@@ -1,5 +1,5 @@
- 
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2 } from 'lucide-react';
+
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell } from 'lucide-react';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -35,7 +35,7 @@ export default function Sidebar({
     // First, sort by connection status
     if (a.isConnected && !b.isConnected) return -1;
     if (!a.isConnected && b.isConnected) return 1;
-    
+
     // Within same connection status, sort naturally by display name
     const nameA = (a.displayName || a.accountName).toLowerCase();
     const nameB = (b.displayName || b.accountName).toLowerCase();
@@ -53,13 +53,13 @@ export default function Sidebar({
           <span>Add Account</span>
         </button>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto">
         <div className="p-4">
           <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3">
             Telegram Accounts
           </h3>
-          
+
           {accounts.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -71,11 +71,10 @@ export default function Sidebar({
               {sortedAccounts.map((account) => (
                 <div
                   key={account.id}
-                  className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                    currentAccount?.id === account.id
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
-                  }`}
+                  className={`p-3 rounded-lg border transition-all cursor-pointer ${currentAccount?.id === account.id
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                    }`}
                   onClick={() => onAccountSelect(account)}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -85,9 +84,12 @@ export default function Sidebar({
                         const map = unreadCounts[account.id] || {};
                         const total = Object.values(map).reduce((s, n) => s + (n || 0), 0);
                         return total > 0 ? (
-                          <span className="px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-300">
-                            {total}
-                          </span>
+                          <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-red-500 shadow-sm animate-pulse-subtle">
+                            <Bell className="w-2.5 h-2.5 text-white" />
+                            <span className="text-[10px] font-bold text-white leading-none">
+                              {total}
+                            </span>
+                          </div>
                         ) : null;
                       })()}
                       <button
@@ -129,7 +131,7 @@ export default function Sidebar({
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="text-xs space-y-1">
                     {account.accountName && (
                       <p className="opacity-75">{account.accountName}</p>
@@ -139,11 +141,10 @@ export default function Sidebar({
                         {account.sourceLanguage} → {account.targetLanguage}
                       </span>
                       <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          account.isConnected
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}
+                        className={`px-2 py-1 rounded text-xs ${account.isConnected
+                          ? 'bg-green-500/20 text-green-400'
+                          : 'bg-red-500/20 text-red-400'
+                          }`}
                       >
                         {account.isConnected ? 'Connected' : 'Offline'}
                       </span>

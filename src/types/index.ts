@@ -15,6 +15,7 @@ export interface TelegramAccount {
   createdAt: string;
   lastUsed?: string;
   isConnected: boolean;
+  unreadCount?: number;
   unreadTotal?: number; // total unread across this account's conversations
 }
 
@@ -26,7 +27,7 @@ export interface TelegramMessage {
   sender_name?: string;
   sender_username?: string;
   peer_title: string;
-  type: 'text' | 'photo' | 'video' | 'voice' | 'document' | 'system' | 'auto_reply';
+  type: 'text' | 'photo' | 'video' | 'voice' | 'document' | 'system' | 'auto_reply' | 'sticker' | 'animation' | 'location' | 'contact' | 'poll' | 'game' | 'venue' | 'invoice' | 'giveaway' | 'giveaway_winners' | 'story' | 'unsupported';
   original_text: string;
   translated_text?: string;
   source_language?: string;
@@ -45,7 +46,7 @@ export interface TelegramChat {
   type: 'private' | 'group' | 'supergroup' | 'channel';
   participantCount?: number;
   lastMessage?: TelegramMessage;
-  unreadCount?: number; // unread messages in this conversation
+  unreadCount?: number;
 }
 
 export interface TranslationResult {

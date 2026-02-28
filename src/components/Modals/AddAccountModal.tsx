@@ -78,7 +78,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
         }
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Invalid TData file';
+      const errorMessage = err.response?.data?.detail || err.message || 'Invalid TData archive';
       setError(errorMessage);
       setTdataFile(null);
       // Reset file input
@@ -107,7 +107,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
       formData.append('tdata', tdataFile[0]);
 
       await telegramAPI.addAccount(formData);
-      
+
       reset();
       setTdataFile(null);
       setValidationInfo(null);
@@ -118,6 +118,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
       onSuccess();
       onClose();
     } catch (err: any) {
+      console.error('Error adding account:', err);
       const errorMessage = err.response?.data?.detail || err.response?.data?.error || 'Failed to add account';
       setError(errorMessage);
     } finally {
@@ -161,7 +162,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              TData File (Zip) *
+              TData File (Zip/Rar) *
             </label>
             <div className="relative">
               <input
@@ -169,7 +170,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
                 type="file"
                 onChange={(e) => handleFileChange(e.target.files)}
                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:text-sm hover:file:bg-blue-700 transition-colors"
-                accept=".zip"
+                accept=".zip,.rar"
                 disabled={loading || validating}
               />
               {validating && (
@@ -180,17 +181,17 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             </div>
             {validating && (
               <p className="mt-1 text-xs text-blue-400">
-                Validating TData file...
+                Validating TData archive...
               </p>
             )}
             {validationInfo && !error && (
               <p className="mt-1 text-xs text-green-400">
-                ✓ Valid TData file for account: {validationInfo.accountName}
+                ✓ Valid TData archive for account: {validationInfo.accountName}
               </p>
             )}
             {!validating && !validationInfo && !error && (
               <p className="mt-1 text-xs text-gray-400">
-                Upload your Telegram session file (Zip format)
+                Upload your Telegram session file (Zip or Rar format)
               </p>
             )}
           </div>

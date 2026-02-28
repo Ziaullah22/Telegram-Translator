@@ -42,6 +42,7 @@ class TelegramAccountResponse(BaseModel):
     created_at: datetime
     last_used: Optional[datetime]
     is_connected: bool = False
+    unread_count: int = 0
 
 class TelegramAccountUpdate(BaseModel):
     account_name: Optional[str] = None
@@ -65,6 +66,7 @@ class ConversationResponse(BaseModel):
     is_archived: bool
     created_at: datetime
     last_message_at: Optional[datetime]
+    last_message: Optional['MessageResponse'] = None
     unread_count: int = 0
 
 class MessageType(str, Enum):

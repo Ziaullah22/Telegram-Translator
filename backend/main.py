@@ -1,8 +1,10 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from datetime import datetime
 import logging
+import traceback
 from app.core.config import settings
 from app.core.encryption import initialize_encryption_service, encrypt_message_if_enabled
 from database import db
@@ -77,6 +79,16 @@ async def lifespan(app: FastAPI):
             else:
                 conversation_id = conversation['id']
 
+            # Check if message already exists to avoid duplication
+            existing_message = await db.fetchrow(
+                "SELECT id FROM messages WHERE conversation_id = $1 AND telegram_message_id = $2",
+                conversation_id,
+                message_data['message_id']
+            )
+            if existing_message:
+                logger.info(f"Message {message_data['message_id']} already exists, skipping")
+                return
+
             # Ensure we have a valid datetime for created_at
             created_at = message_data['date'] if message_data['date'] is not None else datetime.now()
             
@@ -87,13 +99,18 @@ async def lifespan(app: FastAPI):
             translated_text = None
             source_lang = None
             if text:
-                translation = await translation_service.translate_text(
-                    text,
-                    account['target_language'],
-                    account['source_language']
-                )
-                translated_text = translation['translated_text']
-                source_lang = translation['source_language']
+                try:
+                    translation = await translation_service.translate_text(
+                        text,
+                        account['target_language'],
+                        account['source_language']
+                    )
+                    translated_text = translation['translated_text']
+                    source_lang = translation['source_language']
+                except Exception as e:
+                    logger.error(f"Translation error in handle_new_message: {e}")
+                    translated_text = text
+                    source_lang = account['source_language']
             
             # Encrypt message if encryption is enabled
             processed_original, processed_translated, is_encrypted = await encrypt_message_if_enabled(
@@ -103,25 +120,24 @@ async def lifespan(app: FastAPI):
             message_id = await db.fetchval(
                 """
                 INSERT INTO messages
-                (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type,
-                 original_text, translated_text, source_language, target_language, created_at, is_outgoing, media_file_name, is_encrypted)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
+                 source_language, target_language, created_at, is_encrypted, is_outgoing)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING id
                 """,
                 conversation_id,
                 message_data['message_id'],
-                message_data.get('sender_id'),
-                message_data.get('sender_name'),
-                message_data.get('sender_username'),
+                message_data['sender_id'],
+                message_data['sender_name'],
+                message_data.get('sender_username') or 'User',
                 msg_type,
                 processed_original,
                 processed_translated,
                 source_lang,
                 account['target_language'],
                 created_at,
-                message_data.get('is_outgoing', False),
-                message_data.get('media_filename'),
-                is_encrypted
+                is_encrypted,
+                message_data.get('is_outgoing', False)
             )
 
             await db.execute(
@@ -129,91 +145,86 @@ async def lifespan(app: FastAPI):
                 created_at,
                 conversation_id
             )
-            
-            # Cancel scheduled messages if this is an incoming message
-            if not message_data.get('is_outgoing', False):
-                await scheduler_service.cancel_scheduled_messages_for_conversation(conversation_id)
-                
-                # Check auto-responder rules for incoming messages
-                await auto_responder_service.check_and_respond(message_data, account['user_id'])
+
+            message_response = {
+                "id": message_id,
+                "conversation_id": conversation_id,
+                "telegram_message_id": message_data['message_id'],
+                "sender_user_id": message_data['sender_id'],
+                "sender_name": message_data['sender_name'],
+                "sender_username": message_data['sender_username'],
+                "peer_title": message_data['peer_title'],
+                "type": msg_type,
+                "original_text": text,
+                "translated_text": translated_text,
+                "source_language": source_lang,
+                "target_language": account['target_language'],
+                "created_at": created_at.isoformat() if created_at else None,
+                "edited_at": None,
+                "is_outgoing": message_data['is_outgoing'],
+                "media_file_name": message_data.get('media_filename'),
+            }
 
             await manager.send_to_account(
                 {
                     "type": "new_message",
-                    "message": {
-                        "id": message_id,
-                        "conversation_id": conversation_id,
-                        "telegram_message_id": message_data['message_id'],
-                        "sender_user_id": message_data.get('sender_id'),
-                        "sender_name": message_data.get('sender_name'),
-                        "sender_username": message_data.get('sender_username'),
-                        "peer_title": message_data.get('peer_title'),
-                        "type": msg_type,
-                        "original_text": text,
-                        "translated_text": translated_text,
-                        "source_language": source_lang,
-                        "target_language": account['target_language'],
-                        "created_at": created_at.isoformat() if created_at else None,
-                        "is_outgoing": message_data.get('is_outgoing', False),
-                        "has_media": message_data.get('has_media', False),
-                        "media_file_name": message_data.get('media_filename')
-                    }
+                    "message": message_response
                 },
                 account_id,
                 account['user_id']
             )
 
+            # Check for auto-responder matches
+            await auto_responder_service.check_and_respond(
+                message_data,
+                account['user_id']
+            )
+
         except Exception as e:
             logger.error(f"Error handling new message: {e}")
+            logger.error(traceback.format_exc())
 
     telethon_service.add_message_handler(handle_new_message)
     
-    # Auto-connect all active accounts on startup
+    # Auto-connect accounts from database
     try:
-        accounts = await db.fetch(
-            "SELECT id, account_name FROM telegram_accounts WHERE is_active = true"
-        )
-        
-        if accounts:
-            logger.info(f"Auto-connecting {len(accounts)} active account(s)...")
-            
-            for account in accounts:
-                try:
-                    connected = await telethon_service.connect_session(account['id'])
-                    if connected:
-                        logger.info(f"✓ Connected account: {account['account_name']}")
-                    else:
-                        logger.warning(f"✗ Failed to connect account: {account['account_name']}")
-                except Exception as e:
-                    logger.error(f"✗ Error connecting account {account['account_name']}: {e}")
-        else:
-            logger.info("No active accounts to connect")
+        accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
+        logger.info(f"Auto-connecting {len(accounts)} active account(s)...")
+        for account in accounts:
+            try:
+                await telethon_service.connect_session(account['id'])
+                logger.info(f"\u2713 Connected account: {account['display_name']}")
+            except Exception as e:
+                logger.error(f"\u2717 Error connecting account {account['display_name']}: {e}")
     except Exception as e:
-        logger.error(f"Error during auto-connect: {e}")
-    
-    # Start scheduler service
-    await scheduler_service.start()
+        logger.error(f"Error fetching accounts for auto-connect: {e}")
 
-    logger.info("Application startup complete")
+    # Start scheduler
+    await scheduler_service.start()
+    logger.info("Scheduler started")
 
     yield
 
-    logger.info("Shutting down application...")
-    await scheduler_service.stop()
+    # Shutdown
     await telethon_service.disconnect_all()
+    await scheduler_service.stop()
     await db.disconnect()
     logger.info("Application shutdown complete")
 
-app = FastAPI(
-    title="Telegram Translator API",
-    description="FastAPI backend for Telegram multi-account translator with Telethon",
-    version="1.0.0",
-    lifespan=lifespan
-)
+app = FastAPI(lifespan=lifespan)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global exception caught: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)},
+    )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -221,78 +232,60 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(telegram_router)
-app.include_router(translation_router)
 app.include_router(messages_router)
+app.include_router(translation_router)
 app.include_router(templates_router)
 app.include_router(scheduled_router)
-app.include_router(contacts_router, prefix="/api/contacts", tags=["contacts"])
+app.include_router(contacts_router)
 app.include_router(auto_responder_router)
 app.include_router(admin_router)
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Telegram Translator API",
-        "version": "1.0.0",
-        "status": "running"
-    }
-
 @app.get("/api/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "database": "connected" if db.pool else "disconnected"
-    }
+    return {"status": "healthy", "database": "connected"}
 
 @app.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: str = Query(...)
-):
-    user_id = None
+async def websocket_endpoint(websocket: WebSocket):
     try:
-        # Validate the token first (before accepting)
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        user_id = payload.get("user_id")
-
-        if not user_id:
-            logger.warning("WebSocket connection rejected: No user_id in token")
-            await websocket.close(code=1008, reason="Invalid token")
+        token = websocket.query_params.get("token")
+        if not token:
+            logger.warning("WebSocket attempt without token")
+            await websocket.close(code=1008)
             return
 
-        # Accept and register the connection (manager.connect does both)
-        await manager.connect(websocket, user_id)
+        # Debug log for token (partial)
+        logger.info(f"WebSocket handshake attempt for token beginning: {token[:20]}...")
+        
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        user_id = payload.get("user_id")
+        
+        if not user_id:
+            logger.warning(f"WebSocket rejected: Token payload missing user_id. Keys: {list(payload.keys())}")
+            await websocket.close(code=1008)
+            return
 
+        logger.info(f"WebSocket authenticated for user_id: {user_id}")
+        await manager.connect(websocket, int(user_id))
+        
         try:
             while True:
                 data = await websocket.receive_json()
-
                 if data.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
-
         except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected for user {user_id}")
-            manager.disconnect(websocket, user_id)
-
+            logger.info(f"WebSocket disconnected for user_id: {user_id}")
+            manager.disconnect(websocket, int(user_id))
+        except Exception as e:
+            logger.error(f"WebSocket loop error for user_id {user_id}: {e}")
+            manager.disconnect(websocket, int(user_id))
+            
     except JWTError as e:
-        logger.error(f"WebSocket JWT error: {e}")
-        # Can't close if never accepted, just log the error
-        pass
+        logger.error(f"WebSocket JWT Error: {e}")
+        await websocket.close(code=1008)
     except Exception as e:
-        logger.error(f"WebSocket error: {e}", exc_info=True)
-        try:
-            if user_id:
-                manager.disconnect(websocket, user_id)
-            if websocket.client_state.name == "CONNECTED":
-                await websocket.close(code=1011, reason="Internal error")
-        except:
-            pass
+        logger.error(f"WebSocket connection error: {e}")
+        await websocket.close(code=1008)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -32,7 +32,7 @@ export default function ContactInfoModal({
 
   const loadContactInfo = async () => {
     if (!conversationId) return;
-    
+
     try {
       setLoading(true);
       const data = await contactsAPI.getContactInfo(conversationId);

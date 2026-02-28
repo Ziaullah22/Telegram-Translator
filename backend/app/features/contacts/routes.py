@@ -7,7 +7,7 @@ from auth import get_current_user
 from database import db
 from models import ContactInfoCreate, ContactInfoUpdate, ContactInfoResponse, TokenData
 
-router = APIRouter()
+router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 logger = logging.getLogger(__name__)
 
 @router.get("/conversation/{conversation_id}", response_model=Optional[ContactInfoResponse])

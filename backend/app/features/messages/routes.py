@@ -18,6 +18,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
+@router.post("/conversations/{conversation_id}/read")
+async def mark_as_read(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    conversation = await db.fetchrow(
+        """
+        SELECT c.*, ta.user_id FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE c.id = $1
+        """,
+        conversation_id,
+    )
+
+    if not conversation or conversation['user_id'] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    await db.execute(
+        "UPDATE messages SET is_read = true WHERE conversation_id = $1 AND is_outgoing = false",
+        conversation_id,
+    )
+
+    return {"message": "Messages marked as read"}
+
+
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: int,
@@ -107,9 +135,13 @@ async def send_message(
     translated_text = original_text
 
     if message_data.translate:
+        dest_lang = conversation['source_language']
+        if dest_lang == 'auto':
+            dest_lang = 'en'  # Google cannot translate TO 'auto'
+            
         translation = await translation_service.translate_text(
             original_text,
-            conversation['source_language'],
+            dest_lang,
             conversation['target_language'],
         )
         translated_text = translation['translated_text']
@@ -130,15 +162,15 @@ async def send_message(
             """
             INSERT INTO messages
             (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-             source_language, target_language, created_at, is_encrypted)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             source_language, target_language, created_at, is_encrypted, is_outgoing)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
             """,
             message_data.conversation_id,
             sent_message['message_id'],
             sent_message['sender_user_id'],
             sent_message['sender_name'],
-            sent_message['sender_username'],
+            sent_message.get('sender_username') or 'User',
             'text',
             processed_original,
             processed_translated,
@@ -146,6 +178,7 @@ async def send_message(
             conversation['source_language'],
             sent_message['date'],
             is_encrypted,
+            True,
         )
 
         await db.execute(
@@ -160,7 +193,7 @@ async def send_message(
             "telegram_message_id": sent_message['message_id'],
             "sender_user_id": sent_message['sender_user_id'],
             "sender_name": sent_message['sender_name'],
-            "sender_username": sent_message['sender_username'],
+            "sender_username": sent_message.get('sender_username') or 'User',
             "peer_title": conversation['title'],
             "type": "text",
             "original_text": original_text,
@@ -238,9 +271,13 @@ async def send_media(
         source_lang = None
         
         if caption:
+            dest_lang = conversation['source_language']
+            if dest_lang == 'auto':
+                dest_lang = 'en'
+                
             translation = await translation_service.translate_text(
                 caption,
-                conversation['source_language'],
+                dest_lang,
                 conversation['target_language'],
             )
             translated_caption = translation['translated_text']
@@ -281,7 +318,7 @@ async def send_media(
             sent_message['message_id'],
             sent_message['sender_user_id'],
             sent_message['sender_name'],
-            sent_message['sender_username'],
+            sent_message.get('sender_username') or 'User',
             sent_message['type'],
             processed_original,
             processed_translated,
@@ -308,7 +345,7 @@ async def send_media(
             "telegram_message_id": sent_message['message_id'],
             "sender_user_id": sent_message['sender_user_id'],
             "sender_name": sent_message['sender_name'],
-            "sender_username": sent_message['sender_username'],
+            "sender_username": sent_message.get('sender_username') or 'User',
             "type": sent_message['type'],
             "original_text": original_caption,
             "translated_text": translated_caption,

@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Optional, List, Callable
 from telethon import TelegramClient, events
 from telethon.tl.types import User, Chat, Channel, Message, PeerUser, PeerChat, PeerChannel
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, UserDeactivatedError, AuthKeyUnregisteredError, SessionPasswordNeededError
 from app.core.config import settings
 from database import db
 import json
@@ -51,11 +51,29 @@ class TelegramSession:
 
             return True
 
+        except UserDeactivatedError:
+            self.is_connected = False
+            logger.error(f"Account {self.account_id} is banned/deactivated.")
+            raise Exception("This Telegram account has been banned or deactivated by Telegram.")
+        except AuthKeyUnregisteredError:
+            self.is_connected = False
+            logger.error(f"Session for account {self.account_id} is expired.")
+            raise Exception("The session is invalid or has expired. Please export a new TData zip.")
+        except SessionPasswordNeededError:
+            self.is_connected = False
+            logger.error(f"Account {self.account_id} requires 2FA password which is not supported in TData direct login yet.")
+            raise Exception("This account has 2-Step Verification enabled. Please disable it or use a TData without it.")
         except Exception as e:
+            error_msg = str(e).lower()
             logger.error(f"Failed to connect session {self.account_id}: {e}")
             self.is_connected = False
-            # Re-raise the exception to preserve the detailed error message
-            raise
+            
+            # Identify other specific Telegram errors if any
+            if "deactivated" in error_msg or "banned" in error_msg:
+                raise Exception("This Telegram account has been banned or deactivated by Telegram.")
+            
+            # Re-raise the original or a generic exception
+            raise Exception(f"Telegram connection failed: {str(e)}")
 
     async def disconnect(self):
         if self.client:
@@ -423,8 +441,9 @@ class TelethonService:
         self.polling_interval = 10  # seconds
         os.makedirs("sessions", exist_ok=True)
 
-    def add_message_handler(self, handler: Callable):
-        self.message_handlers.append(handler)
+    def add_message_handler(self, handler):
+        if handler not in self.message_handlers:
+            self.message_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
         if account_id in self.sessions and self.sessions[account_id].is_connected:

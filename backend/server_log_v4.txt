@@ -1,0 +1,86 @@
+﻿.\venv\Scripts\python : 
+INFO:     Started server 
+process [26008]
+At line:1 char:49
++ ... ess -Force; 
+.\venv\Scripts\python -m 
+uvicorn main:app --host 
+127.0.0. ...
++                 ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (INFO:    
+     Started server proces   
+ s [26008]:String) [], Re    
+moteException
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+INFO:     Waiting for 
+application startup.
+2026-02-28 08:16:48,180 - 
+main - INFO - Starting 
+application...
+2026-02-28 08:16:48,573 - 
+database - INFO - Database 
+connection pool created 
+successfully
+2026-02-28 08:16:48,573 - 
+main - INFO - Database 
+connected
+2026-02-28 08:16:48,636 - 
+app.core.encryption - INFO - 
+Encryption service 
+initialized successfully
+2026-02-28 08:16:48,636 - 
+main - INFO - Encryption 
+service initialized
+2026-02-28 08:16:48,646 - 
+main - INFO - 
+Auto-connecting 0 active 
+account(s)...
+2026-02-28 08:16:48,646 - 
+scheduler_service - INFO - 
+Starting scheduler service...
+2026-02-28 08:16:48,658 - 
+scheduler_service - INFO - 
+Loaded 0 scheduled messages
+2026-02-28 08:16:48,658 - 
+scheduler_service - INFO - 
+Scheduler service started
+2026-02-28 08:16:48,658 - 
+main - INFO - Scheduler 
+started
+2026-02-28 08:16:48,658 - 
+scheduler_service - INFO - 
+Scheduler loop started
+INFO:     Application 
+startup complete.
+INFO:     Uvicorn running on 
+http://127.0.0.1:8000 (Press 
+CTRL+C to quit)
+INFO:     127.0.0.1:64080 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64080 - "OPTIONS /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64080 - "POST /api/telegram/accounts HTTP/1.1" 409 Conflict
+2026-02-28 08:19:22,562 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+91.108.56.170:443/TcpFull...
+2026-02-28 08:19:22,565 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+91.108.56.170:443/TcpFull 
+complete!
+2026-02-28 08:19:27,163 - 
+telethon_service - INFO - 
+Connected to Telegram 
+Account. ID: 29
+2026-02-28 08:19:27,166 - 
+telethon_service - INFO - 
+Checking unread messages for 
+account 29 on start
+2026-02-28 08:19:27,167 - 
+telethon_service - INFO - 
+Getting unread messages for 
+account 29

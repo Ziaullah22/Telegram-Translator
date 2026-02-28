@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -82,6 +82,7 @@ export const telegramAPI = {
       createdAt: a.created_at,
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
+      unreadCount: a.unread_count,
     }));
   },
 
@@ -102,6 +103,7 @@ export const telegramAPI = {
       createdAt: a.created_at,
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
+      unreadCount: a.unread_count,
     } as TelegramAccount;
   },
 
@@ -126,6 +128,7 @@ export const telegramAPI = {
       createdAt: a.created_at,
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
+      unreadCount: a.unread_count,
     } as TelegramAccount;
   },
 
@@ -195,9 +198,17 @@ export const translationAPI = {
 
 // Conversations API
 export const conversationsAPI = {
-  getConversations: async (accountId: number) => {
+  getConversations: async (accountId: number): Promise<TelegramChat[]> => {
     const response = await api.get(`/telegram/accounts/${accountId}/conversations`);
-    return response.data;
+    const items = response.data as any[];
+    return (items || []).map((c: any) => ({
+      id: c.id,
+      title: c.title,
+      username: c.username,
+      type: c.type,
+      lastMessage: c.last_message,
+      unreadCount: c.unread_count,
+    }));
   },
 };
 
@@ -219,10 +230,24 @@ export const messagesAPI = {
     return response.data;
   },
 
+  sendMedia: async (formData: FormData): Promise<TelegramMessage> => {
+    const response = await api.post('/messages/send-media', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
   translateText: async (text: string, targetLanguage: string, sourceLanguage: string = 'auto') => {
     const response = await api.post('/messages/translate', null, {
       params: { text, target_language: targetLanguage, source_language: sourceLanguage }
     });
+    return response.data;
+  },
+
+  markAsRead: async (conversationId: number) => {
+    const response = await api.post(`/messages/conversations/${conversationId}/read`);
     return response.data;
   },
 };

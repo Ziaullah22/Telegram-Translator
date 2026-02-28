@@ -34,7 +34,7 @@ export default function ConversationList({
       if (user.first_name) titleParts.push(user.first_name);
       if (user.last_name) titleParts.push(user.last_name);
       const title = titleParts.length > 0 ? titleParts.join(' ') : user.username || 'Unknown';
-      
+
       const conversation = await telegramAPI.createConversation(accountId, {
         telegram_peer_id: user.id,
         title: title,
@@ -112,65 +112,96 @@ export default function ConversationList({
           ) : (
             <div className="p-2">
               {conversations.map((conversation) => (
-              <div
-                key={conversation.id}
-                onClick={() => onConversationSelect(conversation)}
-                className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors mb-1 ${
-                  currentConversation?.id === conversation.id
+                <div
+                  key={conversation.id}
+                  onClick={() => onConversationSelect(conversation)}
+                  className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors mb-1 ${currentConversation?.id === conversation.id
                     ? 'bg-blue-600 text-white'
                     : 'hover:bg-gray-700 text-gray-200'
-                }`}
-              >
-                {/* Avatar */}
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  currentConversation?.id === conversation.id
+                    }`}
+                >
+                  {/* Avatar */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${currentConversation?.id === conversation.id
                     ? 'bg-blue-500'
                     : 'bg-gray-600'
-                }`}>
-                  <span className="text-sm font-medium">
-                    {getConversationAvatar(conversation)}
-                  </span>
-                </div>
-
-                {/* Conversation Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium truncate">
-                      {conversation.title || conversation.username || 'Unknown'}
-                    </h3>
-                    {conversation.lastMessage && (
-                      <span className="text-xs opacity-70">
-                        {new Date(conversation.lastMessage.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    )}
+                    }`}>
+                    <span className="text-sm font-medium">
+                      {getConversationAvatar(conversation)}
+                    </span>
                   </div>
-                  
-                  <div className="flex items-center justify-between mt-1">
-                    {conversation.lastMessage?.original_text && (
-                      <p className="text-xs opacity-70 truncate">
-                        {conversation.lastMessage.original_text}
+
+                  {/* Conversation Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium truncate">
+                        {conversation.title || conversation.username || 'Unknown'}
+                      </h3>
+                      {conversation.lastMessage && (
+                        <span className="text-xs opacity-70">
+                          {new Date(conversation.lastMessage.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-1">
+                      <p className={`text-xs truncate ${currentConversation?.id === conversation.id ? 'text-blue-100' : 'text-gray-400'
+                        }`}>
+                        {conversation.lastMessage ? (
+                          <>
+                            {conversation.lastMessage.is_outgoing && <span className="mr-1 opacity-70">You:</span>}
+                            {conversation.lastMessage.type === 'text' ? (
+                              conversation.lastMessage.translated_text || conversation.lastMessage.original_text
+                            ) : (
+                              <span className="italic flex items-center space-x-1">
+                                <span>
+                                  {conversation.lastMessage.type === 'photo' && '📷 Photo'}
+                                  {conversation.lastMessage.type === 'video' && '📹 Video'}
+                                  {conversation.lastMessage.type === 'voice' && '🎤 Voice'}
+                                  {conversation.lastMessage.type === 'document' && '📄 Document'}
+                                  {conversation.lastMessage.type === 'sticker' && '😀 Sticker'}
+                                  {conversation.lastMessage.type === 'animation' && '🖼️ GIF'}
+                                  {conversation.lastMessage.type === 'location' && '📍 Location'}
+                                  {conversation.lastMessage.type === 'contact' && '👤 Contact'}
+                                  {conversation.lastMessage.type === 'poll' && '📊 Poll'}
+                                  {conversation.lastMessage.type === 'game' && '🎮 Game'}
+                                  {conversation.lastMessage.type === 'venue' && '🏛️ Venue'}
+                                  {conversation.lastMessage.type === 'invoice' && '💳 Invoice'}
+                                  {conversation.lastMessage.type === 'giveaway' && '🎁 Giveaway'}
+                                  {conversation.lastMessage.type === 'giveaway_winners' && '🏆 Giveaway Winners'}
+                                  {conversation.lastMessage.type === 'story' && '📖 Story'}
+                                  {conversation.lastMessage.type === 'unsupported' && '❓ Unsupported'}
+                                  {!['photo', 'video', 'voice', 'document', 'sticker', 'animation', 'location', 'contact', 'poll', 'game', 'venue', 'invoice', 'giveaway', 'giveaway_winners', 'story', 'unsupported'].includes(conversation.lastMessage.type) && '💬 Message'}
+                                </span>
+                                {conversation.lastMessage.original_text && (
+                                  <span className="ml-1 opacity-70"> - {conversation.lastMessage.original_text}</span>
+                                )}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          'No messages yet'
+                        )}
                       </p>
-                    )}
-                    {unreadCounts[conversation.id] > 0 && (
-                      <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px]">
-                        {unreadCounts[conversation.id]}
-                      </span>
-                    )}
-                    {conversation.participantCount && conversation.participantCount > 1 && (
-                      <span className="text-xs opacity-50">
-                        {conversation.participantCount}
-                      </span>
-                    )}
+                      {unreadCounts[conversation.id] > 0 && (
+                        <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px]">
+                          {unreadCounts[conversation.id]}
+                        </span>
+                      )}
+                      {conversation.participantCount && conversation.participantCount > 1 && (
+                        <span className="text-xs opacity-50">
+                          {conversation.participantCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Type Icon */}
-                <div className="opacity-50">
-                  {getConversationIcon(conversation.type)}
-                </div>
+                  {/* Type Icon */}
+                  <div className="opacity-50">
+                    {getConversationIcon(conversation.type)}
+                  </div>
                 </div>
               ))}
             </div>

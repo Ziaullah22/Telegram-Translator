@@ -137,7 +137,7 @@ export default function SearchUsersModal({
               {searchResults.map((user) => {
                 const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
                 const subtitle = user.username ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : user.phone || '';
-                
+
                 return (
                   <div
                     key={user.id}

@@ -64,11 +64,11 @@ export function useSocket() {
         }
 
         // Attempt to reconnect if not a normal closure and we have a token
-        if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
+        if (event.code !== 1000) {
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
+          console.log(`Attempting to reconnect in ${delay}ms`);
           reconnectAttempts.current++;
-          
+
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, delay);

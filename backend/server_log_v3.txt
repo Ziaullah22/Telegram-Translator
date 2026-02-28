@@ -1,0 +1,1967 @@
+﻿.\venv\Scripts\python : 
+INFO:     Started server 
+process [5940]
+At line:1 char:49
++ ... ess -Force; 
+.\venv\Scripts\python -m 
+uvicorn main:app --host 
+127.0.0. ...
++                 ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (INFO:    
+     Started server proces   
+ s [5940]:String) [], Rem    
+oteException
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+INFO:     Waiting for 
+application startup.
+2026-02-27 12:55:47,424 - 
+main - INFO - Starting 
+application...
+2026-02-27 12:55:47,673 - 
+database - INFO - Database 
+connection pool created 
+successfully
+2026-02-27 12:55:47,673 - 
+main - INFO - Database 
+connected
+2026-02-27 12:55:47,706 - 
+app.core.encryption - INFO - 
+Encryption service 
+initialized successfully
+2026-02-27 12:55:47,706 - 
+main - INFO - Encryption 
+service initialized
+2026-02-27 12:55:47,712 - 
+main - INFO - 
+Auto-connecting 0 active 
+account(s)...
+2026-02-27 12:55:47,712 - 
+scheduler_service - INFO - 
+Starting scheduler service...
+2026-02-27 12:55:47,718 - 
+scheduler_service - INFO - 
+Loaded 0 scheduled messages
+2026-02-27 12:55:47,718 - 
+scheduler_service - INFO - 
+Scheduler service started
+2026-02-27 12:55:47,718 - 
+main - INFO - Scheduler 
+started
+2026-02-27 12:55:47,718 - 
+scheduler_service - INFO - 
+Scheduler loop started
+INFO:     Application 
+startup complete.
+INFO:     Uvicorn running on 
+http://127.0.0.1:8000 (Press 
+CTRL+C to quit)
+INFO:     127.0.0.1:65507 - "OPTIONS /api/auth/login HTTP/1.1" 200 OK
+2026-02-27 12:56:08,253 - 
+app.features.auth.routes - 
+INFO - User logged in: 
+ziaulah (ID: 1)
+INFO:     127.0.0.1:65507 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "OPTIONS /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "OPTIONS /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56219 - "OPTIONS /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51662 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51662 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65507 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60693 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:50202 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:49928 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:61061 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:59850 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:56826 - "OPTIONS /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:56419 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:59240 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+2026-02-27 12:56:51,991 - 
+app.features.telegram.routes 
+- INFO - Reactivated 
+telegram account: c0Ur6Ra 
+for user 1
+2026-02-27 12:56:52,014 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:56:52,015 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:56:53,746 - 
+telethon_service - ERROR - 
+Failed to connect session 
+13: The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:56:53,746 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+new account c0Ur6Ra: 
+Telegram connection failed: 
+The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:56:53,751 - 
+main - ERROR - Global 
+exception caught: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+2026-02-27 12:56:53,757 - 
+main - ERROR - Traceback 
+(most recent call last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 40, in connect
+    await 
+self.client.connect()
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\tel
+ethon\client\telegrambaseclie
+nt.py", line 603, in connect
+    await self._sender.send(f
+unctions.InvokeWithLayerReque
+st(LAYER, req))
+telethon.errors.rpcerrorlist.
+AuthKeyDuplicatedError: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+
+During handling of the above 
+exception, another exception 
+occurred:
+
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 340, in 
+create_account
+    connected = await teletho
+n_service.connect_session(acc
+ount_id)
+                ^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 466, in connect_session
+    connected = await 
+session.connect()
+                
+^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 76, in connect
+    raise 
+Exception(f"Telegram 
+connection failed: {str(e)}")
+Exception: Telegram 
+connection failed: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+
+During handling of the above 
+exception, another exception 
+occurred:
+
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 164, in __call__
+    await self.app(scope, 
+receive, _send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 95, in __call__
+    await 
+self.simple_response(scope, 
+receive, send, 
+request_headers=headers)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 153, in simple_response
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\exceptions.
+py", line 63, in __call__
+    await wrap_app_handling_e
+xceptions(self.app, 
+conn)(scope, receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\middleware\asyncexitstac
+k.py", line 18, in __call__
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+716, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+736, in app
+    await 
+route.handle(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+290, in handle
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 119, 
+in app
+    await wrap_app_handling_e
+xceptions(app, 
+request)(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 105, 
+in app
+    response = await 
+f(request)
+               
+^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 431, 
+in app
+    raw_response = await 
+run_endpoint_function(
+                   
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+INFO:     127.0.0.1:52470 - "POST /api/telegram/accounts HTTP/1.1" 500 Internal Server Error
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 313, 
+in run_endpoint_function
+    return await 
+dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 376, in 
+create_account
+    
+os.remove(session_location)
+    
+~~~~~~~~~^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+
+ERROR:    Exception in ASGI 
+application
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 40, in connect
+    await 
+self.client.connect()
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\tel
+ethon\client\telegrambaseclie
+nt.py", line 603, in connect
+    await self._sender.send(f
+unctions.InvokeWithLayerReque
+st(LAYER, req))
+telethon.errors.rpcerrorlist.
+AuthKeyDuplicatedError: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+
+During handling of the above 
+exception, another exception 
+occurred:
+
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 340, in 
+create_account
+    connected = await teletho
+n_service.connect_session(acc
+ount_id)
+                ^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 466, in connect_session
+    connected = await 
+session.connect()
+                
+^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\telethon_service.py", 
+line 76, in connect
+    raise 
+Exception(f"Telegram 
+connection failed: {str(e)}")
+Exception: Telegram 
+connection failed: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+
+During handling of the above 
+exception, another exception 
+occurred:
+
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\uvi
+corn\protocols\http\httptools
+_impl.py", line 416, in 
+run_asgi
+    result = await app(  # 
+type: 
+ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^
+        self.scope, 
+self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\uvi
+corn\middleware\proxy_headers
+.py", line 60, in __call__
+    return await 
+self.app(scope, receive, 
+send)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\applications.py", line 
+1160, in __call__
+    await 
+super().__call__(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\applications.py", 
+line 107, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 186, in __call__
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 164, in __call__
+    await self.app(scope, 
+receive, _send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 95, in __call__
+    await 
+self.simple_response(scope, 
+receive, send, 
+request_headers=headers)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 153, in simple_response
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\exceptions.
+py", line 63, in __call__
+    await wrap_app_handling_e
+xceptions(self.app, 
+conn)(scope, receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\middleware\asyncexitstac
+k.py", line 18, in __call__
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+716, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+736, in app
+    await 
+route.handle(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+290, in handle
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 119, 
+in app
+    await wrap_app_handling_e
+xceptions(app, 
+request)(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 105, 
+in app
+    response = await 
+f(request)
+               
+^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 431, 
+in app
+    raw_response = await 
+run_endpoint_function(
+                   
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 313, 
+in run_endpoint_function
+    return await 
+dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 376, in 
+create_account
+    
+os.remove(session_location)
+    
+~~~~~~~~~^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+2026-02-27 12:56:58,767 - 
+main - ERROR - Global 
+exception caught: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+2026-02-27 12:56:58,769 - 
+main - ERROR - Traceback 
+(most recent call last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 164, in __call__
+    await self.app(scope, 
+receive, _send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 95, in __call__
+    await 
+self.simple_response(scope, 
+receive, send, 
+request_headers=headers)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 153, in simple_response
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\exceptions.
+py", line 63, in __call__
+    await wrap_app_handling_e
+xceptions(self.app, 
+conn)(scope, receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\middleware\asyncexitstac
+k.py", line 18, in __call__
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+716, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+736, in app
+    await 
+route.handle(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+290, in handle
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 119, 
+in app
+    await wrap_app_handling_e
+xceptions(app, 
+request)(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 105, 
+in app
+    response = await 
+f(request)
+               
+^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 431, 
+in app
+    raw_response = await 
+run_endpoint_function(
+                   
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 313, 
+in run_endpoint_function
+    return await 
+dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 328, in 
+create_account
+    
+os.remove(session_location)
+    
+~~~~~~~~~^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+
+INFO:     127.0.0.1:56781 - "POST /api/telegram/accounts HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI 
+application
+Traceback (most recent call 
+last):
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\uvi
+corn\protocols\http\httptools
+_impl.py", line 416, in 
+run_asgi
+    result = await app(  # 
+type: 
+ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^
+        self.scope, 
+self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\uvi
+corn\middleware\proxy_headers
+.py", line 60, in __call__
+    return await 
+self.app(scope, receive, 
+send)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\applications.py", line 
+1160, in __call__
+    await 
+super().__call__(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\applications.py", 
+line 107, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 186, in __call__
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\errors.py",
+ line 164, in __call__
+    await self.app(scope, 
+receive, _send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 95, in __call__
+    await 
+self.simple_response(scope, 
+receive, send, 
+request_headers=headers)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\cors.py", 
+line 153, in simple_response
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\middleware\exceptions.
+py", line 63, in __call__
+    await wrap_app_handling_e
+xceptions(self.app, 
+conn)(scope, receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\middleware\asyncexitstac
+k.py", line 18, in __call__
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+716, in __call__
+    await 
+self.middleware_stack(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+736, in app
+    await 
+route.handle(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\routing.py", line 
+290, in handle
+    await self.app(scope, 
+receive, send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 119, 
+in app
+    await wrap_app_handling_e
+xceptions(app, 
+request)(scope, receive, 
+send)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 53, in wrapped_app
+    raise exc
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\sta
+rlette\_exception_handler.py"
+, line 42, in wrapped_app
+    await app(scope, 
+receive, sender)
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 105, 
+in app
+    response = await 
+f(request)
+               
+^^^^^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 431, 
+in app
+    raw_response = await 
+run_endpoint_function(
+                   
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\venv\Lib\site-packages\fas
+tapi\routing.py", line 313, 
+in run_endpoint_function
+    return await 
+dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^
+  File "D:\Freelance 
+Projects\Translator New\backe
+nd\app\features\telegram\rout
+es.py", line 328, in 
+create_account
+    
+os.remove(session_location)
+    
+~~~~~~~~~^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 
+32] The process cannot 
+access the file because it 
+is being used by another 
+process: 
+'sessions/1_c0Ur6Ra.session'
+INFO:     127.0.0.1:53588 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53588 - "POST /api/telegram/accounts HTTP/1.1" 409 Conflict
+2026-02-27 13:04:11,347 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:04:11,348 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 13:04:14,276 - 
+telethon_service - ERROR - 
+Session 26 is not 
+authorized. Please 
+re-authenticate.
+2026-02-27 13:04:14,276 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnecting from 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:04:14,277 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnection from 
+149.154.167.91:443/TcpFull 
+complete!
+INFO:     127.0.0.1:49329 - "POST /api/telegram/accounts HTTP/1.1" 500 Internal Server Error
+2026-02-27 13:04:38,053 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:04:38,054 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 13:04:40,874 - 
+telethon_service - ERROR - 
+Session 27 is not 
+authorized. Please 
+re-authenticate.
+2026-02-27 13:04:40,875 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnecting from 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:04:40,875 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnection from 
+149.154.167.91:443/TcpFull 
+complete!
+INFO:     127.0.0.1:49801 - "POST /api/telegram/accounts HTTP/1.1" 500 Internal Server Error
+2026-02-27 13:06:52,476 - tel
+ethon.network.connection.conn
+ection - WARNING - Server 
+closed the connection: 0 
+bytes read on a total of 8 
+expected bytes
+2026-02-27 13:06:52,477 - tel
+ethon.network.mtprotosender 
+- INFO - Connection closed 
+while receiving data: 0 
+bytes read on a total of 8 
+expected bytes
+2026-02-27 13:06:52,477 - tel
+ethon.network.mtprotosender 
+- INFO - Closing current 
+connection to begin 
+reconnect...
+2026-02-27 13:06:52,477 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:06:52,478 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 13:06:53,757 - 
+telethon.client.updates - 
+WARNING - Error executing 
+high-level request after 
+reconnect: <class 'telethon.e
+rrors.rpcerrorlist.AuthKeyDup
+licatedError'>: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by GetUsersRequest)
+INFO:     127.0.0.1:64318 - "OPTIONS /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64318 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request
+2026-02-27 13:12:59,372 - tel
+ethon.network.connection.conn
+ection - WARNING - Server 
+closed the connection: 
+[WinError 1236] The network 
+connection was aborted by 
+the local system
+2026-02-27 13:12:59,373 - tel
+ethon.network.mtprotosender 
+- INFO - Connection closed 
+while receiving data: 
+[WinError 1236] The network 
+connection was aborted by 
+the local system
+2026-02-27 13:12:59,374 - tel
+ethon.network.mtprotosender 
+- INFO - Closing current 
+connection to begin 
+reconnect...
+2026-02-27 13:12:59,374 - tel
+ethon.network.connection.conn
+ection - INFO - <class 
+'ConnectionAbortedError'> 
+during disconnect: [WinError 
+1236] The network connection 
+was aborted by the local 
+system
+2026-02-27 13:12:59,386 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:13:01,923 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 13:13:05,442 - 
+telethon.client.updates - 
+WARNING - Error executing 
+high-level request after 
+reconnect: <class 'telethon.e
+rrors.rpcerrorlist.AuthKeyDup
+licatedError'>: The 
+authorization key (session 
+file) was used under two 
+different IP addresses 
+simultaneously, and can no 
+longer be used. Use the same 
+session exclusively, or use 
+different sessions (caused 
+by GetUsersRequest)
+2026-02-27 13:22:09,065 - tel
+ethon.network.connection.conn
+ection - WARNING - Server 
+closed the connection: 
+[WinError 1236] The network 
+connection was aborted by 
+the local system
+2026-02-27 13:22:09,085 - tel
+ethon.network.mtprotosender 
+- INFO - Connection closed 
+while receiving data: 
+[WinError 1236] The network 
+connection was aborted by 
+the local system
+2026-02-27 13:22:09,087 - tel
+ethon.network.mtprotosender 
+- INFO - Closing current 
+connection to begin 
+reconnect...
+2026-02-27 13:22:09,097 - tel
+ethon.network.connection.conn
+ection - INFO - <class 
+'ConnectionAbortedError'> 
+during disconnect: [WinError 
+1236] The network connection 
+was aborted by the local 
+system
+2026-02-27 13:22:09,098 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:22:09,208 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: OSError: 
+[WinError 1231] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:22:10,237 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: OSError: 
+[WinError 1231] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:22:11,271 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: OSError: 
+[WinError 1231] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:22:12,292 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: OSError: 
+[WinError 1231] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:22:13,302 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: OSError: 
+[WinError 1231] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:28:58,826 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: OSError: 
+[WinError 1232] The network 
+location cannot be reached. 
+For information about 
+network troubleshooting, see 
+Windows Help
+2026-02-27 13:28:59,834 - tel
+ethon.network.mtprotosender 
+- INFO - Failed reconnection 
+attempt 1 with 
+ConnectionError
+2026-02-27 13:29:00,836 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:29:10,839 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:29:21,870 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:29:32,881 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:29:43,899 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:29:54,927 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:30:05,945 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:30:06,954 - tel
+ethon.network.mtprotosender 
+- INFO - Failed reconnection 
+attempt 2 with 
+ConnectionError
+2026-02-27 13:30:07,970 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:30:17,980 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:30:29,004 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:30:40,031 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:30:51,054 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:02,077 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:13,090 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:14,100 - tel
+ethon.network.mtprotosender 
+- INFO - Failed reconnection 
+attempt 3 with 
+ConnectionError
+2026-02-27 13:31:15,111 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:31:25,114 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:36,127 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:47,141 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:31:58,155 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:32:09,161 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:32:20,171 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:32:21,179 - tel
+ethon.network.mtprotosender 
+- INFO - Failed reconnection 
+attempt 4 with 
+ConnectionError
+2026-02-27 13:32:22,188 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:32:32,196 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:32:43,211 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:32:54,230 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:33:05,254 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:33:16,266 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:33:27,283 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:33:28,298 - tel
+ethon.network.mtprotosender 
+- INFO - Failed reconnection 
+attempt 5 with 
+ConnectionError
+2026-02-27 13:33:29,309 - tel
+ethon.network.mtprotosender 
+- ERROR - Automatic 
+reconnection failed 5 time(s)
+2026-02-27 13:33:29,309 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnecting from 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:33:29,309 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnection from 
+149.154.167.91:443/TcpFull 
+complete!
+INFO:     127.0.0.1:51189 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     127.0.0.1:51995 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:51995 - "OPTIONS /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51995 - "GET /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "OPTIONS /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65275 - "OPTIONS /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51995 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51995 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54375 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61485 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:51649 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60465 - "POST /api/admin/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51675 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51677 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49912 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:55259 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:62342 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:62490 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50463 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61120 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56300 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61028 - "GET /api/admin/encryption/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64954 - "GET /api/admin/encryption/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63580 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61126 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52874 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63254 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64103 - "GET /api/admin/encryption/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49680 - "GET /api/admin/encryption/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57739 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52203 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52206 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61071 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50062 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52836 - "GET /api/admin/statistics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62241 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58500 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62933 - "GET /api/admin/conversations?user_id=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61998 - "GET /api/admin/conversations?user_id=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61979 - "GET /api/admin/conversations?user_id=1&account_id=24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56686 - "GET /api/admin/conversations?user_id=1&account_id=8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52700 - "OPTIONS /api/telegram/accounts/24/connect HTTP/1.1" 200 OK
+2026-02-27 13:41:51,772 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:41:52,253 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:41:52,441 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:41:52,941 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:41:53,162 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 13:42:01,781 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:02,262 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:02,450 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:02,946 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:03,178 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 1 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:12,798 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:13,283 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:13,471 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:13,970 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:14,202 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 2 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:23,815 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:24,297 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:24,485 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:24,984 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:25,217 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 3 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:34,840 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:35,321 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:35,507 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:35,987 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:36,222 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 4 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:45,858 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:46,340 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:46,528 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:47,012 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:47,246 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 5 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:56,887 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:57,369 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:57,539 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:57,896 - 
+telethon_service - ERROR - 
+Failed to connect session 
+24: Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:57,896 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+account 24: Telegram 
+connection failed: 
+Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:58,037 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:58,272 - tel
+ethon.network.mtprotosender 
+- WARNING - Attempt 6 at 
+connecting failed: 
+TimeoutError: 
+2026-02-27 13:42:58,381 - 
+telethon_service - ERROR - 
+Failed to connect session 
+24: Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:58,381 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+account 24: Telegram 
+connection failed: 
+Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:58,551 - 
+telethon_service - ERROR - 
+Failed to connect session 
+24: Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:58,551 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+account 24: Telegram 
+connection failed: 
+Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:59,048 - 
+telethon_service - ERROR - 
+Failed to connect session 
+24: Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:59,049 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+account 24: Telegram 
+connection failed: 
+Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:59,283 - 
+telethon_service - ERROR - 
+Failed to connect session 
+24: Connection to Telegram 
+failed 5 time(s)
+2026-02-27 13:42:59,283 - 
+app.features.telegram.routes 
+- ERROR - Error connecting 
+account 24: Telegram 
+connection failed: 
+Connection to Telegram 
+failed 5 time(s)
+INFO:     127.0.0.1:49864 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     127.0.0.1:50970 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58903 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:50970 - "OPTIONS /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53294 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:58903 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50970 - "GET /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58903 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58903 - "OPTIONS /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50970 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58903 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50970 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58903 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62608 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60482 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:51114 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:50590 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:61335 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4MzA1Njh9.XhPUUTUu8bqr1vjYXz
+6NvN7yIS8O7vcy87tSjsSGCS4" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:61347 - "GET /api/admin/auth/verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61350 - "GET /api/admin/auth/verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61356 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61358 - "GET /api/admin/colleagues HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "OPTIONS /api/auth/login HTTP/1.1" 200 OK
+2026-02-28 08:04:36,680 - 
+app.features.auth.routes - 
+INFO - User logged in: 
+ziaulah (ID: 1)
+INFO:     127.0.0.1:54865 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55956 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:54865 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55394 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55394 - "GET /api/templates HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61264 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:55219 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:55394 - "OPTIONS /api/telegram/accounts/24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55394 - "PATCH /api/telegram/accounts/24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55394 - "GET /api/telegram/accounts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:49396 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:51791 - "OPTIONS /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51791 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:65035 - 
+"WebSocket /ws?token=eyJhbGci
+OiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZ
+SI6InppYXVsYWgiLCJleHAiOjE3Nz
+I4OTk0NzZ9.DBkR5bCctxv9GPGmVg
+lNBOxstZFuYt5N6oG4PcV7IPU" 
+403
+INFO:     connection 
+rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:64170 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:57231 - "OPTIONS /api/telegram/accounts/validate-tdata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57231 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:64292 - "POST /api/telegram/accounts/validate-tdata HTTP/1.1" 400 Bad Request

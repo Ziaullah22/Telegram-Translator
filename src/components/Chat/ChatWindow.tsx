@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -63,7 +63,7 @@ const PhotoMessage: React.FC<{
   if (error || !imageUrl) {
     return (
       <div className="mb-2">
-        <div 
+        <div
           className="bg-gray-800/50 rounded-lg p-4 flex items-center space-x-3 cursor-pointer hover:bg-gray-800/70 transition-colors"
           onClick={() => onDownload(message)}
         >
@@ -80,7 +80,7 @@ const PhotoMessage: React.FC<{
 
   return (
     <div className="mb-2">
-      <div 
+      <div
         className="relative rounded-lg overflow-hidden cursor-pointer group max-w-md"
         onClick={() => onDownload(message)}
         title="Click to download"
@@ -164,7 +164,7 @@ const VideoMessage: React.FC<{
   if (error || !videoUrl) {
     return (
       <div className="mb-2">
-        <div 
+        <div
           className="bg-gray-800/50 rounded-lg p-4 flex items-center space-x-3 cursor-pointer hover:bg-gray-800/70 transition-colors"
           onClick={() => onDownload(message)}
         >
@@ -181,7 +181,7 @@ const VideoMessage: React.FC<{
 
   return (
     <div className="mb-2">
-      <div 
+      <div
         className="relative rounded-lg overflow-hidden max-w-md bg-gray-900/50"
       >
         <video
@@ -225,6 +225,7 @@ interface ChatWindowProps {
   sourceLanguage: string;
   targetLanguage: string;
   onSendMessage: (text: string) => Promise<void>;
+  onSendMedia: (file: File, caption: string) => Promise<void>;
   conversationId?: number;
 }
 
@@ -236,6 +237,7 @@ export default function ChatWindow({
   sourceLanguage,
   targetLanguage,
   onSendMessage,
+  onSendMedia,
   conversationId,
 }: ChatWindowProps) {
   const [newMessage, setNewMessage] = useState('');
@@ -244,6 +246,61 @@ export default function ChatWindow({
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      setPickerPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      dragStart.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+    };
+
+    if (showEmojiPicker) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [showEmojiPicker]);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStart.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const emojis = [
+    { cat: 'Recent', items: ['❤️', '🔥', '👍', '😂', '😍', '✨', '🙏', '😊'] },
+    { cat: 'Smileys', items: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '☺️', '😚', '😙', '😋', '😛', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😮‍💨', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🫣', '🤭', '🫢', '🫡', '🤫', '🫠', '🤥', '😶', '🫥', '😶‍🌫️', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '😵‍💫', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕'] },
+    { cat: 'Gestures', items: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾'] }
+  ];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const addEmoji = (emoji: string) => {
+    setNewMessage(prev => prev + emoji);
+    // Keep focus on input if possible, but for simplicity just toggle for now
+  };
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactSaveAlert, setContactSaveAlert] = useState(false);
@@ -260,14 +317,14 @@ export default function ChatWindow({
 
   // Helper to check if message has photo media
   const hasPhoto = (message: TelegramMessage) => {
-    return message.type === 'photo' || 
-           (message.type === 'auto_reply' && message.media_file_name?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+    return message.type === 'photo' ||
+      (message.type === 'auto_reply' && message.media_file_name?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   };
 
   // Helper to check if message has video media
   const hasVideo = (message: TelegramMessage) => {
-    return message.type === 'video' || 
-           (message.type === 'auto_reply' && message.media_file_name?.match(/\.(mp4|webm|mov|avi)$/i));
+    return message.type === 'video' ||
+      (message.type === 'auto_reply' && message.media_file_name?.match(/\.(mp4|webm|mov|avi)$/i));
   };
 
   useEffect(() => {
@@ -292,8 +349,8 @@ export default function ChatWindow({
     if (conversationId && messages.length > 0) {
       // Check if any recent message is a system message about scheduled messages
       const recentMessages = messages.slice(-5); // Check last 5 messages
-      const hasScheduledSystemMessage = recentMessages.some(msg => 
-        msg.type === 'system' && 
+      const hasScheduledSystemMessage = recentMessages.some(msg =>
+        msg.type === 'system' &&
         msg.original_text && (
           msg.original_text.includes('Scheduled message sent') ||
           msg.original_text.includes('Scheduled message cancelled') ||
@@ -301,7 +358,7 @@ export default function ChatWindow({
           msg.original_text.includes('Scheduled message set')
         )
       );
-      
+
       if (hasScheduledSystemMessage) {
         // Add a small delay to ensure database is updated before reloading
         const timer = setTimeout(() => {
@@ -390,29 +447,12 @@ export default function ChatWindow({
 
     setUploadingFile(true);
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('conversation_id', currentConversation.id.toString());
-      formData.append('caption', newMessage);
-
-      const response = await fetch('http://localhost:8000/api/messages/send-media', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('auth_token=')[1]?.split(';')[0]}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to send media');
-      }
-
+      await onSendMedia(selectedFile, newMessage);
       // Clear file and message
       handleRemoveFile();
       setNewMessage('');
     } catch (error) {
-      console.error('Failed to send file:', error);
-      alert('Failed to send file. Please try again.');
+      // Error is handled in the callback
     } finally {
       setUploadingFile(false);
     }
@@ -427,7 +467,7 @@ export default function ChatWindow({
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
       const url = `http://localhost:8000/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -447,10 +487,10 @@ export default function ChatWindow({
 
       const blob = await response.blob();
       const imageUrl = window.URL.createObjectURL(blob);
-      
+
       // Cache the loaded image
       setLoadedImages(prev => ({ ...prev, [message.id]: imageUrl }));
-      
+
       return imageUrl;
     } catch (error) {
       console.error('Failed to load media:', error);
@@ -462,7 +502,7 @@ export default function ChatWindow({
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
       const url = `http://localhost:8000/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -476,7 +516,7 @@ export default function ChatWindow({
       // Get filename from Content-Disposition header or use stored filename
       const contentDisposition = response.headers.get('content-disposition');
       let filename = message.media_file_name || `media_${message.telegram_message_id}`;
-      
+
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
         if (filenameMatch) {
@@ -509,12 +549,12 @@ export default function ChatWindow({
   const isMessageOutgoing = (message: TelegramMessage) => {
     // If message is already marked as outgoing, use that
     if (message.is_outgoing) return true;
-    
+
     // If we have current account info, check if sender matches current account
     if (currentAccount && message.sender_username) {
       return message.sender_username === currentAccount.accountName;
     }
-    
+
     // Fallback to original is_outgoing
     return message.is_outgoing;
   };
@@ -629,7 +669,7 @@ export default function ChatWindow({
               {!currentConversation ? 'Select a conversation' : 'No messages yet'}
             </h3>
             <p className="text-gray-500">
-              {!currentConversation 
+              {!currentConversation
                 ? 'Choose a conversation from the list to start viewing messages'
                 : isConnected
                   ? 'Start a conversation to see real-time translations'
@@ -656,132 +696,131 @@ export default function ChatWindow({
             }
 
             const isOutgoing = isMessageOutgoing(message);
-            
-            return (
-            <div
-              key={message.id}
-              className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4`}
-            >
-              <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'}`}>
-                {/* Sender info for incoming messages */}
-                {!isOutgoing && (
-                  <div className="flex items-center space-x-2 mb-2 px-1">
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-medium text-white">
-                        {message.sender_name ? message.sender_name.charAt(0).toUpperCase() : '?'}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-pink-400">
-                        {message.sender_name || message.sender_username || 'Unknown'}
-                      </p>
-                    </div>
-                  </div>
-                )}
 
-                {/* Message bubble */}
-                <div
-                  className={`px-4 py-3 rounded-2xl ${
-                    isOutgoing
+            return (
+              <div
+                key={message.id}
+                className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4`}
+              >
+                <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'}`}>
+                  {/* Sender info for incoming messages */}
+                  {!isOutgoing && (
+                    <div className="flex items-center space-x-2 mb-2 px-1">
+                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                        <span className="text-sm font-medium text-white">
+                          {message.sender_name ? message.sender_name.charAt(0).toUpperCase() : '?'}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-pink-400">
+                          {message.sender_name || message.sender_username || 'Unknown'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Message bubble */}
+                  <div
+                    className={`px-4 py-3 rounded-2xl ${isOutgoing
                       ? 'bg-blue-600 text-white rounded-br-md'
                       : 'bg-gray-700 text-gray-200 rounded-bl-md'
-                  }`}
-                >
-                  {/* Auto-Reply Badge */}
-                  {message.type === 'auto_reply' && (
-                    <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
-                      <Zap className="w-3 h-3 text-yellow-400" />
-                      <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
-                    </div>
-                  )}
-                  
-                  {/* Photo - Display as inline image like Telegram */}
-                  {hasPhoto(message) && (
-                    <PhotoMessage 
-                      message={message}
-                      loadedImages={loadedImages}
-                      loadImage={loadImage}
-                      onDownload={handleDownloadMedia}
-                      onImageLoad={scrollToBottom}
-                    />
-                  )}
-
-                  {/* Video - Display as inline video player like Telegram */}
-                  {hasVideo(message) && (
-                    <VideoMessage 
-                      message={message}
-                      loadedImages={loadedImages}
-                      loadImage={loadImage}
-                      onDownload={handleDownloadMedia}
-                      onImageLoad={scrollToBottom}
-                    />
-                  )}
-
-                  {/* Document - keep as icon */}
-                  {message.type === 'document' && (
-                    <div className="mb-3">
-                      <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
-                        <div className="flex-shrink-0">
-                          <FileText className="w-8 h-8 text-green-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {message.media_file_name || '📄 Document'}
-                          </p>
-                          <p className="text-xs text-gray-400">Click to download</p>
-                        </div>
-                        <button
-                          onClick={() => handleDownloadMedia(message)}
-                          className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                          title="Download"
-                        >
-                          <Download className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Caption/Text */}
-                  {message.original_text && (
-                    <div className="mb-2">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-xs font-medium text-blue-400">
-                          {message.source_language && `${message.source_language.toUpperCase()}`}
-                        </span>
-                        <span className="text-sm leading-relaxed">{message.original_text}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Translated caption/message */}
-                  {message.translated_text && (
-                    <div className="border-t border-gray-500 pt-2 mt-2">
-                      <p className="text-sm leading-relaxed">{message.translated_text}</p>
-                    </div>
-                  )}
-
-                  {/* Timestamp and read receipt */}
-                  <div className="flex items-center justify-end mt-2 space-x-1">
-                    <p className="text-xs opacity-70">
-                      {new Date(message.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                    {isOutgoing && (
-                      <div className="flex items-center">
-                        <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
+                      }`}
+                  >
+                    {/* Auto-Reply Badge */}
+                    {message.type === 'auto_reply' && (
+                      <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
+                        <Zap className="w-3 h-3 text-yellow-400" />
+                        <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
                       </div>
                     )}
+
+                    {/* Photo - Display as inline image like Telegram */}
+                    {hasPhoto(message) && (
+                      <PhotoMessage
+                        message={message}
+                        loadedImages={loadedImages}
+                        loadImage={loadImage}
+                        onDownload={handleDownloadMedia}
+                        onImageLoad={scrollToBottom}
+                      />
+                    )}
+
+                    {/* Video - Display as inline video player like Telegram */}
+                    {hasVideo(message) && (
+                      <VideoMessage
+                        message={message}
+                        loadedImages={loadedImages}
+                        loadImage={loadImage}
+                        onDownload={handleDownloadMedia}
+                        onImageLoad={scrollToBottom}
+                      />
+                    )}
+
+                    {/* Document - keep as icon */}
+                    {message.type === 'document' && (
+                      <div className="mb-3">
+                        <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <FileText className="w-8 h-8 text-green-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {message.media_file_name || '📄 Document'}
+                            </p>
+                            <p className="text-xs text-gray-400">Click to download</p>
+                          </div>
+                          <button
+                            onClick={() => handleDownloadMedia(message)}
+                            className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Download"
+                          >
+                            <Download className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Caption/Text */}
+                    {message.original_text && (
+                      <div className="mb-2">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-xs font-medium text-blue-400">
+                            {message.source_language && `${message.source_language.toUpperCase()}`}
+                          </span>
+                          <span className="text-sm leading-relaxed">{message.original_text}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Translated caption/message */}
+                    {message.translated_text && (
+                      <div className="border-t border-gray-500 pt-2 mt-2">
+                        <p className="text-sm leading-relaxed">{message.translated_text}</p>
+                      </div>
+                    )}
+
+                    {/* Timestamp and read receipt */}
+                    <div className="flex items-center justify-end mt-2 space-x-1">
+                      <p className="text-xs opacity-70">
+                        {new Date(message.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                      {isOutgoing && (
+                        <div className="flex items-center">
+                          <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
             );
           })
         )}
@@ -884,12 +923,67 @@ export default function ChatWindow({
                     ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
                     : 'Connect to an account to start messaging'
               }
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors pr-12"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors pr-24"
               disabled={!isConnected || !currentConversation || translating}
             />
-            {translating && (
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                title="Emojis"
+              >
+                <Smile className="w-5 h-5" />
+              </button>
+              {translating && (
                 <Languages className="w-5 h-5 text-blue-400 animate-pulse" />
+              )}
+            </div>
+
+            {/* Emoji Picker Overlay */}
+            {showEmojiPicker && (
+              <div
+                ref={pickerRef}
+                style={{
+                  transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
+                  transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
+                }}
+                className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in"
+              >
+                <div
+                  onMouseDown={onDragStart}
+                  className="p-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Smile className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-bold text-white tracking-wide">Select Emoji</span>
+                  </div>
+                  <button
+                    onClick={() => setShowEmojiPicker(false)}
+                    className="p-1 hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-gray-800/50">
+                  {emojis.map((group) => (
+                    <div key={group.cat} className="mb-6">
+                      <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
+                      <div className="grid grid-cols-8 gap-1.5">
+                        {group.items.map((emoji, idx) => (
+                          <button
+                            key={`${group.cat}-${idx}`}
+                            type="button"
+                            onClick={() => addEmoji(emoji)}
+                            className="text-2xl hover:bg-blue-500/20 p-2 rounded-xl transition-all transform hover:scale-125 active:scale-90"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

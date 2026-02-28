@@ -19,7 +19,13 @@ import logging
 import os, json
 import shutil
 import zipfile
+import rarfile
 import io
+
+# Configure rarfile to use WinRAR's UnRAR tool if available
+RAR_TOOL_PATH = r"C:\Program Files\WinRAR\UnRAR.exe"
+if os.path.exists(RAR_TOOL_PATH):
+    rarfile.UNRAR_TOOL = RAR_TOOL_PATH
 
 
 logger = logging.getLogger(__name__)
@@ -40,72 +46,110 @@ async def validate_tdata(
         # Read the file content
         file_content = await tdata.read()
         
-        # Check if it's a valid zip file
+        # Check if it's a valid zip or rar file
+        filename = tdata.filename.lower()
         try:
-            with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
-                os.makedirs(temp_path, exist_ok=True)
-                zip_ref.extractall(temp_path)
-                
-                # Get the account ID from zip structure
-                namelist = zip_ref.namelist()
-                if not namelist:
-                    raise ValueError("Empty zip file")
-                
-                tg_account_id = namelist[0].split('/')[0]
-        except zipfile.BadZipFile:
+            os.makedirs(temp_path, exist_ok=True)
+            if filename.endswith('.zip'):
+                with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
+                    zip_ref.extractall(temp_path)
+                    namelist = zip_ref.namelist()
+                    if not namelist:
+                        raise ValueError("Empty archive")
+                    tg_account_id = namelist[0].split('/')[0]
+            elif filename.endswith('.rar'):
+                with rarfile.RarFile(io.BytesIO(file_content), 'r') as rar_ref:
+                    rar_ref.extractall(temp_path)
+                    namelist = rar_ref.namelist()
+                    if not namelist:
+                        raise ValueError("Empty archive")
+                    tg_account_id = namelist[0].split('/')[0]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Unsupported file format. Please upload a .zip or .rar file.",
+                )
+        except (zipfile.BadZipFile, rarfile.BadRarFile):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file format. Please upload a valid TData zip file exported from Telegram Desktop.",
+                detail="Invalid file format. Please upload a valid TData archive exported from Telegram Desktop.",
             )
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract zip file: {str(e)}",
+                detail=f"Failed to extract file: {str(e)}",
             )
         
-        # Check for required files
-        json_file = f"{temp_path}/{tg_account_id}/{tg_account_id}.json"
-        session_file = f"{temp_path}/{tg_account_id}/{tg_account_id}.session"
+        # Find the .json configuration file in the extracted directory
+        json_file = None
+        tg_account_id = None
         
-        if not os.path.exists(json_file):
-            shutil.rmtree(temp_path)
+        for root, dirs, files in os.walk(temp_path):
+            for file in files:
+                if file.endswith('.json'):
+                    potential_account_id = file[:-5]
+                    if os.path.exists(os.path.join(root, f"{potential_account_id}.session")):
+                        json_file = os.path.join(root, file)
+                        session_file = os.path.join(root, f"{potential_account_id}.session")
+                        tg_account_id = potential_account_id
+                        break
+            if json_file:
+                break
+        
+        if not json_file or not os.path.exists(session_file):
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing account configuration file. Please ensure you exported the complete TData from Telegram Desktop.",
-            )
-        
-        if not os.path.exists(session_file):
-            shutil.rmtree(temp_path)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing session file. Please ensure you exported the complete TData from Telegram Desktop.",
+                detail="Missing account configuration or session file (.json/.session). Please export a fresh TData from Telegram Desktop.",
             )
         
         # Parse account data
         try:
-            app_data = json.load(open(json_file))
-            account_name = app_data.get('username')
+            with open(json_file, 'r', encoding='utf-8') as f:
+                app_data = json.load(f)
+            
+            # Fallback order: username -> phone -> tg_account_id
+            account_name = app_data.get('username') or app_data.get('phone') or tg_account_id
             app_id = app_data.get('app_id')
             app_hash = app_data.get('app_hash')
             
-            if not account_name:
-                raise ValueError("Missing username")
             if not app_id:
-                raise ValueError("Missing app_id")
+                raise ValueError("Missing app_id (API ID)")
             if not app_hash:
-                raise ValueError("Missing app_hash")
+                raise ValueError("Missing app_hash (API Hash)")
                 
         except json.JSONDecodeError:
-            shutil.rmtree(temp_path)
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            logger.error(f"JSON decode error for TData validation in {temp_path}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid configuration file format. The TData file may be corrupted.",
             )
         except ValueError as e:
-            shutil.rmtree(temp_path)
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            logger.error(f"Validation error in validate_tdata: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid TData file: {str(e)}. Please export a fresh TData from Telegram Desktop.",
+            )
+        except Exception as e:
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            logger.error(f"Unexpected error in validate_tdata: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Validation failed: {str(e)}",
+            )
+        except Exception as e:
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            logger.error(f"Unexpected error in validate_tdata: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Validation failed: {str(e)}",
             )
         
         # Check if account already exists
@@ -143,11 +187,17 @@ async def validate_tdata(
 async def get_accounts(current_user = Depends(get_current_user)):
     accounts = await db.fetch(
         """
-        SELECT id, account_name, display_name, is_active,
-               source_language, target_language, created_at, last_used
-        FROM telegram_accounts
-        WHERE user_id = $1 AND is_active = true
-        ORDER BY last_used DESC NULLS LAST, created_at DESC
+        SELECT ta.id, ta.account_name, ta.display_name, ta.is_active,
+               ta.source_language, ta.target_language, ta.created_at, ta.last_used,
+               (
+                   SELECT COUNT(*) 
+                   FROM messages m
+                   JOIN conversations c ON m.conversation_id = c.id
+                   WHERE c.telegram_account_id = ta.id AND m.is_read = false AND m.is_outgoing = false
+               ) as total_unread
+        FROM telegram_accounts ta
+        WHERE ta.user_id = $1 AND ta.is_active = true
+        ORDER BY ta.last_used DESC NULLS LAST, ta.created_at DESC
         """,
         current_user.user_id,
     )
@@ -167,6 +217,7 @@ async def get_accounts(current_user = Depends(get_current_user)):
             "created_at": account['created_at'],
             "last_used": account['last_used'],
             "is_connected": is_connected,
+            "unread_count": account['total_unread'] or 0
         })
 
     return result
@@ -192,15 +243,49 @@ async def create_account(
     temp_path = f"temp/TData/{temp_id}"
     
     try:
-        # Read the file content into memory to avoid SpooledTemporaryFile issues
+        # Read the file content into memory
         file_content = await tdata.read()
-        with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
-            os.makedirs(temp_path, exist_ok=True)
-            zip_ref.extractall(temp_path)
-            tg_account_id = zip_ref.namelist()[0].split('/')[0]
+        filename = tdata.filename.lower()
+        os.makedirs(temp_path, exist_ok=True)
         
-        app_data = json.load(open(f"{temp_path}/{tg_account_id}/{tg_account_id}.json"))
-        account_name = app_data['username']
+        if filename.endswith('.zip'):
+            with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
+                zip_ref.extractall(temp_path)
+        elif filename.endswith('.rar'):
+            with rarfile.RarFile(io.BytesIO(file_content), 'r') as rar_ref:
+                rar_ref.extractall(temp_path)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported file format. Please upload a .zip or .rar file.",
+            )
+            
+        # Find the .json configuration file in the extracted directory
+        json_file = None
+        tg_account_id = None
+        session_file_path = None
+        
+        for root, dirs, files in os.walk(temp_path):
+            for file in files:
+                if file.endswith('.json'):
+                    potential_account_id = file[:-5]
+                    potential_session = os.path.join(root, f"{potential_account_id}.session")
+                    if os.path.exists(potential_session):
+                        json_file = os.path.join(root, file)
+                        session_file_path = potential_session
+                        tg_account_id = potential_account_id
+                        break
+            if json_file:
+                break
+        
+        if not json_file or not session_file_path:
+            raise ValueError("Missing .json or .session file in archive")
+            
+        with open(json_file, 'r', encoding='utf-8') as f:
+            app_data = json.load(f)
+            
+        # Fallback order: username -> phone -> tg_account_id
+        account_name = app_data.get('username') or app_data.get('phone') or tg_account_id
         app_id = app_data['app_id']
         app_hash = app_data['app_hash']
     except Exception as e:
@@ -209,7 +294,7 @@ async def create_account(
             shutil.rmtree(temp_path)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid TData file: {str(e)}",
+            detail=f"Invalid TData archive: {str(e)}",
         )
 
     # Check for existing account (only active accounts)
@@ -298,7 +383,7 @@ async def create_account(
     if os.path.exists(session_location):
         os.remove(session_location)
     
-    shutil.move(f"{temp_path}/{tg_account_id}/{tg_account_id}.session", session_location)
+    shutil.move(session_file_path, session_location)
     
     # Clean up temp directory
     if os.path.exists(temp_path):
@@ -336,7 +421,7 @@ async def create_account(
         raise
     except Exception as e:
         # Connection error, delete the account and session file
-        error_msg = str(e).lower()
+        error_msg = str(e)
         logger.error(f"Error connecting new account {account_name}: {e}")
         
         await db.execute(
@@ -346,21 +431,16 @@ async def create_account(
         if os.path.exists(session_location):
             os.remove(session_location)
         
-        # Provide specific error messages for common issues
-        if "authorization key" in error_msg and "two different ip" in error_msg:
-            detail = "Session conflict: This session is being used on another device or IP address. Please use the session exclusively on one device, or export a new session from Telegram Desktop."
-        elif "unauthorized" in error_msg or "auth key" in error_msg:
-            detail = "Session expired or invalid. Please export a fresh session from Telegram Desktop."
-        elif "flood" in error_msg:
-            detail = "Too many connection attempts. Please wait a few minutes and try again."
-        elif "timeout" in error_msg or "connection" in error_msg:
-            detail = "Connection timeout. Please check your internet connection and try again."
-        else:
-            detail = f"Failed to connect to Telegram: {str(e)}"
+        # If the error message is already one of our descriptive ones, use it directly
+        if "banned" in error_msg.lower() or "deactivated" in error_msg.lower() or "expired" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail,
+            detail=f"Failed to connect to Telegram: {str(e)}",
         )
 
     account = await db.fetchrow(
@@ -412,24 +492,19 @@ async def connect_account(
     except HTTPException:
         raise
     except Exception as e:
-        error_msg = str(e).lower()
+        error_msg = str(e)
         logger.error(f"Error connecting account {account_id}: {e}")
         
-        # Provide specific error messages for common issues
-        if "authorization key" in error_msg and "two different ip" in error_msg:
-            detail = "Session conflict: This session is being used on another device or IP address. Please use the session exclusively on one device, or export a new session from Telegram Desktop."
-        elif "unauthorized" in error_msg or "auth key" in error_msg:
-            detail = "Session expired or invalid. Please export a fresh session from Telegram Desktop."
-        elif "flood" in error_msg:
-            detail = "Too many connection attempts. Please wait a few minutes and try again."
-        elif "timeout" in error_msg or "connection" in error_msg:
-            detail = "Connection timeout. Please check your internet connection and try again."
-        else:
-            detail = f"Failed to connect to Telegram: {str(e)}"
-        
+        # If the error message is already descriptive, use it
+        if "banned" in error_msg.lower() or "deactivated" in error_msg.lower() or "expired" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+            
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail,
+            detail=f"Failed to connect to Telegram: {str(e)}",
         )
 
 
@@ -580,23 +655,55 @@ async def get_conversations(
             detail="Account not found",
         )
 
-    # Fetch conversations directly from database
+    # Fetch conversations directly from database with last message content
     conversations = await db.fetch(
         """
+        WITH LastMessages AS (
+            SELECT conversation_id, 
+                   id, telegram_message_id, sender_user_id, sender_name, sender_username, 
+                   type, original_text, translated_text, source_language, target_language, 
+                   created_at, edited_at, is_outgoing, media_file_name,
+                   ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) as rn
+            FROM messages
+        )
         SELECT c.*, 
-               COUNT(m.id) as message_count,
-               MAX(m.created_at) as last_message_at
+               lm.id as last_msg_db_id, lm.telegram_message_id, lm.sender_user_id, lm.sender_name, 
+               lm.sender_username, lm.type as msg_type, lm.original_text, lm.translated_text, 
+               lm.source_language as msg_source_lang, lm.target_language as msg_target_lang, 
+               lm.created_at as msg_created_at, lm.edited_at as msg_edited_at, 
+               lm.is_outgoing as msg_is_outgoing, lm.media_file_name,
+               (SELECT COUNT(*) FROM messages m2 
+                WHERE m2.conversation_id = c.id AND m2.is_outgoing = false AND (m2.is_read = false OR m2.is_read IS NULL)) as unread_count_db
         FROM conversations c
-        LEFT JOIN messages m ON c.id = m.conversation_id
+        LEFT JOIN LastMessages lm ON c.id = lm.conversation_id AND lm.rn = 1
         WHERE c.telegram_account_id = $1
-        GROUP BY c.id, c.telegram_account_id, c.telegram_peer_id, c.title, c.type, c.is_archived, c.created_at
-        ORDER BY c.created_at DESC
+        ORDER BY COALESCE(lm.created_at, c.created_at) DESC
         """,
         account_id,
     )
 
     result = []
     for conv in conversations:
+        last_message = None
+        if conv['last_msg_db_id']:
+            last_message = {
+                "id": conv['last_msg_db_id'],
+                "conversation_id": conv['id'],
+                "telegram_message_id": conv['telegram_message_id'],
+                "sender_user_id": conv['sender_user_id'],
+                "sender_name": conv['sender_name'],
+                "sender_username": conv['sender_username'],
+                "type": conv['msg_type'],
+                "original_text": conv['original_text'],
+                "translated_text": conv['translated_text'],
+                "source_language": conv['msg_source_lang'],
+                "target_language": conv['msg_target_lang'],
+                "created_at": conv['msg_created_at'],
+                "edited_at": conv['msg_edited_at'],
+                "is_outgoing": conv['msg_is_outgoing'] or False,
+                "media_file_name": conv['media_file_name'],
+            }
+
         result.append({
             "id": conv['id'],
             "telegram_account_id": conv['telegram_account_id'],
@@ -605,8 +712,9 @@ async def get_conversations(
             "type": conv['type'],
             "is_archived": conv['is_archived'],
             "created_at": conv['created_at'],
-            "last_message_at": conv['last_message_at'],
-            "unread_count": 0,  # Messages are automatically marked as read when received
+            "last_message_at": conv['msg_created_at'] or conv['created_at'],
+            "last_message": last_message,
+            "unread_count": conv['unread_count_db'] or 0,
         })
 
     return result

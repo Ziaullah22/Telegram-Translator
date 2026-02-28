@@ -15,7 +15,7 @@ class TranslationService:
         source_language: str = "auto"
     ) -> dict:
         try:
-            result = self.translator.translate(
+            result = await self.translator.translate(
                 text,
                 dest=target_language,
                 src=source_language

@@ -16,16 +16,15 @@ export default function Header() {
             <MessageCircle className="w-8 h-8 text-blue-500" />
             <h1 className="text-xl font-bold text-white">Telegram Translator</h1>
           </div>
-          
+
           {/* Navigation Links */}
           <nav className="flex items-center space-x-2">
             <button
               onClick={() => navigate('/')}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                location.pathname === '/'
+              className={`px-4 py-2 rounded-lg transition-colors ${location.pathname === '/'
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800'
-              }`}
+                }`}
             >
               <div className="flex items-center space-x-2">
                 <MessageCircle className="w-4 h-4" />
@@ -34,11 +33,10 @@ export default function Header() {
             </button>
             <button
               onClick={() => navigate('/auto-responder')}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                location.pathname === '/auto-responder'
+              className={`px-4 py-2 rounded-lg transition-colors ${location.pathname === '/auto-responder'
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800'
-              }`}
+                }`}
             >
               <div className="flex items-center space-x-2">
                 <Zap className="w-4 h-4" />
@@ -47,13 +45,13 @@ export default function Header() {
             </button>
           </nav>
         </div>
-        
+
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 text-gray-300">
             <User className="w-4 h-4" />
             <span className="text-sm">{user?.username}</span>
           </div>
-          
+
           <button
             onClick={() => {
               logout();

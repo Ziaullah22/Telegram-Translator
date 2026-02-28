@@ -1,0 +1,189 @@
+﻿.\venv\Scripts\python : 
+INFO:     Started server 
+process [3080]
+At line:1 char:49
++ ... ess -Force; 
+.\venv\Scripts\python -m 
+uvicorn main:app --host 
+127.0.0. ...
++                 ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (INFO:    
+     Started server proces   
+ s [3080]:String) [], Rem    
+oteException
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+INFO:     Waiting for 
+application startup.
+2026-02-27 12:42:03,928 - 
+main - INFO - Starting 
+application...
+2026-02-27 12:42:04,273 - 
+database - INFO - Database 
+connection pool created 
+successfully
+2026-02-27 12:42:04,274 - 
+main - INFO - Database 
+connected
+2026-02-27 12:42:04,306 - 
+app.core.encryption - INFO - 
+Encryption service 
+initialized successfully
+2026-02-27 12:42:04,306 - 
+main - INFO - Encryption 
+service initialized
+2026-02-27 12:42:04,312 - 
+main - INFO - 
+Auto-connecting 3 active 
+account(s)...
+2026-02-27 12:42:04,317 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:42:04,318 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:42:06,116 - 
+telethon_service - ERROR - 
+Failed to connect session 8: 
+The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:42:06,117 - 
+main - ERROR - \u2717 Error 
+connecting account zia: 
+Telegram connection failed: 
+The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:42:06,120 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:42:06,121 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:42:08,870 - 
+telethon_service - ERROR - 
+Session 10 is not 
+authorized. Please 
+re-authenticate.
+2026-02-27 12:42:08,870 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnecting from 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:42:08,870 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnection from 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:42:08,880 - 
+main - INFO - \u2713 
+Connected account: Rafi
+2026-02-27 12:42:08,884 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:42:08,885 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:42:10,770 - 
+telethon_service - ERROR - 
+Failed to connect session 
+13: The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:42:10,770 - 
+main - ERROR - \u2717 Error 
+connecting account Attau: 
+Telegram connection failed: 
+The authorization key 
+(session file) was used 
+under two different IP 
+addresses simultaneously, 
+and can no longer be used. 
+Use the same session 
+exclusively, or use 
+different sessions (caused 
+by InvokeWithLayerRequest(Ini
+tConnectionRequest(GetConfigR
+equest)))
+2026-02-27 12:42:10,770 - 
+scheduler_service - INFO - 
+Starting scheduler service...
+2026-02-27 12:42:10,776 - 
+scheduler_service - INFO - 
+Loaded 0 scheduled messages
+2026-02-27 12:42:10,776 - 
+scheduler_service - INFO - 
+Scheduler service started
+2026-02-27 12:42:10,776 - 
+main - INFO - Scheduler 
+started
+2026-02-27 12:42:10,776 - 
+scheduler_service - INFO - 
+Scheduler loop started
+INFO:     Application 
+startup complete.
+INFO:     Uvicorn running on 
+http://127.0.0.1:8000 (Press 
+CTRL+C to quit)
+INFO:     127.0.0.1:57675 - "OPTIONS /api/telegram/accounts HTTP/1.1" 200 OK
+2026-02-27 12:43:16,914 - tel
+ethon.network.mtprotosender 
+- INFO - Connecting to 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:43:16,915 - tel
+ethon.network.mtprotosender 
+- INFO - Connection to 
+149.154.167.91:443/TcpFull 
+complete!
+2026-02-27 12:43:19,688 - 
+telethon_service - ERROR - 
+Session 15 is not 
+authorized. Please 
+re-authenticate.
+2026-02-27 12:43:19,689 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnecting from 
+149.154.167.91:443/TcpFull...
+2026-02-27 12:43:19,689 - tel
+ethon.network.mtprotosender 
+- INFO - Disconnection from 
+149.154.167.91:443/TcpFull 
+complete!
+INFO:     127.0.0.1:57675 - "POST /api/telegram/accounts HTTP/1.1" 500 Internal Server Error
