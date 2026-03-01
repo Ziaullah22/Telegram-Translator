@@ -14,7 +14,7 @@ export default function Header({ onStartTour }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4 transition-colors duration-300">
+    <header className="bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-b border-gray-100 dark:border-white/5 px-6 py-4 transition-colors duration-300">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-6">
           <div id="app-logo" className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('/')}>
@@ -28,7 +28,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               onClick={() => navigate('/')}
               className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                 }`}
             >
               <div className="flex items-center space-x-2 font-medium">
@@ -41,7 +41,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               onClick={() => navigate('/auto-responder')}
               className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/auto-responder'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                 }`}
             >
               <div className="flex items-center space-x-2 font-medium">
@@ -52,7 +52,7 @@ export default function Header({ onStartTour }: HeaderProps) {
 
             <button
               onClick={onStartTour}
-              className="px-4 py-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-300 flex items-center space-x-2 font-medium"
+              className="px-4 py-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-all duration-300 flex items-center space-x-2 font-medium"
               title="Quick Tour"
             >
               <HelpCircle className="w-4 h-4" />
@@ -65,7 +65,7 @@ export default function Header({ onStartTour }: HeaderProps) {
           {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all duration-300 group"
+            className="p-2 text-gray-500 dark:text-gray-400 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark rounded-lg transition-all duration-300 group"
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
             {theme === 'light' ? (
@@ -75,7 +75,7 @@ export default function Header({ onStartTour }: HeaderProps) {
             )}
           </button>
 
-          <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-2" />
+          <div className="h-6 w-px bg-gray-100 dark:bg-white/10 mx-2" />
 
           <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-300">
             <User className="w-4 h-4" />
@@ -87,7 +87,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               logout();
               navigate('/login');
             }}
-            className="p-2 text-gray-500 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-300"
+            className="p-2 text-gray-500 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-telegram-hover-dark rounded-lg transition-all duration-300"
             title="Logout"
           >
             <LogOut className="w-5 h-5" />

@@ -42,7 +42,7 @@ function App() {
   const [editingAccount, setEditingAccount] = useState<TelegramAccount | null>(null);
   // unreadCounts[accountId][conversationId] = count
   const [unreadCounts, setUnreadCounts] = useState<Record<number, Record<number, number>>>({});
-  const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number } | null>(null);
+  const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number; avatar?: string } | null>(null);
   const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -73,10 +73,41 @@ function App() {
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
   }, []);
 
+  // Hook into native notifications
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(e => console.log('Audio play blocked:', e));
+    }
+  }, []);
+
+  const showNativeNotification = useCallback((title: string, body: string, accountId: number, conversationId: number, icon?: string) => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      const n = new Notification(title, {
+        body: body,
+        icon: icon || '/logo192.png',
+        tag: `chat-${conversationId}`,
+        // @ts-ignore - renotify is supported by modern browsers
+        renotify: true,
+        requireInteraction: true // Keep it showing like Telegram
+      });
+
+      n.onclick = (e) => {
+        e.preventDefault();
+        window.focus();
+        // Force focus for Chrome/Edge
+        if (window.opener) {
+          window.opener.focus();
+        }
+        handleNotificationClick(accountId, conversationId);
+        n.close();
+      };
     }
   }, []);
 
@@ -119,15 +150,26 @@ function App() {
           playNotificationSound();
 
           if (!isActiveConv) {
+            const title = data.message.sender_name || data.message.peer_title || 'New Message';
+            const body = data.message.original_text || 'Sent an attachment';
+            const avatar = data.message.sender_avatar || undefined;
+
             setNotification({
-              title: data.message.sender_name || 'New Message',
-              message: data.message.original_text || 'Sent an attachment',
+              title: title,
+              message: body,
               id: Date.now(),
               accountId: incomingAccountId,
-              conversationId: incomingConversationId
+              conversationId: incomingConversationId,
+              avatar: avatar
             });
-            // Auto hide notification
-            setTimeout(() => setNotification(null), 8000); // 8 seconds for the popup
+
+            // Show native notification if window is blurred
+            if (!document.hasFocus()) {
+              showNativeNotification(title, body, incomingAccountId, incomingConversationId, avatar);
+            }
+
+            // Auto hide in-app notification
+            setTimeout(() => setNotification(null), 8000);
           }
         }
 
@@ -526,7 +568,7 @@ function App() {
   // Main application
   return (
     <Router>
-      <div className="h-screen flex flex-col bg-white dark:bg-[#0f111a] transition-colors duration-500 text-gray-900 dark:text-white">
+      <div className="h-screen flex flex-col bg-telegram-side-list-light dark:bg-telegram-side-list-dark transition-colors duration-500 text-gray-900 dark:text-white">
         <Header onStartTour={() => setShowTour(true)} />
 
         <Routes>
@@ -598,31 +640,40 @@ function App() {
           onStepChange={setTourStep}
         />
 
-        {/* Real-time notification popup */}
+        {/* Real-time notification popup - Refined Telegram Style */}
         {notification && (
-          <div className="fixed top-24 right-8 z-[100] animate-slide-up pointer-events-none">
+          <div className="fixed bottom-8 right-8 z-[9000] animate-slide-up pointer-events-none">
             <div
               onClick={() => handleNotificationClick(notification.accountId, notification.conversationId)}
-              className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-100 dark:border-gray-700 shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)] rounded-3xl p-5 min-w-[320px] max-w-md pointer-events-auto cursor-pointer hover:scale-[1.02] active:scale-95 transition-all duration-300"
+              className="bg-white dark:bg-[#1c242d] border border-gray-100 dark:border-gray-700/30 shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)] rounded-2xl p-4 w-[360px] pointer-events-auto cursor-pointer border-l-4 border-l-blue-500 hover:translate-y-[-2px] transition-all duration-300 group"
             >
-              <div className="flex items-start space-x-4">
-                <div className="bg-blue-600 shadow-lg shadow-blue-600/30 rounded-2xl p-3 flex-shrink-0">
-                  <Zap className="w-5 h-5 text-white fill-white" />
+              <div className="flex items-center space-x-4">
+                <div className="relative flex-shrink-0">
+                  {notification.avatar ? (
+                    <img
+                      src={notification.avatar}
+                      alt=""
+                      className="w-14 h-14 rounded-full object-cover border-2 border-gray-100 dark:border-gray-700"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-black text-xl shadow-lg border-2 border-gray-100 dark:border-gray-700">
+                      {notification.title.charAt(0)}
+                    </div>
+                  )}
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-500 rounded-full border-2 border-white dark:border-[#1c242d] flex items-center justify-center">
+                    <Zap className="w-3 h-3 text-white fill-white" />
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">Incoming Message</p>
-                  <p className="text-sm font-black text-gray-900 dark:text-white truncate tracking-tight">{notification.title}</p>
-                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">{notification.message}</p>
+                <div className="flex-1 min-w-0 pr-6">
+                  <h4 className="text-[17px] font-bold text-gray-900 dark:text-white tracking-tight truncate leading-tight mb-1">{notification.title}</h4>
+                  <p className="text-[14px] font-medium text-gray-500 dark:text-gray-400 truncate leading-snug">{notification.message}</p>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setNotification(null); }}
-                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-1"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
-              </div>
-              <div className="mt-4 h-1 bg-gray-100 dark:bg-gray-700/50 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-600 animate-progress origin-left"></div>
               </div>
             </div>
           </div>

@@ -31,6 +31,33 @@ export default {
           900: '#14531d',
           950: '#052e10',
         },
+        telegram: {
+          bg: {
+            light: '#d4e4d5',
+            dark: '#0e1118',
+          },
+          side: {
+            nav: '#1c2025', // Far left narrow sidebar
+            list: {
+              light: '#ffffff',
+              dark: '#0e1621', // Main chat list background
+            },
+          },
+          hover: {
+            light: '#f1f1f1',
+            dark: '#232e3c',
+          },
+          bubble: {
+            out: {
+              light: '#effdde',
+              dark: '#2b5278',
+            },
+            in: {
+              light: '#ffffff',
+              dark: '#182533',
+            },
+          },
+        },
       },
     },
   },

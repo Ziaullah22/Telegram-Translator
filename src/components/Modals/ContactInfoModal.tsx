@@ -99,10 +99,10 @@ export default function ContactInfoModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
-      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-scale-in">
+      <div id="crm-modal-container" className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4" id="crm-modal-profile">
             <div className="bg-blue-600/10 dark:bg-blue-600/20 p-2.5 rounded-2xl">
               <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
@@ -112,6 +112,7 @@ export default function ContactInfoModal({
             </div>
           </div>
           <button
+            id="crm-modal-close-btn"
             onClick={handleClose}
             className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
           >
@@ -130,7 +131,7 @@ export default function ContactInfoModal({
 
           <div className="space-y-8">
             {/* --- SECTION: Personal Information --- */}
-            <div className="space-y-4">
+            <div className="space-y-4" id="crm-personal-section">
               <h3 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] border-b border-blue-50 dark:border-blue-900/30 pb-2">Personal Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -157,7 +158,7 @@ export default function ContactInfoModal({
             </div>
 
             {/* --- SECTION: Communication Channels --- */}
-            <div className="space-y-4">
+            <div className="space-y-4" id="crm-channels-section">
               <h3 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] border-b border-blue-50 dark:border-blue-900/30 pb-2">Communication Channels</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -204,7 +205,7 @@ export default function ContactInfoModal({
             </div>
 
             {/* --- SECTION: Business Details --- */}
-            <div className="space-y-4">
+            <div className="space-y-4" id="crm-business-section">
               <h3 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] border-b border-blue-50 dark:border-blue-900/30 pb-2">Business Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -241,7 +242,7 @@ export default function ContactInfoModal({
             </div>
 
             {/* --- SECTION: Logistics --- */}
-            <div className="space-y-4">
+            <div className="space-y-4" id="crm-logistics-section">
               <h3 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] border-b border-blue-50 dark:border-blue-900/30 pb-2">Logistics & Shipping</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -283,7 +284,7 @@ export default function ContactInfoModal({
             </div>
 
             {/* --- SECTION: Samples & Notes --- */}
-            <div className="space-y-4 pb-4">
+            <div className="space-y-4 pb-4" id="crm-notes-section">
               <h3 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] border-b border-blue-50 dark:border-blue-900/30 pb-2">Samples & Relationship Notes</h3>
               <div className="space-y-6">
                 <div className="space-y-2">

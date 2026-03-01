@@ -6,6 +6,17 @@ import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
 import ContactInfoModal from '../Modals/ContactInfoModal';
 
+// Helper to check if string contains only emojis
+const isOnlyEmoji = (str: string) => {
+  if (!str) return false;
+  const cleanStr = str.replace(/\s/g, '');
+  if (!cleanStr || cleanStr.length > 10) return false; // Limit length for big emoji
+
+  // Basic emoji range check
+  const emojiRegex = /^(\u2702|\u2705|\u2708|\u2709|\u270A-\u270D|\u270F|\u2712|\u2714|\u2716|\u271D|\u2721|\u2728|\u2733|\u2734|\u2744|\u2747|\u274C|\u274E|\u2753-\u2755|\u2757|\u2763|\u2764|\u2795-\u2797|\u27A1|\u27B0|\u27BF|\u2934|\u2935|\u2B05-\u2B07|\u2B1B|\u2B1C|\u2B50|\u2B55|\u3030|\u303D|\u3297|\u3299|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\uD83D[\uDE00-\uDE4F]|\uD83D[\uDE80-\uDEFF]|\uD83E[\uDD00-\uDDFF])+$/u;
+  return emojiRegex.test(cleanStr);
+};
+
 // Photo Message Component - displays images inline like Telegram
 const PhotoMessage: React.FC<{
   message: TelegramMessage;
@@ -578,7 +589,7 @@ export default function ChatWindow({
 
 
   return (
-    <div id="chat-window" className="flex-1 flex flex-col bg-[#d4e4d5] dark:bg-[#0e1118] transition-colors duration-300">
+    <div id="chat-window" className="flex-1 flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
       {/* Contact Save Alert */}
       {contactSaveAlert && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
@@ -654,6 +665,7 @@ export default function ChatWindow({
           {/* Contact Info Button */}
           {currentConversation && (
             <button
+              id="chat-crm-btn"
               onClick={() => setShowContactModal(true)}
               className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
               title="Contact CRM Info"
@@ -666,7 +678,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-6 chat-telegram-bg">
+      <div className="flex-1 overflow-y-auto p-6 dark:bg-[#0E1621] chat-telegram-bg">
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <Languages className="w-16 h-16 text-gray-600 mx-auto mb-4" />
@@ -683,239 +695,282 @@ export default function ChatWindow({
             </p>
           </div>
         ) : (
-          sortedMessages.map((message) => {
-            // System messages (scheduled message cancellations)
-            if (message.type === 'system') {
-              return (
-                <div key={message.id} className="flex justify-center mb-4">
-                  <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-2xl">
-                    <p className="text-xs text-yellow-300 text-center">
-                      {message.original_text}
-                    </p>
-                    <p className="text-xs text-gray-500 text-center mt-1">
-                      {new Date(message.created_at).toLocaleString()}
-                    </p>
+          (() => {
+            const getDateLabel = (dateStr: string): string => {
+              const date = new Date(dateStr);
+              const now = new Date();
+              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+              const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86400000);
+              if (diffDays === 0) return 'Today';
+              if (diffDays === 1) return 'Yesterday';
+              if (date.getFullYear() === now.getFullYear()) {
+                return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+              }
+              return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            };
+
+            let lastDateLabel = '';
+            const elements: React.ReactNode[] = [];
+
+            sortedMessages.forEach((message) => {
+              const dateLabel = getDateLabel(message.created_at);
+              if (dateLabel !== lastDateLabel) {
+                lastDateLabel = dateLabel;
+                elements.push(
+                  <div key={`sep-${message.id}`} className="flex justify-center my-3">
+                    <span className="px-4 py-1 rounded-full text-xs font-medium bg-black/20 dark:bg-black/30 text-gray-800 dark:text-gray-200 backdrop-blur-sm shadow-sm select-none">
+                      {dateLabel}
+                    </span>
+                  </div>
+                );
+              }
+
+              if (message.type === 'system') {
+                elements.push(
+                  <div key={message.id} className="flex justify-center mb-4">
+                    <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-2xl">
+                      <p className="text-xs text-yellow-300 text-center">{message.original_text}</p>
+                      <p className="text-xs text-gray-500 text-center mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                );
+                return;
+              }
+
+              const isOutgoing = isMessageOutgoing(message);
+              elements.push(
+                <div
+                  key={message.id}
+                  className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4`}
+                >
+                  <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'}`}>
+                    {/* Sender info for group/supergroup/channel incoming messages - Telegram Desktop doesn't show this in private chats */}
+                    {!isOutgoing && currentConversation?.type !== 'private' && (
+                      <div className="flex items-center space-x-2 mb-2 px-1">
+                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase">
+                          {message.sender_name ? message.sender_name.charAt(0) : '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 truncate">
+                            {message.sender_name || message.sender_username || 'Unknown'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Message bubble */}
+                    {isOnlyEmoji(message.translated_text || message.original_text) ? (
+                      <div className="py-1 px-1 inline-block">
+                        <span style={{ fontSize: '96px', lineHeight: '1.1' }} className="select-none block">
+                          {message.translated_text || message.original_text}
+                        </span>
+                        <div className="flex items-center justify-end mt-1 space-x-1">
+                          <div className="flex items-center space-x-1 bg-black/40 dark:bg-black/50 rounded-full px-2 py-0.5">
+                            <p className="text-[10px] text-white">
+                              {new Date(message.created_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                            {isOutgoing && (
+                              <div className="flex items-center">
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                <svg className="w-3 h-3 text-white -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`px-3 py-2 rounded-2xl break-words whitespace-pre-wrap overflow-hidden shadow-sm relative ${isOutgoing
+                          ? 'bg-telegram-bubble-out-light dark:bg-telegram-bubble-out-dark text-gray-900 dark:text-white rounded-br-md ml-auto'
+                          : 'bg-telegram-bubble-in-light dark:bg-telegram-bubble-in-dark text-gray-900 dark:text-gray-100 rounded-bl-md mr-auto'
+                          }`}
+                      >
+                        {/* Auto-Reply Badge */}
+                        {message.type === 'auto_reply' && (
+                          <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
+                            <Zap className="w-3 h-3 text-yellow-400" />
+                            <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
+                          </div>
+                        )}
+
+                        {/* Photo - Display as inline image like Telegram */}
+                        {hasPhoto(message) && (
+                          <PhotoMessage
+                            message={message}
+                            loadedImages={loadedImages}
+                            loadImage={loadImage}
+                            onDownload={handleDownloadMedia}
+                            onImageLoad={scrollToBottom}
+                          />
+                        )}
+
+                        {/* Video - Display as inline video player like Telegram */}
+                        {hasVideo(message) && (
+                          <VideoMessage
+                            message={message}
+                            loadedImages={loadedImages}
+                            loadImage={loadImage}
+                            onDownload={handleDownloadMedia}
+                            onImageLoad={scrollToBottom}
+                          />
+                        )}
+
+                        {/* Document - keep as icon */}
+                        {message.type === 'document' && (
+                          <div className="mb-3">
+                            <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
+                              <div className="flex-shrink-0">
+                                <FileText className="w-8 h-8 text-green-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">
+                                  {message.media_file_name || '📄 Document'}
+                                </p>
+                                <p className="text-xs text-gray-400">Click to download</p>
+                              </div>
+                              <button
+                                onClick={() => handleDownloadMedia(message)}
+                                className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Download"
+                              >
+                                <Download className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Caption/Text */}
+                        {message.original_text && (
+                          <div className="mb-2">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="text-xs font-medium text-blue-400">
+                                {message.source_language && `${message.source_language.toUpperCase()}`}
+                              </span>
+                              <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Translated caption/message */}
+                        {message.translated_text && (
+                          <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
+                            <p className={`text-sm font-bold leading-relaxed break-all ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>{message.translated_text}</p>
+                          </div>
+                        )}
+
+                        {/* Timestamp and read receipt */}
+                        <div className="flex items-center justify-end mt-2 space-x-1">
+                          <p className="text-xs opacity-70">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                          {isOutgoing && (
+                            <div className="flex items-center">
+                              <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
-            }
-
-            const isOutgoing = isMessageOutgoing(message);
-
-            return (
-              <div
-                key={message.id}
-                className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4`}
-              >
-                <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'}`}>
-                  {/* Sender info for incoming messages */}
-                  {!isOutgoing && (
-                    <div className="flex items-center space-x-2 mb-2 px-1">
-                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                        <span className="text-sm font-medium text-white">
-                          {message.sender_name ? message.sender_name.charAt(0).toUpperCase() : '?'}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-pink-400">
-                          {message.sender_name || message.sender_username || 'Unknown'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Message bubble */}
-                  <div
-                    className={`px-4 py-3 rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${isOutgoing
-                      ? 'bg-blue-600 text-white rounded-br-md'
-                      : 'bg-gray-700 text-gray-200 rounded-bl-md'
-                      }`}
-                  >
-                    {/* Auto-Reply Badge */}
-                    {message.type === 'auto_reply' && (
-                      <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
-                        <Zap className="w-3 h-3 text-yellow-400" />
-                        <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
-                      </div>
-                    )}
-
-                    {/* Photo - Display as inline image like Telegram */}
-                    {hasPhoto(message) && (
-                      <PhotoMessage
-                        message={message}
-                        loadedImages={loadedImages}
-                        loadImage={loadImage}
-                        onDownload={handleDownloadMedia}
-                        onImageLoad={scrollToBottom}
-                      />
-                    )}
-
-                    {/* Video - Display as inline video player like Telegram */}
-                    {hasVideo(message) && (
-                      <VideoMessage
-                        message={message}
-                        loadedImages={loadedImages}
-                        loadImage={loadImage}
-                        onDownload={handleDownloadMedia}
-                        onImageLoad={scrollToBottom}
-                      />
-                    )}
-
-                    {/* Document - keep as icon */}
-                    {message.type === 'document' && (
-                      <div className="mb-3">
-                        <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
-                          <div className="flex-shrink-0">
-                            <FileText className="w-8 h-8 text-green-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {message.media_file_name || '📄 Document'}
-                            </p>
-                            <p className="text-xs text-gray-400">Click to download</p>
-                          </div>
-                          <button
-                            onClick={() => handleDownloadMedia(message)}
-                            className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                            title="Download"
-                          >
-                            <Download className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Caption/Text */}
-                    {message.original_text && (
-                      <div className="mb-2">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className="text-xs font-medium text-blue-400">
-                            {message.source_language && `${message.source_language.toUpperCase()}`}
-                          </span>
-                          <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Translated caption/message */}
-                    {message.translated_text && (
-                      <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-blue-400' : 'border-gray-100 dark:border-gray-700'}`}>
-                        <p className="text-sm font-bold leading-relaxed break-all">{message.translated_text}</p>
-                      </div>
-                    )}
-
-                    {/* Timestamp and read receipt */}
-                    <div className="flex items-center justify-end mt-2 space-x-1">
-                      <p className="text-xs opacity-70">
-                        {new Date(message.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                      {isOutgoing && (
-                        <div className="flex items-center">
-                          <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+            });
+            return elements;
+          })()
         )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Message input */}
-      <div id="chat-input-area" className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-6 transition-colors duration-300">
+      <div id="chat-input-area" className="bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 px-4 pt-3 pb-4 transition-colors duration-300">
         {/* Template Selector */}
         {showTemplates && templates.length > 0 && (
-          <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto shadow-inner">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">Message Templates</span>
-              <button
-                onClick={() => setShowTemplates(false)}
-                className="text-gray-400 hover:text-red-500 p-1 rounded-lg transition-colors"
-              >
+          <div className="mb-3 p-3 bg-gray-100 dark:bg-[#0e1621] rounded-xl border border-gray-200 dark:border-white/10 max-h-48 overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Message Templates</span>
+              <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 p-1 rounded-lg transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {templates.map((template) => (
                 <button
                   key={template.id}
                   onClick={() => handleTemplateSelect(template)}
-                  className="w-full text-left p-2 bg-gray-600 hover:bg-gray-500 rounded transition-colors"
+                  className="w-full text-left p-2 bg-gray-200 dark:bg-white/5 hover:bg-gray-300 dark:hover:bg-white/10 rounded-lg transition-colors"
                 >
-                  <div className="text-sm font-medium text-white">{template.name}</div>
-                  <div className="text-xs text-gray-400 truncate">{template.content}</div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">{template.name}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</div>
                 </button>
               ))}
             </div>
           </div>
         )}
 
+        {/* Top action row: Templates + Manage */}
         <div className="flex items-center space-x-2 mb-3">
           <button
             type="button"
             onClick={() => setShowTemplates(!showTemplates)}
             disabled={!isConnected || !currentConversation}
-            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
           >
-            <Copy className="w-4 h-4" />
+            <Copy className="w-3.5 h-3.5" />
             <span>Templates</span>
           </button>
           <button
             type="button"
             onClick={() => setShowTemplatesModal(true)}
-            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3.5 h-3.5" />
             <span>Manage</span>
           </button>
         </div>
 
         {/* File Preview */}
         {selectedFile && (
-          <div className="mb-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
+          <div className="mb-3 p-3 bg-gray-100 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10">
             <div className="flex items-start space-x-3">
               {filePreview ? (
-                <img src={filePreview} alt="Preview" className="w-20 h-20 object-cover rounded" />
+                <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded-lg" />
               ) : (
-                <div className="w-20 h-20 bg-gray-600 rounded flex items-center justify-center">
-                  <Video className="w-8 h-8 text-gray-400" />
+                <div className="w-16 h-16 bg-gray-200 dark:bg-white/10 rounded-lg flex items-center justify-center">
+                  <Video className="w-7 h-7 text-gray-400" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{selectedFile.name}</p>
-                <p className="text-xs text-gray-400">
-                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{selectedFile.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
               </div>
-              <button
-                onClick={handleRemoveFile}
-                className="text-gray-400 hover:text-white"
-                type="button"
-              >
+              <button onClick={handleRemoveFile} className="text-gray-400 hover:text-gray-700 dark:hover:text-white" type="button">
                 <X className="w-5 h-5" />
               </button>
             </div>
           </div>
         )}
 
-        <form onSubmit={handleSendMessage} className="flex space-x-4">
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+        {/* Input row */}
+        <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+          <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
+
+          {/* Text input with emoji icon inside */}
           <div className="flex-1 relative">
             <input
               type="text"
@@ -928,21 +983,19 @@ export default function ChatWindow({
                     ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
                     : 'Connect to an account to start messaging'
               }
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors pr-24"
+              className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
               disabled={!isConnected || !currentConversation || translating}
             />
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 title="Emojis"
               >
                 <Smile className="w-5 h-5" />
               </button>
-              {translating && (
-                <Languages className="w-5 h-5 text-blue-400 animate-pulse" />
-              )}
+              {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
             </div>
 
             {/* Emoji Picker Overlay */}
@@ -992,49 +1045,51 @@ export default function ChatWindow({
               </div>
             )}
           </div>
+
+          {/* Attachment button */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!isConnected || !currentConversation || uploadingFile}
-            className="px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-white rounded-xl transition-all duration-300 flex items-center space-x-2 shadow-sm"
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
             title="Attach file"
           >
             <Paperclip className="w-5 h-5" />
           </button>
+
+          {/* Send / Send File button */}
           {selectedFile ? (
             <button
               type="button"
               onClick={handleSendFile}
               disabled={uploadingFile || !isConnected || !currentConversation}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2"
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
             >
-              {uploadingFile ? (
-                <Languages className="w-4 h-4 animate-pulse" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-              <span>{uploadingFile ? 'Sending...' : 'Send File'}</span>
+              {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
             </button>
           ) : (
             <button
               type="submit"
               disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2"
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
             >
               <Send className="w-4 h-4" />
             </button>
           )}
+
+          {/* Schedule button */}
           <button
             type="button"
             onClick={() => setShowScheduleModal(true)}
             disabled={!newMessage.trim() || !isConnected || !currentConversation}
-            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2"
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
             title="Schedule Message"
           >
             <Clock className="w-4 h-4" />
           </button>
         </form>
-        <p className="text-xs text-gray-500 mt-2">
+
+        <p className="text-xs text-blue-500 dark:text-[#4da2d9] mt-2">
           Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
         </p>
       </div>
