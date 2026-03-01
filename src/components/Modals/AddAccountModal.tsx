@@ -139,89 +139,89 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 border border-gray-700 rounded-xl max-w-md w-full">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Add Telegram Account</h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] transition-opacity duration-300">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden transform transition-all animate-scale-in">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+          <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Add Telegram Account</h2>
           <button
             id="modal-close-btn"
             onClick={handleClose}
             disabled={loading}
-            className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors"
+            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center space-x-3 text-red-400">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <p className="text-sm">{error}</p>
+            <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl flex items-center space-x-3 text-red-600 dark:text-red-400 animate-shake">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-bold">{error}</p>
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              TData File (Zip/Rar) *
+          <div className="space-y-2">
+            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+              TData Archive (Zip/Rar)
             </label>
-            <div id="tdata-upload-box" className="relative">
+            <div id="tdata-upload-box" className="relative group">
               <input
                 ref={fileInputRef}
                 type="file"
                 onChange={(e) => handleFileChange(e.target.files)}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:text-sm hover:file:bg-blue-700 transition-colors"
+                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:text-[10px] file:font-black file:uppercase file:tracking-widest hover:file:bg-blue-700 transition-all focus:ring-4 focus:ring-blue-500/10 disabled:opacity-50"
                 accept=".zip,.rar"
                 disabled={loading || validating}
               />
               {validating && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Loader className="w-5 h-5 animate-spin text-blue-400" />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <Loader className="w-5 h-5 animate-spin text-blue-500" />
                 </div>
               )}
             </div>
             {validating && (
-              <p className="mt-1 text-xs text-blue-400">
-                Validating TData archive...
+              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">
+                Validating session...
               </p>
             )}
             {validationInfo && !error && (
-              <p className="mt-1 text-xs text-green-400">
-                ✓ Valid TData archive for account: {validationInfo.accountName}
+              <p className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest flex items-center">
+                <span className="mr-1.5 text-lg">✓</span> Session found: {validationInfo.accountName}
               </p>
             )}
             {!validating && !validationInfo && !error && (
-              <p className="mt-1 text-xs text-gray-400">
-                Upload your Telegram session file (Zip or Rar format)
+              <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+                Upload your Telegram TData folder as a zip archive
               </p>
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Display Name *
+          <div className="space-y-2">
+            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+              Account Display Name
             </label>
             <input
               {...register('displayName', { required: 'Display name is required' })}
               id="display-name-input"
               type="text"
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-              placeholder="e.g., Work Account"
+              className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm"
+              placeholder="e.g., Marketing Team"
               disabled={loading}
             />
             {errors.displayName && (
-              <p className="mt-1 text-sm text-red-400">{errors.displayName.message}</p>
+              <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">{errors.displayName.message}</p>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Source Language
+          <div id="language-selection-container" className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                Source
               </label>
               <select
                 {...register('sourceLanguage')}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
                 <option value="auto">Auto-detect</option>
@@ -235,13 +235,13 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Target Language
+            <div className="space-y-2">
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                Target
               </label>
               <select
                 {...register('targetLanguage')}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
                 <option value="en">English</option>
@@ -260,7 +260,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
               type="button"
               onClick={handleClose}
               disabled={loading}
-              className="flex-1 px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              className="flex-1 px-4 py-4 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all"
             >
               Cancel
             </button>
@@ -268,17 +268,17 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
               type="submit"
               id="modal-add-btn"
               disabled={loading}
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+              className="flex-1 px-4 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 text-white rounded-2xl shadow-xl shadow-blue-600/30 transition-all font-black uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2"
             >
               {loading ? (
                 <>
-                  <Loader className="w-4 h-4 animate-spin" />
-                  <span>Connecting...</span>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  <span>Processing...</span>
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4" />
-                  <span>Add & Connect</span>
+                  <Upload className="w-5 h-5" />
+                  <span>Connect Account</span>
                 </>
               )}
             </button>

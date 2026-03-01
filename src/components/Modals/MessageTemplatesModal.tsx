@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus, Edit2, Trash2, Save } from 'lucide-react';
 import { templatesAPI } from '../../services/api';
 import type { MessageTemplate } from '../../types';
@@ -109,24 +109,30 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg w-full max-w-3xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
+      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Message Templates</h2>
+        <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+          <div className="flex items-center space-x-4">
+            <div className="bg-blue-600/10 dark:bg-blue-600/20 p-2.5 rounded-2xl">
+              <Plus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Message Templates</h2>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-400 text-sm">
-              {error}
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center space-x-3 animate-shake">
+              <X className="w-4 h-4" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -134,44 +140,45 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
           {!isCreating && !editingId && (
             <button
               onClick={() => setIsCreating(true)}
-              className="w-full mb-4 p-4 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:text-white hover:border-blue-500 transition-colors flex items-center justify-center space-x-2"
+              className="w-full mb-6 p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-3xl text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all flex flex-col items-center justify-center space-y-2 group"
             >
-              <Plus className="w-5 h-5" />
-              <span>Create New Template</span>
+              <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded-2xl group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-all">
+                <Plus className="w-6 h-6" />
+              </div>
+              <span className="font-black uppercase tracking-widest text-[11px]">Create New Template</span>
             </button>
           )}
 
           {/* Create Form */}
           {isCreating && (
-            <div className="mb-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
-              <h3 className="text-white font-medium mb-3">New Template</h3>
+            <div className="mb-8 p-6 bg-gray-50 dark:bg-gray-900/50 rounded-3xl border border-gray-100 dark:border-gray-800 animate-slide-up">
+              <h3 className="text-gray-900 dark:text-white font-black uppercase tracking-widest text-[10px] mb-4">New Request Template</h3>
               <input
                 type="text"
-                placeholder="Template Name"
+                placeholder="Template Title (e.g., Support Replay)"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full mb-3 px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full mb-4 px-6 py-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm"
               />
               <textarea
-                placeholder="Template Content"
+                placeholder="Your message content here..."
                 value={formData.content}
                 onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                 rows={4}
-                className="w-full mb-3 px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full mb-4 px-6 py-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm resize-none scrollbar-hide"
               />
-              <div className="flex space-x-2">
+              <div className="flex space-x-3">
                 <button
                   onClick={handleCreate}
                   disabled={loading}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded transition-colors flex items-center space-x-2"
+                  className="flex-1 px-6 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl transition-all font-black uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2 shadow-lg shadow-blue-600/20"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Save</span>
+                  <span>Save Template</span>
                 </button>
                 <button
                   onClick={cancelEdit}
-                  disabled={loading}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-white rounded transition-colors"
+                  className="px-6 py-3.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-2xl transition-all font-black uppercase tracking-widest text-[10px]"
                 >
                   Cancel
                 </button>
@@ -181,68 +188,76 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
 
           {/* Templates List */}
           {loading && templates.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">Loading templates...</div>
+            <div className="text-center py-12 flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mb-4" />
+              <span className="text-sm font-black text-gray-400 uppercase tracking-widest">Fetching Templates...</span>
+            </div>
           ) : templates.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">No templates yet. Create your first template!</div>
+            <div className="text-center py-12 text-gray-400 font-bold">
+              No templates found. Create one to speed up your workflow!
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {templates.map((template) => (
-                <div key={template.id} className="p-4 bg-gray-700 rounded-lg border border-gray-600">
+                <div key={template.id} className="group p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-3xl hover:border-blue-500 hover:shadow-xl transition-all duration-300 animate-fade-in relative overflow-hidden">
                   {editingId === template.id ? (
-                    <>
+                    <div className="space-y-4">
                       <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full mb-3 px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl text-gray-900 dark:text-white font-bold text-sm"
                       />
                       <textarea
                         value={formData.content}
                         onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                         rows={4}
-                        className="w-full mb-3 px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl text-gray-900 dark:text-white font-bold text-sm resize-none"
                       />
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleUpdate(template.id)}
-                          disabled={loading}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded transition-colors flex items-center space-x-2"
+                          className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] transition-all"
                         >
-                          <Save className="w-4 h-4" />
-                          <span>Save</span>
+                          Save
                         </button>
                         <button
                           onClick={cancelEdit}
-                          disabled={loading}
-                          className="px-4 py-2 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-white rounded transition-colors"
+                          className="px-4 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-black uppercase tracking-widest text-[9px]"
                         >
                           Cancel
                         </button>
                       </div>
-                    </>
+                    </div>
                   ) : (
                     <>
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="text-white font-medium">{template.name}</h4>
-                        <div className="flex space-x-2">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 mr-4">
+                          <h4 className="text-gray-900 dark:text-white font-black text-lg group-hover:text-blue-600 transition-colors truncate">{template.name}</h4>
+                          <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{template.content.length} characters</span>
+                        </div>
+                        <div className="flex space-x-1">
                           <button
                             onClick={() => startEdit(template)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors"
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(template.id)}
-                            className="text-red-400 hover:text-red-300 transition-colors"
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 rounded-xl transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
-                      <p className="text-gray-300 text-sm whitespace-pre-wrap">{template.content}</p>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Updated: {new Date(template.updated_at).toLocaleString()}
-                      </p>
+                      <div className="p-4 bg-gray-50/50 dark:bg-gray-900/30 rounded-2xl border border-gray-50 dark:border-gray-800 mb-4 h-32 overflow-y-auto scrollbar-hide">
+                        <p className="text-gray-600 dark:text-gray-300 text-sm font-medium leading-relaxed italic">"{template.content}"</p>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-tighter text-gray-400">
+                        <span>Updated {new Date(template.updated_at).toLocaleDateString()}</span>
+                        <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">ID: #{template.id}</span>
+                      </div>
                     </>
                   )}
                 </div>

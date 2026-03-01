@@ -481,10 +481,10 @@ function App() {
   // Loading screen
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading...</p>
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center transition-colors duration-500">
+        <div className="text-center animate-fade-in">
+          <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin mx-auto mb-6"></div>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 dark:text-gray-500">Initializing Experience</p>
         </div>
       </div>
     );
@@ -526,7 +526,7 @@ function App() {
   // Main application
   return (
     <Router>
-      <div className="h-screen flex flex-col bg-gray-900">
+      <div className="h-screen flex flex-col bg-white dark:bg-[#0f111a] transition-colors duration-500 text-gray-900 dark:text-white">
         <Header onStartTour={() => setShowTour(true)} />
 
         <Routes>
@@ -600,28 +600,29 @@ function App() {
 
         {/* Real-time notification popup */}
         {notification && (
-          <div className="fixed top-20 right-6 z-[9999] animate-fade-in pointer-events-none">
+          <div className="fixed top-24 right-8 z-[100] animate-slide-up pointer-events-none">
             <div
               onClick={() => handleNotificationClick(notification.accountId, notification.conversationId)}
-              className="bg-gray-800/90 backdrop-blur-md border border-gray-700 shadow-2xl rounded-xl p-4 min-w-[280px] max-w-sm pointer-events-auto cursor-pointer hover:bg-gray-800 transition-colors"
+              className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-100 dark:border-gray-700 shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)] rounded-3xl p-5 min-w-[320px] max-w-md pointer-events-auto cursor-pointer hover:scale-[1.02] active:scale-95 transition-all duration-300"
             >
-              <div className="flex items-start space-x-3">
-                <div className="bg-blue-500 rounded-full p-2 flex-shrink-0">
-                  <Zap className="w-4 h-4 text-white" />
+              <div className="flex items-start space-x-4">
+                <div className="bg-blue-600 shadow-lg shadow-blue-600/30 rounded-2xl p-3 flex-shrink-0">
+                  <Zap className="w-5 h-5 text-white fill-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{notification.title}</p>
-                  <p className="text-xs text-gray-400 mt-1 line-clamp-2">{notification.message}</p>
+                  <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">Incoming Message</p>
+                  <p className="text-sm font-black text-gray-900 dark:text-white truncate tracking-tight">{notification.title}</p>
+                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">{notification.message}</p>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setNotification(null); }}
-                  className="text-gray-500 hover:text-gray-300"
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="mt-2 h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 animate-progress"></div>
+              <div className="mt-4 h-1 bg-gray-100 dark:bg-gray-700/50 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-600 animate-progress origin-left"></div>
               </div>
             </div>
           </div>

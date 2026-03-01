@@ -578,7 +578,7 @@ export default function ChatWindow({
 
 
   return (
-    <div id="chat-window" className="flex-1 flex flex-col bg-gray-900">
+    <div id="chat-window" className="flex-1 flex flex-col bg-[#d4e4d5] dark:bg-[#0e1118] transition-colors duration-300">
       {/* Contact Save Alert */}
       {contactSaveAlert && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
@@ -592,12 +592,17 @@ export default function ChatWindow({
       )}
 
       {/* Chat header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-6 py-4">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <div className="flex items-center space-x-3">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Translation Chat</h2>
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xl shadow-inner uppercase">
+                {currentConversation?.title?.charAt(0) || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">
+                  {currentConversation?.title || 'Translation Chat'}
+                </h2>
                 {currentAccount && (
                   <p className="text-sm text-gray-400">
                     {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
@@ -621,20 +626,20 @@ export default function ChatWindow({
                     return (
                       <div
                         key={sm.id}
-                        className="flex items-center space-x-2 px-3 py-2 bg-blue-500/20 border border-blue-500/40 rounded-lg"
+                        className="flex items-center space-x-2 px-3 py-2 bg-blue-100 dark:bg-blue-500/20 border border-blue-200 dark:border-blue-500/40 rounded-lg shadow-sm"
                       >
-                        <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                        <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                         <div className="flex flex-col">
-                          <span className="text-xs text-blue-300 font-medium">
+                          <span className="text-xs text-blue-700 dark:text-blue-300 font-bold">
                             {formattedDate}
                           </span>
-                          <span className="text-xs text-gray-400 truncate max-w-xs">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs font-medium">
                             {sm.message_text}
                           </span>
                         </div>
                         <button
                           onClick={() => handleCancelScheduledMessage(sm.id)}
-                          className="text-red-400 hover:text-red-300 text-xs ml-2 flex-shrink-0"
+                          className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 text-xs ml-2 flex-shrink-0 font-black p-1"
                           title="Cancel scheduled message"
                         >
                           ✕
@@ -661,7 +666,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 chat-telegram-bg">
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <Languages className="w-16 h-16 text-gray-600 mx-auto mb-4" />
@@ -721,7 +726,7 @@ export default function ChatWindow({
 
                   {/* Message bubble */}
                   <div
-                    className={`px-4 py-3 rounded-2xl ${isOutgoing
+                    className={`px-4 py-3 rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${isOutgoing
                       ? 'bg-blue-600 text-white rounded-br-md'
                       : 'bg-gray-700 text-gray-200 rounded-bl-md'
                       }`}
@@ -787,15 +792,15 @@ export default function ChatWindow({
                           <span className="text-xs font-medium text-blue-400">
                             {message.source_language && `${message.source_language.toUpperCase()}`}
                           </span>
-                          <span className="text-sm leading-relaxed">{message.original_text}</span>
+                          <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
                         </div>
                       </div>
                     )}
 
                     {/* Translated caption/message */}
                     {message.translated_text && (
-                      <div className="border-t border-gray-500 pt-2 mt-2">
-                        <p className="text-sm leading-relaxed">{message.translated_text}</p>
+                      <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-blue-400' : 'border-gray-100 dark:border-gray-700'}`}>
+                        <p className="text-sm font-bold leading-relaxed break-all">{message.translated_text}</p>
                       </div>
                     )}
 
@@ -828,17 +833,17 @@ export default function ChatWindow({
       </div>
 
       {/* Message input */}
-      <div id="chat-input-area" className="bg-gray-800 border-t border-gray-700 p-6">
+      <div id="chat-input-area" className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-6 transition-colors duration-300">
         {/* Template Selector */}
         {showTemplates && templates.length > 0 && (
-          <div className="mb-4 p-3 bg-gray-700 rounded-lg border border-gray-600 max-h-48 overflow-y-auto">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-300">Select Template</span>
+          <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto shadow-inner">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">Message Templates</span>
               <button
                 onClick={() => setShowTemplates(false)}
-                className="text-gray-400 hover:text-white text-xs"
+                className="text-gray-400 hover:text-red-500 p-1 rounded-lg transition-colors"
               >
-                Close
+                <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-2">
@@ -948,24 +953,24 @@ export default function ChatWindow({
                   transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
                   transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
                 }}
-                className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in"
+                className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
               >
                 <div
                   onMouseDown={onDragStart}
-                  className="p-4 border-b border-gray-700 flex items-center justify-between bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
+                  className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
                 >
                   <div className="flex items-center space-x-2">
-                    <Smile className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm font-bold text-white tracking-wide">Select Emoji</span>
+                    <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm font-black text-gray-900 dark:text-white tracking-wide uppercase">Select Emoji</span>
                   </div>
                   <button
                     onClick={() => setShowEmojiPicker(false)}
-                    className="p-1 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
                   >
                     <X className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-gray-800/50">
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white dark:bg-gray-800/50">
                   {emojis.map((group) => (
                     <div key={group.cat} className="mb-6">
                       <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
@@ -991,10 +996,10 @@ export default function ChatWindow({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!isConnected || !currentConversation || uploadingFile}
-            className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2"
+            className="px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-white rounded-xl transition-all duration-300 flex items-center space-x-2 shadow-sm"
             title="Attach file"
           >
-            <Paperclip className="w-4 h-4" />
+            <Paperclip className="w-5 h-5" />
           </button>
           {selectedFile ? (
             <button
@@ -1055,6 +1060,6 @@ export default function ChatWindow({
         conversationId={conversationId || null}
         onSaved={handleContactSaved}
       />
-    </div>
+    </div >
   );
 }

@@ -84,15 +84,15 @@ export default function ConversationList({
 
   return (
     <>
-      <div id="conversation-list" className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+      <div id="conversation-list" className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors duration-300">
         {/* Header */}
-        <div className="p-4 border-b border-gray-700">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-white">Conversations</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Conversations</h2>
             <button
               onClick={() => setShowSearchModal(true)}
               disabled={!isConnected}
-              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed transition-all duration-300 shadow-md shadow-blue-600/20"
               title="Search users"
             >
               <UserPlus className="w-5 h-5 text-white" />
@@ -103,9 +103,9 @@ export default function ConversationList({
         {/* Conversations List */}
         <div id="conversation-list" className="flex-1 overflow-y-auto custom-scrollbar">
           {conversations.length === 0 ? (
-            <div className="p-4 text-center">
-              <MessageCircle className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-              <p className="text-gray-400 text-sm">
+            <div className="p-10 text-center">
+              <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4 opacity-50" />
+              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
                 {isConnected ? 'No conversations yet' : 'Connect account to see conversations'}
               </p>
             </div>
@@ -115,29 +115,29 @@ export default function ConversationList({
                 <div
                   key={conversation.id}
                   onClick={() => onConversationSelect(conversation)}
-                  className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors mb-1 ${currentConversation?.id === conversation.id
-                    ? 'bg-blue-600 text-white'
-                    : 'hover:bg-gray-700 text-gray-200'
+                  className={`flex items-center space-x-3 p-4 rounded-xl cursor-pointer transition-all duration-300 mb-2 border ${currentConversation?.id === conversation.id
+                    ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20'
+                    : 'bg-white dark:bg-transparent border-transparent hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 hover:shadow-sm'
                     }`}
                 >
                   {/* Avatar */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${currentConversation?.id === conversation.id
-                    ? 'bg-blue-500'
-                    : 'bg-gray-600'
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm ${currentConversation?.id === conversation.id
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400'
                     }`}>
-                    <span className="text-sm font-medium">
+                    <span className="uppercase">
                       {getConversationAvatar(conversation)}
                     </span>
                   </div>
 
                   {/* Conversation Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium truncate">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <h3 className="text-sm font-bold truncate">
                         {conversation.title || conversation.username || 'Unknown'}
                       </h3>
                       {conversation.lastMessage && (
-                        <span className="text-xs opacity-70">
+                        <span className={`text-[10px] font-medium opacity-70 ${currentConversation?.id === conversation.id ? 'text-white' : 'text-gray-500 dark:text-gray-400'}`}>
                           {new Date(conversation.lastMessage.created_at).toLocaleTimeString([], {
                             hour: '2-digit',
                             minute: '2-digit'
@@ -146,8 +146,8 @@ export default function ConversationList({
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between mt-1">
-                      <p className={`text-xs truncate ${currentConversation?.id === conversation.id ? 'text-blue-100' : 'text-gray-400'
+                    <div className="flex items-center justify-between">
+                      <p className={`text-xs truncate font-medium ${currentConversation?.id === conversation.id ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                         }`}>
                         {conversation.lastMessage ? (
                           <>
@@ -175,9 +175,6 @@ export default function ConversationList({
                                   {conversation.lastMessage.type === 'unsupported' && '❓ Unsupported'}
                                   {!['photo', 'video', 'voice', 'document', 'sticker', 'animation', 'location', 'contact', 'poll', 'game', 'venue', 'invoice', 'giveaway', 'giveaway_winners', 'story', 'unsupported'].includes(conversation.lastMessage.type) && '💬 Message'}
                                 </span>
-                                {conversation.lastMessage.original_text && (
-                                  <span className="ml-1 opacity-70"> - {conversation.lastMessage.original_text}</span>
-                                )}
                               </span>
                             )}
                           </>
@@ -185,22 +182,17 @@ export default function ConversationList({
                           'No messages yet'
                         )}
                       </p>
-                      {unreadCounts[conversation.id] > 0 && (
-                        <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px]">
-                          {unreadCounts[conversation.id]}
-                        </span>
-                      )}
-                      {conversation.participantCount && conversation.participantCount > 1 && (
-                        <span className="text-xs opacity-50">
-                          {conversation.participantCount}
-                        </span>
-                      )}
+                      <div className="flex items-center space-x-2 ml-2">
+                        {unreadCounts[conversation.id] > 0 && (
+                          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black shadow-sm">
+                            {unreadCounts[conversation.id]}
+                          </span>
+                        )}
+                        <div className={`opacity-40 ${currentConversation?.id === conversation.id ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`}>
+                          {getConversationIcon(conversation.type)}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Type Icon */}
-                  <div className="opacity-50">
-                    {getConversationIcon(conversation.type)}
                   </div>
                 </div>
               ))}

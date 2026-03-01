@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, HelpCircle, ArrowRight, AlertCircle, MousePointer2 } from 'lucide-react';
+import { X, HelpCircle, ArrowRight, MousePointer2 } from 'lucide-react';
 
 interface TourStep {
     title: string;
@@ -43,6 +43,11 @@ export const tourSteps: TourStep[] = [
         title: "Identify Your Account",
         description: "Give this account a nickname (e.g., 'Work', 'Personal') to easily identify it in the sidebar.",
         targetId: 'display-name-input'
+    },
+    {
+        title: "Language Preferences",
+        description: "Crucially, set your 'Source' and 'Target' languages. We'll translate between these in real-time.",
+        targetId: 'language-selection-container'
     },
     {
         title: "Finalize Setup",
@@ -104,8 +109,8 @@ export default function UserGuideTour({
     let activeTargetId = step.targetId;
     let badgeText = "Perform This Action to Continue";
 
-    // --- Step 6 Behavioral Logic (Chat History Requirement) ---
-    if (currentStep === 6) {
+    // --- Step 7 Behavioral Logic (Chat History Requirement) ---
+    if (currentStep === 7) {
         if (!isConversationListInDOM) {
             // CASE: No account selected yet
             isBlocked = true;
@@ -143,16 +148,16 @@ export default function UserGuideTour({
         if (!prevModalOpen.current && isModalInDOM && currentStep === 1) {
             onStepChange(2);
         }
-        // Detect Modal Closing: From Step 5 -> Step 6
-        else if (prevModalOpen.current && !isModalInDOM && currentStep === 5) {
-            onStepChange(6);
+        // Detect Modal Closing: From Step 6 -> Step 7
+        else if (prevModalOpen.current && !isModalInDOM && currentStep === 6) {
+            onStepChange(7);
         }
-        // Detect Account Selection: Transitioning from No-List to List (if already at step 6)
+        // Detect Account Selection: Transitioning from No-List to List (if already at step 7)
         // No auto-advance here usually, but we want the highlight to shift, handled by state update anyway.
 
-        // Detect Chat Selection: From Step 6 -> Step 7
-        if (hasConversation && currentStep === 6) {
-            setTimeout(() => onStepChange(7), 400);
+        // Detect Chat Selection: From Step 7 -> Step 8
+        if (hasConversation && currentStep === 7) {
+            setTimeout(() => onStepChange(8), 400);
         }
 
         prevModalOpen.current = isModalInDOM;
@@ -197,7 +202,7 @@ export default function UserGuideTour({
         if (isBlocked) return;
 
         if (currentStep === 1 && hasAccounts) {
-            onStepChange(6);
+            onStepChange(7);
             return;
         }
 
@@ -210,7 +215,7 @@ export default function UserGuideTour({
     };
 
     const handlePrev = () => {
-        if (currentStep === 6) {
+        if (currentStep === 7) {
             onStepChange(1);
             return;
         }
@@ -246,26 +251,26 @@ export default function UserGuideTour({
 
             {/* Tour Dialogue Card */}
             <div
-                className="absolute top-26 right-10 w-[420px] bg-gray-900 border border-gray-800 rounded-[32px] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-7 pointer-events-auto transform transition-all duration-300 animate-fade-in z-[10002]"
+                className="absolute top-26 right-10 w-[420px] bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-[32px] shadow-[0_25px_60px_-12px_rgba(0,0,0,0.1)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-7 pointer-events-auto transform transition-all duration-300 animate-fade-in z-[10002]"
             >
-                <div className="flex items-center justify-between mb-5 pb-5 border-b border-gray-800">
+                <div className="flex items-center justify-between mb-5 pb-5 border-b border-gray-100 dark:border-gray-800">
                     <div className="flex items-center space-x-3">
-                        <div className="bg-blue-600/20 p-2.5 rounded-2xl">
-                            <HelpCircle className="w-5 h-5 text-blue-400" />
+                        <div className="bg-blue-600/10 dark:bg-blue-600/20 p-2.5 rounded-2xl">
+                            <HelpCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         </div>
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Tour Step • {currentStep + 1}/{tourSteps.length}</span>
+                        <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] leading-none">Tour Step • {currentStep + 1}/{tourSteps.length}</span>
                     </div>
-                    <button onClick={onClose} className="text-gray-500 hover:text-white transition-all p-2 hover:bg-gray-800 rounded-full">
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 <div className="flex items-start space-x-4 mb-5">
-                    <div className={`mt-1.5 h-3 w-3 rounded-full flex-shrink-0 ${isBlocked ? 'bg-amber-500 animate-pulse shadow-amber-500/50' : 'bg-green-500 shadow-green-500/20'}`} />
+                    <div className={`mt-1.5 h-3 w-3 rounded-full flex-shrink-0 ${isBlocked ? 'bg-amber-500 animate-pulse shadow-lg shadow-amber-500/50' : 'bg-green-500 shadow-lg shadow-green-500/20'}`} />
                     <div className="flex-1 min-w-0">
-                        <h3 className={`text-2xl font-black leading-tight mb-2 ${isBlocked ? 'text-amber-400' : 'text-white'}`}>{activeTitle}</h3>
-                        <div className={`p-4 rounded-3xl border transition-all duration-500 ${isBlocked ? 'bg-amber-500/10 border-amber-500/20 shadow-inner' : 'bg-gray-800/40 border-gray-700/30'}`}>
-                            <p className={`${isBlocked ? 'text-amber-200' : 'text-gray-300'} text-[13px] leading-relaxed font-bold`}>
+                        <h3 className={`text-2xl font-black leading-tight mb-2 tracking-tighter ${isBlocked ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>{activeTitle}</h3>
+                        <div className={`p-5 rounded-3xl border transition-all duration-500 ${isBlocked ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 shadow-inner' : 'bg-gray-50/50 dark:bg-gray-800/40 border-gray-100 dark:border-gray-700/30'}`}>
+                            <p className={`${isBlocked ? 'text-amber-800 dark:text-amber-200' : 'text-gray-600 dark:text-gray-300'} text-[13px] leading-relaxed font-bold`}>
                                 {activeDescription}
                             </p>
                         </div>
@@ -277,7 +282,7 @@ export default function UserGuideTour({
                         {tourSteps.map((_, idx) => (
                             <div
                                 key={idx}
-                                className={`h-1.5 rounded-full transition-all duration-700 ${idx === currentStep ? 'bg-blue-500 w-8 shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'bg-gray-800 w-1.5'}`}
+                                className={`h-1.5 rounded-full transition-all duration-700 ${idx === currentStep ? 'bg-blue-500 w-8 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-gray-200 dark:bg-gray-800 w-1.5'}`}
                             />
                         ))}
                     </div>
@@ -285,7 +290,7 @@ export default function UserGuideTour({
                         {currentStep > 0 && (
                             <button
                                 onClick={handlePrev}
-                                className="px-3 py-2 text-[10px] font-black text-gray-400 hover:text-white transition-all uppercase tracking-widest"
+                                className="px-3 py-2 text-[10px] font-black text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all uppercase tracking-widest"
                             >
                                 Back
                             </button>
@@ -294,8 +299,8 @@ export default function UserGuideTour({
                             onClick={handleNext}
                             disabled={isBlocked}
                             className={`flex items-center space-x-2 px-6 py-2.5 rounded-2xl transition-all font-black shadow-xl ${isBlocked
-                                    ? 'bg-gray-800 text-gray-600 cursor-not-allowed border border-gray-700/50 shadow-none'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30 transform active:scale-95'
+                                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed border border-gray-200 dark:border-gray-700/50 shadow-none'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30 transform active:scale-95'
                                 }`}
                         >
                             <span className="text-[11px] uppercase tracking-wider">{currentStep === tourSteps.length - 1 ? 'Finish' : 'Next'}</span>
