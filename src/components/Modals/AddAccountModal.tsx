@@ -144,6 +144,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-lg font-semibold text-white">Add Telegram Account</h2>
           <button
+            id="modal-close-btn"
             onClick={handleClose}
             disabled={loading}
             className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors"
@@ -164,7 +165,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             <label className="block text-sm font-medium text-gray-300 mb-2">
               TData File (Zip/Rar) *
             </label>
-            <div className="relative">
+            <div id="tdata-upload-box" className="relative">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -202,6 +203,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             </label>
             <input
               {...register('displayName', { required: 'Display name is required' })}
+              id="display-name-input"
               type="text"
               className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               placeholder="e.g., Work Account"
@@ -264,6 +266,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             </button>
             <button
               type="submit"
+              id="modal-add-btn"
               disabled={loading}
               className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
             >

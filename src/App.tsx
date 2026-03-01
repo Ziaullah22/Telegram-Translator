@@ -14,6 +14,7 @@ import ConversationList from './components/Layout/ConversationList';
 import AddAccountModal from './components/Modals/AddAccountModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
 import AutoResponderPage from './components/AutoResponder/AutoResponderPage';
+import UserGuideTour from './components/Modals/UserGuideTour';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
@@ -42,6 +43,8 @@ function App() {
   // unreadCounts[accountId][conversationId] = count
   const [unreadCounts, setUnreadCounts] = useState<Record<number, Record<number, number>>>({});
   const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number } | null>(null);
+  const [showTour, setShowTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
@@ -524,7 +527,7 @@ function App() {
   return (
     <Router>
       <div className="h-screen flex flex-col bg-gray-900">
-        <Header />
+        <Header onStartTour={() => setShowTour(true)} />
 
         <Routes>
           {/* Auto-Responder Page */}
@@ -583,6 +586,16 @@ function App() {
           account={editingAccount}
           onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }}
           onSuccess={loadAccounts}
+        />
+
+        {/* User Guide Tour */}
+        <UserGuideTour
+          isOpen={showTour}
+          onClose={() => setShowTour(false)}
+          hasAccounts={accounts.length > 0}
+          hasConversation={!!currentConversation}
+          currentStep={tourStep}
+          onStepChange={setTourStep}
         />
 
         {/* Real-time notification popup */}

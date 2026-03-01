@@ -578,7 +578,7 @@ export default function ChatWindow({
 
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900">
+    <div id="chat-window" className="flex-1 flex flex-col bg-gray-900">
       {/* Contact Save Alert */}
       {contactSaveAlert && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
@@ -828,7 +828,7 @@ export default function ChatWindow({
       </div>
 
       {/* Message input */}
-      <div className="bg-gray-800 border-t border-gray-700 p-6">
+      <div id="chat-input-area" className="bg-gray-800 border-t border-gray-700 p-6">
         {/* Template Selector */}
         {showTemplates && templates.length > 0 && (
           <div className="mb-4 p-3 bg-gray-700 rounded-lg border border-gray-600 max-h-48 overflow-y-auto">
