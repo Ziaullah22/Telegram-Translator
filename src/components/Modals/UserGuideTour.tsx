@@ -5,7 +5,7 @@ interface TourStep {
     title: string;
     description: string;
     targetId: string;
-    requirement?: 'accounts' | 'conversation' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder';
+    requirement?: 'accounts' | 'conversation' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder' | 'ar_modal_open' | 'ar_modal_close';
     group?: 'main' | 'auto-responder';
     placement?: 'left' | 'right' | 'top' | 'bottom';
 }
@@ -141,11 +141,67 @@ export const allTourSteps: TourStep[] = [
         title: "Create Auto-Rules",
         description: "Click 'Add Rule' to create a new trigger. You can set keywords, priority, and even attach media like photos or videos!",
         targetId: 'ar-add-rule-btn',
+        requirement: 'ar_modal_open',
+        group: 'auto-responder'
+    },
+    {
+        title: "Rule Name",
+        description: "Give your rule a clear name (e.g., 'Pricing Query') to identify it quickly in your dashboard.",
+        targetId: 'ar-modal-name',
+        group: 'auto-responder'
+    },
+    {
+        title: "Smart Keywords",
+        description: "Add keywords that will trigger this response. They are case-insensitive. You can add multiple triggers for one rule!",
+        targetId: 'ar-modal-keywords',
+        group: 'auto-responder'
+    },
+    {
+        title: "Instant Response",
+        description: "Type the message you want to send automatically. This response will be translated if needed!",
+        targetId: 'ar-modal-response',
+        group: 'auto-responder'
+    },
+    {
+        title: "Strategic Language",
+        description: "Select the language of your triggers and response. Incoming messages will be analyzed based on this setting.",
+        targetId: 'ar-modal-language',
+        group: 'auto-responder'
+    },
+    {
+        title: "Visual Assets (Media)",
+        description: "Optionally attach an image or video to make your automation feel more personal and professional.",
+        targetId: 'ar-modal-media',
+        group: 'auto-responder'
+    },
+    {
+        title: "Rule Priority",
+        description: "Higher priority rules are checked first. Use this if you have overlapping keywords.",
+        targetId: 'ar-modal-priority',
+        group: 'auto-responder'
+    },
+    {
+        title: "Automation Active State",
+        description: "Toggle this to enable or disable the rule instantly without deleting it.",
+        targetId: 'ar-modal-active',
+        group: 'auto-responder'
+    },
+    {
+        title: "Save & Deploy",
+        description: "Click here to save your rule. It will be active immediately for all your connected accounts.",
+        targetId: 'ar-modal-save',
+        group: 'auto-responder'
+    },
+    {
+        title: "Close Rule Editor",
+        description: "Perfect! Now close the editor to return to the dashboard overview.",
+        targetId: 'ar-modal-close',
+        requirement: 'ar_modal_close',
         group: 'auto-responder'
     },
     {
         title: "Tour Complete!",
-        description: "You're all set to use Telegram Translator. Connect your accounts and start translating!",
+        description: "You've mastered the Auto-Responder! You're all set to automate your business communication.",
         targetId: 'app-logo',
         group: 'auto-responder'
     }
@@ -164,12 +220,14 @@ export default function UserGuideTour({
     const [filteredSteps, setFilteredSteps] = useState<TourStep[]>(allTourSteps);
 
     const prevModalOpen = useRef(false);
+    const prevArModalOpen = useRef(false);
     const prevCrmOpen = useRef(false);
     const prevIsAutoResponder = useRef(false);
 
     const isAutoResponderPage = window.location.pathname === '/auto-responder';
     const isModalInDOM = !!document.getElementById('tdata-upload-box');
-    const isCrmOpen = !!document.getElementById('crm-modal-profile');
+    const isArModalInDOM = !!document.getElementById('ar-modal-name');
+    const isCrmOpen = !!document.getElementById('crm-modal-container');
     const isConversationListInDOM = !!document.getElementById('conversation-list');
 
     // Filter steps on initial open based on starting page
@@ -225,6 +283,13 @@ export default function UserGuideTour({
             onStepChange(currentStep + 1);
         }
 
+        // Auto-Responder modal triggers
+        if (!prevArModalOpen.current && isArModalInDOM && stepTargetId === 'ar-add-rule-btn') {
+            onStepChange(currentStep + 1);
+        } else if (prevArModalOpen.current && !isArModalInDOM && stepTargetId === 'ar-modal-close') {
+            onStepChange(currentStep + 1);
+        }
+
         // Auto-Responder trigger
         if (!prevIsAutoResponder.current && isAutoResponderPage && stepTargetId === 'nav-auto-responder') {
             onStepChange(currentStep + 1);
@@ -236,9 +301,10 @@ export default function UserGuideTour({
         }
 
         prevModalOpen.current = isModalInDOM;
+        prevArModalOpen.current = isArModalInDOM;
         prevCrmOpen.current = isCrmOpen;
         prevIsAutoResponder.current = isAutoResponderPage;
-    }, [isOpen, isModalInDOM, isCrmOpen, isAutoResponderPage, hasConversation, step.targetId, currentStep, onStepChange]);
+    }, [isOpen, isModalInDOM, isArModalInDOM, isCrmOpen, isAutoResponderPage, hasConversation, step.targetId, currentStep, onStepChange]);
 
     // Position Calculation
     useEffect(() => {
@@ -305,41 +371,33 @@ export default function UserGuideTour({
     }, [currentStep, isOpen, activeTargetId, filteredSteps, step.placement]);
 
     // Requirements logic
-    if (activeTargetId === 'conversation-list') {
-        if (!isConversationListInDOM) {
-            isBlocked = true;
-            activeTargetId = 'sidebar-accounts';
-            activeTitle = "Select Account First";
-            activeDescription = "Please click on any account in the sidebar to load your chats.";
-            badgeText = "Click on an account";
-        } else if (!hasConversation) {
-            isBlocked = true;
-            activeTargetId = 'conversation-list';
-            activeTitle = "Select a Chat";
-            activeDescription = "Great! Now select any active chat to proceed with the tour.";
-            badgeText = "Click on a chat";
-        }
-    }
-
-    if (step.requirement === 'crm_open' && !isCrmOpen) {
-        isBlocked = true;
-        badgeText = "Click the CRM button";
-    } else if (step.requirement === 'crm_close' && isCrmOpen) {
-        isBlocked = true;
-        badgeText = "Close the CRM Profile";
-    }
-
-    if (step.requirement === 'is_auto_responder' && !isAutoResponderPage) {
-        isBlocked = true;
-        badgeText = "Switch to Auto-Responder";
-    }
-
     if (step.requirement === 'accounts') {
         // We don't block this step anymore to allow clicking 'Next' to skip
         badgeText = "Click to Setup Account";
     } else if (step.requirement === 'modal_close' && isModalInDOM) {
         isBlocked = true;
-        badgeText = "Close the modal";
+        badgeText = "Close Modal First";
+    } else if (step.requirement === 'modal_open' && !isModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click 'Add Account'";
+    } else if (step.requirement === 'ar_modal_open' && !isArModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click 'Add Rule'";
+    } else if (step.requirement === 'ar_modal_close' && isArModalInDOM) {
+        isBlocked = true;
+        badgeText = "Close Modal First";
+    } else if (step.requirement === 'crm_open' && !isCrmOpen) {
+        isBlocked = true;
+        badgeText = "Open CRM Profile";
+    } else if (step.requirement === 'crm_close' && isCrmOpen) {
+        isBlocked = true;
+        badgeText = "Close CRM First";
+    } else if (step.requirement === 'conversation' && !hasConversation && isConversationListInDOM) {
+        isBlocked = true;
+        badgeText = "Select a Chat";
+    } else if (step.requirement === 'is_auto_responder' && !isAutoResponderPage) {
+        isBlocked = true;
+        badgeText = "Go to Auto-Responder";
     }
 
     if (!isOpen) return null;

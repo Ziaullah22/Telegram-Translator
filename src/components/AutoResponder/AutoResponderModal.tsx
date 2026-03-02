@@ -27,7 +27,7 @@ export default function AutoResponderModal({
   const [loading, setLoading] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -161,16 +161,17 @@ export default function AutoResponderModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
-          <h2 className="text-lg font-semibold text-white">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[2rem] max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl transition-all duration-300">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+          <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
             {rule ? 'Edit Auto-Responder Rule' : 'Create Auto-Responder Rule'}
           </h2>
           <button
+            id="ar-modal-close"
             onClick={onClose}
             disabled={loading || uploadingMedia}
-            className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors"
+            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-full transition-all"
           >
             <X className="w-5 h-5" />
           </button>
@@ -184,15 +185,15 @@ export default function AutoResponderModal({
           )}
 
           {/* Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-name">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Rule Name *
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               placeholder="e.g., Price Question"
               required
               disabled={loading || uploadingMedia}
@@ -200,8 +201,8 @@ export default function AutoResponderModal({
           </div>
 
           {/* Keywords */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-keywords">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Keywords * (case-insensitive)
             </label>
             <div className="space-y-2">
@@ -211,7 +212,7 @@ export default function AutoResponderModal({
                     type="text"
                     value={keyword}
                     onChange={(e) => handleKeywordChange(index, e.target.value)}
-                    className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., price, how much, cost"
                     disabled={loading || uploadingMedia}
                   />
@@ -243,14 +244,14 @@ export default function AutoResponderModal({
           </div>
 
           {/* Response Text */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-response">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Response Text *
             </label>
             <textarea
               value={responseText}
               onChange={(e) => setResponseText(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all"
               placeholder="e.g., $50 per item"
               rows={4}
               required
@@ -259,14 +260,14 @@ export default function AutoResponderModal({
           </div>
 
           {/* Language */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-language">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Language *
             </label>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               disabled={loading || uploadingMedia}
             >
               <option value="en">English</option>
@@ -283,14 +284,14 @@ export default function AutoResponderModal({
           </div>
 
           {/* Media Upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-media">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Attach Media (Optional)
             </label>
-            
+
             {existingMedia && !mediaFile && (
-              <div className="mb-2 p-3 bg-gray-700 rounded-lg flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-sm text-gray-300">
+              <div className="mb-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl flex items-center justify-between border border-gray-100 dark:border-gray-600">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-300">
                   {existingMedia === 'photo' ? (
                     <Image className="w-4 h-4" />
                   ) : (
@@ -301,7 +302,7 @@ export default function AutoResponderModal({
                 <button
                   type="button"
                   onClick={handleRemoveMedia}
-                  className="text-red-400 hover:text-red-300"
+                  className="text-red-500 hover:text-red-400"
                   disabled={loading || uploadingMedia}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -310,8 +311,8 @@ export default function AutoResponderModal({
             )}
 
             {mediaFile && (
-              <div className="mb-2 p-3 bg-gray-700 rounded-lg flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-sm text-gray-300">
+              <div className="mb-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl flex items-center justify-between border border-gray-100 dark:border-gray-600">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-300">
                   {mediaFile.type.startsWith('image/') ? (
                     <Image className="w-4 h-4" />
                   ) : (
@@ -322,7 +323,7 @@ export default function AutoResponderModal({
                 <button
                   type="button"
                   onClick={handleRemoveMedia}
-                  className="text-red-400 hover:text-red-300"
+                  className="text-red-500 hover:text-red-400"
                   disabled={loading || uploadingMedia}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -335,7 +336,7 @@ export default function AutoResponderModal({
               type="file"
               onChange={handleFileChange}
               accept="image/*,video/*"
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:text-sm hover:file:bg-blue-700"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-700 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:text-sm hover:file:bg-blue-700 transition-all cursor-pointer"
               disabled={loading || uploadingMedia}
             />
             <p className="mt-1 text-xs text-gray-400">
@@ -344,49 +345,50 @@ export default function AutoResponderModal({
           </div>
 
           {/* Priority */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+          <div id="ar-modal-priority">
+            <label className="block text-sm font-black text-gray-700 dark:text-gray-300 mb-2 uppercase tracking-wider">
               Priority (higher = checked first)
             </label>
             <input
               type="number"
               value={priority}
               onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               min="0"
               disabled={loading || uploadingMedia}
             />
           </div>
 
           {/* Active Toggle */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3" id="ar-modal-active">
             <input
               type="checkbox"
               id="isActive"
               checked={isActive}
               onChange={(e) => setIsActive(e.target.checked)}
-              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+              className="w-5 h-5 text-blue-600 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded focus:ring-blue-500 accent-blue-600 transition-all cursor-pointer"
               disabled={loading || uploadingMedia}
             />
-            <label htmlFor="isActive" className="text-sm text-gray-300">
+            <label htmlFor="isActive" className="text-sm font-black text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer">
               Active (rule will trigger automatically)
             </label>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
+          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-100 dark:border-gray-700">
             <button
               type="button"
               onClick={onClose}
               disabled={loading || uploadingMedia}
-              className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              className="px-6 py-2.5 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all font-black text-[10px] uppercase tracking-widest"
             >
               Cancel
             </button>
             <button
+              id="ar-modal-save"
               type="submit"
               disabled={loading || uploadingMedia}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              className="flex items-center space-x-2 px-8 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-lg shadow-blue-600/20 font-black text-[10px] uppercase tracking-widest active:scale-95"
             >
               {(loading || uploadingMedia) && <Loader className="w-4 h-4 animate-spin" />}
               <span>{loading || uploadingMedia ? 'Saving...' : rule ? 'Update Rule' : 'Create Rule'}</span>
