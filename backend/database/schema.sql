@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS messages (
   is_outgoing BOOLEAN NOT NULL DEFAULT FALSE,
   has_media BOOLEAN NOT NULL DEFAULT FALSE,
   media_file_name VARCHAR(255),
-  is_encrypted BOOLEAN NOT NULL DEFAULT FALSE
+  is_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
+import asyncio
 from typing import List
 from app.core.database import db
 from app.core.security import get_current_user
@@ -22,10 +23,14 @@ import zipfile
 import rarfile
 import io
 
-# Configure rarfile to use WinRAR's UnRAR tool if available
-RAR_TOOL_PATH = r"C:\Program Files\WinRAR\UnRAR.exe"
-if os.path.exists(RAR_TOOL_PATH):
-    rarfile.UNRAR_TOOL = RAR_TOOL_PATH
+# Configure rarfile tool path
+if os.name == 'nt':  # Windows
+    RAR_TOOL_PATH = r"C:\Program Files\WinRAR\UnRAR.exe"
+    if os.path.exists(RAR_TOOL_PATH):
+        rarfile.UNRAR_TOOL = RAR_TOOL_PATH
+else:  # Linux
+    # On Linux, assume 'unrar' is in the system PATH
+    rarfile.UNRAR_TOOL = "unrar"
 
 
 logger = logging.getLogger(__name__)
@@ -391,57 +396,24 @@ async def create_account(
     
     tdata.file.close()
 
-    # Try to auto-connect the account
-    try:
-        connected = await telethon_service.connect_session(account_id)
-        
-        if not connected:
-            # Connection failed, delete the account and session file
-            await db.execute(
-                "DELETE FROM telegram_accounts WHERE id = $1",
-                account_id
-            )
-            if os.path.exists(session_location):
-                os.remove(session_location)
-            
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to connect to Telegram. Please check your session file and try again.",
-            )
-        
-        # Update last_used to place account at top of list
-        await db.execute(
-            "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
-            account_id
-        )
-        
-        logger.info(f"New Telegram account created and connected: {account_name} for user {current_user.user_id}")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Connection error, delete the account and session file
-        error_msg = str(e)
-        logger.error(f"Error connecting new account {account_name}: {e}")
-        
-        await db.execute(
-            "DELETE FROM telegram_accounts WHERE id = $1",
-            account_id
-        )
-        if os.path.exists(session_location):
-            os.remove(session_location)
-        
-        # If the error message is already one of our descriptive ones, use it directly
-        if "banned" in error_msg.lower() or "deactivated" in error_msg.lower() or "expired" in error_msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg,
-            )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to connect to Telegram: {str(e)}",
-        )
+    # Start connection in background to avoid HTTP timeout
+    async def start_initial_connection():
+        try:
+            connected = await telethon_service.connect_session(account_id)
+            if connected:
+                # Update last_used to place account at top of list
+                await db.execute(
+                    "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
+                    account_id
+                )
+                logger.info(f"Background connection successful for new account: {account_name}")
+            else:
+                logger.error(f"Background connection failed for new account: {account_name}")
+        except Exception as e:
+            logger.error(f"Error in background connection for {account_name}: {e}")
+
+    # Fire and forget the connection task
+    asyncio.create_task(start_initial_connection())
 
     account = await db.fetchrow(
         "SELECT * FROM telegram_accounts WHERE id = $1 AND is_active = true",
@@ -457,7 +429,7 @@ async def create_account(
         "target_language": account['target_language'],
         "created_at": account['created_at'],
         "last_used": account['last_used'],
-        "is_connected": True,
+        "is_connected": False, # Initially false as it's connecting in background
     }
 
 

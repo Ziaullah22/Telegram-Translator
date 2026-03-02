@@ -23,9 +23,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      // Token expired, invalid, or account deactivated
-      Cookies.remove('auth_token');
+    // Only redirect to login if we have a 401/403 on a non-auth endpoint
+    // This allows login/register to handle their own errors
+    if ((error.response?.status === 401 || error.response?.status === 403) &&
+      !error.config.url?.includes('/auth/login') &&
+      !error.config.url?.includes('/auth/register')) {
+      Cookies.remove('auth_token', { path: '/' });
       window.location.href = '/login';
     }
     return Promise.reject(error);

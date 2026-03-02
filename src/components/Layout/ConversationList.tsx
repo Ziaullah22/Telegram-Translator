@@ -1,8 +1,7 @@
-import { MessageCircle, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { MessageCircle, Search, Loader2, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
-import SearchUsersModal from '../Modals/SearchUsersModal';
 
 interface ConversationListProps {
   conversations: TelegramChat[];
@@ -51,7 +50,47 @@ export default function ConversationList({
   accountId,
   onConversationCreated,
 }: ConversationListProps) {
-  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounced search logic
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (searchQuery.trim().length === 0) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      if (!accountId || !isConnected) {
+        setIsSearching(false);
+        return;
+      }
+
+      try {
+        const results = await telegramAPI.searchUsers(accountId, searchQuery);
+        setSearchResults(results);
+      } catch (error) {
+        console.error('Search failed:', error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400); // 400ms debounce
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, accountId, isConnected]);
 
   const handleUserSelect = async (user: TelegramUserSearchResult) => {
     if (!accountId) return;
@@ -76,13 +115,22 @@ export default function ConversationList({
         username: user.username,
         type: 'private',
       } as TelegramChat);
+
+      // Clear search after selecting
+      setSearchQuery('');
     } catch (error) {
       console.error('Failed to create conversation:', error);
     }
   };
 
-  const getConversationAvatar = (conversation: TelegramChat) => {
-    const name = conversation.title || conversation.username || '?';
+  const getConversationAvatar = (conversation: TelegramChat | TelegramUserSearchResult) => {
+    let name = '';
+    if ('title' in conversation) {
+      name = conversation.title || (conversation as any).username || '?';
+    } else {
+      name = conversation.username || `${(conversation as any).first_name || ''} ${(conversation as any).last_name || ''}`.trim() || '?';
+    }
+
     const parts = name.split(' ').filter(Boolean);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return name.charAt(0).toUpperCase();
@@ -105,26 +153,93 @@ export default function ConversationList({
   };
 
   return (
-    <>
-      <div id="conversation-list" className="w-80 bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white">Conversations</h2>
-          <button
-            onClick={() => setShowSearchModal(true)}
+    <div id="conversation-list" className="w-80 bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300">
+      {/* Header with Search Bar */}
+      <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 space-y-3">
+        <div className="relative group">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-[#419FD9]' : 'text-gray-400 dark:text-gray-500'}`} />
+          </div>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             disabled={!isConnected}
-            className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed transition-all duration-300 shadow-md shadow-blue-600/20"
-            title="Search users"
-          >
-            <UserPlus className="w-4 h-4 text-white" />
-          </button>
+            placeholder={isConnected ? "Search chats or usernames..." : "Connect account to search..."}
+            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[#419FD9] dark:focus:border-[#419FD9] rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {isSearching && (
+            <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
+              <Loader2 className="w-4 h-4 text-[#419FD9] animate-spin" />
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Conversations List */}
-        <div id="conversation-list-items" className="flex-1 overflow-y-auto">
-          {conversations.length === 0 ? (
+      {/* List Space */}
+      <div id="list-container" className="flex-1 overflow-y-auto">
+        {searchQuery.trim() ? (
+          /* Search Results View */
+          <div className="flex flex-col">
+            <div className="px-4 py-2 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
+              Global Search Results
+            </div>
+            {isSearching && searchResults.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
+                Searching Telegram...
+              </div>
+            ) : searchResults.length === 0 && !isSearching ? (
+              <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
+                No users found for "{searchQuery}"
+              </div>
+            ) : (
+              searchResults.map((user) => {
+                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
+                const subtitle = user.username ? `@${user.username}` : user.phone || 'User';
+                const avatarLabel = getConversationAvatar(user);
+                const avatarColor = getAvatarColor(displayName);
+
+                return (
+                  <div
+                    key={user.id}
+                    onClick={() => handleUserSelect(user)}
+                    className="flex items-center px-3 py-2.5 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5 last:border-0"
+                  >
+                    <div
+                      className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-lg shadow-sm"
+                      style={{ backgroundColor: avatarColor }}
+                    >
+                      {avatarLabel}
+                    </div>
+                    <div className="flex-1 min-w-0 ml-3">
+                      <h3 className="text-sm font-semibold truncate text-gray-900 dark:text-white">
+                        {displayName}
+                      </h3>
+                      <p className="text-xs text-[#4da2d9] truncate">
+                        {subtitle}
+                      </p>
+                    </div>
+                    <div className="text-gray-300 dark:text-gray-600 pr-2">
+                      <MessageCircle className="w-4 h-4" />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          /* Normal Conversations View */
+          conversations.length === 0 ? (
             <div className="p-10 text-center">
-              <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4 opacity-50" />
+              <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4 opacity-30" />
               <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
                 {isConnected ? 'No conversations yet' : 'Connect account to see conversations'}
               </p>
@@ -142,14 +257,14 @@ export default function ConversationList({
                 <div
                   key={conversation.id}
                   onClick={() => onConversationSelect(conversation)}
-                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-colors duration-150 ${isActive
-                    ? 'bg-[#419FD9]'
+                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 ${isActive
+                    ? 'bg-[#419FD9] shadow-inner'
                     : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                     }`}
                 >
                   {/* Avatar */}
                   <div
-                    className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-lg"
+                    className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-lg shadow-sm"
                     style={{ backgroundColor: isActive ? '#60b4e8' : avatarColor }}
                   >
                     {avatarLabel}
@@ -163,12 +278,12 @@ export default function ConversationList({
                       </h3>
                       <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
                         {isOutgoing && (
-                          <svg className={`w-3 h-3 ${isActive ? 'text-blue-200' : 'text-blue-400 dark:text-blue-400'}`} fill="currentColor" viewBox="0 0 20 20">
+                          <svg className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-[#419FD9] dark:text-[#419FD9]'}`} fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
                         )}
                         {conversation.lastMessage && (
-                          <span className={`text-[11px] ${isActive ? 'text-blue-200' : 'text-gray-400 dark:text-gray-500'}`}>
+                          <span className={`text-[11px] ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`}>
                             {formatConvDate(conversation.lastMessage.created_at)}
                           </span>
                         )}
@@ -176,11 +291,11 @@ export default function ConversationList({
                     </div>
 
                     <div className="flex items-center justify-between mt-0.5">
-                      <p className={`text-xs truncate ${isActive ? 'text-blue-100' : 'text-gray-500 dark:text-[#4da2d9]'}`}>
+                      <p className={`text-xs truncate ${isActive ? 'text-blue-50' : 'text-gray-500 dark:text-gray-400'}`}>
                         {lastPreview}
                       </p>
                       {unread > 0 && (
-                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold text-white ${isActive ? 'bg-white/30' : 'bg-[#40A7E3]'}`}>
+                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black text-white ${isActive ? 'bg-white/30' : 'bg-[#40A7E3]'}`}>
                           {unread}
                         </span>
                       )}
@@ -189,18 +304,9 @@ export default function ConversationList({
                 </div>
               );
             })
-          )}
-        </div>
+          )
+        )}
       </div>
-
-      {/* Search Modal */}
-      <SearchUsersModal
-        isOpen={showSearchModal}
-        onClose={() => setShowSearchModal(false)}
-        accountId={accountId || 0}
-        isConnected={isConnected}
-        onUserSelect={handleUserSelect}
-      />
-    </>
+    </div>
   );
 }

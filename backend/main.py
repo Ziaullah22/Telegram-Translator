@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request
+import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -186,18 +187,22 @@ async def lifespan(app: FastAPI):
 
     telethon_service.add_message_handler(handle_new_message)
     
-    # Auto-connect accounts from database
-    try:
-        accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
-        logger.info(f"Auto-connecting {len(accounts)} active account(s)...")
-        for account in accounts:
-            try:
-                await telethon_service.connect_session(account['id'])
-                logger.info(f"\u2713 Connected account: {account['display_name']}")
-            except Exception as e:
-                logger.error(f"\u2717 Error connecting account {account['display_name']}: {e}")
-    except Exception as e:
-        logger.error(f"Error fetching accounts for auto-connect: {e}")
+    # Auto-connect accounts from database in the background
+    async def auto_connect_accounts():
+        try:
+            accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
+            logger.info(f"Auto-connecting {len(accounts)} active account(s)...")
+            for account in accounts:
+                try:
+                    await telethon_service.connect_session(account['id'])
+                    logger.info(f"\u2713 Connected account: {account['display_name']}")
+                except Exception as e:
+                    logger.error(f"\u2717 Error connecting account {account['display_name']}: {e}")
+        except Exception as e:
+            logger.error(f"Error fetching accounts for auto-connect: {e}")
+
+    # Fire and forget the connection task
+    asyncio.create_task(auto_connect_accounts())
 
     # Start scheduler
     await scheduler_service.start()
