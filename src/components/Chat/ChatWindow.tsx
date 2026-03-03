@@ -926,6 +926,7 @@ export default function ChatWindow({
         {/* Top action row: Templates + Manage */}
         <div className="flex items-center space-x-2 mb-3">
           <button
+            id="chat-templates-btn"
             type="button"
             onClick={() => setShowTemplates(!showTemplates)}
             disabled={!isConnected || !currentConversation}
@@ -935,6 +936,7 @@ export default function ChatWindow({
             <span>Templates</span>
           </button>
           <button
+            id="chat-templates-manage-btn"
             type="button"
             onClick={() => setShowTemplatesModal(true)}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
@@ -1079,6 +1081,7 @@ export default function ChatWindow({
 
           {/* Schedule button */}
           <button
+            id="chat-schedule-btn"
             type="button"
             onClick={() => setShowScheduleModal(true)}
             disabled={!newMessage.trim() || !isConnected || !currentConversation}

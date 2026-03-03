@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev:backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "cd backend && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
     "dev:client": "vite --host",
     "dev:admin": "cd admin && npm run dev",
     "build": "vite build",
@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "install:all": "npm install && cd admin && npm install && cd ../backend && pip install -r requirements.txt",
-    "setup:admin": "cd backend && python setup_admin.py"
+    "setup:admin": "cd backend && .\\venv\\Scripts\\python.exe setup_admin.py"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",

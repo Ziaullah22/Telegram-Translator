@@ -137,6 +137,30 @@ export const allTourSteps: TourStep[] = [
         group: 'main',
         placement: 'top'
     },
+    // ── STEP 13: Message Templates ──────────────────────────────────────────
+    {
+        title: "Quick Templates",
+        description: "Click here to see your list of saved message templates for one-tap replies. Perfect for common business responses.",
+        targetId: 'chat-templates-btn',
+        group: 'main',
+        placement: 'top'
+    },
+    // ── STEP 14: Template Management ────────────────────────────────────────
+    {
+        title: "Manage Templates",
+        description: "Click 'Manage' to create, edit, or delete your own custom message templates tailored to your workflow.",
+        targetId: 'chat-templates-manage-btn',
+        group: 'main',
+        placement: 'top'
+    },
+    // ── STEP 15: Message Scheduling ─────────────────────────────────────────
+    {
+        title: "Smart Scheduling",
+        description: "Use the Clock icon to schedule a message. You can set it to send automatically at any specific date and time in the future.",
+        targetId: 'chat-schedule-btn',
+        group: 'main',
+        placement: 'top'
+    },
     // ── STEP 13: CRM — single step highlighting full CRM modal ───────────────
     {
         title: "Integrated Contact CRM",
