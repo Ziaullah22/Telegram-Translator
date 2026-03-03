@@ -21,8 +21,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-*.env
+# .env
+# *.env
 *.pyc
 *.pyo
 *.pyd
@@ -53,7 +53,7 @@ backend/media/
 Thumbs.db
 
 # Admin panel security files
-backend/.admin_key
-backend/.admin_password
-.admin_key
-.admin_password
+# backend/.admin_key
+# backend/.admin_password
+# .admin_key
+# .admin_password
