@@ -129,8 +129,8 @@ async def lifespan(app: FastAPI):
                 """,
                 conversation_id,
                 message_data['message_id'],
-                message_data['sender_id'],
-                message_data['sender_name'],
+                message_data.get('sender_id'),
+                message_data.get('sender_name', 'Unknown'),
                 message_data.get('sender_username') or 'User',
                 msg_type,
                 processed_original,
@@ -153,9 +153,9 @@ async def lifespan(app: FastAPI):
                 "conversation_id": conversation_id,
                 "telegram_message_id": message_data['message_id'],
                 "sender_user_id": message_data['sender_id'],
-                "sender_name": message_data['sender_name'],
-                "sender_username": message_data['sender_username'],
-                "peer_title": message_data['peer_title'],
+                "sender_name": message_data.get('sender_name', 'Unknown'),
+                "sender_username": message_data.get('sender_username'),
+                "peer_title": message_data.get('peer_title', ''),
                 "type": msg_type,
                 "original_text": text,
                 "translated_text": translated_text,
@@ -170,6 +170,7 @@ async def lifespan(app: FastAPI):
             await manager.send_to_account(
                 {
                     "type": "new_message",
+                    "account_id": account_id,
                     "message": message_response
                 },
                 account_id,

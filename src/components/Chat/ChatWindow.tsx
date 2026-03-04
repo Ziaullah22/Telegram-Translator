@@ -240,6 +240,8 @@ interface ChatWindowProps {
   onJoinConversation?: (conversationId: number) => Promise<void>;
   onToggleMute?: (conversationId: number) => Promise<void>;
   conversationId?: number;
+  hasMoreMessages?: boolean;
+  onLoadMoreMessages?: () => Promise<void>;
 }
 
 export default function ChatWindow({
@@ -254,9 +256,12 @@ export default function ChatWindow({
   onJoinConversation,
   onToggleMute,
   conversationId,
+  hasMoreMessages = false,
+  onLoadMoreMessages,
 }: ChatWindowProps) {
   const [newMessage, setNewMessage] = useState('');
   const [translating, setTranslating] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -324,7 +329,9 @@ export default function ChatWindow({
   const [uploadingFile, setUploadingFile] = useState(false);
   const [loadedImages, setLoadedImages] = useState<Record<number, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevScrollHeightRef = useRef<number>(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -342,9 +349,37 @@ export default function ChatWindow({
       (message.type === 'auto_reply' && message.media_file_name?.match(/\.(mp4|webm|mov|avi)$/i));
   };
 
+  // Scroll detection for infinite scroll (load older messages on scroll to top)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = async () => {
+      if (container.scrollTop <= 10 && hasMoreMessages && !loadingMore && onLoadMoreMessages) {
+        // Save scroll height before loading
+        prevScrollHeightRef.current = container.scrollHeight;
+        setLoadingMore(true);
+        await onLoadMoreMessages();
+        setLoadingMore(false);
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [hasMoreMessages, loadingMore, onLoadMoreMessages]);
+
+  // After loading older messages, restore scroll position
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || !loadingMore) return;
+    // Restore position: new scrollHeight - old scrollHeight
+    const newScrollHeight = container.scrollHeight;
+    container.scrollTop = newScrollHeight - prevScrollHeightRef.current;
+  });
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages.length > 0 && messages[messages.length - 1]?.id]);
 
   useEffect(() => {
     loadTemplates();
@@ -682,7 +717,19 @@ export default function ChatWindow({
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-6 dark:bg-[#0E1621] chat-telegram-bg">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 dark:bg-[#0E1621] chat-telegram-bg">
+        {/* Loading older messages spinner */}
+        {loadingMore && (
+          <div className="flex justify-center py-3">
+            <div className="flex items-center space-x-2 text-xs text-gray-400 bg-black/10 dark:bg-white/5 px-4 py-2 rounded-full">
+              <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              <span>Loading older messages...</span>
+            </div>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <Languages className="w-16 h-16 text-gray-600 mx-auto mb-4" />
@@ -927,6 +974,7 @@ export default function ChatWindow({
           </div>
         )}
 
+        {showTemplates && <div id="templates-menu-state-open" className="hidden" />}
         {/* Top action row: Templates + Manage */}
         <div className="flex items-center space-x-2 mb-3">
           <button

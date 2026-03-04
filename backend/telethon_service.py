@@ -5,12 +5,24 @@ from typing import Dict, Optional, List, Callable
 from telethon import TelegramClient, events
 from telethon.tl.types import User, Chat, Channel, Message, PeerUser, PeerChat, PeerChannel
 from telethon.errors import FloodWaitError, UserDeactivatedError, AuthKeyUnregisteredError, SessionPasswordNeededError
+from telethon.sessions import SQLiteSession
 from app.core.config import settings
 from database import db
 import json
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+
+class WALSQLiteSession(SQLiteSession):
+    """SQLiteSession subclass that enables WAL mode to prevent 'database is locked' errors."""
+    def __init__(self, session_id):
+        super().__init__(session_id)
+        try:
+            self._db_query("PRAGMA journal_mode=WAL")
+            self._db_query("PRAGMA synchronous=NORMAL")
+        except Exception as e:
+            logger.warning(f"Could not set WAL mode: {e}")
 
 class TelegramSession:
     def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str):
@@ -26,7 +38,8 @@ class TelegramSession:
 
     async def connect(self):
         try:
-            session = self.session_filepath
+            # Use WAL-mode SQLite session to prevent "database is locked" errors
+            session = WALSQLiteSession(self.session_filepath)
 
             self.client = TelegramClient(
                 session,
@@ -402,6 +415,85 @@ class TelegramSession:
             logger.error(f"Error joining chat {peer_id} for account {self.account_id}: {e}")
             raise
 
+    async def get_history(self, peer_id: int, limit: int = 50):
+        """Fetch message history for a peer without extra API calls to avoid SQLite lock"""
+        if not self.client or not self.is_connected:
+            return []
+
+        try:
+            messages = await self.client.get_messages(peer_id, limit=limit)
+            result = []
+
+            for msg in messages:
+                # Extract sender name from already-fetched msg.sender (no extra API call needed)
+                sender_name = "Unknown"
+                sender_username = None
+                if msg.sender:
+                    sender = msg.sender
+                    if hasattr(sender, 'first_name') or hasattr(sender, 'last_name'):
+                        parts = []
+                        if getattr(sender, 'first_name', None):
+                            parts.append(sender.first_name)
+                        if getattr(sender, 'last_name', None):
+                            parts.append(sender.last_name)
+                        sender_name = " ".join(parts) if parts else getattr(sender, 'username', None) or "Unknown"
+                    elif hasattr(sender, 'title'):
+                        sender_name = sender.title or "Unknown"
+                    sender_username = getattr(sender, 'username', None)
+
+                # Determine message type and extract filename
+                msg_type = "text"
+                has_media = False
+                media_filename = None
+                
+                if msg.photo:
+                    msg_type = "photo"
+                    has_media = True
+                    media_filename = f"photo_{msg.id}.jpg"
+                elif msg.video:
+                    msg_type = "video"
+                    has_media = True
+                    if msg.document and hasattr(msg.document, 'attributes'):
+                        for attr in msg.document.attributes:
+                            if hasattr(attr, 'file_name'):
+                                media_filename = attr.file_name
+                                break
+                    if not media_filename:
+                        media_filename = f"video_{msg.id}.mp4"
+                elif msg.voice:
+                    msg_type = "voice"
+                    has_media = True
+                    media_filename = f"voice_{msg.id}.ogg"
+                elif msg.document:
+                    msg_type = "document"
+                    has_media = True
+                    if hasattr(msg.document, 'attributes'):
+                        for attr in msg.document.attributes:
+                            if hasattr(attr, 'file_name'):
+                                media_filename = attr.file_name
+                                break
+                    if not media_filename:
+                        media_filename = f"document_{msg.id}"
+
+                result.append({
+                    "message_id": msg.id,
+                    "text": msg.text or msg.message or "",
+                    "sender_id": msg.sender_id,
+                    "sender_name": sender_name,
+                    "sender_username": sender_username,
+                    "peer_id": peer_id,
+                    "date": msg.date,
+                    "is_outgoing": msg.out,
+                    "type": msg_type,
+                    "has_media": has_media,
+                    "media_filename": media_filename
+                })
+
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching history for {self.account_id}: {e}")
+            return []
+
     def _get_peer_id(self, entity) -> int:
         if isinstance(entity, User):
             return entity.id
@@ -589,6 +681,40 @@ class TelethonService:
             raise Exception("Session not connected")
 
         return await session.join_chat(peer_id)
+
+    async def fetch_and_save_history(self, account_id: int, peer_id: int, limit: int = 50):
+        """Fetch history and trigger handlers to save to DB as a background task"""
+        # Run in background to avoid blocking the caller
+        asyncio.create_task(self._do_fetch_history(account_id, peer_id, limit))
+        return True
+
+    async def _do_fetch_history(self, account_id: int, peer_id: int, limit: int):
+        """Internal background worker for history fetching"""
+        try:
+            session = self.sessions.get(account_id)
+            if not session:
+                logger.warning(f"Cannot fetch history: session {account_id} not connected")
+                return
+
+            logger.info(f"Background fetching history for account {account_id}, peer {peer_id}")
+            messages = await session.get_history(peer_id, limit=limit)
+            if not messages:
+                logger.info(f"No history found for peer {peer_id}")
+                return
+            
+            # Sort by date ascending so they are processed in order
+            messages.sort(key=lambda x: x['date'])
+            
+            for msg_data in messages:
+                msg_data['account_id'] = account_id
+                for handler in self.message_handlers:
+                    try:
+                        await handler(msg_data)
+                    except Exception as e:
+                        logger.error(f"Error in handler during history catchup: {e}")
+            logger.info(f"Successfully caught up {len(messages)} historical messages for peer {peer_id}")
+        except Exception as e:
+            logger.error(f"Background history fetch failed: {e}")
 
     async def _setup_event_handlers(self, session: TelegramSession):
         @session.client.on(events.NewMessage)

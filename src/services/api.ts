@@ -233,9 +233,9 @@ export const conversationsAPI = {
 
 // Messages API
 export const messagesAPI = {
-  getMessages: async (conversationId: number, limit: number = 50) => {
+  getMessages: async (conversationId: number, limit: number = 30, before_id?: number) => {
     const response = await api.get(`/messages/conversations/${conversationId}/messages`, {
-      params: { limit }
+      params: { limit, ...(before_id ? { before_id } : {}) }
     });
     return response.data;
   },

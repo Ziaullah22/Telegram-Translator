@@ -837,6 +837,9 @@ async def join_conversation(
         conversation_id
     )
 
+    # Fetch previous history (last 50 messages) in background to prevent timeout
+    await telethon_service.fetch_and_save_history(conv['telegram_account_id'], conv['telegram_peer_id'], limit=50)
+
     # Insert a "You joined this group/channel" system message
     # Get conversation info to choose text
     conv_info = await db.fetchrow("SELECT type, title FROM conversations WHERE id = $1", conversation_id)

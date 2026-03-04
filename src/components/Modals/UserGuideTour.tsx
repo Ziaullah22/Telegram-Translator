@@ -5,7 +5,7 @@ interface TourStep {
     title: string;
     description: string;
     targetId: string;
-    requirement?: 'must_open_modal' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder' | 'ar_modal_open' | 'ar_modal_close' | 'account_selected' | 'chat_selected' | 'search_visible';
+    requirement?: 'must_open_modal' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder' | 'ar_modal_open' | 'ar_modal_close' | 'account_selected' | 'chat_selected' | 'search_visible' | 'templates_menu_open' | 'templates_modal_open' | 'templates_modal_close' | 'schedule_modal_open' | 'schedule_modal_close';
     group?: 'main' | 'auto-responder';
     // placement: where to put popup relative to the highlighted element
     placement: 'left' | 'right' | 'top' | 'bottom';
@@ -140,26 +140,70 @@ export const allTourSteps: TourStep[] = [
     // ── STEP 13: Message Templates ──────────────────────────────────────────
     {
         title: "Quick Templates",
-        description: "Click here to see your list of saved message templates for one-tap replies. Perfect for common business responses.",
+        description: "ACTION REQUIRED: Click here to see your list of saved message templates. (If nothing happens, it means you have no templates yet! The tour will auto-continue).",
         targetId: 'chat-templates-btn',
+        requirement: 'templates_menu_open',
         group: 'main',
         placement: 'top'
     },
     // ── STEP 14: Template Management ────────────────────────────────────────
     {
         title: "Manage Templates",
-        description: "Click 'Manage' to create, edit, or delete your own custom message templates tailored to your workflow.",
+        description: "ACTION REQUIRED: Click 'Manage' to open the template manager, where you can create, edit, or delete custom message templates.",
         targetId: 'chat-templates-manage-btn',
+        requirement: 'templates_modal_open',
         group: 'main',
         placement: 'top'
+    },
+    // ── Inside Templates Modal ──────────────────────────────────────────────
+    {
+        title: "Template Manager",
+        description: "Here you can view and manage all your templates. These templates sync across all your connected accounts for quick access.",
+        targetId: 'templates-modal-container',
+        group: 'main',
+        placement: 'right'
+    },
+    {
+        title: "Create a Template",
+        description: "You can click here to add a new template. Templates allow you to respond instantly to common questions without retyping them.",
+        targetId: 'templates-modal-create-btn',
+        group: 'main',
+        placement: 'bottom'
+    },
+    // ── Close Templates Modal ──────────────────────────────────────────────
+    {
+        title: "Close Template Manager",
+        description: "ACTION REQUIRED: Click the X to close the template manager before continuing to the next step.",
+        targetId: 'templates-modal-close-btn',
+        requirement: 'templates_modal_close',
+        group: 'main',
+        placement: 'bottom'
     },
     // ── STEP 15: Message Scheduling ─────────────────────────────────────────
     {
         title: "Smart Scheduling",
-        description: "Use the Clock icon to schedule a message. You can set it to send automatically at any specific date and time in the future.",
+        description: "ACTION REQUIRED: To enable this button, you first need to type something in the message box! Once enabled, click the Clock icon to open the message scheduler.",
         targetId: 'chat-schedule-btn',
+        requirement: 'schedule_modal_open',
         group: 'main',
         placement: 'top'
+    },
+    // ── Inside Schedule Modal ──────────────────────────────────────────────
+    {
+        title: "Schedule Message",
+        description: "Set the number of days to delay the message. If the contact replies before the countdown finishes, this automation is automatically cancelled to prevent out-of-context replies.",
+        targetId: 'schedule-modal-container',
+        group: 'main',
+        placement: 'right'
+    },
+    // ── Close Schedule Modal ──────────────────────────────────────────────
+    {
+        title: "Close Scheduler",
+        description: "ACTION REQUIRED: Click the X to close the scheduler.",
+        targetId: 'schedule-modal-close-btn',
+        requirement: 'schedule_modal_close',
+        group: 'main',
+        placement: 'bottom'
     },
     // ── STEP 13: CRM — single step highlighting full CRM modal ───────────────
     {
@@ -306,6 +350,9 @@ export default function UserGuideTour({
     const isCrmOpen = !!document.getElementById('crm-modal-container');
     const isConvListInDOM = !!document.getElementById('conversation-list');
     const isSearchInDOM = !!document.getElementById('search-container');
+    const isTemplatesMenuOpen = !!document.getElementById('templates-menu-state-open');
+    const isTemplatesModalInDOM = !!document.getElementById('templates-modal-container');
+    const isScheduleModalInDOM = !!document.getElementById('schedule-modal-container');
 
     // Filter steps when tour opens based on starting page
     useEffect(() => {
@@ -401,6 +448,26 @@ export default function UserGuideTour({
     } else if (step.requirement === 'ar_modal_close' && isArModalInDOM) {
         isBlocked = true;
         badgeText = "Close the Rule Editor First";
+
+    } else if (step.requirement === 'templates_menu_open' && !isTemplatesMenuOpen) {
+        isBlocked = true;
+        badgeText = "Click 'Templates' to Open Quick Menu";
+
+    } else if (step.requirement === 'templates_modal_open' && !isTemplatesModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click 'Manage' to Open Editor";
+
+    } else if (step.requirement === 'templates_modal_close' && isTemplatesModalInDOM) {
+        isBlocked = true;
+        badgeText = "Close Template Manager First";
+
+    } else if (step.requirement === 'schedule_modal_open' && !isScheduleModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click Clock Icon to Open Scheduler";
+
+    } else if (step.requirement === 'schedule_modal_close' && isScheduleModalInDOM) {
+        isBlocked = true;
+        badgeText = "Close Scheduler First";
 
     } else if (step.requirement === 'is_auto_responder' && !isAutoResponderPage) {
         isBlocked = true;
@@ -511,11 +578,21 @@ export default function UserGuideTour({
         // AR modal closed → advance past close step
         if (!isArModalInDOM && tid === 'ar-modal-close') onStepChange(currentStep + 1);
 
+        // Advance past quick templates if clicked
+        if (isTemplatesMenuOpen && tid === 'chat-templates-btn') onStepChange(currentStep + 1);
+
+        // Modals opened/closed → advance
+        if (isTemplatesModalInDOM && tid === 'chat-templates-manage-btn') onStepChange(currentStep + 1);
+        if (!isTemplatesModalInDOM && tid === 'templates-modal-close-btn') onStepChange(currentStep + 1);
+
+        if (isScheduleModalInDOM && tid === 'chat-schedule-btn') onStepChange(currentStep + 1);
+        if (!isScheduleModalInDOM && tid === 'schedule-modal-close-btn') onStepChange(currentStep + 1);
+
         // Navigated to auto-responder page
         if (isAutoResponderPage && tid === 'nav-auto-responder') onStepChange(currentStep + 1);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, isModalInDOM, isArModalInDOM, isCrmOpen, isAutoResponderPage]);
+    }, [isOpen, isModalInDOM, isArModalInDOM, isCrmOpen, isAutoResponderPage, isTemplatesMenuOpen, isTemplatesModalInDOM, isScheduleModalInDOM]);
 
     if (!isOpen && !showTourEndedNotice) return null;
 

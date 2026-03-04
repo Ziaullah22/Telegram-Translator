@@ -109,7 +109,7 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
+    <div id="templates-modal-container" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
       <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
@@ -120,6 +120,7 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
             <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Message Templates</h2>
           </div>
           <button
+            id="templates-modal-close-btn"
             onClick={onClose}
             className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
           >
@@ -139,6 +140,7 @@ export default function MessageTemplatesModal({ isOpen, onClose }: MessageTempla
           {/* Create New Button */}
           {!isCreating && !editingId && (
             <button
+              id="templates-modal-create-btn"
               onClick={() => setIsCreating(true)}
               className="w-full mb-6 p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-3xl text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all flex flex-col items-center justify-center space-y-2 group"
             >

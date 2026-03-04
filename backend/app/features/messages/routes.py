@@ -49,7 +49,8 @@ async def mark_as_read(
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: int,
-    limit: int = 50,
+    limit: int = 30,
+    before_id: int = None,
     current_user = Depends(get_current_user),
 ):
     conversation = await db.fetchrow(
@@ -67,16 +68,29 @@ async def get_messages(
             detail="Conversation not found",
         )
 
-    messages = await db.fetch(
-        """
-        SELECT * FROM messages
-        WHERE conversation_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        """,
-        conversation_id,
-        limit,
-    )
+    if before_id:
+        messages = await db.fetch(
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = $1 AND id < $2
+            ORDER BY created_at DESC
+            LIMIT $3
+            """,
+            conversation_id,
+            before_id,
+            limit,
+        )
+    else:
+        messages = await db.fetch(
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            conversation_id,
+            limit,
+        )
 
     result = []
     for msg in messages:

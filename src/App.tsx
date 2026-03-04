@@ -45,6 +45,7 @@ function App() {
   const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number; avatar?: string } | null>(null);
   const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
@@ -305,10 +306,28 @@ function App() {
 
   const loadMessages = async (conversationId: number) => {
     try {
-      const messages = await messagesAPI.getMessages(conversationId);
+      const messages = await messagesAPI.getMessages(conversationId, 30);
       setMessages(messages);
+      setHasMoreMessages(messages.length === 30);
     } catch (error) {
       console.error('Failed to load messages:', error);
+    }
+  };
+
+  const loadMoreMessages = async (conversationId: number) => {
+    if (!hasMoreMessages) return;
+    try {
+      // Find the oldest message ID currently loaded
+      const oldestId = messages.length > 0 ? Math.min(...messages.map((m: any) => m.id)) : undefined;
+      const older = await messagesAPI.getMessages(conversationId, 30, oldestId);
+      if (older.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+      setMessages(prev => [...older, ...prev]);
+      setHasMoreMessages(older.length === 30);
+    } catch (error) {
+      console.error('Failed to load more messages:', error);
     }
   };
 
@@ -630,8 +649,10 @@ function App() {
                       await loadConversations(currentAccount.id);
                       // Update current conversation state to reflect it's no longer hidden
                       setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
-                      // Reload messages to get full history if it was blocked before
+                      // Immediately load any already-saved messages
                       loadMessages(id);
+                      // Backend fetches history in background (with translation), reload after 5s to catch them
+                      setTimeout(() => loadMessages(id), 5000);
                     }
                   } catch (error) {
                     console.error('Failed to join conversation:', error);
@@ -647,6 +668,8 @@ function App() {
                   }
                 }}
                 conversationId={currentConversation?.id}
+                hasMoreMessages={hasMoreMessages}
+                onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
               />
             </div>
           } />

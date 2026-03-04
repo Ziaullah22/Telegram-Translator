@@ -61,7 +61,7 @@ export default function ScheduleMessageModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
+    <div id="schedule-modal-container" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
       <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
@@ -72,6 +72,7 @@ export default function ScheduleMessageModal({
             <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Schedule Message</h2>
           </div>
           <button
+            id="schedule-modal-close-btn"
             onClick={handleClose}
             className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
           >
