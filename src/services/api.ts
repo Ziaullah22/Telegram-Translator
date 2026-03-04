@@ -165,8 +165,24 @@ export const telegramAPI = {
     title?: string;
     username?: string;
     type?: string;
+    is_hidden?: boolean;
   }) => {
     const response = await api.post(`/telegram/accounts/${accountId}/conversations`, data);
+    return response.data;
+  },
+
+  unhideConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/unhide`);
+    return response.data;
+  },
+
+  joinConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/join`);
+    return response.data;
+  },
+
+  toggleMute: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/toggle_mute`);
     return response.data;
   },
 };

@@ -47,6 +47,8 @@ export interface TelegramChat {
   participantCount?: number;
   lastMessage?: TelegramMessage;
   unreadCount?: number;
+  is_hidden?: boolean;
+  is_muted?: boolean;
 }
 
 export interface TranslationResult {
@@ -128,6 +130,8 @@ export interface TelegramUserSearchResult {
   last_name?: string;
   phone?: string;
   is_contact: boolean;
+  title?: string;
+  type: 'user' | 'group' | 'supergroup' | 'channel';
 }
 
 export interface AutoResponderRule {

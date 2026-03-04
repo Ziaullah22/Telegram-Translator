@@ -1,4 +1,4 @@
-import { MessageCircle, Search, Loader2, X } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
@@ -100,11 +100,14 @@ export default function ConversationList({
       if (user.last_name) titleParts.push(user.last_name);
       const title = titleParts.length > 0 ? titleParts.join(' ') : user.username || 'Unknown';
 
+      const isGroup = user.type === 'group' || user.type === 'supergroup' || user.type === 'channel';
+
       const conversation = await telegramAPI.createConversation(accountId, {
         telegram_peer_id: user.id,
-        title,
+        title: user.title || title,
         username: user.username,
-        type: 'private',
+        type: user.type,
+        is_hidden: isGroup, // Hide groups/channels from list until joined
       });
 
       if (onConversationCreated) await onConversationCreated();
@@ -113,7 +116,8 @@ export default function ConversationList({
         id: conversation.id,
         title: conversation.title,
         username: user.username,
-        type: 'private',
+        type: user.type,
+        is_hidden: conversation.is_hidden,
       } as TelegramChat);
 
       // Clear search after selecting
@@ -149,7 +153,20 @@ export default function ConversationList({
     if (msg.type === 'location') return '📍 Location';
     if (msg.type === 'contact') return '👤 Contact';
     if (msg.type === 'poll') return '📊 Poll';
+    if (msg.type === 'auto_reply') return '⚡ ' + (msg.translated_text || msg.original_text);
     return '💬 Message';
+  };
+
+  const getResultIcon = (type: string) => {
+    switch (type) {
+      case 'group':
+      case 'supergroup':
+        return <Users className="w-4 h-4" />;
+      case 'channel':
+        return <Megaphone className="w-4 h-4" />;
+      default:
+        return <MessageCircle className="w-4 h-4" />;
+    }
   };
 
   return (
@@ -227,8 +244,8 @@ export default function ConversationList({
                         {subtitle}
                       </p>
                     </div>
-                    <div className="text-gray-300 dark:text-gray-600 pr-2">
-                      <MessageCircle className="w-4 h-4" />
+                    <div className="text-[#4da2d9] pr-2 opacity-70">
+                      {getResultIcon(user.type)}
                     </div>
                   </div>
                 );
@@ -282,6 +299,9 @@ export default function ConversationList({
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
                         )}
+                        {conversation.is_muted && (
+                          <BellOff className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`} />
+                        )}
                         {conversation.lastMessage && (
                           <span className={`text-[11px] ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`}>
                             {formatConvDate(conversation.lastMessage.created_at)}
@@ -295,7 +315,7 @@ export default function ConversationList({
                         {lastPreview}
                       </p>
                       {unread > 0 && (
-                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black text-white ${isActive ? 'bg-white/30' : 'bg-[#40A7E3]'}`}>
+                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black text-white ${isActive ? 'bg-white/30' : conversation.is_muted ? 'bg-gray-400 dark:bg-gray-500' : 'bg-[#40A7E3]'}`}>
                           {unread}
                         </span>
                       )}

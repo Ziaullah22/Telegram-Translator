@@ -68,6 +68,8 @@ class ConversationResponse(BaseModel):
     last_message_at: Optional[datetime]
     last_message: Optional['MessageResponse'] = None
     unread_count: int = 0
+    is_hidden: bool = False
+    is_muted: bool = False
 
 class MessageType(str, Enum):
     text = "text"
@@ -253,14 +255,18 @@ class ContactInfoResponse(BaseModel):
 # User Search
 class UserSearchResult(BaseModel):
     id: int
-    username: Optional[str]
-    first_name: Optional[str]
-    last_name: Optional[str]
-    phone: Optional[str]
-    is_contact: bool
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    is_contact: bool = False
+    title: Optional[str] = None
+    type: str = "user" # "user", "group", "channel"
 
 class ConversationCreate(BaseModel):
     telegram_peer_id: int
     title: Optional[str]
     username: Optional[str]
     type: str = "private"
+    is_hidden: bool = False
+    is_muted: bool = False

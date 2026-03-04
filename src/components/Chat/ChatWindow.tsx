@@ -237,6 +237,8 @@ interface ChatWindowProps {
   targetLanguage: string;
   onSendMessage: (text: string) => Promise<void>;
   onSendMedia: (file: File, caption: string) => Promise<void>;
+  onJoinConversation?: (conversationId: number) => Promise<void>;
+  onToggleMute?: (conversationId: number) => Promise<void>;
   conversationId?: number;
 }
 
@@ -249,6 +251,8 @@ export default function ChatWindow({
   targetLanguage,
   onSendMessage,
   onSendMedia,
+  onJoinConversation,
+  onToggleMute,
   conversationId,
 }: ChatWindowProps) {
   const [newMessage, setNewMessage] = useState('');
@@ -969,128 +973,148 @@ export default function ChatWindow({
         )}
 
         {/* Input row */}
-        <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
-          <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
+        {currentConversation?.is_hidden ? (
+          <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+            <button
+              onClick={() => conversationId && onJoinConversation?.(conversationId)}
+              className="flex-1 py-4 bg-[#419FD9] hover:bg-[#3b8fc4] text-white font-bold uppercase tracking-widest transition-all active:scale-[0.99] flex items-center justify-center"
+            >
+              Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
+            </button>
+          </div>
+        ) : currentConversation?.type === 'channel' ? (
+          <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+            <button
+              onClick={() => conversationId && onToggleMute?.(conversationId)}
+              className="flex-1 py-3 text-[#419FD9] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all active:scale-[0.99]"
+            >
+              {currentConversation.is_muted ? 'Unmute' : 'Mute'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+            <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
 
-          {/* Text input with emoji icon inside */}
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={
-                !currentConversation
-                  ? 'Select a conversation to start messaging'
-                  : isConnected
-                    ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
-                    : 'Connect to an account to start messaging'
-              }
-              className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
-              disabled={!isConnected || !currentConversation || translating}
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-              <button
-                type="button"
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                title="Emojis"
-              >
-                <Smile className="w-5 h-5" />
-              </button>
-              {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
+            {/* Text input with emoji icon inside */}
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder={
+                  !currentConversation
+                    ? 'Select a conversation to start messaging'
+                    : isConnected
+                      ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
+                      : 'Connect to an account to start messaging'
+                }
+                className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
+                disabled={!isConnected || !currentConversation || translating}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="Emojis"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
+                {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
+              </div>
+
+              {/* Emoji Picker Overlay */}
+              {showEmojiPicker && (
+                <div
+                  ref={pickerRef}
+                  style={{
+                    transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
+                    transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
+                  }}
+                  className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
+                >
+                  <div
+                    onMouseDown={onDragStart}
+                    className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span className="text-sm font-black text-gray-900 dark:text-white tracking-wide uppercase">Select Emoji</span>
+                    </div>
+                    <button
+                      onClick={() => setShowEmojiPicker(false)}
+                      className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                    >
+                      <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white dark:bg-gray-800/50">
+                    {emojis.map((group) => (
+                      <div key={group.cat} className="mb-6">
+                        <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
+                        <div className="grid grid-cols-8 gap-1.5">
+                          {group.items.map((emoji, idx) => (
+                            <button
+                              key={`${group.cat}-${idx}`}
+                              type="button"
+                              onClick={() => addEmoji(emoji)}
+                              className="text-2xl hover:bg-blue-500/20 p-2 rounded-xl transition-all transform hover:scale-125 active:scale-90"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Emoji Picker Overlay */}
-            {showEmojiPicker && (
-              <div
-                ref={pickerRef}
-                style={{
-                  transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
-                  transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
-                }}
-                className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
-              >
-                <div
-                  onMouseDown={onDragStart}
-                  className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
-                >
-                  <div className="flex items-center space-x-2">
-                    <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span className="text-sm font-black text-gray-900 dark:text-white tracking-wide uppercase">Select Emoji</span>
-                  </div>
-                  <button
-                    onClick={() => setShowEmojiPicker(false)}
-                    className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
-                  >
-                    <X className="w-4 h-4 text-gray-400" />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white dark:bg-gray-800/50">
-                  {emojis.map((group) => (
-                    <div key={group.cat} className="mb-6">
-                      <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
-                      <div className="grid grid-cols-8 gap-1.5">
-                        {group.items.map((emoji, idx) => (
-                          <button
-                            key={`${group.cat}-${idx}`}
-                            type="button"
-                            onClick={() => addEmoji(emoji)}
-                            className="text-2xl hover:bg-blue-500/20 p-2 rounded-xl transition-all transform hover:scale-125 active:scale-90"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Attachment button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!isConnected || !currentConversation || uploadingFile}
-            className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
-            title="Attach file"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-
-          {/* Send / Send File button */}
-          {selectedFile ? (
+            {/* Attachment button */}
             <button
               type="button"
-              onClick={handleSendFile}
-              disabled={uploadingFile || !isConnected || !currentConversation}
-              className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isConnected || !currentConversation || uploadingFile}
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
+              title="Attach file"
             >
-              {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
+              <Paperclip className="w-5 h-5" />
             </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
-              className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          )}
 
-          {/* Schedule button */}
-          <button
-            id="chat-schedule-btn"
-            type="button"
-            onClick={() => setShowScheduleModal(true)}
-            disabled={!newMessage.trim() || !isConnected || !currentConversation}
-            className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
-            title="Schedule Message"
-          >
-            <Clock className="w-4 h-4" />
-          </button>
-        </form>
+            {/* Send / Send File button */}
+            {selectedFile ? (
+              <button
+                type="button"
+                onClick={handleSendFile}
+                disabled={uploadingFile || !isConnected || !currentConversation}
+                className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+              >
+                {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
+                className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Schedule button */}
+            <button
+              id="chat-schedule-btn"
+              type="button"
+              onClick={() => setShowScheduleModal(true)}
+              disabled={!newMessage.trim() || !isConnected || !currentConversation}
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
+              title="Schedule Message"
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+          </form>
+        )}
 
         <p className="text-xs text-blue-500 dark:text-[#4da2d9] mt-2">
           Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}

@@ -382,6 +382,26 @@ class TelegramSession:
             logger.error(f"Error downloading media for account {self.account_id}, message {telegram_message_id}: {e}")
             raise
 
+    async def join_chat(self, peer_id: int):
+        """Join a Telegram group or channel"""
+        if not self.client or not self.is_connected:
+            raise Exception("Client not connected")
+
+        try:
+            from telethon.tl.functions.channels import JoinChannelRequest
+            entity = await self.client.get_entity(peer_id)
+            
+            # For channels and supergroups
+            if isinstance(entity, Channel):
+                await self.client(JoinChannelRequest(entity))
+                return True
+            # For normal groups, you usually need an invite or to be added, 
+            # but global search usually returns supergroups/channels.
+            return True
+        except Exception as e:
+            logger.error(f"Error joining chat {peer_id} for account {self.account_id}: {e}")
+            raise
+
     def _get_peer_id(self, entity) -> int:
         if isinstance(entity, User):
             return entity.id
@@ -414,19 +434,33 @@ class TelegramSession:
                 limit=limit
             ))
             
-            users = []
+            results = []
+            
+            # Process users
             for user in search_results.users:
                 if isinstance(user, User) and not user.bot:
-                    users.append({
+                    results.append({
                         "id": user.id,
                         "username": user.username,
                         "first_name": user.first_name,
                         "last_name": user.last_name,
                         "phone": user.phone,
-                        "is_contact": user.contact,
+                        "is_contact": user.contact or False,
+                        "type": "user"
                     })
             
-            return users[:limit]
+            # Process chats/channels
+            for chat in search_results.chats:
+                chat_type = self._get_conversation_type(chat)
+                results.append({
+                    "id": self._get_peer_id(chat),
+                    "username": getattr(chat, 'username', None),
+                    "title": getattr(chat, 'title', None) or getattr(chat, 'name', None),
+                    "type": chat_type,
+                    "is_contact": False
+                })
+            
+            return results[:limit * 2] # Increased limit for combined results
                 
         except Exception as e:
             logger.error(f"Error searching users for {self.account_id}: {e}")
@@ -547,6 +581,14 @@ class TelethonService:
             raise Exception("Session not connected")
 
         return await session.download_media(telegram_message_id, peer_id, download_path)
+
+    async def join_chat(self, account_id: int, peer_id: int):
+        """Join a group or channel"""
+        session = self.sessions.get(account_id)
+        if not session:
+            raise Exception("Session not connected")
+
+        return await session.join_chat(peer_id)
 
     async def _setup_event_handlers(self, session: TelegramSession):
         @session.client.on(events.NewMessage)

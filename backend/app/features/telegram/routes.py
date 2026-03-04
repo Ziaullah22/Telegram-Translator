@@ -648,7 +648,7 @@ async def get_conversations(
                 WHERE m2.conversation_id = c.id AND m2.is_outgoing = false AND (m2.is_read = false OR m2.is_read IS NULL)) as unread_count_db
         FROM conversations c
         LEFT JOIN LastMessages lm ON c.id = lm.conversation_id AND lm.rn = 1
-        WHERE c.telegram_account_id = $1
+        WHERE c.telegram_account_id = $1 AND c.is_hidden = false
         ORDER BY COALESCE(lm.created_at, c.created_at) DESC
         """,
         account_id,
@@ -687,6 +687,8 @@ async def get_conversations(
             "last_message_at": conv['msg_created_at'] or conv['created_at'],
             "last_message": last_message,
             "unread_count": conv['unread_count_db'] or 0,
+            "is_muted": conv.get('is_muted', False),
+            "is_hidden": conv.get('is_hidden', False),
         })
 
     return result
@@ -768,19 +770,23 @@ async def create_conversation(
             "created_at": existing['created_at'],
             "last_message_at": existing.get('last_message_at'),
             "unread_count": 0,
+            "is_hidden": existing.get('is_hidden', False),
+            "is_muted": existing.get('is_muted', False),
         }
 
     # Create new conversation
     conversation_id = await db.fetchval(
         """
-        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, is_hidden, is_muted)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         """,
         account_id,
         conversation_data.telegram_peer_id,
         conversation_data.title or conversation_data.username or "Unknown",
         conversation_data.type,
+        conversation_data.is_hidden,
+        False, # is_muted
     )
 
     conversation = await db.fetchrow(
@@ -800,6 +806,83 @@ async def create_conversation(
         "created_at": conversation['created_at'],
         "last_message_at": conversation.get('last_message_at'),
         "unread_count": 0,
+        "is_hidden": conversation.get('is_hidden', False),
+        "is_muted": conversation.get('is_muted', False),
     }
+
+@router.post("/conversations/{conversation_id}/join")
+async def join_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Join the group/channel and unhide it"""
+    # Get details
+    conv = await db.fetchrow(
+        "SELECT telegram_account_id, telegram_peer_id FROM conversations WHERE id = $1",
+        conversation_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Try to join via Telethon
+    try:
+        await telethon_service.join_chat(conv['telegram_account_id'], conv['telegram_peer_id'])
+    except Exception as e:
+        # Some errors might be okay (e.g. already joined), but log it
+        logger.warning(f"Joining chat error: {e}")
+    
+    # Unhide in database
+    await db.execute(
+        "UPDATE conversations SET is_hidden = false WHERE id = $1",
+        conversation_id
+    )
+
+    # Insert a "You joined this group/channel" system message
+    # Get conversation info to choose text
+    conv_info = await db.fetchrow("SELECT type, title FROM conversations WHERE id = $1", conversation_id)
+    join_text = f"You joined this {'channel' if conv_info['type'] == 'channel' else 'group'}"
+    
+    await db.execute(
+        """
+        INSERT INTO messages (
+            conversation_id, sender_name, sender_username, type, original_text, translated_text, is_outgoing, is_read
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        """,
+        conversation_id,
+        "System",
+        "system",
+        "system",
+        join_text,
+        join_text,
+        False,
+        True
+    )
+
+    return {"status": "success"}
+
+@router.post("/conversations/{conversation_id}/unhide")
+async def unhide_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Make a hidden conversation visible in the sidebar"""
+    await db.execute(
+        "UPDATE conversations SET is_hidden = false WHERE id = $1",
+        conversation_id
+    )
+    return {"status": "success"}
+
+@router.post("/conversations/{conversation_id}/toggle_mute")
+async def toggle_mute(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Toggle the mute status of a conversation"""
+    await db.execute(
+        "UPDATE conversations SET is_muted = NOT is_muted WHERE id = $1",
+        conversation_id
+    )
+    new_status = await db.fetchval("SELECT is_muted FROM conversations WHERE id = $1", conversation_id)
+    return {"status": "success", "is_muted": new_status}
 
 

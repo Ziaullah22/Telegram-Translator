@@ -58,6 +58,7 @@ function App() {
   // Refs for current state to be used in the socket listener without stale closures
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
+  const conversationsRef = useRef<TelegramChat[]>(conversations);
 
   useEffect(() => {
     currentAccountRef.current = currentAccount;
@@ -66,6 +67,10 @@ function App() {
   useEffect(() => {
     currentConversationRef.current = currentConversation;
   }, [currentConversation]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   // Handle notification sound
   useEffect(() => {
@@ -147,29 +152,33 @@ function App() {
 
         // Play sound and show notification for incoming messages
         if (!data.message.is_outgoing) {
-          playNotificationSound();
+          const isMuted = conversationsRef.current.some(c => Number(c.id) === incomingConversationId && c.is_muted);
 
-          if (!isActiveConv) {
-            const title = data.message.sender_name || data.message.peer_title || 'New Message';
-            const body = data.message.original_text || 'Sent an attachment';
-            const avatar = data.message.sender_avatar || undefined;
+          if (!isMuted) {
+            playNotificationSound();
 
-            setNotification({
-              title: title,
-              message: body,
-              id: Date.now(),
-              accountId: incomingAccountId,
-              conversationId: incomingConversationId,
-              avatar: avatar
-            });
+            if (!isActiveConv) {
+              const title = data.message.sender_name || data.message.peer_title || 'New Message';
+              const body = data.message.original_text || 'Sent an attachment';
+              const avatar = data.message.sender_avatar || undefined;
 
-            // Show native notification if window is blurred
-            if (!document.hasFocus()) {
-              showNativeNotification(title, body, incomingAccountId, incomingConversationId, avatar);
+              setNotification({
+                title: title,
+                message: body,
+                id: Date.now(),
+                accountId: incomingAccountId,
+                conversationId: incomingConversationId,
+                avatar: avatar
+              });
+
+              // Show native notification if window is blurred
+              if (!document.hasFocus()) {
+                showNativeNotification(title, body, incomingAccountId, incomingConversationId, avatar);
+              }
+
+              // Auto hide in-app notification
+              setTimeout(() => setNotification(null), 8000);
             }
-
-            // Auto hide in-app notification
-            setTimeout(() => setNotification(null), 8000);
           }
         }
 
@@ -318,6 +327,7 @@ function App() {
   const handleConversationSelect = (conversation: TelegramChat) => {
     setCurrentConversation(conversation);
     setMessages([]); // Clear messages when switching conversations
+
     // Reset unread count in central map for this conversation
     if (currentAccount) {
       setUnreadCounts(prev => {
@@ -328,7 +338,9 @@ function App() {
         return next;
       });
     }
-    loadMessages(conversation.id); // Load messages for the selected conversation
+
+    // Load messages regardless of hidden status
+    loadMessages(conversation.id);
 
     // Mark as read in backend
     messagesAPI.markAsRead(conversation.id).catch(err =>
@@ -611,6 +623,29 @@ function App() {
                 targetLanguage={currentAccount?.targetLanguage || 'en'}
                 onSendMessage={handleSendMessage}
                 onSendMedia={handleSendMedia}
+                onJoinConversation={async (id) => {
+                  try {
+                    await telegramAPI.joinConversation(id);
+                    if (currentAccount) {
+                      await loadConversations(currentAccount.id);
+                      // Update current conversation state to reflect it's no longer hidden
+                      setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
+                      // Reload messages to get full history if it was blocked before
+                      loadMessages(id);
+                    }
+                  } catch (error) {
+                    console.error('Failed to join conversation:', error);
+                  }
+                }}
+                onToggleMute={async (id) => {
+                  try {
+                    const result = await telegramAPI.toggleMute(id);
+                    setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
+                    setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
+                  } catch (error) {
+                    console.error('Failed to toggle mute:', error);
+                  }
+                }}
                 conversationId={currentConversation?.id}
               />
             </div>
