@@ -101,12 +101,14 @@ export default function ConversationList({
       const title = titleParts.length > 0 ? titleParts.join(' ') : user.username || 'Unknown';
 
       const isGroup = user.type === 'group' || user.type === 'supergroup' || user.type === 'channel';
+      // Map 'user' to 'private' for database compatibility
+      const targetType = user.type === 'user' ? 'private' : user.type;
 
       const conversation = await telegramAPI.createConversation(accountId, {
         telegram_peer_id: user.id,
         title: user.title || title,
         username: user.username,
-        type: user.type,
+        type: targetType,
         is_hidden: isGroup, // Hide groups/channels from list until joined
       });
 
@@ -116,7 +118,7 @@ export default function ConversationList({
         id: conversation.id,
         title: conversation.title,
         username: user.username,
-        type: user.type,
+        type: targetType as any,
         is_hidden: conversation.is_hidden,
       } as TelegramChat);
 
