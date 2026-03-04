@@ -22,7 +22,14 @@ async def migrate():
             ALTER TABLE conversations 
             ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT FALSE
         """)
-        print("Column is_muted added successfully")
+        
+        # Add is_hidden column if it doesn't exist
+        await conn.execute("""
+            ALTER TABLE conversations 
+            ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE
+        """)
+        
+        print("Columns is_muted and is_hidden checked/added successfully")
     finally:
         await conn.close()
 
