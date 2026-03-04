@@ -25,6 +25,7 @@ from app.features.admin.routes import router as admin_router
 from auth import get_current_user
 from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
+from app.core.admin_security import ADMIN_SECRET_KEY, ADMIN_ALGORITHM
 
 logging.basicConfig(
     level=logging.INFO,
@@ -261,16 +262,34 @@ async def websocket_endpoint(websocket: WebSocket):
         # Debug log for token (partial)
         logger.info(f"WebSocket handshake attempt for token beginning: {token[:20]}...")
         
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        user_id = payload.get("user_id")
+        user_id = None
+        is_admin = False
         
-        if not user_id:
-            logger.warning(f"WebSocket rejected: Token payload missing user_id. Keys: {list(payload.keys())}")
+        # Try decoding with user secret first
+        try:
+            payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+            user_id = payload.get("user_id")
+        except JWTError:
+            # Try decoding with admin secret
+            try:
+                payload = jwt.decode(token, ADMIN_SECRET_KEY, algorithms=[ADMIN_ALGORITHM])
+                if payload.get("type") == "admin":
+                    is_admin = True
+                    logger.info("WebSocket authenticated for admin")
+            except JWTError as e:
+                logger.error(f"WebSocket JWT Error: {e}")
+                await websocket.close(code=1008)
+                return
+        
+        if not user_id and not is_admin:
+            logger.warning(f"WebSocket rejected: Token payload missing user_id and not admin.")
             await websocket.close(code=1008)
             return
 
-        logger.info(f"WebSocket authenticated for user_id: {user_id}")
-        await manager.connect(websocket, int(user_id))
+        if is_admin:
+            await manager.connect(websocket, is_admin=True)
+        else:
+            await manager.connect(websocket, user_id=int(user_id))
         
         try:
             while True:
@@ -278,15 +297,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 if data.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
         except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected for user_id: {user_id}")
-            manager.disconnect(websocket, int(user_id))
+            if is_admin:
+                manager.disconnect(websocket, is_admin=True)
+            else:
+                manager.disconnect(websocket, user_id=int(user_id))
         except Exception as e:
-            logger.error(f"WebSocket loop error for user_id {user_id}: {e}")
-            manager.disconnect(websocket, int(user_id))
+            logger.error(f"WebSocket loop error: {e}")
+            if is_admin:
+                manager.disconnect(websocket, is_admin=True)
+            else:
+                manager.disconnect(websocket, user_id=int(user_id))
             
-    except JWTError as e:
-        logger.error(f"WebSocket JWT Error: {e}")
-        await websocket.close(code=1008)
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
         await websocket.close(code=1008)

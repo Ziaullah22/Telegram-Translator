@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Cookies from 'js-cookie';
 import { Search, Filter, ArrowLeft, MessageSquare, Image as ImageIcon, Video as VideoIcon } from 'lucide-react';
 import { adminApi } from '../services/api';
 import { Message, Conversation, ColleagueWithAccounts } from '../types';
@@ -171,14 +172,14 @@ const VideoMessage: React.FC<{
 const MessageReview = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
-  
+
   const [colleagues, setColleagues] = useState<ColleagueWithAccounts[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(
     userId ? parseInt(userId) : null
   );
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
-  
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +188,8 @@ const MessageReview = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loadedMedia, setLoadedMedia] = useState<Record<number, string>>({});
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const selectedConvRef = useRef<number | null>(null);
   const MESSAGES_PER_PAGE = 10;
 
   useEffect(() => {
@@ -224,12 +227,12 @@ const MessageReview = () => {
   useEffect(() => {
     if (messagesContainerRef.current && messages.length > 0 && !loadingMore) {
       const container = messagesContainerRef.current;
-      // Only scroll to bottom on initial load (when we have exactly one page)
-      if (messages.length <= MESSAGES_PER_PAGE) {
+      // Scroll to bottom on initial load
+      if (messages.length <= MESSAGES_PER_PAGE || (container.scrollTop === 0 && !hasMore)) {
         container.scrollTop = container.scrollHeight;
       }
     }
-  }, [messages.length, loadingMore]);
+  }, [messages.length, loadingMore, hasMore]);
 
 
   const fetchConversations = async () => {
@@ -237,7 +240,7 @@ const MessageReview = () => {
       const params: { user_id?: number; account_id?: number } = {};
       if (selectedUserId) params.user_id = selectedUserId;
       if (selectedAccountId) params.account_id = selectedAccountId;
-      
+
       const response = await adminApi.getConversations(params);
       setConversations(response.data);
     } catch (error) {
@@ -260,7 +263,7 @@ const MessageReview = () => {
         offset: reset ? 0 : messages.length,
       };
       if (selectedConversationId) params.conversation_id = selectedConversationId;
-      
+
       const response = await adminApi.getMessages(params);
       const newMessages = response.data;
 
@@ -290,7 +293,7 @@ const MessageReview = () => {
     if (!messagesContainerRef.current || loadingMore || !hasMore) return;
 
     const { scrollTop } = messagesContainerRef.current;
-    
+
     // Load more when scrolled to top (to get older messages)
     if (scrollTop === 0) {
       const prevScrollHeight = messagesContainerRef.current.scrollHeight;
@@ -314,6 +317,86 @@ const MessageReview = () => {
     }
   }, [handleScroll]);
 
+  useEffect(() => {
+    selectedConvRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  // WebSocket Connection
+  useEffect(() => {
+    const adminToken = Cookies.get('admin_token');
+    if (!adminToken) return;
+
+    const wsUrl = `ws://localhost:8000/ws?token=${adminToken}`;
+    const socket = new WebSocket(wsUrl);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      console.log('Admin WebSocket connected');
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'new_message') {
+          const newMessage = data.message;
+          const currentSelectedId = selectedConvRef.current;
+
+          // Update conversations list (bring the relevant conversation to the top)
+          setConversations(prev => {
+            const index = prev.findIndex(c => c.id === newMessage.conversation_id);
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                last_message_at: newMessage.created_at
+              };
+              // Move to top
+              const item = updated.splice(index, 1)[0];
+              return [item, ...updated];
+            }
+            return prev;
+          });
+
+          // Add message to view if it's the current conversation
+          if (newMessage.conversation_id === currentSelectedId) {
+            setMessages(prev => {
+              // Check if message already exists
+              if (prev.some(m => m.id === newMessage.id || m.telegram_message_id === newMessage.telegram_message_id)) {
+                return prev;
+              }
+              const updated = [...prev, newMessage];
+              // Scroll to bottom
+              setTimeout(() => {
+                if (messagesContainerRef.current) {
+                  const container = messagesContainerRef.current;
+                  // If we are within 250px of bottom, or it's an outgoing message, scroll down
+                  const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 250;
+                  if (isNearBottom || newMessage.sender_user_id === selectedConvRef.current) {
+                    container.scrollTo({
+                      top: container.scrollHeight,
+                      behavior: 'smooth'
+                    });
+                  }
+                }
+              }, 50);
+              return updated;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error handling WebSocket message:', err);
+      }
+    };
+
+    socket.onclose = () => {
+      console.log('Admin WebSocket disconnected');
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, []);
+
   const selectedColleague = colleagues.find((c) => c.id === selectedUserId);
   const accounts = selectedColleague?.accounts || [];
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
@@ -326,10 +409,10 @@ const MessageReview = () => {
 
     try {
       const url = `http://localhost:8000/api/admin/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
-      
+
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${document.cookie.split('admin_token=')[1]?.split(';')[0]}`,
+          'Authorization': `Bearer ${Cookies.get('admin_token')}`,
         },
       });
 
@@ -344,9 +427,9 @@ const MessageReview = () => {
 
       const blob = await response.blob();
       const mediaUrl = window.URL.createObjectURL(blob);
-      
+
       setLoadedMedia(prev => ({ ...prev, [message.id]: mediaUrl }));
-      
+
       return mediaUrl;
     } catch (error) {
       console.error('Failed to load media:', error);
@@ -381,7 +464,7 @@ const MessageReview = () => {
 
   return (
     <div>
-      <div className="flex items-center mb-8">
+      <div className="flex items-center mb-6">
         {userId && (
           <button
             onClick={() => navigate('/messages')}
@@ -390,14 +473,14 @@ const MessageReview = () => {
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
-        <h1 className="text-3xl font-bold text-gray-900">Message Review</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Message Review</h1>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center mb-4">
-          <Filter className="w-5 h-5 text-gray-500 mr-2" />
-          <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+        <div className="flex items-center mb-3">
+          <Filter className="w-4 h-4 text-gray-500 mr-2" />
+          <h2 className="text-md font-semibold text-gray-900">Filters</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -475,15 +558,15 @@ const MessageReview = () => {
 
       {/* Search */}
       {selectedConversationId && (
-        <div className="mb-6">
+        <div className="mb-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
               placeholder="Search messages..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
         </div>
@@ -491,154 +574,138 @@ const MessageReview = () => {
 
       {/* Messages */}
       {selectedConversationId ? (
-        <div className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
-          <div 
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[calc(100vh-420px)] min-h-[400px]">
+          <div
             ref={messagesContainerRef}
-            className="space-y-4 max-h-[600px] overflow-y-auto"
+            className="flex-1 p-4 space-y-3 overflow-y-auto bg-gray-50"
           >
             {loadingMore && (
-              <div className="flex justify-center py-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <div className="flex justify-center py-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
               </div>
             )}
             {filteredMessages.length > 0 ? (
               filteredMessages.map((message) => {
                 const isFromAccount = isMessageFromAccount(message);
                 return (
-                <div
-                  key={message.id}
-                  className={`flex ${isFromAccount ? 'justify-end' : 'justify-start'} mb-4`}
-                >
-                  <div className={`max-w-[70%] ${isFromAccount ? 'ml-12' : 'mr-12'}`}>
-                    {/* Sender info for incoming messages */}
-                    {!isFromAccount && (
-                      <div className="flex items-center space-x-2 mb-2 px-1">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-medium text-white">
-                            {message.sender_name ? message.sender_name.charAt(0).toUpperCase() : '?'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-700">
-                            {message.sender_name || message.sender_username || 'Unknown'}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Message bubble */}
-                    <div
-                      className={`px-4 py-3 rounded-2xl ${
-                        isFromAccount
-                          ? 'bg-blue-500 text-white rounded-br-md'
-                          : 'bg-white text-gray-900 rounded-bl-md shadow-sm border border-gray-200'
-                      }`}
-                    >
-                      {/* Auto-reply badge */}
-                      {message.type === 'auto_reply' && (
-                        <div className={`flex items-center space-x-1 mb-2 pb-2 border-b ${
-                          isFromAccount ? 'border-white/20' : 'border-gray-200'
-                        }`}>
-                          <span className="text-xs font-medium text-yellow-500">⚡ Auto-Reply</span>
+                  <div
+                    key={message.id}
+                    className={`flex ${isFromAccount ? 'justify-end' : 'justify-start'} mb-2`}
+                  >
+                    <div className={`max-w-[75%] ${isFromAccount ? 'ml-12' : 'mr-12'}`}>
+                      {/* Sender info for incoming messages */}
+                      {!isFromAccount && (
+                        <div className="flex items-center space-x-2 mb-1 px-1">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                              {message.sender_name || message.sender_username || 'Unknown'}
+                            </p>
+                          </div>
                         </div>
                       )}
 
-                      {/* Media preview */}
-                      {(message.media_file_name || ['photo', 'video', 'voice', 'document', 'sticker'].includes(message.type)) && (() => {
-                        const fileName = (message.media_file_name || '').toLowerCase();
-                        const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(fileName) || message.type === 'photo';
-                        const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(fileName) || message.type === 'video';
-                        
-                        if (isImage) {
-                          return (
-                            <ImageMessage
-                              message={message}
-                              loadedMedia={loadedMedia}
-                              loadMedia={loadMedia}
-                              isFromAccount={isFromAccount}
-                            />
-                          );
-                        } else if (isVideo) {
-                          return (
-                            <VideoMessage
-                              message={message}
-                              loadedMedia={loadedMedia}
-                              loadMedia={loadMedia}
-                              isFromAccount={isFromAccount}
-                            />
-                          );
-                        } else {
-                          return (
-                            <div className={`mb-2 flex items-center space-x-2 px-3 py-2 rounded-lg ${
-                              isFromAccount ? 'bg-blue-600' : 'bg-gray-100'
+                      {/* Message bubble */}
+                      <div
+                        className={`px-3 py-2 rounded-xl shadow-sm ${isFromAccount
+                          ? 'bg-blue-600 text-white rounded-tr-none'
+                          : 'bg-white text-gray-900 rounded-tl-none border border-gray-200'
+                          }`}
+                      >
+                        {/* Auto-reply badge */}
+                        {message.type === 'auto_reply' && (
+                          <div className={`flex items-center space-x-1 mb-1 pb-1 border-b ${isFromAccount ? 'border-white/10' : 'border-gray-100'
                             }`}>
-                              <svg className={`w-5 h-5 ${isFromAccount ? 'text-blue-200' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                              </svg>
-                              <span className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-600'}`}>
-                                📎 {message.media_file_name}
-                              </span>
-                            </div>
-                          );
-                        }
-                      })()}
-                      
-                      {/* Original text */}
-                      {message.original_text && (
-                        <div className="mb-2">
-                          {message.source_language && (
-                            <span className={`text-xs font-medium mr-2 ${
-                              isFromAccount ? 'text-blue-200' : 'text-blue-600'
-                            }`}>
-                              {message.source_language.toUpperCase()}
+                            <span className="text-[10px] font-bold text-yellow-500 flex items-center italic">
+                              <span className="mr-1">⚡</span> AUTO-REPLY
                             </span>
-                          )}
-                          <p className="text-sm leading-relaxed">{message.original_text}</p>
-                        </div>
-                      )}
-                      
-                      {/* Translated text */}
-                      {message.translated_text && message.translated_text !== message.original_text && (
-                        <div className={`pt-2 mt-2 border-t ${
-                          isFromAccount ? 'border-white/20' : 'border-gray-200'
-                        }`}>
-                          {message.target_language && (
-                            <span className={`text-xs font-medium mr-2 ${
-                              isFromAccount ? 'text-blue-200' : 'text-blue-600'
-                            }`}>
-                              {message.target_language.toUpperCase()}
-                            </span>
-                          )}
-                          <p className="text-sm leading-relaxed">{message.translated_text}</p>
-                        </div>
-                      )}
-
-                      {/* Timestamp */}
-                      <div className="flex items-center justify-end mt-2">
-                        <p className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-500'}`}>
-                          {new Date(message.created_at).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })} {new Date(message.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
-                        {isFromAccount && (
-                          <div className="flex items-center ml-1">
-                            <svg className="w-3 h-3 text-blue-200" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                            <svg className="w-3 h-3 text-blue-200 -ml-1" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
                           </div>
                         )}
+
+                        {/* Media preview */}
+                        {(message.media_file_name || ['photo', 'video', 'voice', 'document', 'sticker'].includes(message.type)) && (() => {
+                          const fileName = (message.media_file_name || '').toLowerCase();
+                          const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(fileName) || message.type === 'photo';
+                          const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(fileName) || message.type === 'video';
+
+                          if (isImage) {
+                            return (
+                              <ImageMessage
+                                message={message}
+                                loadedMedia={loadedMedia}
+                                loadMedia={loadMedia}
+                                isFromAccount={isFromAccount}
+                              />
+                            );
+                          } else if (isVideo) {
+                            return (
+                              <VideoMessage
+                                message={message}
+                                loadedMedia={loadedMedia}
+                                loadMedia={loadMedia}
+                                isFromAccount={isFromAccount}
+                              />
+                            );
+                          } else {
+                            return (
+                              <div className={`mb-2 flex items-center space-x-2 px-3 py-2 rounded-lg ${isFromAccount ? 'bg-blue-600' : 'bg-gray-100'
+                                }`}>
+                                <svg className={`w-5 h-5 ${isFromAccount ? 'text-blue-200' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-600'}`}>
+                                  📎 {message.media_file_name}
+                                </span>
+                              </div>
+                            );
+                          }
+                        })()}
+
+                        {/* Original text */}
+                        {message.original_text && (
+                          <div className="mb-1">
+                            {message.source_language && (
+                              <span className={`text-[10px] font-bold mr-1.5 ${isFromAccount ? 'text-blue-200' : 'text-blue-500'
+                                }`}>
+                                [{message.source_language.toUpperCase()}]
+                              </span>
+                            )}
+                            <p className="text-[13px] leading-snug">{message.original_text}</p>
+                          </div>
+                        )}
+
+                        {/* Translated text */}
+                        {message.translated_text && message.translated_text !== message.original_text && (
+                          <div className={`pt-1.5 mt-1.5 border-t ${isFromAccount ? 'border-white/10' : 'border-gray-100'
+                            }`}>
+                            {message.target_language && (
+                              <span className={`text-[10px] font-bold mr-1.5 ${isFromAccount ? 'text-blue-200' : 'text-blue-500'
+                                }`}>
+                                [{message.target_language.toUpperCase()}]
+                              </span>
+                            )}
+                            <p className="text-[13px] leading-snug italic opacity-90">{message.translated_text}</p>
+                          </div>
+                        )}
+
+                        {/* Timestamp */}
+                        <div className="flex items-center justify-end mt-1 space-x-1.5">
+                          <p className={`text-[10px] ${isFromAccount ? 'text-blue-100' : 'text-gray-400'}`}>
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                          {isFromAccount && (
+                            <div className="flex items-center">
+                              <svg className="w-2.5 h-2.5 text-blue-200 opacity-70" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
                 );
               })
             ) : (
