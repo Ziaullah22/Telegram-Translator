@@ -204,12 +204,12 @@ export const telegramAPI = {
   },
 
   getProfile: async (accountId: number) => {
-    const response = await api.get(`/telegram/accounts/${accountId}/profile`);
+    const response = await api.get(`/telegram/accounts/${accountId}/profile`, { timeout: 30000 });
     return response.data;
   },
 
   updateProfile: async (accountId: number, data: { first_name?: string; last_name?: string; bio?: string }) => {
-    const response = await api.patch(`/telegram/accounts/${accountId}/profile`, data);
+    const response = await api.patch(`/telegram/accounts/${accountId}/profile`, data, { timeout: 30000 });
     return response.data;
   },
 
@@ -218,12 +218,13 @@ export const telegramAPI = {
     formData.append('photo', file);
     const response = await api.post(`/telegram/accounts/${accountId}/profile/photo`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000, // Photos can take a while to upload
     });
     return response.data;
   },
 
   setPhonePrivacy: async (accountId: number, visibility: 'everybody' | 'contacts' | 'nobody') => {
-    const response = await api.patch(`/telegram/accounts/${accountId}/profile/privacy`, { visibility });
+    const response = await api.patch(`/telegram/accounts/${accountId}/profile/privacy`, { visibility }, { timeout: 30000 });
     return response.data;
   },
 

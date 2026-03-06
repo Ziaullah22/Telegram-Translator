@@ -1041,52 +1041,66 @@ class TelethonService:
         """Get the Telegram user's own profile info including privacy"""
         session = self.sessions.get(account_id)
         if not session or not session.client:
+            logger.error(f"Cannot get profile: session {account_id} not connected in TelethonService")
             raise Exception("Account not connected")
         
         from telethon.tl.functions.users import GetFullUserRequest
         from telethon.tl.functions.account import GetPrivacyRequest
         from telethon.tl.types import InputPrivacyKeyPhoneNumber, PrivacyValueAllowAll, PrivacyValueAllowContacts
         
-        me = await session.client.get_me()
-        full = await session.client(GetFullUserRequest(me))
-        
-        # Get privacy settings
-        phone_privacy = 'nobody'
         try:
-            privacy = await session.client(GetPrivacyRequest(key=InputPrivacyKeyPhoneNumber()))
-            for rule in privacy.rules:
-                if isinstance(rule, PrivacyValueAllowAll):
-                    phone_privacy = 'everybody'
-                    break
-                elif isinstance(rule, PrivacyValueAllowContacts):
-                    phone_privacy = 'contacts'
-                    break
-        except Exception as e:
-            logger.warning(f"Could not get privacy settings for account {account_id}: {e}")
+            logger.info(f"Fetching profile for account {account_id}")
+            # Use a short timeout for basic info
+            me = await asyncio.wait_for(session.client.get_me(), timeout=15.0)
+            if not me:
+                raise Exception("Not authorized")
+                
+            full = await asyncio.wait_for(session.client(GetFullUserRequest(me)), timeout=15.0)
+            
+            # Get privacy settings
+            phone_privacy = 'nobody'
+            try:
+                privacy = await asyncio.wait_for(session.client(GetPrivacyRequest(key=InputPrivacyKeyPhoneNumber())), timeout=10.0)
+                for rule in privacy.rules:
+                    if isinstance(rule, PrivacyValueAllowAll):
+                        phone_privacy = 'everybody'
+                        break
+                    elif isinstance(rule, PrivacyValueAllowContacts):
+                        phone_privacy = 'contacts'
+                        break
+            except Exception as e:
+                logger.warning(f"Could not get privacy settings for account {account_id}: {e}")
 
-        # Build a clean profile dict
-        user = full.users[0]
-        photo_url = None
-        
-        # Try to get profile photo bytes
-        try:
-            photo_bytes = await session.client.download_profile_photo(me, bytes)
-            if photo_bytes:
-                import base64
-                photo_url = f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
+            # Build a clean profile dict
+            user = full.users[0]
+            photo_url = None
+            
+            # Try to get profile photo bytes (very safe, with timeout)
+            try:
+                # Photos can be large, but we only want a small base64 string
+                photo_bytes = await asyncio.wait_for(session.client.download_profile_photo(me, bytes), timeout=15.0)
+                if photo_bytes:
+                    import base64
+                    photo_url = f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
+            except Exception as e:
+                logger.debug(f"Could not download profile photo for {account_id}: {e}")
+            
+            return {
+                "id": user.id,
+                "first_name": user.first_name or "",
+                "last_name": user.last_name or "",
+                "username": user.username or "",
+                "phone": user.phone or "",
+                "bio": full.full_user.about or "",
+                "photo_url": photo_url,
+                "phone_privacy": phone_privacy
+            }
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout while fetching profile for account {account_id}")
+            raise Exception("Telegram request timed out. Please try again.")
         except Exception as e:
-            logger.debug(f"Could not download profile photo: {e}")
-        
-        return {
-            "id": user.id,
-            "first_name": user.first_name or "",
-            "last_name": user.last_name or "",
-            "username": user.username or "",
-            "phone": user.phone or "",
-            "bio": full.full_user.about or "",
-            "photo_url": photo_url,
-            "phone_privacy": phone_privacy
-        }
+            logger.error(f"Error fetching profile for account {account_id}: {e}")
+            raise e
 
     async def update_profile(self, account_id: int, first_name: str = None, last_name: str = None, bio: str = None) -> dict:
         """Update Telegram profile name and bio"""
@@ -1229,11 +1243,18 @@ class TelethonService:
         if not session or not session.client:
             raise Exception("Account not connected")
         
-        await session.client.edit_2fa(
-            current_password=current_password if current_password else None,
-            new_password=new_password,
-        )
-        return {"status": "success", "message": "2FA password updated successfully"}
+        from telethon.errors import PasswordHashInvalidError
+        try:
+            await session.client.edit_2fa(
+                current_password=current_password if current_password else None,
+                new_password=new_password,
+            )
+            return {"status": "success", "message": "2FA password updated successfully"}
+        except PasswordHashInvalidError:
+            raise Exception("The current 2FA password you entered is incorrect. If you haven't set one yet, try leaving it empty.")
+        except Exception as e:
+            logger.error(f"Telegram 2FA change error: {e}")
+            raise e
 
     async def get_peer_photo(self, account_id: int, peer_id: int) -> str:
         """Download and return peer's profile photo as base64"""

@@ -1018,9 +1018,19 @@ async def get_profile(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    # Try to get session, if not connected and account is active, try to connect it first
     session = await telethon_service.get_session(account_id)
     if not session or not session.is_connected:
-        raise HTTPException(status_code=400, detail="Account not connected")
+        if account.get('is_active', True):
+            logger.info(f"Auto-connecting account {account_id} for profile retrieval after backend restart")
+            await telethon_service.connect_session(account_id)
+            session = await telethon_service.get_session(account_id)
+            
+    if not session or not session.is_connected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Account not connected. Please try connecting it from the sidebar first."
+        )
     
     try:
         profile = await telethon_service.get_profile(account_id)
@@ -1044,6 +1054,12 @@ async def update_profile(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    # Try to get session, if not connected and account is active, try to connect it first
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        if account.get('is_active', True):
+            await telethon_service.connect_session(account_id)
+            
     try:
         result = await telethon_service.update_profile(
             account_id,
@@ -1071,6 +1087,12 @@ async def upload_profile_photo(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    # Try to get session, if not connected and account is active, try to connect it first
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        if account.get('is_active', True):
+            await telethon_service.connect_session(account_id)
+            
     try:
         file_bytes = await photo.read()
         result = await telethon_service.upload_profile_photo(account_id, file_bytes, photo.filename or "photo.jpg")
@@ -1098,6 +1120,12 @@ async def set_phone_privacy(
     if visibility not in ('everybody', 'contacts', 'nobody'):
         raise HTTPException(status_code=400, detail="visibility must be everybody, contacts, or nobody")
     
+    # Try to get session, if not connected and account is active, try to connect it first
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        if account.get('is_active', True):
+            await telethon_service.connect_session(account_id)
+            
     try:
         result = await telethon_service.set_phone_privacy(account_id, visibility)
         return result
@@ -1119,9 +1147,15 @@ async def get_sessions(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    # Try to get session, if not connected and account is active, try to connect it first
     session = await telethon_service.get_session(account_id)
     if not session or not session.is_connected:
-        raise HTTPException(status_code=400, detail="Account not connected")
+        if account.get('is_active', True):
+            await telethon_service.connect_session(account_id)
+            session = await telethon_service.get_session(account_id)
+            
+    if not session or not session.is_connected:
+        raise HTTPException(status_code=400, detail="Account not connected. Please try connecting it from the sidebar first.")
     
     try:
         sessions = await telethon_service.get_sessions(account_id)

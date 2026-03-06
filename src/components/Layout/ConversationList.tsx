@@ -183,15 +183,15 @@ export default function ConversationList({
             <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-[#419FD9]' : 'text-gray-400 dark:text-gray-500'}`} />
           </div>
           <input
-            type="text"
+            type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             disabled={!isConnected}
-            autoComplete="off"
+            autoComplete="no-autofill-search"
             spellCheck={false}
-            name="telegram-search"
+            name="search-query-field"
             placeholder={isConnected ? "Search chats or usernames..." : "Connect account to search..."}
-            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[#419FD9] dark:focus:border-[#419FD9] rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
+            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[#419FD9] dark:focus:border-[#419FD9] rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none [&::-webkit-search-cancel-button]:hidden"
           />
           {searchQuery && (
             <button

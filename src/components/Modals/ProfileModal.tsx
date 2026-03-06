@@ -325,7 +325,11 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
 
                     {/* 2FA Tab */}
                     {activeTab === '2fa' && (
-                        <div className="space-y-4">
+                        <form
+                            onSubmit={(e) => { e.preventDefault(); handleChange2FA(); }}
+                            className="space-y-4"
+                            autoComplete="off"
+                        >
                             <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-500/10 rounded-xl border border-blue-200 dark:border-blue-500/30">
                                 <Lock className="w-5 h-5 text-blue-500 flex-shrink-0" />
                                 <p className="text-sm text-blue-700 dark:text-blue-300">
@@ -338,7 +342,8 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     type="password"
                                     value={currentPass}
                                     onChange={e => setCurrentPass(e.target.value)}
-                                    autoComplete="current-password"
+                                    autoComplete="off"
+                                    name="current-2fa-pass"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="Current 2FA password"
                                 />
@@ -350,6 +355,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     value={newPass}
                                     onChange={e => setNewPass(e.target.value)}
                                     autoComplete="new-password"
+                                    name="new-2fa-pass"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="New 2FA password"
                                 />
@@ -361,19 +367,20 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     value={confirmPass}
                                     onChange={e => setConfirmPass(e.target.value)}
                                     autoComplete="new-password"
+                                    name="confirm-2fa-pass"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="Confirm new password"
                                 />
                             </div>
                             <button
-                                onClick={handleChange2FA}
+                                type="submit"
                                 disabled={saving || !newPass}
                                 className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
                                 Update 2FA Password
                             </button>
-                        </div>
+                        </form>
                     )}
                 </div>
             </div>
