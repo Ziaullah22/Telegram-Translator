@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Search, Loader2, MessageCircle } from 'lucide-react';
 import type { TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
+import PeerAvatar from '../Common/PeerAvatar';
 
 interface SearchUsersModalProps {
   isOpen: boolean;
@@ -135,8 +136,8 @@ export default function SearchUsersModal({
           ) : (
             <div className="space-y-2">
               {searchResults.map((user) => {
-                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
-                const subtitle = user.username ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : user.phone || '';
+                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
+                const subtitle = user.username ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone : '';
 
                 return (
                   <div
@@ -145,11 +146,12 @@ export default function SearchUsersModal({
                     className="flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-700 text-gray-200"
                   >
                     {/* Avatar */}
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-600">
-                      <span className="text-base font-medium">
-                        {displayName.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <PeerAvatar
+                      accountId={accountId}
+                      peerId={user.id}
+                      name={displayName}
+                      className="w-12 h-12 rounded-full flex-shrink-0 text-lg"
+                    />
 
                     {/* User Info */}
                     <div className="flex-1 min-w-0">

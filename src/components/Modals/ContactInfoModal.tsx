@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
-import { X, User, Save } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import { contactsAPI } from '../../services/api';
 import type { ContactInfo } from '../../types';
+import PeerAvatar from '../Common/PeerAvatar';
 
 interface ContactInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
   conversationId: number | null;
+  accountId?: number;
+  peerId?: number;
+  contactName?: string;
   onSaved?: () => void;
 }
 
@@ -14,6 +18,9 @@ export default function ContactInfoModal({
   isOpen,
   onClose,
   conversationId,
+  accountId,
+  peerId,
+  contactName,
   onSaved,
 }: ContactInfoModalProps) {
   const [contactInfo, setContactInfo] = useState<Partial<ContactInfo>>({
@@ -103,12 +110,15 @@ export default function ContactInfoModal({
         {/* Header */}
         <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
           <div className="flex items-center space-x-4" id="crm-modal-profile">
-            <div className="bg-blue-600/10 dark:bg-blue-600/20 p-2.5 rounded-2xl">
-              <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
+            <PeerAvatar
+              accountId={accountId}
+              peerId={peerId}
+              name={contactName || 'Unknown'}
+              className="w-14 h-14 rounded-2xl flex-shrink-0 text-xl font-bold shadow-sm object-cover"
+            />
             <div>
               <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight leading-none">Contact Profile</h2>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">Manage CRM & Relationship Details</p>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{contactName}</p>
             </div>
           </div>
           <button

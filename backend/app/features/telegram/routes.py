@@ -567,7 +567,7 @@ async def update_account(
     session = await telethon_service.get_session(account_id)
     is_connected = session.is_connected if session else False
 
-    return {
+    update_result = {
         "id": updated_account['id'],
         "account_name": updated_account['account_name'],
         "display_name": updated_account['display_name'],
@@ -578,6 +578,18 @@ async def update_account(
         "last_used": updated_account['last_used'],
         "is_connected": is_connected,
     }
+
+    # Notify frontend via WebSocket for instant UI updates
+    await manager.send_to_account(
+        {
+            "type": "account_updated",
+            "account": update_result
+        },
+        account_id,
+        current_user.user_id,
+    )
+
+    return update_result
 
 
 @router.delete("/accounts/{account_id}")
@@ -599,8 +611,18 @@ async def delete_account(
 
     await telethon_service.disconnect_session(account_id)
 
+    # Delete Telegram account from database
     await db.execute(
         "DELETE FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id,
+        current_user.user_id,
+    )
+
+    await manager.send_to_account(
+        {
+            "type": "account_deleted",
+            "account_id": account_id
+        },
         account_id,
         current_user.user_id,
     )
@@ -888,4 +910,279 @@ async def toggle_mute(
     new_status = await db.fetchval("SELECT is_muted FROM conversations WHERE id = $1", conversation_id)
     return {"status": "success", "is_muted": new_status}
 
+
+@router.post("/conversations/{conversation_id}/leave")
+async def leave_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Leave a group/channel and hide conversation"""
+    conv = await db.fetchrow(
+        """SELECT c.telegram_account_id, c.telegram_peer_id FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = $1 AND ta.user_id = $2""",
+        conversation_id, current_user.user_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    try:
+        await telethon_service.leave_chat(conv['telegram_account_id'], conv['telegram_peer_id'])
+    except Exception as e:
+        logger.warning(f"Leave chat error (may already have left): {e}")
+    
+    await db.execute(
+        "UPDATE conversations SET is_hidden = true WHERE id = $1",
+        conversation_id
+    )
+
+    # Notify via WebSocket so it's removed from admin side too
+    await manager.send_to_account(
+        {
+            "type": "conversation_deleted",
+            "conversation_id": conversation_id
+        },
+        conv['telegram_account_id'],
+        current_user.user_id,
+    )
+
+    return {"status": "success"}
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Hard delete a conversation and its messages from DB and Telegram"""
+    conv = await db.fetchrow(
+        """SELECT c.id, c.telegram_account_id, c.telegram_peer_id FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = $1 AND ta.user_id = $2""",
+        conversation_id, current_user.user_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Delete from Telegram side too
+    try:
+        await telethon_service.delete_dialog(conv['telegram_account_id'], conv['telegram_peer_id'])
+    except Exception as e:
+        logger.error(f"Failed to delete Telegram dialog: {e}")
+
+    # Delete messages first (FW constraint)
+    await db.execute("DELETE FROM messages WHERE conversation_id = $1", conversation_id)
+    
+    # Delete conversation
+    await db.execute("DELETE FROM conversations WHERE id = $1", conversation_id)
+    
+    # Notify via WebSocket
+    await manager.send_to_account(
+        {
+            "type": "conversation_deleted",
+            "conversation_id": conversation_id
+        },
+        conv['telegram_account_id'],
+        current_user.user_id,
+    )
+
+    return {"status": "success", "message": "Conversation and messages deleted permanently"}
+
+
+@router.get("/accounts/{account_id}/profile")
+async def get_profile(
+    account_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Get Telegram profile info for an account"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        raise HTTPException(status_code=400, detail="Account not connected")
+    
+    try:
+        profile = await telethon_service.get_profile(account_id)
+        return profile
+    except Exception as e:
+        logger.error(f"Failed to get profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/accounts/{account_id}/profile")
+async def update_profile(
+    account_id: int,
+    data: dict,
+    current_user = Depends(get_current_user),
+):
+    """Update Telegram profile name/bio"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        result = await telethon_service.update_profile(
+            account_id,
+            first_name=data.get('first_name'),
+            last_name=data.get('last_name'),
+            bio=data.get('bio')
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Failed to update profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/accounts/{account_id}/profile/photo")
+async def upload_profile_photo(
+    account_id: int,
+    photo: UploadFile = File(...),
+    current_user = Depends(get_current_user),
+):
+    """Upload a new profile photo"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        file_bytes = await photo.read()
+        result = await telethon_service.upload_profile_photo(account_id, file_bytes, photo.filename or "photo.jpg")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to upload profile photo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/accounts/{account_id}/profile/privacy")
+async def set_phone_privacy(
+    account_id: int,
+    data: dict,
+    current_user = Depends(get_current_user),
+):
+    """Set phone number privacy (everybody/contacts/nobody)"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    visibility = data.get('visibility', 'contacts')
+    if visibility not in ('everybody', 'contacts', 'nobody'):
+        raise HTTPException(status_code=400, detail="visibility must be everybody, contacts, or nobody")
+    
+    try:
+        result = await telethon_service.set_phone_privacy(account_id, visibility)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set phone privacy: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/accounts/{account_id}/sessions")
+async def get_sessions(
+    account_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Get all active Telegram sessions (devices)"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        raise HTTPException(status_code=400, detail="Account not connected")
+    
+    try:
+        sessions = await telethon_service.get_sessions(account_id)
+        return sessions
+    except Exception as e:
+        logger.error(f"Failed to get sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/accounts/{account_id}/sessions/{session_hash}")
+async def terminate_session(
+    account_id: int,
+    session_hash: str,
+    current_user = Depends(get_current_user),
+):
+    """Terminate a specific Telegram session"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        result = await telethon_service.terminate_session(account_id, int(session_hash))
+        return result
+    except Exception as e:
+        logger.error(f"Failed to terminate session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/accounts/{account_id}/2fa")
+async def change_2fa(
+    account_id: int,
+    data: dict,
+    current_user = Depends(get_current_user),
+):
+    """Change the Telegram 2FA cloud password"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    
+    if not new_password:
+        raise HTTPException(status_code=400, detail="New password is required")
+    
+    try:
+        result = await telethon_service.change_2fa(account_id, current_password, new_password)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to change 2FA: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/accounts/{account_id}/peers/{peer_id}/photo")
+async def get_peer_photo(
+    account_id: int,
+    peer_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Get profile photo for a specific peer"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        photo_url = await telethon_service.get_peer_photo(account_id, peer_id)
+        return {"photo_url": photo_url}
+    except Exception as e:
+        logger.error(f"Failed to get peer photo: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 

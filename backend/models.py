@@ -262,6 +262,7 @@ class UserSearchResult(BaseModel):
     is_contact: bool = False
     title: Optional[str] = None
     type: str = "user" # "user", "group", "channel"
+    photo_url: Optional[str] = None
 
 class ConversationCreate(BaseModel):
     telegram_peer_id: int

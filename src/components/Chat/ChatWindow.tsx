@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, CheckSquare } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
 import ContactInfoModal from '../Modals/ContactInfoModal';
+import ConfirmModal from '../Modals/ConfirmModal';
+import PeerAvatar from '../Common/PeerAvatar';
 
 // Helper to check if string contains only emojis
 const isOnlyEmoji = (str: string) => {
@@ -239,7 +241,8 @@ interface ChatWindowProps {
   onSendMedia: (file: File, caption: string) => Promise<void>;
   onJoinConversation?: (conversationId: number) => Promise<void>;
   onToggleMute?: (conversationId: number) => Promise<void>;
-  conversationId?: number;
+  onLeaveConversation?: (conversationId: number) => Promise<void>;
+  onDeleteMessages?: (conversationId: number, messageIds: number[], revoke: boolean) => Promise<void>;
   hasMoreMessages?: boolean;
   onLoadMoreMessages?: () => Promise<void>;
 }
@@ -255,10 +258,13 @@ export default function ChatWindow({
   onSendMedia,
   onJoinConversation,
   onToggleMute,
-  conversationId,
+  onLeaveConversation,
+  onDeleteMessages,
   hasMoreMessages = false,
   onLoadMoreMessages,
 }: ChatWindowProps) {
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const conversationId = currentConversation?.id;
   const [newMessage, setNewMessage] = useState('');
   const [translating, setTranslating] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -267,6 +273,12 @@ export default function ChatWindow({
   const [showTemplates, setShowTemplates] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedMessages, setSelectedMessages] = useState<number[]>([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteForEveryone, setDeleteForEveryone] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
   const pickerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -328,13 +340,30 @@ export default function ChatWindow({
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [loadedImages, setLoadedImages] = useState<Record<number, string>>({});
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: 'danger' | 'warning' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    type: 'danger'
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevScrollHeightRef = useRef<number>(0);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    } else if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
 
   // Helper to check if message has photo media
@@ -375,11 +404,20 @@ export default function ChatWindow({
     // Restore position: new scrollHeight - old scrollHeight
     const newScrollHeight = container.scrollHeight;
     container.scrollTop = newScrollHeight - prevScrollHeightRef.current;
-  });
+  }, [messages.length, loadingMore]);
+
+  // Scroll to bottom on conversation change (instant) or new messages (smooth)
+  useEffect(() => {
+    scrollToBottom(messages.length > 0 ? 'auto' : 'smooth');
+  }, [conversationId]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages.length > 0 && messages[messages.length - 1]?.id]);
+    if (messages.length > 0) {
+      // Small delay to ensure images or other dynamic content have started rendering
+      const timer = setTimeout(() => scrollToBottom('smooth'), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length, messages[messages.length - 1]?.id]);
 
   useEffect(() => {
     loadTemplates();
@@ -444,15 +482,20 @@ export default function ChatWindow({
   };
 
   const handleCancelScheduledMessage = async (messageId: number) => {
-    if (!confirm('Cancel this scheduled message?')) return;
-    try {
-      await scheduledMessagesAPI.cancelScheduledMessage(messageId);
-      // Remove from local state immediately for instant feedback
-      setScheduledMessages(scheduledMessages.filter(m => m.id !== messageId));
-      // The system message will be added via WebSocket and trigger a reload
-    } catch (err) {
-      console.error('Failed to cancel scheduled message:', err);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Cancel Message',
+      message: 'Are you sure you want to cancel this scheduled message?',
+      type: 'warning',
+      onConfirm: async () => {
+        try {
+          await scheduledMessagesAPI.cancelScheduledMessage(messageId);
+          setScheduledMessages(scheduledMessages.filter(m => m.id !== messageId));
+        } catch (err) {
+          console.error('Failed to cancel scheduled message:', err);
+        }
+      }
+    });
   };
 
   const handleContactSaved = () => {
@@ -516,7 +559,7 @@ export default function ChatWindow({
 
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
-      const url = `http://localhost:8000/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
+      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
 
       const response = await fetch(url, {
         headers: {
@@ -551,7 +594,7 @@ export default function ChatWindow({
   const handleDownloadMedia = async (message: TelegramMessage) => {
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
-      const url = `http://localhost:8000/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
+      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
 
       const response = await fetch(url, {
         headers: {
@@ -587,6 +630,46 @@ export default function ChatWindow({
     } catch (error) {
       console.error('Failed to download media:', error);
       alert('Failed to download media. Please try again.');
+    }
+  };
+
+  const toggleMessageSelection = (messageId: number) => {
+    if (!isSelectionMode) {
+      setIsSelectionMode(true);
+      setSelectedMessages([messageId]);
+    } else {
+      setSelectedMessages(prev =>
+        prev.includes(messageId)
+          ? prev.filter(id => id !== messageId)
+          : [...prev, messageId]
+      );
+    }
+  };
+
+  const cancelSelection = () => {
+    setIsSelectionMode(false);
+    setSelectedMessages([]);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedMessages.length === 0) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!conversationId || selectedMessages.length === 0 || !onDeleteMessages) return;
+
+    setIsDeleting(true);
+    try {
+      await onDeleteMessages(conversationId, selectedMessages, deleteForEveryone);
+      setShowDeleteConfirm(false);
+      setIsSelectionMode(false);
+      setSelectedMessages([]);
+    } catch (error) {
+      console.error('Failed to delete messages:', error);
+      alert('Failed to delete messages. Please try again.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -629,6 +712,75 @@ export default function ChatWindow({
 
   return (
     <div id="chat-window" className="flex-1 flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
+      {/* Selection Mode Header overlay */}
+      {isSelectionMode && (
+        <div className="absolute top-0 left-0 right-0 h-16 bg-[#419FD9] dark:bg-[#1C2733] z-50 flex items-center justify-between px-6 shadow-md transition-all">
+          <div className="flex items-center space-x-6">
+            <button onClick={cancelSelection} className="text-white hover:bg-white/10 p-2 rounded-full transition-colors">
+              <X className="w-6 h-6" />
+            </button>
+            <span className="text-white font-medium">{selectedMessages.length} messages selected</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleDeleteSelected}
+              disabled={selectedMessages.length === 0}
+              className="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 dark:text-red-400 rounded-lg transition-colors font-medium border border-red-500/20 disabled:opacity-50"
+            >
+              <Trash className="w-5 h-5" />
+              <span>Delete</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-[#1C2733] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
+            <div className="p-6">
+              <div className="flex items-center justify-center mb-6">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center">
+                  <Trash className="w-8 h-8 text-red-500" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-center text-gray-900 dark:text-white mb-2">Delete Messages?</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-center text-sm mb-6">
+                Are you sure you want to delete {selectedMessages.length} message{selectedMessages.length > 1 ? 's' : ''}? This action cannot be undone.
+              </p>
+
+              <div className="flex items-center space-x-3 mb-6 p-4 bg-gray-50 dark:bg-white/5 rounded-xl cursor-pointer" onClick={() => setDeleteForEveryone(!deleteForEveryone)}>
+                <div className={`w-5 h-5 rounded border ${deleteForEveryone ? 'bg-blue-500 border-blue-500' : 'border-gray-400'} flex items-center justify-center transition-colors`}>
+                  {deleteForEveryone && <CheckSquare className="w-4 h-4 text-white" />}
+                </div>
+                <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Delete for everyone</span>
+              </div>
+
+              <div className="flex flex-col space-y-2">
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                >
+                  {isDeleting ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    <span>Delete</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="w-full py-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Contact Save Alert */}
       {contactSaveAlert && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
@@ -646,9 +798,18 @@ export default function ChatWindow({
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xl shadow-inner uppercase">
-                {currentConversation?.title?.charAt(0) || '?'}
-              </div>
+              <PeerAvatar
+                accountId={currentAccount?.id}
+                peerId={
+                  currentConversation?.telegram_peer_id ||
+                  (currentConversation?.type === 'private' && !currentConversation?.lastMessage?.is_outgoing
+                    ? currentConversation?.lastMessage?.sender_user_id
+                    : undefined) ||
+                  (currentConversation?.type !== 'private' ? currentConversation?.id : undefined)
+                }
+                name={currentConversation?.title || 'Unknown'}
+                className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
+              />
               <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">
                   {currentConversation?.title || 'Translation Chat'}
@@ -701,6 +862,42 @@ export default function ChatWindow({
               )}
             </div>
           </div>
+          {/* Chat Actions Menu */}
+          {currentConversation && (
+            <div className="relative ml-2">
+              <button
+                onClick={() => setShowChatMenu(p => !p)}
+                className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="More options"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                </svg>
+              </button>
+              {showChatMenu && (
+                <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-xl z-50 w-48 py-1 animate-scale-in">
+                  {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
+                    <button
+                      onClick={() => {
+                        setShowChatMenu(false);
+                        setConfirmModal({
+                          isOpen: true,
+                          title: 'Leave Group',
+                          message: 'Are you sure you want to leave this group? You will no longer receive messages from it.',
+                          type: 'danger',
+                          onConfirm: () => onLeaveConversation(currentConversation.id)
+                        });
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 font-medium flex items-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                      <span>Leave Group</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* Contact Info Button */}
           {currentConversation && (
             <button
@@ -790,21 +987,40 @@ export default function ChatWindow({
               }
 
               const isOutgoing = isMessageOutgoing(message);
+              const isSelected = selectedMessages.includes(message.id);
+
               elements.push(
                 <div
                   key={message.id}
-                  className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4`}
+                  className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4 group relative`}
+                  onClick={() => isSelectionMode && toggleMessageSelection(message.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    toggleMessageSelection(message.id);
+                  }}
                 >
-                  <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'}`}>
+                  {/* Selection Checkbox */}
+                  {isSelectionMode && (
+                    <div className={`absolute ${isOutgoing ? '-left-8' : '-right-8'} top-1/2 -translate-y-1/2 transition-opacity`}>
+                      <div className={`w-5 h-5 rounded border ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-400'} flex items-center justify-center`}>
+                        {isSelected && <CheckSquare className="w-4 h-4 text-white" />}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'} ${isSelected ? 'opacity-80' : ''}`}>
                     {/* Sender info for group/supergroup/channel incoming messages - Telegram Desktop doesn't show this in private chats */}
                     {!isOutgoing && currentConversation?.type !== 'private' && (
                       <div className="flex items-center space-x-2 mb-2 px-1">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase">
-                          {message.sender_name ? message.sender_name.charAt(0) : '?'}
-                        </div>
+                        <PeerAvatar
+                          accountId={currentAccount?.id}
+                          peerId={message.sender_user_id}
+                          name={message.sender_name || 'Unknown'}
+                          className="w-8 h-8 rounded-full flex-shrink-0 text-xs font-bold uppercase shadow-sm"
+                        />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 truncate">
-                            {message.sender_name || message.sender_username || 'Unknown'}
+                            {message.sender_name}
                           </p>
                         </div>
                       </div>
@@ -1188,7 +1404,18 @@ export default function ChatWindow({
         isOpen={showContactModal}
         onClose={() => setShowContactModal(false)}
         conversationId={conversationId || null}
+        accountId={currentAccount?.id}
+        peerId={currentConversation?.telegram_peer_id || currentConversation?.id}
+        contactName={currentConversation?.title || 'Unknown'}
         onSaved={handleContactSaved}
+      />
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
       />
     </div >
   );

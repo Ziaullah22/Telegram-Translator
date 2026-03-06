@@ -245,7 +245,7 @@ async def get_conversations(
         FROM conversations c
         JOIN telegram_accounts ta ON ta.id = c.telegram_account_id
         JOIN users u ON u.id = ta.user_id
-        WHERE 1=1
+        WHERE c.is_hidden = false
     """
     params = []
     
@@ -422,10 +422,11 @@ async def admin_download_media(
                 )
             
             try:
-                # Download the media
-                file_path = await session.client.download_media(
+                # Download the media using our helper which ensures the message is fetched first
+                file_path = await session.download_media(
                     telegram_message_id,
-                    file=download_path
+                    message['telegram_peer_id'],
+                    download_path
                 )
                 
                 if not file_path:

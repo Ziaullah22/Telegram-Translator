@@ -123,8 +123,8 @@ async def lifespan(app: FastAPI):
                 """
                 INSERT INTO messages
                 (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-                 source_language, target_language, created_at, is_encrypted, is_outgoing)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                 source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING id
                 """,
                 conversation_id,
@@ -139,7 +139,8 @@ async def lifespan(app: FastAPI):
                 account['target_language'],
                 created_at,
                 is_encrypted,
-                message_data.get('is_outgoing', False)
+                message_data.get('is_outgoing', False),
+                message_data.get('media_filename')
             )
 
             await db.execute(
@@ -161,9 +162,9 @@ async def lifespan(app: FastAPI):
                 "translated_text": translated_text,
                 "source_language": source_lang,
                 "target_language": account['target_language'],
-                "created_at": created_at.isoformat() if created_at else None,
+                "created_at": created_at.isoformat() if isinstance(created_at, datetime) else created_at,
                 "edited_at": None,
-                "is_outgoing": message_data['is_outgoing'],
+                "is_outgoing": message_data.get('is_outgoing', False),
                 "media_file_name": message_data.get('media_filename'),
             }
 
@@ -231,7 +232,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=[settings.frontend_url, "http://localhost:5174", "http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -35,6 +35,8 @@ class TelegramSession:
         # Rate limiting: track last message time
         self.last_message_time = None
         self.min_message_interval = 1.0  # Minimum 1 second between messages
+        # Entity cache: peer_id -> entity (populated from dialogs on connect)
+        self.entity_cache: Dict[int, object] = {}
 
     async def connect(self):
         try:
@@ -61,6 +63,21 @@ class TelegramSession:
 
             self.is_connected = True
             logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
+
+            # Pre-warm entity cache using SAME ID format as our DB (_get_peer_id)
+            try:
+                async for dialog in self.client.iter_dialogs(limit=500):
+                    if dialog.entity:
+                        db_peer_id = self._get_peer_id(dialog.entity)
+                        if db_peer_id:
+                            self.entity_cache[db_peer_id] = dialog.entity
+                        # Also index by raw entity.id as fallback
+                        raw_id = getattr(dialog.entity, 'id', None)
+                        if raw_id and raw_id != db_peer_id:
+                            self.entity_cache[raw_id] = dialog.entity
+                logger.info(f"Entity cache warmed: {len(self.entity_cache)} entries for account {self.account_id}")
+            except Exception as e:
+                logger.warning(f"Could not warm entity cache: {e}")
 
             return True
 
@@ -254,16 +271,17 @@ class TelegramSession:
                     if entity.last_name:
                         name_parts.append(entity.last_name)
                     
-                    full_name = " ".join(name_parts) if name_parts else entity.username or "Unknown"
+                    full_name = " ".join(name_parts) if name_parts else (entity.username or entity.phone or "Unknown")
                     
                     return {
                         "name": full_name,
-                        "username": entity.username
+                        "username": entity.username,
+                        "phone": entity.phone
                     }
         except Exception as e:
             logger.error(f"Error getting sender info for {sender_id}: {e}")
         
-        return {"name": "Unknown", "username": None}
+        return {"name": "Unknown", "username": None, "phone": None}
 
     async def send_message(self, peer_id: int, text: str, max_retries: int = 3):
         if not self.client or not self.is_connected:
@@ -436,7 +454,7 @@ class TelegramSession:
                             parts.append(sender.first_name)
                         if getattr(sender, 'last_name', None):
                             parts.append(sender.last_name)
-                        sender_name = " ".join(parts) if parts else getattr(sender, 'username', None) or "Unknown"
+                        sender_name = " ".join(parts) if parts else getattr(sender, 'username', None) or getattr(sender, 'phone', None) or "Unknown"
                     elif hasattr(sender, 'title'):
                         sender_name = sender.title or "Unknown"
                     sender_username = getattr(sender, 'username', None)
@@ -513,9 +531,21 @@ class TelegramSession:
         return "private"
 
     async def search_users(self, username: str, limit: int = 10):
-        """Search for Telegram users by username"""
+        """Search for Telegram users by username or phone number"""
         if not self.client or not self.is_connected:
             return []
+
+        # Detect if this is a phone number search
+        cleaned = username.strip().replace(' ', '').replace('-', '')
+        
+        # Force + for phone numbers that look international (more than 7 digits)
+        if cleaned.isdigit() and len(cleaned) >= 10 and not cleaned.startswith('+'):
+            cleaned = '+' + cleaned
+            
+        is_phone = cleaned.startswith('+') or (cleaned.isdigit() and len(cleaned) > 5)
+        
+        if is_phone:
+            return await self._search_by_phone(cleaned, limit)
 
         try:
             from telethon.tl.functions.contacts import SearchRequest
@@ -552,11 +582,75 @@ class TelegramSession:
                     "is_contact": False
                 })
             
-            return results[:limit * 2] # Increased limit for combined results
+            return results[:limit * 2]
                 
         except Exception as e:
             logger.error(f"Error searching users for {self.account_id}: {e}")
             return []
+
+    async def _search_by_phone(self, phone: str, limit: int = 10):
+        """Search by phone number using ImportContacts"""
+        try:
+            from telethon.tl.functions.contacts import ImportContactsRequest, DeleteContactsRequest
+            from telethon.tl.types import InputPhoneContact
+            
+            # Use the phone number itself as the temporary name
+            # This is less confusing than 'Search' if it ends up being displayed
+            result = await self.client(ImportContactsRequest(contacts=[
+                InputPhoneContact(client_id=0, phone=phone, first_name=phone, last_name='')
+            ]))
+            
+            found = []
+            for user in result.users:
+                # If Telegram has a real name for this user, it usually returns it in results.users
+                # even if we provided a different one in ImportContactsRequest (sometimes).
+                # But to be safe, we'll use the user's properties.
+                found.append({
+                    "id": user.id,
+                    "username": user.username,
+                    "first_name": user.first_name if user.first_name != phone else (user.username or phone),
+                    "last_name": user.last_name,
+                    "phone": user.phone or phone,
+                    "is_contact": False,
+                    "type": "user"
+                })
+            
+            # Clean up temp contact
+            if result.users:
+                try:
+                    await self.client(DeleteContactsRequest(id=[u.id for u in result.users]))
+                except Exception:
+                    pass
+            
+            return found[:limit]
+        except Exception as e:
+            logger.error(f"Phone search error for {phone}: {e}")
+            return []
+
+    async def delete_messages(self, peer_id: int, message_ids: List[int], revoke: bool = True):
+        """Delete messages from a conversation"""
+        if not self.client or not self.is_connected:
+            return False
+            
+        try:
+            await self.client.delete_messages(peer_id, message_ids, revoke=revoke)
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting messages for {self.account_id}: {e}")
+            return False
+
+    async def delete_dialog(self, peer_id: int):
+        """Delete a dialog/conversation from Telegram side"""
+        if not self.client or not self.is_connected:
+            return False
+            
+        try:
+            # revoke=True deletes for everyone if private chat
+            await self.client.delete_dialog(peer_id, revoke=True)
+            return True
+        except Exception as e:
+            logger.error(f"Dialog deletion error: {e}")
+            return False
 
 
 class TelethonService:
@@ -636,11 +730,22 @@ class TelethonService:
         return await session.get_messages(peer_id, limit)
 
     async def send_message(self, account_id: int, peer_id: int, text: str):
-        session = self.sessions.get(account_id)
-        if not session:
-            raise Exception("Session not connected")
+        session = await self.get_session(account_id)
+        if session:
+            return await session.send_message(peer_id, text)
+        return None
 
-        return await session.send_message(peer_id, text)
+    async def delete_messages(self, account_id: int, peer_id: int, message_ids: List[int], revoke: bool = True):
+        session = await self.get_session(account_id)
+        if not session:
+            return False
+        return await session.delete_messages(peer_id, message_ids, revoke=revoke)
+
+    async def delete_dialog(self, account_id: int, peer_id: int):
+        session = await self.get_session(account_id)
+        if not session:
+            return False
+        return await session.delete_dialog(peer_id)
 
     async def get_unread_messages(self, account_id: int):
         """Get unread messages for a specific account"""
@@ -904,5 +1009,231 @@ class TelethonService:
         
         for account_id in list(self.sessions.keys()):
             await self.disconnect_session(account_id)
+
+    async def leave_chat(self, account_id: int, peer_id: int):
+        """Leave a group or channel"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.channels import LeaveChannelRequest
+        from telethon.tl.functions.messages import DeleteChatUserRequest
+        
+        try:
+            entity = await session.client.get_entity(peer_id)
+            if hasattr(entity, 'megagroup') or hasattr(entity, 'broadcast'):
+                await session.client(LeaveChannelRequest(entity))
+            else:
+                me = await session.client.get_me()
+                await session.client(DeleteChatUserRequest(peer_id, me))
+        except Exception as e:
+            logger.warning(f"Leave chat error for peer {peer_id}: {e}")
+            raise
+
+    async def get_profile(self, account_id: int) -> dict:
+        """Get the Telegram user's own profile info including privacy"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.users import GetFullUserRequest
+        from telethon.tl.functions.account import GetPrivacyRequest
+        from telethon.tl.types import InputPrivacyKeyPhoneNumber, PrivacyValueAllowAll, PrivacyValueAllowContacts
+        
+        me = await session.client.get_me()
+        full = await session.client(GetFullUserRequest(me))
+        
+        # Get privacy settings
+        phone_privacy = 'nobody'
+        try:
+            privacy = await session.client(GetPrivacyRequest(key=InputPrivacyKeyPhoneNumber()))
+            for rule in privacy.rules:
+                if isinstance(rule, PrivacyValueAllowAll):
+                    phone_privacy = 'everybody'
+                    break
+                elif isinstance(rule, PrivacyValueAllowContacts):
+                    phone_privacy = 'contacts'
+                    break
+        except Exception as e:
+            logger.warning(f"Could not get privacy settings for account {account_id}: {e}")
+
+        # Build a clean profile dict
+        user = full.users[0]
+        photo_url = None
+        
+        # Try to get profile photo bytes
+        try:
+            photo_bytes = await session.client.download_profile_photo(me, bytes)
+            if photo_bytes:
+                import base64
+                photo_url = f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
+        except Exception as e:
+            logger.debug(f"Could not download profile photo: {e}")
+        
+        return {
+            "id": user.id,
+            "first_name": user.first_name or "",
+            "last_name": user.last_name or "",
+            "username": user.username or "",
+            "phone": user.phone or "",
+            "bio": full.full_user.about or "",
+            "photo_url": photo_url,
+            "phone_privacy": phone_privacy
+        }
+
+    async def update_profile(self, account_id: int, first_name: str = None, last_name: str = None, bio: str = None) -> dict:
+        """Update Telegram profile name and bio"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.account import UpdateProfileRequest
+        
+        kwargs = {}
+        if first_name is not None:
+            kwargs['first_name'] = first_name
+        if last_name is not None:
+            kwargs['last_name'] = last_name
+        if bio is not None:
+            kwargs['about'] = bio
+        
+        await session.client(UpdateProfileRequest(**kwargs))
+        return {"status": "success", "message": "Profile updated successfully"}
+
+    async def upload_profile_photo(self, account_id: int, file_bytes: bytes, filename: str) -> dict:
+        """Upload a new profile photo"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.photos import UploadProfilePhotoRequest
+        import io
+        
+        file_obj = io.BytesIO(file_bytes)
+        file_obj.name = filename
+        uploaded = await session.client.upload_file(file_obj)
+        await session.client(UploadProfilePhotoRequest(file=uploaded))
+        return {"status": "success", "message": "Profile photo updated"}
+
+    async def set_phone_privacy(self, account_id: int, visibility: str) -> dict:
+        """Set phone number privacy setting"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.account import SetPrivacyRequest
+        from telethon.tl.types import (
+            InputPrivacyKeyPhoneNumber,
+            InputPrivacyValueAllowAll,
+            InputPrivacyValueAllowContacts,
+            InputPrivacyValueDisallowAll,
+        )
+        
+        if visibility == 'everybody':
+            rules = [InputPrivacyValueAllowAll()]
+        elif visibility == 'contacts':
+            rules = [InputPrivacyValueAllowContacts()]
+        else:  # nobody
+            rules = [InputPrivacyValueDisallowAll()]
+        
+        await session.client(SetPrivacyRequest(key=InputPrivacyKeyPhoneNumber(), rules=rules))
+        return {"status": "success", "visibility": visibility}
+
+    async def get_sessions(self, account_id: int) -> list:
+        """Get all active Telegram sessions"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.account import GetAuthorizationsRequest
+        
+        result = await session.client(GetAuthorizationsRequest())
+        sessions = []
+        for auth in result.authorizations:
+            sessions.append({
+                "hash": str(auth.hash),
+                "device_model": auth.device_model or "Unknown",
+                "platform": auth.platform or "",
+                "system_version": auth.system_version or "",
+                "app_name": auth.app_name or "",
+                "app_version": auth.app_version or "",
+                "date_created": auth.date_created.isoformat() if auth.date_created else None,
+                "date_active": auth.date_active.isoformat() if auth.date_active else None,
+                "ip": auth.ip or "",
+                "country": auth.country or "",
+                "region": auth.region or "",
+                "current": auth.current,
+                "password_pending": auth.password_pending,
+            })
+        return sessions
+
+    async def terminate_session(self, account_id: int, session_hash: int) -> dict:
+        """Terminate a specific session by hash"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.account import ResetAuthorizationRequest
+        
+        await session.client(ResetAuthorizationRequest(hash=session_hash))
+        return {"status": "success", "message": "Session terminated"}
+
+    async def change_2fa(self, account_id: int, current_password: str, new_password: str) -> dict:
+        """Change Telegram 2FA password"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        await session.client.edit_2fa(
+            current_password=current_password if current_password else None,
+            new_password=new_password,
+        )
+        return {"status": "success", "message": "2FA password updated successfully"}
+
+    async def get_peer_photo(self, account_id: int, peer_id: int) -> str:
+        """Download and return peer's profile photo as base64"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        import base64
+        
+        # Look up entity from our cache (keyed by both raw and full peer IDs)
+        entity = session.entity_cache.get(peer_id)
+        
+        if not entity:
+            # Try Telethon's own session cache as fallback
+            for peer_type in (peer_id, PeerUser(peer_id), PeerChannel(peer_id), PeerChat(peer_id)):
+                try:
+                    entity = await session.client.get_entity(peer_type)
+                    if entity:
+                        # Cache using DB-compatible ID format
+                        try:
+                            db_id = session._get_peer_id(entity)
+                            if db_id:
+                                session.entity_cache[db_id] = entity
+                        except Exception:
+                            pass
+                        raw_id = getattr(entity, 'id', None)
+                        if raw_id:
+                            session.entity_cache[raw_id] = entity
+                        break
+                except Exception:
+                    continue
+
+        if not entity:
+            logger.warning(f"Entity not found for peer {peer_id} in account {account_id}. Cache has {len(session.entity_cache)} entries.")
+            raise Exception(f"Entity not found for peer {peer_id}")
+        
+        try:
+            photo_bytes = await session.client.download_profile_photo(entity, bytes)
+        except Exception as e:
+            logger.error(f"Error downloading photo for peer {peer_id}: {e}")
+            raise e
+        
+        if photo_bytes:
+            return f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
+        return None  # Entity has no profile photo set
+
 
 telethon_service = TelethonService()

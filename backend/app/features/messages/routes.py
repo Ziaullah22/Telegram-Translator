@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from typing import List
 from datetime import datetime
@@ -481,5 +481,87 @@ async def download_media(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download media: {str(e)}",
         )
+
+
+@router.delete("/delete")
+async def delete_messages_endpoint(
+    conversation_id: int,
+    message_ids: List[int] = Query(None),
+    message_ids_alt: List[int] = Query(None, alias="message_ids[]"),
+    revoke: bool = True,
+    current_user = Depends(get_current_user),
+):
+    """Delete specific messages from a conversation and Telegram"""
+    ids_to_delete = message_ids or message_ids_alt
+    if not ids_to_delete:
+        raise HTTPException(status_code=400, detail="No message IDs provided")
+
+    # Verify conversation ownership and get account/peer info
+    conversation = await db.fetchrow(
+        """
+        SELECT c.*, ta.user_id 
+        FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE c.id = $1 AND ta.user_id = $2
+        """,
+        conversation_id,
+        current_user.user_id,
+    )
+
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    # Map local IDs to Telegram message IDs
+    messages = await db.fetch(
+        f"""
+        SELECT id, telegram_message_id FROM messages 
+        WHERE id = ANY($1) AND conversation_id = $2
+        """,
+        ids_to_delete,
+        conversation_id
+    )
+
+    if not messages:
+        return {"message": "No messages found to delete"}
+
+    tg_message_ids = [m['telegram_message_id'] for m in messages if m['telegram_message_id']]
+    found_local_ids = [m['id'] for m in messages]
+
+    # Delete from Telegram if they have TG IDs
+    if tg_message_ids:
+        try:
+            success = await telethon_service.delete_messages(
+                conversation['telegram_account_id'],
+                conversation['telegram_peer_id'],
+                tg_message_ids,
+                revoke=revoke
+            )
+            if not success:
+                logger.warning(f"Telethon reported failure deleting messages {tg_message_ids}")
+        except Exception as e:
+            logger.error(f"Failed to delete messages from Telegram: {e}")
+            # We continue to delete from local DB anyway
+
+    # Delete from local database
+    await db.execute(
+        f"DELETE FROM messages WHERE id = ANY($1)",
+        found_local_ids
+    )
+
+    # Notify frontend via WebSocket
+    await manager.send_to_account(
+        {
+            "type": "messages_deleted",
+            "conversation_id": conversation_id,
+            "message_ids": found_local_ids
+        },
+        conversation['telegram_account_id'],
+        current_user.user_id,
+    )
+
+    return {"message": f"Deleted {len(found_local_ids)} messages", "deleted_ids": found_local_ids}
 
 

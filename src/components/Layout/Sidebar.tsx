@@ -1,5 +1,5 @@
 
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, User, Shield } from 'lucide-react';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -10,7 +10,9 @@ interface SidebarProps {
   onConnect: (account: TelegramAccount) => void;
   onDisconnect: (account: TelegramAccount) => void;
   onEdit: (account: TelegramAccount) => void;
-  onSoftDelete: (account: TelegramAccount) => void;
+  onDelete: (account: TelegramAccount) => void;
+  onProfile: (account: TelegramAccount) => void;
+  onSessions: (account: TelegramAccount) => void;
   unreadCounts: Record<number, Record<number, number>>; // accountId -> { conversationId: count }
 }
 
@@ -22,7 +24,9 @@ export default function Sidebar({
   onConnect,
   onDisconnect,
   onEdit,
-  onSoftDelete,
+  onDelete,
+  onProfile,
+  onSessions,
   unreadCounts,
 }: SidebarProps) {
   // Natural sort function that handles numbers correctly (1,2,3,11,23 instead of 1,11,2,23,3)
@@ -99,6 +103,20 @@ export default function Sidebar({
                           ) : null;
                         })()}
                         <button
+                          onClick={(e) => { e.stopPropagation(); onProfile(account); }}
+                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                          title="Profile & Privacy"
+                        >
+                          <User className="w-3.5 h-3.5 text-blue-500" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onSessions(account); }}
+                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                          title="Active Sessions"
+                        >
+                          <Shield className="w-3.5 h-3.5 text-orange-500" />
+                        </button>
+                        <button
                           id="account-edit-btn"
                           onClick={(e) => { e.stopPropagation(); onEdit(account); }}
                           className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
@@ -108,7 +126,7 @@ export default function Sidebar({
                         </button>
                         <button
                           id="account-delete-btn"
-                          onClick={(e) => { e.stopPropagation(); onSoftDelete(account); }}
+                          onClick={(e) => { e.stopPropagation(); onDelete(account); }}
                           className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
                           title="Delete"
                         >

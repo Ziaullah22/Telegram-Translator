@@ -15,6 +15,8 @@ import AddAccountModal from './components/Modals/AddAccountModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
 import AutoResponderPage from './components/AutoResponder/AutoResponderPage';
 import UserGuideTour from './components/Modals/UserGuideTour';
+import ProfileModal from './components/Modals/ProfileModal';
+import ActiveSessionsModal from './components/Modals/ActiveSessionsModal';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
@@ -46,6 +48,10 @@ function App() {
   const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileAccount, setProfileAccount] = useState<TelegramAccount | null>(null);
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
+  const [sessionsAccount, setSessionsAccount] = useState<TelegramAccount | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
@@ -241,9 +247,34 @@ function App() {
             });
           }
         }
-        else {
-          // If message is for a different account, do not change current conversations; only bump that account's total
-          // Sidebar will reflect totals derived from unreadCounts
+      }
+
+      if (data?.type === 'conversation_deleted') {
+        const deletedConversationId = Number(data.conversation_id);
+        setConversations(prev => prev.filter(c => c.id !== deletedConversationId));
+        if (currentConversationRef.current?.id === deletedConversationId) {
+          setCurrentConversation(null);
+          setMessages([]);
+        }
+      }
+
+      if (data?.type === 'messages_deleted') {
+        const deletedConversationId = Number(data.conversation_id);
+        const deletedIds = data.message_ids as number[];
+
+        // If current view is the same conversation, remove messages
+        if (currentConversationRef.current?.id === deletedConversationId) {
+          setMessages(prev => prev.filter(msg => !deletedIds.includes(msg.id)));
+        }
+      }
+
+      if (data?.type === 'account_deleted') {
+        const deletedAccountId = Number(data.account_id);
+        setAccounts(prev => prev.filter(acc => acc.id !== deletedAccountId));
+        if (currentAccountRef.current?.id === deletedAccountId) {
+          setCurrentAccount(null);
+          setConversations([]);
+          setMessages([]);
         }
       }
 
@@ -256,6 +287,19 @@ function App() {
         const accId = Number(data.account_id);
         setAccounts(prev => prev.map(acc => acc.id === accId ? { ...acc, isConnected: false } : acc));
       }
+      if (data?.type === 'account_updated' && data.account) {
+        const updatedAcc = data.account;
+        // Map backend snake_case to frontend camelCase if necessary (check types)
+        const camelAcc = {
+          ...updatedAcc,
+          isConnected: updatedAcc.is_connected // backend uses is_connected
+        };
+
+        setAccounts(prev => prev.map(acc => acc.id === updatedAcc.id ? { ...acc, ...camelAcc } : acc));
+        if (currentAccountRef.current?.id === updatedAcc.id) {
+          setCurrentAccount(prev => prev ? { ...prev, ...camelAcc } : null);
+        }
+      }
     });
 
     return unsubscribe;
@@ -265,6 +309,13 @@ function App() {
     try {
       const accountsList = await telegramAPI.getAccounts();
       setAccounts(accountsList);
+
+      // CRITICAL: Update currentAccount if it's already selected to ensure UI updates instantly
+      setCurrentAccount(prev => {
+        if (!prev) return null;
+        const updated = accountsList.find(a => a.id === prev.id);
+        return updated || prev;
+      });
 
       // Initialize unreadCounts for all accounts based on total count from backend
       setUnreadCounts(prev => {
@@ -453,12 +504,21 @@ function App() {
     setShowEditAccountModal(true);
   };
 
-  const handleSoftDelete = async (account: TelegramAccount) => {
+  const handleHardDelete = async (account: TelegramAccount) => {
+    if (!confirm(`Delete "${account.displayName || account.accountName}"? This cannot be undone.`)) return;
     try {
-      await telegramAPI.updateAccount(account.id, { isActive: false });
+      await telegramAPI.deleteAccount(account.id);
+      // If this was the active account, clear UI
+      if (currentAccount?.id === account.id) {
+        setCurrentAccount(null);
+        setCurrentConversation(null);
+        setConversations([]);
+        setMessages([]);
+      }
       await loadAccounts();
     } catch (error) {
       console.error('Failed to delete account:', error);
+      alert('Failed to delete account.');
     }
   };
 
@@ -551,6 +611,43 @@ function App() {
     }
   };
 
+  const handleLeaveConversation = async (conversationId: number) => {
+    try {
+      await telegramAPI.leaveConversation(conversationId);
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Failed to leave conversation:', error);
+    }
+  };
+
+  const handleDeleteConversation = async (conversationId: number) => {
+    try {
+      await telegramAPI.deleteConversation(conversationId);
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  };
+
+  const handleDeleteMessages = async (conversationId: number, messageIds: number[], revoke: boolean) => {
+    try {
+      await messagesAPI.deleteMessages(conversationId, messageIds, revoke);
+      // Remove already handled by WebSocket normally, but we can do it optimistically
+      setMessages(prev => prev.filter(msg => !messageIds.includes(msg.id)));
+    } catch (error) {
+      console.error('Failed to delete messages:', error);
+      throw error;
+    }
+  };
+
   // Loading screen
   if (isLoading) {
     return (
@@ -617,7 +714,9 @@ function App() {
                 onConnect={handleConnectAccount}
                 onDisconnect={handleDisconnectAccount}
                 onEdit={handleEditAccount}
-                onSoftDelete={handleSoftDelete}
+                onDelete={handleHardDelete}
+                onProfile={(account) => { setProfileAccount(account); setShowProfileModal(true); }}
+                onSessions={(account) => { setSessionsAccount(account); setShowSessionsModal(true); }}
                 unreadCounts={unreadCounts}
               />
 
@@ -626,6 +725,7 @@ function App() {
                   conversations={conversations}
                   currentConversation={currentConversation}
                   onConversationSelect={handleConversationSelect}
+                  onDeleteConversation={handleDeleteConversation}
                   isConnected={currentAccount.isConnected}
                   unreadCounts={unreadCounts[currentAccount.id] || {}}
                   accountId={currentAccount.id}
@@ -667,7 +767,8 @@ function App() {
                     console.error('Failed to toggle mute:', error);
                   }
                 }}
-                conversationId={currentConversation?.id}
+                onLeaveConversation={handleLeaveConversation}
+                onDeleteMessages={handleDeleteMessages}
                 hasMoreMessages={hasMoreMessages}
                 onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
               />
@@ -686,6 +787,18 @@ function App() {
           account={editingAccount}
           onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }}
           onSuccess={loadAccounts}
+        />
+
+        <ProfileModal
+          isOpen={showProfileModal}
+          account={profileAccount}
+          onClose={() => { setShowProfileModal(false); setProfileAccount(null); }}
+        />
+
+        <ActiveSessionsModal
+          isOpen={showSessionsModal}
+          account={sessionsAccount}
+          onClose={() => { setShowSessionsModal(false); setSessionsAccount(null); }}
         />
 
         {/* User Guide Tour */}

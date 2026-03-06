@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Cookies from 'js-cookie';
+import { useAuth } from './useAuth';
 
 export function useSocket() {
+  const { isAuthenticated, token: authContextToken } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlers = useRef<Set<(data: any) => void>>(new Set());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -11,10 +13,14 @@ export function useSocket() {
   const maxReconnectAttempts = 5;
 
   const connect = useCallback(() => {
-    const token = Cookies.get('auth_token');
+    // Only attempt connection if authenticated
+    if (!isAuthenticated) return;
+
+    // Use token from context or fallback to cookie
+    const token = authContextToken || Cookies.get('auth_token');
 
     if (!token) {
-      console.log('No auth token found, skipping WebSocket connection');
+      // If we think we're authenticated but have no token, don't spam the console on login page
       return;
     }
 
@@ -23,10 +29,12 @@ export function useSocket() {
     }
 
     try {
-      const ws = new WebSocket(`ws://localhost:8000/ws?token=${token}`);
+      // DEBUG: console.log('Attempting WebSocket connection...');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
 
       ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
         setIsConnected(true);
         reconnectAttempts.current = 0;
 
@@ -64,16 +72,18 @@ export function useSocket() {
         }
 
         // Attempt to reconnect if not a normal closure and we have a token
-        if (event.code !== 1000) {
+        if (event.code !== 1000 && isAuthenticated) {
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`Attempting to reconnect in ${delay}ms`);
+          console.log(`Attempting to reconnect in ${delay}ms (Attempt ${reconnectAttempts.current + 1})`);
           reconnectAttempts.current++;
 
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-          console.error('Max reconnection attempts reached');
+          if (reconnectAttempts.current < maxReconnectAttempts) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              connect();
+            }, delay);
+          } else {
+            console.error('Max reconnection attempts reached');
+          }
         }
       };
 
@@ -81,10 +91,12 @@ export function useSocket() {
     } catch (error) {
       console.error('Error creating WebSocket:', error);
     }
-  }, []);
+  }, [isAuthenticated, authContextToken]);
 
   useEffect(() => {
-    connect();
+    if (isAuthenticated) {
+      connect();
+    }
 
     return () => {
       if (reconnectTimeoutRef.current) {
@@ -94,11 +106,12 @@ export function useSocket() {
         clearInterval(heartbeatIntervalRef.current);
       }
       if (wsRef.current) {
+        console.log('Closing WebSocket connection due to unmount or logout');
         wsRef.current.close(1000, 'Component unmounting');
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, isAuthenticated]);
 
   const onMessage = useCallback((handler: (data: any) => void) => {
     messageHandlers.current.add(handler);

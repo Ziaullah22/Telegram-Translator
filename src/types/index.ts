@@ -41,6 +41,7 @@ export interface TelegramMessage {
 
 export interface TelegramChat {
   id: number;
+  telegram_peer_id?: number;
   title?: string;
   username?: string;
   type: 'private' | 'group' | 'supergroup' | 'channel';
@@ -49,6 +50,7 @@ export interface TelegramChat {
   unreadCount?: number;
   is_hidden?: boolean;
   is_muted?: boolean;
+  photo_url?: string;
 }
 
 export interface TranslationResult {
@@ -132,6 +134,7 @@ export interface TelegramUserSearchResult {
   is_contact: boolean;
   title?: string;
   type: 'user' | 'group' | 'supergroup' | 'channel';
+  photo_url?: string;
 }
 
 export interface AutoResponderRule {

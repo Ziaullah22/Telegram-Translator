@@ -1,31 +1,20 @@
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
+import ConfirmModal from '../Modals/ConfirmModal';
+import PeerAvatar, { prefetchAvatars } from '../Common/PeerAvatar';
 
 interface ConversationListProps {
   conversations: TelegramChat[];
   currentConversation: TelegramChat | null;
   onConversationSelect: (conversation: TelegramChat) => void;
+  onDeleteConversation?: (conversationId: number) => void;
   isConnected?: boolean;
   unreadCounts: Record<number, number>;
   accountId?: number;
   onConversationCreated?: () => Promise<void>;
 }
-
-// Generate a consistent teal/blue color for avatar initials like Telegram
-const getAvatarColor = (name: string) => {
-  const colors = [
-    '#2b96c7', '#2caef4', '#45bfff', '#3d9be9',
-    '#4caf7d', '#45bf8d', '#5bb3a8', '#72b5e5',
-    '#e36f6f', '#e37c6f', '#e3a76f', '#e3bc6f',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-};
 
 const formatConvDate = (dateStr: string) => {
   const date = new Date(dateStr);
@@ -45,6 +34,7 @@ export default function ConversationList({
   conversations,
   currentConversation,
   onConversationSelect,
+  onDeleteConversation,
   isConnected = false,
   unreadCounts,
   accountId,
@@ -53,7 +43,20 @@ export default function ConversationList({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; conversationId: number | null }>({
+    isOpen: false,
+    conversationId: null,
+  });
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Batch-prefetch all conversation photos as soon as they are available
+  useEffect(() => {
+    if (!accountId || conversations.length === 0) return;
+    const peers = conversations
+      .map(c => ({ peerId: c.telegram_peer_id! }))
+      .filter(p => !!p.peerId);
+    prefetchAvatars(accountId, peers);
+  }, [accountId, conversations]);
 
   // Debounced search logic
   useEffect(() => {
@@ -98,7 +101,7 @@ export default function ConversationList({
       const titleParts = [];
       if (user.first_name) titleParts.push(user.first_name);
       if (user.last_name) titleParts.push(user.last_name);
-      const title = titleParts.length > 0 ? titleParts.join(' ') : user.username || 'Unknown';
+      const title = titleParts.length > 0 ? titleParts.join(' ') : user.username || user.phone || 'Unknown';
 
       const isGroup = user.type === 'group' || user.type === 'supergroup' || user.type === 'channel';
       // Map 'user' to 'private' for database compatibility
@@ -109,11 +112,17 @@ export default function ConversationList({
         title: user.title || title,
         username: user.username,
         type: targetType,
-        is_hidden: isGroup, // Hide groups/channels from list until joined
+        is_hidden: false, // Unhide immediately so it opens directly
       });
 
-      if (onConversationCreated) await onConversationCreated();
+      // Automatically join if it's a group/channel
+      if (isGroup) {
+        telegramAPI.joinConversation(conversation.id).catch(err => {
+          console.error('Auto-join failed:', err);
+        });
+      }
 
+      // Select immediately to show chat window
       onConversationSelect({
         id: conversation.id,
         title: conversation.title,
@@ -122,6 +131,11 @@ export default function ConversationList({
         is_hidden: conversation.is_hidden,
       } as TelegramChat);
 
+      // Refresh list in background
+      if (onConversationCreated) {
+        onConversationCreated().catch(err => console.error('Failed to refresh list:', err));
+      }
+
       // Clear search after selecting
       setSearchQuery('');
     } catch (error) {
@@ -129,18 +143,7 @@ export default function ConversationList({
     }
   };
 
-  const getConversationAvatar = (conversation: TelegramChat | TelegramUserSearchResult) => {
-    let name = '';
-    if ('title' in conversation) {
-      name = conversation.title || (conversation as any).username || '?';
-    } else {
-      name = conversation.username || `${(conversation as any).first_name || ''} ${(conversation as any).last_name || ''}`.trim() || '?';
-    }
 
-    const parts = name.split(' ').filter(Boolean);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return name.charAt(0).toUpperCase();
-  };
 
   const getLastMessagePreview = (conversation: TelegramChat) => {
     if (!conversation.lastMessage) return 'No messages yet';
@@ -221,10 +224,8 @@ export default function ConversationList({
               </div>
             ) : (
               searchResults.map((user) => {
-                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
-                const subtitle = user.username ? `@${user.username}` : user.phone || 'User';
-                const avatarLabel = getConversationAvatar(user);
-                const avatarColor = getAvatarColor(displayName);
+                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
+                const subtitle = user.username ? `@${user.username}` : user.phone || '';
 
                 return (
                   <div
@@ -232,12 +233,12 @@ export default function ConversationList({
                     onClick={() => handleUserSelect(user)}
                     className="flex items-center px-3 py-2.5 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5 last:border-0"
                   >
-                    <div
-                      className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-lg shadow-sm"
-                      style={{ backgroundColor: avatarColor }}
-                    >
-                      {avatarLabel}
-                    </div>
+                    <PeerAvatar
+                      accountId={accountId}
+                      peerId={user.id}
+                      name={displayName}
+                      className="w-12 h-12 rounded-full flex-shrink-0 text-lg"
+                    />
                     <div className="flex-1 min-w-0 ml-3">
                       <h3 className="text-sm font-semibold truncate text-gray-900 dark:text-white">
                         {displayName}
@@ -266,28 +267,34 @@ export default function ConversationList({
           ) : (
             conversations.map((conversation) => {
               const isActive = currentConversation?.id === conversation.id;
-              const avatarLabel = getConversationAvatar(conversation);
-              const avatarColor = getAvatarColor(conversation.title || conversation.username || '?');
               const unread = unreadCounts[conversation.id] || 0;
               const lastPreview = getLastMessagePreview(conversation);
               const isOutgoing = conversation.lastMessage?.is_outgoing;
+              const displayName = conversation.title || conversation.username || 'Unknown';
 
               return (
                 <div
                   key={conversation.id}
                   onClick={() => onConversationSelect(conversation)}
-                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 ${isActive
+                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group ${isActive
                     ? 'bg-[#419FD9] shadow-inner'
                     : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                     }`}
                 >
                   {/* Avatar */}
-                  <div
-                    className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-lg shadow-sm"
-                    style={{ backgroundColor: isActive ? '#60b4e8' : avatarColor }}
-                  >
-                    {avatarLabel}
-                  </div>
+                  <PeerAvatar
+                    accountId={accountId}
+                    peerId={
+                      conversation.telegram_peer_id
+                        ? conversation.telegram_peer_id
+                        : (conversation.type === 'private' && !conversation.lastMessage?.is_outgoing
+                          ? conversation.lastMessage?.sender_user_id
+                          : undefined)
+                    }
+                    name={displayName}
+                    isActive={isActive}
+                    className="w-12 h-12 rounded-full flex-shrink-0 text-lg"
+                  />
 
                   {/* Info */}
                   <div className={`flex-1 min-w-0 ml-3 py-1 ${isActive ? '' : 'border-b border-gray-100 dark:border-white/5'}`}>
@@ -295,7 +302,7 @@ export default function ConversationList({
                       <h3 className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
                         {conversation.title || conversation.username || 'Unknown'}
                       </h3>
-                      <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
+                      <div className="flex items-center space-x-1 ml-2 flex-shrink-0 relative">
                         {isOutgoing && (
                           <svg className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-[#419FD9] dark:text-[#419FD9]'}`} fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -305,9 +312,21 @@ export default function ConversationList({
                           <BellOff className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`} />
                         )}
                         {conversation.lastMessage && (
-                          <span className={`text-[11px] ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`}>
+                          <span className={`text-[11px] transition-opacity duration-200 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'} ${!isActive ? 'group-hover:opacity-0' : ''}`}>
                             {formatConvDate(conversation.lastMessage.created_at)}
                           </span>
+                        )}
+                        {!isActive && onDeleteConversation && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteModal({ isOpen: true, conversationId: conversation.id });
+                            }}
+                            className="absolute right-0 top-0 p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-10"
+                            title="Remove User"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
                     </div>
@@ -329,6 +348,20 @@ export default function ConversationList({
           )
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, conversationId: null })}
+        onConfirm={() => {
+          if (deleteModal.conversationId && onDeleteConversation) {
+            onDeleteConversation(deleteModal.conversationId);
+          }
+        }}
+        title="Remove User"
+        message="Are you sure you want to remove this user? This will delete the account and chat history from both sides. This action cannot be undone."
+        confirmText="Remove User"
+        type="danger"
+      />
     </div>
   );
 }

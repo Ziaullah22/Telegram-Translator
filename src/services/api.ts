@@ -2,7 +2,7 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = '/api';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -185,6 +185,70 @@ export const telegramAPI = {
     const response = await api.post(`/telegram/conversations/${conversationId}/toggle_mute`);
     return response.data;
   },
+
+  leaveConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/leave`);
+    return response.data;
+  },
+
+  deleteConversation: async (conversationId: number) => {
+    const response = await api.delete(`/telegram/conversations/${conversationId}`);
+    return response.data;
+  },
+
+  searchUsersByPhone: async (accountId: number, phone: string) => {
+    const response = await api.get(`/telegram/accounts/${accountId}/search-users`, {
+      params: { username: phone }
+    });
+    return response.data;
+  },
+
+  getProfile: async (accountId: number) => {
+    const response = await api.get(`/telegram/accounts/${accountId}/profile`);
+    return response.data;
+  },
+
+  updateProfile: async (accountId: number, data: { first_name?: string; last_name?: string; bio?: string }) => {
+    const response = await api.patch(`/telegram/accounts/${accountId}/profile`, data);
+    return response.data;
+  },
+
+  uploadProfilePhoto: async (accountId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('photo', file);
+    const response = await api.post(`/telegram/accounts/${accountId}/profile/photo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  setPhonePrivacy: async (accountId: number, visibility: 'everybody' | 'contacts' | 'nobody') => {
+    const response = await api.patch(`/telegram/accounts/${accountId}/profile/privacy`, { visibility });
+    return response.data;
+  },
+
+  getSessions: async (accountId: number) => {
+    const response = await api.get(`/telegram/accounts/${accountId}/sessions`);
+    return response.data;
+  },
+
+  terminateSession: async (accountId: number, sessionHash: string) => {
+    const response = await api.delete(`/telegram/accounts/${accountId}/sessions/${sessionHash}`);
+    return response.data;
+  },
+
+  change2FA: async (accountId: number, currentPassword: string, newPassword: string) => {
+    const response = await api.post(`/telegram/accounts/${accountId}/2fa`, {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+
+  getPeerPhoto: async (accountId: number, peerId: number) => {
+    const response = await api.get(`/telegram/accounts/${accountId}/peers/${peerId}/photo`);
+    return response.data;
+  },
 };
 
 // Translation API
@@ -222,10 +286,16 @@ export const conversationsAPI = {
     const items = response.data as any[];
     return (items || []).map((c: any) => ({
       id: c.id,
+      telegram_peer_id: c.telegram_peer_id,
       title: c.title,
       username: c.username,
       type: c.type,
-      lastMessage: c.last_message,
+      is_muted: c.is_muted || false,
+      is_hidden: c.is_hidden || false,
+      lastMessage: c.last_message ? {
+        ...c.last_message,
+        sender_user_id: c.last_message.sender_user_id,
+      } : undefined,
       unreadCount: c.unread_count,
     }));
   },
@@ -254,6 +324,13 @@ export const messagesAPI = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+    });
+    return response.data;
+  },
+
+  deleteMessages: async (conversationId: number, messageIds: number[], revoke: boolean = true) => {
+    const response = await api.delete('/messages/delete', {
+      params: { conversation_id: conversationId, message_ids: messageIds, revoke }
     });
     return response.data;
   },

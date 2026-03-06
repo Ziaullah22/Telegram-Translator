@@ -42,7 +42,8 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       await authRegister(data.username, data.password, data.email);
       setSuccess(true);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      console.error('Registration error:', err);
+      setError(err.response?.data?.detail || err.response?.data?.error || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -11,7 +11,9 @@ const ImageMessage: React.FC<{
   loadedMedia: Record<number, string>;
   loadMedia: (message: Message) => Promise<string | null>;
   isFromAccount: boolean;
-}> = ({ message, loadedMedia, loadMedia, isFromAccount }) => {
+  isMediaOnly?: boolean;
+  isSticker?: boolean;
+}> = ({ message, loadedMedia, loadMedia, isFromAccount, isMediaOnly, isSticker }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(loadedMedia[message.id] || null);
   const [loading, setLoading] = useState(!loadedMedia[message.id]);
   const [error, setError] = useState(false);
@@ -66,18 +68,23 @@ const ImageMessage: React.FC<{
   }
 
   return (
-    <div className="mb-2">
-      <div className="relative rounded-lg overflow-hidden max-w-md">
-        <img
-          src={imageUrl}
-          alt={message.media_file_name || 'Photo'}
-          className="w-full h-auto max-h-[400px] object-contain bg-gray-100"
-        />
-      </div>
-      {message.media_file_name && (
-        <p className={`text-xs mt-1 ${isFromAccount ? 'text-blue-100' : 'text-gray-500'}`}>
-          {message.media_file_name}
-        </p>
+    <div
+      className={`relative group cursor-pointer ${isSticker ? 'max-w-[160px]' : isMediaOnly ? 'w-full' : '-mx-3.5 -mt-2 mb-2'}`}
+      onClick={() => window.open(imageUrl, '_blank')}
+    >
+      <img
+        src={imageUrl}
+        alt={message.media_file_name || 'Photo'}
+        className={`w-full h-auto max-h-[500px] bg-gray-100 ${isSticker ? '' : 'object-contain'} ${isMediaOnly ? 'rounded-2xl' : 'rounded-t-2xl'}`}
+      />
+      {!isSticker && (
+        <div className={`absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center ${isMediaOnly ? 'rounded-2xl' : 'rounded-t-2xl'}`}>
+          <div className="opacity-0 group-hover:opacity-100 bg-black/40 text-white rounded-full p-2 transition-opacity duration-200">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -89,7 +96,8 @@ const VideoMessage: React.FC<{
   loadedMedia: Record<number, string>;
   loadMedia: (message: Message) => Promise<string | null>;
   isFromAccount: boolean;
-}> = ({ message, loadedMedia, loadMedia, isFromAccount }) => {
+  isMediaOnly?: boolean;
+}> = ({ message, loadedMedia, loadMedia, isFromAccount, isMediaOnly }) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(loadedMedia[message.id] || null);
   const [loading, setLoading] = useState(!loadedMedia[message.id]);
   const [error, setError] = useState(false);
@@ -144,27 +152,15 @@ const VideoMessage: React.FC<{
   }
 
   return (
-    <div className="mb-2">
-      <div className="relative rounded-lg overflow-hidden max-w-md bg-gray-100">
-        <video
-          src={videoUrl}
-          controls
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="w-full h-auto max-h-[400px] object-contain"
-          style={{ display: 'block' }}
-          preload="auto"
-        >
-          Your browser does not support the video tag.
-        </video>
-      </div>
-      {message.media_file_name && (
-        <p className={`text-xs mt-1 ${isFromAccount ? 'text-blue-100' : 'text-gray-500'}`}>
-          {message.media_file_name}
-        </p>
-      )}
+    <div className={`relative group overflow-hidden bg-black ${isMediaOnly ? 'rounded-2xl w-full' : '-mx-3.5 -mt-2 mb-2 rounded-t-2xl'}`}>
+      <video
+        src={videoUrl}
+        controls
+        autoPlay
+        loop
+        className="w-full h-auto max-h-[500px]"
+        poster={message.media_file_name ? undefined : undefined}
+      />
     </div>
   );
 };
@@ -223,16 +219,20 @@ const MessageReview = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId]);
 
-  // Scroll to bottom when messages first load
+  // Scroll to bottom when messages first load or conversation changes
   useEffect(() => {
     if (messagesContainerRef.current && messages.length > 0 && !loadingMore) {
       const container = messagesContainerRef.current;
-      // Scroll to bottom on initial load
-      if (messages.length <= MESSAGES_PER_PAGE || (container.scrollTop === 0 && !hasMore)) {
-        container.scrollTop = container.scrollHeight;
-      }
+      // Force scroll to bottom on initial load of a conversation
+      container.scrollTop = container.scrollHeight;
+
+      // Secondary check for slow-loading content
+      const timer = setTimeout(() => {
+        if (container) container.scrollTop = container.scrollHeight;
+      }, 100);
+      return () => clearTimeout(timer);
     }
-  }, [messages.length, loadingMore, hasMore]);
+  }, [selectedConversationId, messages.length === MESSAGES_PER_PAGE]); // Trigger on initial load
 
 
   const fetchConversations = async () => {
@@ -326,7 +326,8 @@ const MessageReview = () => {
     const adminToken = Cookies.get('admin_token');
     if (!adminToken) return;
 
-    const wsUrl = `ws://localhost:8000/ws?token=${adminToken}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws?token=${adminToken}`;
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
 
@@ -382,6 +383,31 @@ const MessageReview = () => {
               return updated;
             });
           }
+        } else if (data.type === 'messages_deleted') {
+          const { conversation_id, message_ids } = data;
+          if (conversation_id === selectedConvRef.current) {
+            setMessages(prev => prev.filter(m => !message_ids.includes(m.id)));
+          }
+        } else if (data.type === 'conversation_deleted') {
+          const { conversation_id } = data;
+          setConversations(prev => prev.filter(c => c.id !== conversation_id));
+          if (conversation_id === selectedConvRef.current) {
+            setSelectedConversationId(null);
+            setMessages([]);
+          }
+        } else if (data.type === 'account_deleted') {
+          const { account_id } = data;
+          setColleagues(prev => prev.map(colleague => ({
+            ...colleague,
+            accounts: colleague.accounts.filter(acc => acc.id !== account_id)
+          })));
+
+          // If viewing conversations for this account, refresh or clear
+          if (selectedAccountId === account_id) {
+            setSelectedAccountId(null);
+            setConversations([]);
+            setMessages([]);
+          }
         }
       } catch (err) {
         console.error('Error handling WebSocket message:', err);
@@ -408,13 +434,15 @@ const MessageReview = () => {
     }
 
     try {
-      const url = `http://localhost:8000/api/admin/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${Cookies.get('admin_token')}`,
-        },
-      });
+      const adminToken = Cookies.get('admin_token');
+      const response = await fetch(
+        `/api/admin/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${adminToken}`,
+          },
+        }
+      );
 
       if (response.status === 410) {
         setLoadedMedia(prev => ({ ...prev, [message.id]: 'DELETED' }));
@@ -448,11 +476,15 @@ const MessageReview = () => {
     return message.is_outgoing;
   };
 
-  const filteredMessages = messages.filter((msg) =>
-    msg.original_text?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    msg.translated_text?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    msg.sender_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMessages = messages.filter((msg) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      (msg.original_text?.toLowerCase().includes(term) ?? false) ||
+      (msg.translated_text?.toLowerCase().includes(term) ?? false) ||
+      (msg.sender_name?.toLowerCase().includes(term) ?? false) ||
+      (msg.sender_username?.toLowerCase().includes(term) ?? false)
+    );
+  });
 
   if (loading) {
     return (
@@ -587,18 +619,23 @@ const MessageReview = () => {
             {filteredMessages.length > 0 ? (
               filteredMessages.map((message) => {
                 const isFromAccount = isMessageFromAccount(message);
+                const hasMedia = !!(message.media_file_name || ['photo', 'video', 'voice', 'document', 'sticker'].includes(message.type));
+                const isSticker = message.type === 'sticker';
+                const hasText = !!(message.original_text || message.translated_text);
+                const isMediaOnly = hasMedia && !hasText && !isSticker;
+
                 return (
                   <div
                     key={message.id}
                     className={`flex ${isFromAccount ? 'justify-end' : 'justify-start'} mb-2`}
                   >
-                    <div className={`max-w-[75%] ${isFromAccount ? 'ml-12' : 'mr-12'}`}>
+                    <div className={`max-w-[85%] ${isFromAccount ? 'ml-12' : 'mr-12'}`}>
                       {/* Sender info for incoming messages */}
                       {!isFromAccount && (
                         <div className="flex items-center space-x-2 mb-1 px-1">
                           <div className="flex-1 min-w-0">
                             <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                              {message.sender_name || message.sender_username || 'Unknown'}
+                              {message.sender_name || message.sender_username || selectedConversation?.title || 'Unknown'}
                             </p>
                           </div>
                         </div>
@@ -606,10 +643,12 @@ const MessageReview = () => {
 
                       {/* Message bubble */}
                       <div
-                        className={`px-3 py-2 rounded-xl shadow-sm ${isFromAccount
-                          ? 'bg-blue-600 text-white rounded-tr-none'
-                          : 'bg-white text-gray-900 rounded-tl-none border border-gray-200'
-                          }`}
+                        className={`shadow-sm transition-all duration-200 ${isSticker
+                          ? ''
+                          : isFromAccount
+                            ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none'
+                            : 'bg-white text-gray-900 rounded-2xl rounded-tl-none border border-gray-100'
+                          } ${isMediaOnly ? 'p-0 overflow-hidden' : isSticker ? 'p-0' : 'px-3.5 py-2'}`}
                       >
                         {/* Auto-reply badge */}
                         {message.type === 'auto_reply' && (
@@ -624,8 +663,9 @@ const MessageReview = () => {
                         {/* Media preview */}
                         {(message.media_file_name || ['photo', 'video', 'voice', 'document', 'sticker'].includes(message.type)) && (() => {
                           const fileName = (message.media_file_name || '').toLowerCase();
-                          const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(fileName) || message.type === 'photo';
+                          const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(fileName) || message.type === 'photo' || message.type === 'sticker';
                           const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(fileName) || message.type === 'video';
+                          const isAudio = /\.(mp3|wav|ogg|m4a)$/i.test(fileName) || message.type === 'voice';
 
                           if (isImage) {
                             return (
@@ -634,6 +674,8 @@ const MessageReview = () => {
                                 loadedMedia={loadedMedia}
                                 loadMedia={loadMedia}
                                 isFromAccount={isFromAccount}
+                                isMediaOnly={isMediaOnly}
+                                isSticker={isSticker}
                               />
                             );
                           } else if (isVideo) {
@@ -643,17 +685,29 @@ const MessageReview = () => {
                                 loadedMedia={loadedMedia}
                                 loadMedia={loadMedia}
                                 isFromAccount={isFromAccount}
+                                isMediaOnly={isMediaOnly}
                               />
+                            );
+                          } else if (isAudio) {
+                            return (
+                              <div className={`mb-2 flex items-center space-x-2 px-3 py-2 rounded-lg ${isFromAccount ? 'bg-blue-700/50' : 'bg-gray-100'}`}>
+                                <svg className={`w-5 h-5 ${isFromAccount ? 'text-blue-200' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                </svg>
+                                <span className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-600'}`}>
+                                  🎤 Voice Note
+                                </span>
+                              </div>
                             );
                           } else {
                             return (
-                              <div className={`mb-2 flex items-center space-x-2 px-3 py-2 rounded-lg ${isFromAccount ? 'bg-blue-600' : 'bg-gray-100'
+                              <div className={`mb-2 flex items-center space-x-2 px-3 py-2 rounded-lg ${isFromAccount ? 'bg-blue-700/50' : 'bg-gray-100'
                                 }`}>
                                 <svg className={`w-5 h-5 ${isFromAccount ? 'text-blue-200' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
-                                <span className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-600'}`}>
-                                  📎 {message.media_file_name}
+                                <span className={`text-xs ${isFromAccount ? 'text-blue-100' : 'text-gray-600'} truncate max-w-xs`}>
+                                  📎 {message.media_file_name || 'Attachment'}
                                 </span>
                               </div>
                             );

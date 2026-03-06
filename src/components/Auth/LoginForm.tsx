@@ -35,7 +35,8 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       await login(data.username, data.password);
       navigate('/', { replace: true });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+      console.error('Login error:', err);
+      setError(err.response?.data?.detail || err.response?.data?.error || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
