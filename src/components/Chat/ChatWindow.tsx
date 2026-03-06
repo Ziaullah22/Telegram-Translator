@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, CheckSquare } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, CheckSquare, Reply, Forward, Bookmark } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -278,7 +278,8 @@ export default function ChatWindow({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteForEveryone] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ messageId: number; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ messageId: number; x: number; y: number; text: string; hasPhoto: boolean; isOutgoing: boolean } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: number; text: string; senderName: string } | null>(null);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -783,32 +784,111 @@ export default function ChatWindow({
       {/* Context Menu */}
       {contextMenu && (
         <div
-          className="fixed z-[200] w-48 bg-white/70 dark:bg-[#1c2733]/80 backdrop-blur-xl border border-gray-100/50 dark:border-white/10 rounded-xl shadow-2xl py-1 animate-scale-in"
+          className="fixed z-[200] w-52 bg-white/80 dark:bg-[#212121]/95 backdrop-blur-xl border border-gray-100/60 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-scale-in"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Quick emoji reactions */}
+          <div className="flex items-center justify-around px-3 py-2.5 border-b border-gray-100 dark:border-white/10">
+            {['👍', '❤️', '😂', '😮', '😢', '🔥'].map(emoji => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  // Emoji reaction - copy to clipboard for now
+                  navigator.clipboard.writeText(emoji).catch(() => { });
+                  setContextMenu(null);
+                }}
+                className="text-[22px] hover:scale-125 transition-transform active:scale-90"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+
+          {/* Reply */}
           <button
             onClick={() => {
-              setSelectedMessages([contextMenu.messageId]);
-              setShowDeleteConfirm(true);
+              const msg = sortedMessages.find(m => m.id === contextMenu.messageId);
+              if (msg) setReplyTo({ id: msg.id, text: msg.translated_text || msg.original_text || '(media)', senderName: msg.is_outgoing ? 'You' : (msg.sender_name || 'Unknown') });
               setContextMenu(null);
             }}
-            className="w-full px-4 py-2 flex items-center space-x-4 text-[#e53935] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <Trash className="w-[18px] h-[18px]" />
-            <span className="text-[15px] font-medium">Delete</span>
+            <Reply className="w-[17px] h-[17px] opacity-70" />
+            <span className="text-[15px]">Reply</span>
           </button>
-          <div className="mx-2 my-1 border-b border-gray-200/50 dark:border-white/10" />
+
+          {/* Copy (only for text messages) */}
+          {contextMenu.text && (
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(contextMenu.text).catch(() => { });
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <Copy className="w-[17px] h-[17px] opacity-70" />
+              <span className="text-[15px]">Copy</span>
+            </button>
+          )}
+
+          {/* Save Image (only for photo messages) */}
+          {contextMenu.hasPhoto && (
+            <button
+              onClick={() => {
+                const msg = sortedMessages.find(m => m.id === contextMenu.messageId);
+                if (msg) handleDownloadMedia(msg);
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <Bookmark className="w-[17px] h-[17px] opacity-70" />
+              <span className="text-[15px]">Save Image</span>
+            </button>
+          )}
+
+          {/* Forward */}
+          <button
+            onClick={() => {
+              const msg = sortedMessages.find(m => m.id === contextMenu.messageId);
+              const text = msg ? (msg.translated_text || msg.original_text || '') : '';
+              if (text) navigator.clipboard.writeText(text).catch(() => { });
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <Forward className="w-[17px] h-[17px] opacity-70" />
+            <span className="text-[15px]">Forward</span>
+          </button>
+
+          <div className="mx-3 border-b border-gray-100 dark:border-white/10" />
+
+          {/* Select */}
           <button
             onClick={() => {
               setIsSelectionMode(true);
               setSelectedMessages([contextMenu.messageId]);
               setContextMenu(null);
             }}
-            className="w-full px-4 py-2 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <CheckSquare className="w-[18px] h-[18px]" />
-            <span className="text-[15px] font-medium">Select</span>
+            <CheckSquare className="w-[17px] h-[17px] opacity-70" />
+            <span className="text-[15px]">Select</span>
+          </button>
+
+          <div className="mx-3 border-b border-gray-100 dark:border-white/10" />
+
+          {/* Delete */}
+          <button
+            onClick={() => {
+              setSelectedMessages([contextMenu.messageId]);
+              setShowDeleteConfirm(true);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-[#e53935] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <Trash className="w-[17px] h-[17px]" />
+            <span className="text-[15px]">Delete</span>
           </button>
         </div>
       )}
@@ -1059,15 +1139,17 @@ export default function ChatWindow({
                     } else {
                       let x = e.clientX;
                       let y = e.clientY;
-
-                      // Keep within window bounds roughly
-                      if (x + 192 > window.innerWidth) x = window.innerWidth - 192 - 10;
-                      if (y + 110 > window.innerHeight) y = window.innerHeight - 110 - 10;
-
+                      const menuH = 320;
+                      const menuW = 208;
+                      if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 10;
+                      if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 10;
                       setContextMenu({
                         messageId: message.id,
                         x,
-                        y
+                        y,
+                        text: message.translated_text || message.original_text || '',
+                        hasPhoto: !!hasPhoto(message),
+                        isOutgoing: isOutgoing,
                       });
                     }
                   }}
@@ -1259,6 +1341,19 @@ export default function ChatWindow({
           </div>
         ) : (
           <>
+            {/* Reply Quote Bar */}
+            {replyTo && (
+              <div className="flex items-center space-x-3 mb-2 px-3 py-2 bg-gray-50 dark:bg-white/5 border-l-4 border-[#3390ec] rounded-lg">
+                <Reply className="w-4 h-4 text-[#3390ec] flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[#3390ec] truncate">{replyTo.senderName}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{replyTo.text}</p>
+                </div>
+                <button onClick={() => setReplyTo(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             {/* Template Selector */}
             {showTemplates && templates.length > 0 && (
               <div className="mb-3 p-3 bg-gray-100 dark:bg-[#0e1621] rounded-xl border border-gray-200 dark:border-white/10 max-h-48 overflow-y-auto">

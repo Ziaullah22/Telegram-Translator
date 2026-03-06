@@ -10,6 +10,14 @@ interface ScheduleMessageModalProps {
   onScheduled: () => void;
 }
 
+const QUICK_PRESETS = [
+  { label: '5 min', minutes: 5 },
+  { label: '30 min', minutes: 30 },
+  { label: '1 hour', minutes: 60 },
+  { label: '3 hours', minutes: 180 },
+  { label: '1 day', minutes: 1440 },
+];
+
 export default function ScheduleMessageModal({
   isOpen,
   onClose,
@@ -17,31 +25,53 @@ export default function ScheduleMessageModal({
   messageText,
   onScheduled,
 }: ScheduleMessageModalProps) {
-  const [daysDelay, setDaysDelay] = useState(1);
+  const [unit, setUnit] = useState<'minutes' | 'hours' | 'days'>('hours');
+  const [value, setValue] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const getTotalMinutes = () => {
+    if (unit === 'minutes') return value;
+    if (unit === 'hours') return value * 60;
+    return value * 1440;
+  };
+
+  const getDaysDelay = () => {
+    const mins = getTotalMinutes();
+    // Backend uses days_delay, we pass fractional days (minimum rounded to nearest fraction)
+    return Math.max(mins / 1440, 1 / 1440);
+  };
+
+  const getPreviewText = () => {
+    const mins = getTotalMinutes();
+    if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''}`;
+    if (mins < 1440) {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return m > 0 ? `${h}h ${m}m` : `${h} hour${h !== 1 ? 's' : ''}`;
+    }
+    const d = Math.floor(mins / 1440);
+    return `${d} day${d !== 1 ? 's' : ''}`;
+  };
+
+  const handlePreset = (minutes: number) => {
+    if (minutes < 60) { setUnit('minutes'); setValue(minutes); }
+    else if (minutes < 1440) { setUnit('hours'); setValue(minutes / 60); }
+    else { setUnit('days'); setValue(minutes / 1440); }
+  };
+
   const handleSchedule = async () => {
-    if (!conversationId) {
-      setError('No conversation selected');
-      return;
-    }
-
-    if (!messageText.trim()) {
-      setError('Message text is required');
-      return;
-    }
-
-    if (daysDelay < 1) {
-      setError('Days delay must be at least 1');
-      return;
-    }
+    if (!conversationId) { setError('No conversation selected'); return; }
+    if (!messageText.trim()) { setError('Message text is required'); return; }
+    const mins = getTotalMinutes();
+    if (mins < 1) { setError('Must be at least 1 minute'); return; }
 
     try {
       setLoading(true);
       setError(null);
-      await scheduledMessagesAPI.createScheduledMessage(conversationId, messageText, daysDelay);
-      setDaysDelay(1);
+      await scheduledMessagesAPI.createScheduledMessage(conversationId, messageText, getDaysDelay());
+      setValue(1);
+      setUnit('hours');
       onScheduled();
       onClose();
     } catch (err) {
@@ -53,7 +83,8 @@ export default function ScheduleMessageModal({
   };
 
   const handleClose = () => {
-    setDaysDelay(1);
+    setValue(1);
+    setUnit('hours');
     setError(null);
     onClose();
   };
@@ -61,93 +92,108 @@ export default function ScheduleMessageModal({
   if (!isOpen) return null;
 
   return (
-    <div id="schedule-modal-container" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 transition-all duration-300">
-      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-scale-in">
+    <div id="schedule-modal-container" className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+      <div className="bg-white dark:bg-[#212121] border border-gray-100 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
-        <div className="flex items-center justify-between p-8 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-          <div className="flex items-center space-x-4">
-            <div className="bg-blue-600/10 dark:bg-blue-600/20 p-2.5 rounded-2xl">
-              <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Schedule Message</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10">
+          <div className="flex items-center space-x-3">
+            <Clock className="w-5 h-5 text-[#3390ec]" />
+            <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white">Schedule Message</h2>
           </div>
           <button
             id="schedule-modal-close-btn"
             onClick={handleClose}
-            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-8">
+        <div className="p-6 space-y-5">
+          {/* Error */}
           {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-sm font-bold flex items-center space-x-3 animate-shake">
-              <X className="w-4 h-4" />
-              <span>{error}</span>
+            <div className="px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-600 dark:text-red-400 text-sm">
+              {error}
             </div>
           )}
 
-          <div className="space-y-6">
-            {/* Message Preview */}
-            <div className="space-y-2">
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                Message Preview
-              </label>
-              <div className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 rounded-2xl text-gray-700 dark:text-gray-300 text-sm font-medium italic min-h-[100px] leading-relaxed">
-                {messageText || <span className="text-gray-400 dark:text-gray-600">No message content entered...</span>}
+          {/* Message Preview */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Message</p>
+            <div className="px-4 py-3 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl text-gray-700 dark:text-gray-300 text-sm leading-relaxed min-h-[60px]">
+              {messageText || <span className="text-gray-400 italic">No message entered...</span>}
+            </div>
+          </div>
+
+          {/* Quick Presets */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Quick select</p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => handlePreset(p.minutes)}
+                  className="px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 dark:bg-white/10 hover:bg-[#3390ec] hover:text-white dark:text-gray-300 dark:hover:bg-[#3390ec] transition-all"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Time Input */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Custom delay</p>
+            <div className="flex items-center space-x-3">
+              <input
+                type="number"
+                min="1"
+                value={value}
+                onChange={(e) => setValue(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-24 px-4 py-2.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white text-center font-semibold text-lg focus:outline-none focus:border-[#3390ec] transition-colors"
+              />
+              <div className="flex rounded-xl overflow-hidden border border-gray-200 dark:border-white/10">
+                {(['minutes', 'hours', 'days'] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setUnit(u)}
+                    className={`px-4 py-2.5 text-sm font-medium transition-colors capitalize ${unit === u
+                        ? 'bg-[#3390ec] text-white'
+                        : 'bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10'
+                      }`}
+                  >
+                    {u}
+                  </button>
+                ))}
               </div>
             </div>
-
-            {/* Days Delay */}
-            <div className="space-y-2">
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                Send After (Days)
-              </label>
-              <div className="relative group">
-                <input
-                  type="number"
-                  min="1"
-                  value={daysDelay}
-                  onChange={(e) => setDaysDelay(parseInt(e.target.value) || 1)}
-                  className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-black text-lg"
-                />
-                <div className="absolute right-6 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-400 uppercase tracking-widest pointer-events-none">
-                  Days
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-bold ml-1">
-                ✓ Message will be automatically sent in {daysDelay} {daysDelay === 1 ? 'day' : 'days'}
-              </p>
-            </div>
-
-            {/* Info */}
-            <div className="p-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl">
-              <p className="text-[12px] text-blue-700 dark:text-blue-300 font-bold leading-relaxed">
-                <span className="uppercase tracking-widest text-[9px] block mb-1">Important Note</span>
-                Scheduled messages are temporary. If the contact replies before the countdown finishes, this automation will be cancelled to prevent confusion.
-              </p>
-            </div>
+            <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+              Message will send in <span className="font-semibold text-[#3390ec]">{getPreviewText()}</span>
+            </p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end space-x-3 p-8 bg-gray-50/50 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-700">
+        <div className="flex items-center justify-end space-x-2 px-6 py-4 border-t border-gray-100 dark:border-white/10">
           <button
             onClick={handleClose}
             disabled={loading}
-            className="px-6 py-3.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-2xl transition-all font-black uppercase tracking-widest text-[10px]"
+            className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-lg transition-colors uppercase text-sm tracking-wide"
           >
             Cancel
           </button>
           <button
             onClick={handleSchedule}
             disabled={loading || !messageText.trim()}
-            className="flex-1 max-w-[220px] px-6 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 text-white rounded-2xl shadow-xl shadow-blue-600/30 transition-all font-black uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2"
+            className="flex items-center space-x-2 px-5 py-2 bg-[#3390ec] hover:bg-[#2980d9] disabled:opacity-50 text-white rounded-lg transition-colors font-medium text-sm"
           >
-            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
-            <span>{loading ? 'Processing...' : 'Schedule message'}</span>
+            {loading
+              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <Send className="w-4 h-4" />
+            }
+            <span>{loading ? 'Scheduling...' : 'Schedule'}</span>
           </button>
         </div>
       </div>
