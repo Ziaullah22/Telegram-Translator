@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Monitor, Smartphone, Tablet, Globe, Loader2, Trash2, Shield, MapPin } from 'lucide-react';
+import { X, Monitor, Smartphone, Tablet, Globe, Loader2, Trash2, Shield, MapPin, Info } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -30,6 +30,7 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [terminatingHash, setTerminatingHash] = useState<string | null>(null);
+    const [terminatingAll, setTerminatingAll] = useState(false);
 
     useEffect(() => {
         if (isOpen && account) {
@@ -62,6 +63,22 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
             setError(e.response?.data?.detail || 'Failed to terminate session.');
         } finally {
             setTerminatingHash(null);
+        }
+    };
+
+    const handleTerminateAll = async () => {
+        const otherSessions = sessions.filter(s => !s.current);
+        if (!account || otherSessions.length === 0) return;
+        if (!confirm('Are you sure you want to log out all other devices? This will terminate all sessions except the one you are currently using.')) return;
+
+        setTerminatingAll(true);
+        try {
+            await telegramAPI.terminateAllSessions(account.id);
+            setSessions(prev => prev.filter(s => s.current));
+        } catch (e: any) {
+            setError(e.response?.data?.detail || 'Failed to terminate all sessions.');
+        } finally {
+            setTerminatingAll(false);
         }
     };
 
@@ -108,6 +125,20 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                     </button>
                 </div>
 
+                {otherSessions.length > 0 && (
+                    <div className="px-6 py-3 bg-red-50 dark:bg-red-500/5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-red-600 dark:text-red-400">Security Check</span>
+                        <button
+                            onClick={handleTerminateAll}
+                            disabled={terminatingAll || loading}
+                            className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                            {terminatingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            Terminate all others
+                        </button>
+                    </div>
+                )}
+
                 <div className="p-6 max-h-[65vh] overflow-y-auto">
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm text-red-600 dark:text-red-400">{error}</div>
@@ -124,6 +155,14 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                         </div>
                     ) : (
                         <div className="space-y-4">
+                            {/* Security Note */}
+                            <div className="p-3 bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20 rounded-xl flex gap-3 text-xs text-blue-800 dark:text-blue-300">
+                                <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                <p>
+                                    To keep your account secure, you can <b>Terminate</b> other active devices. Your current device session cannot be terminated from here to prevent accidental disconnection.
+                                </p>
+                            </div>
+
                             {/* Current Session */}
                             {currentSession && (
                                 <div>
@@ -175,7 +214,7 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                                                 <button
                                                     onClick={() => handleTerminate(session)}
                                                     disabled={terminatingHash === session.hash}
-                                                    className="flex-shrink-0 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                    className="flex-shrink-0 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
                                                     title="Terminate session"
                                                 >
                                                     {terminatingHash === session.hash

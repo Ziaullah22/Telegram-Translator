@@ -179,6 +179,7 @@ const MessageReview = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -204,10 +205,10 @@ const MessageReview = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedUserId || selectedAccountId) {
-      fetchConversations();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setConversations([]);
+    setSelectedConversationId(null);
+    setMessages([]);
+    fetchConversations();
   }, [selectedUserId, selectedAccountId]);
 
   useEffect(() => {
@@ -235,7 +236,8 @@ const MessageReview = () => {
   }, [selectedConversationId, messages.length === MESSAGES_PER_PAGE]); // Trigger on initial load
 
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
+    setLoadingConversations(true);
     try {
       const params: { user_id?: number; account_id?: number } = {};
       if (selectedUserId) params.user_id = selectedUserId;
@@ -245,8 +247,11 @@ const MessageReview = () => {
       setConversations(response.data);
     } catch (error) {
       console.error('Failed to fetch conversations:', error);
+      setConversations([]);
+    } finally {
+      setLoadingConversations(false);
     }
-  };
+  }, [selectedUserId, selectedAccountId]);
 
   const fetchMessages = async (reset = false) => {
     if (!selectedConversationId || (!reset && !hasMore) || loadingMore) return;
@@ -527,6 +532,7 @@ const MessageReview = () => {
                 setSelectedUserId(value);
                 setSelectedAccountId(null);
                 setSelectedConversationId(null);
+                setConversations([]);
                 setMessages([]);
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -550,6 +556,7 @@ const MessageReview = () => {
                 const value = e.target.value ? parseInt(e.target.value) : null;
                 setSelectedAccountId(value);
                 setSelectedConversationId(null);
+                setConversations([]);
                 setMessages([]);
               }}
               disabled={!selectedUserId}
@@ -574,10 +581,12 @@ const MessageReview = () => {
                 const value = e.target.value ? parseInt(e.target.value) : null;
                 setSelectedConversationId(value);
               }}
-              disabled={conversations.length === 0}
+              disabled={loadingConversations || conversations.length === 0}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
-              <option value="">Select Conversation</option>
+              <option value="">
+                {loadingConversations ? 'Loading conversations...' : conversations.length === 0 ? 'No conversations found' : 'Select Conversation'}
+              </option>
               {conversations.map((conv) => (
                 <option key={conv.id} value={conv.id}>
                   {conv.account_name ? `${conv.account_name} ↔ ${conv.title}` : `${conv.title} (${conv.type})`}

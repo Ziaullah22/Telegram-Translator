@@ -232,8 +232,18 @@ export const telegramAPI = {
     return response.data;
   },
 
+  logoutAccount: async (accountId: number) => {
+    const response = await api.post(`/telegram/accounts/${accountId}/logout`);
+    return response.data;
+  },
+
   terminateSession: async (accountId: number, sessionHash: string) => {
     const response = await api.delete(`/telegram/accounts/${accountId}/sessions/${sessionHash}`);
+    return response.data;
+  },
+
+  terminateAllSessions: async (accountId: number) => {
+    const response = await api.delete(`/telegram/accounts/${accountId}/sessions/terminate_all`);
     return response.data;
   },
 

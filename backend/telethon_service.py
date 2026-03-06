@@ -14,15 +14,8 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
-class WALSQLiteSession(SQLiteSession):
-    """SQLiteSession subclass that enables WAL mode to prevent 'database is locked' errors."""
-    def __init__(self, session_id):
-        super().__init__(session_id)
-        try:
-            self._db_query("PRAGMA journal_mode=WAL")
-            self._db_query("PRAGMA synchronous=NORMAL")
-        except Exception as e:
-            logger.warning(f"Could not set WAL mode: {e}")
+# Using standard SQLiteSession as WAL mode can sometimes cause issues during intense reloads on Windows
+from telethon.sessions import SQLiteSession
 
 class TelegramSession:
     def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str):
@@ -37,14 +30,18 @@ class TelegramSession:
         self.min_message_interval = 1.0  # Minimum 1 second between messages
         # Entity cache: peer_id -> entity (populated from dialogs on connect)
         self.entity_cache: Dict[int, object] = {}
+        self.telegram_user_id: Optional[int] = None
 
     async def connect(self):
         try:
-            # Use WAL-mode SQLite session to prevent "database is locked" errors
-            session = WALSQLiteSession(self.session_filepath)
+            # Standard SQLite session. Telethon handles the file locking.
+            # We strip .session from filepath because Telethon appends it automatically.
+            session_id = self.session_filepath
+            if session_id.endswith('.session'):
+                session_id = session_id[:-8]
 
             self.client = TelegramClient(
-                session,
+                session_id,
                 self.telegram_api_id,
                 self.telegram_api_hash,
                 device_model="Desktop",
@@ -64,9 +61,19 @@ class TelegramSession:
             self.is_connected = True
             logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
 
+            # Cache the account's own telegram ID for faster admin operations
+            try:
+                # Use a timeout for get_me to prevent startup hangs
+                me = await asyncio.wait_for(self.client.get_me(), timeout=10.0)
+                if me:
+                    self.telegram_user_id = me.id
+            except Exception as e:
+                logger.warning(f"Could not get 'me' for account {self.account_id} during connect: {e}")
+
             # Pre-warm entity cache using SAME ID format as our DB (_get_peer_id)
             try:
-                async for dialog in self.client.iter_dialogs(limit=500):
+                # limit the number of dialogs to fetch to keep connection fast
+                async for dialog in self.client.iter_dialogs(limit=100):
                     if dialog.entity:
                         db_peer_id = self._get_peer_id(dialog.entity)
                         if db_peer_id:
@@ -1177,6 +1184,44 @@ class TelethonService:
         
         await session.client(ResetAuthorizationRequest(hash=session_hash))
         return {"status": "success", "message": "Session terminated"}
+
+    async def logout(self, account_id: int) -> dict:
+        """Log out the current session (this device) from Telegram servers"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        # This will invalidate the session key on Telegram servers
+        await session.client.log_out()
+        
+        # Clean up our local session tracking
+        if account_id in self.sessions:
+            session_file = self.sessions[account_id].session_filepath
+            del self.sessions[account_id]
+            
+            # Clean up the file from disk as it's now invalid
+            try:
+                if os.path.exists(session_file):
+                    os.remove(session_file)
+                # Also clean up journal files
+                for suffix in ['-journal', '-wal', '-shm']:
+                    if os.path.exists(session_file + suffix):
+                        os.remove(session_file + suffix)
+            except Exception as e:
+                logger.warning(f"Could not delete session file after logout: {e}")
+            
+        return {"status": "success", "message": "Logged out successfully"}
+
+    async def terminate_all_sessions(self, account_id: int) -> dict:
+        """Terminate all other sessions except current"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.account import ResetAuthorizationsRequest
+        
+        await session.client(ResetAuthorizationsRequest())
+        return {"status": "success", "message": "All other sessions terminated"}
 
     async def change_2fa(self, account_id: int, current_password: str, new_password: str) -> dict:
         """Change Telegram 2FA password"""

@@ -261,20 +261,35 @@ async def get_conversations(
     
     conversations = await db.fetch(query, *params)
     
-    # Add account owner's Telegram user ID to each conversation
+    # Optimize: Get unique account IDs to avoid redundant and slow sequential me/get_me() calls
+    unique_account_ids = {conv['account_id'] for conv in conversations}
+    account_to_telegram_user_id = {}
+    
+    for acc_id in unique_account_ids:
+        session = telethon_service.sessions.get(acc_id)
+        if session and session.client and session.is_connected:
+            # Check if we have it cached on the session object (we'll add this to the class too)
+            cached_id = getattr(session, 'telegram_user_id', None)
+            if cached_id:
+                account_to_telegram_user_id[acc_id] = cached_id
+            else:
+                try:
+                    me = await session.client.get_me()
+                    if me:
+                        account_to_telegram_user_id[acc_id] = me.id
+                        setattr(session, 'telegram_user_id', me.id)
+                    else:
+                        account_to_telegram_user_id[acc_id] = None
+                except Exception:
+                    account_to_telegram_user_id[acc_id] = None
+        else:
+            account_to_telegram_user_id[acc_id] = None
+
+    # Map the results back to conversations
     result = []
     for conv in conversations:
         conv_dict = dict(conv)
-        # Try to get the account owner's Telegram user ID from the session
-        session = telethon_service.sessions.get(conv['account_id'])
-        if session and session.client and session.is_connected:
-            try:
-                me = await session.client.get_me()
-                conv_dict['account_telegram_user_id'] = me.id
-            except Exception:
-                conv_dict['account_telegram_user_id'] = None
-        else:
-            conv_dict['account_telegram_user_id'] = None
+        conv_dict['account_telegram_user_id'] = account_to_telegram_user_id.get(conv['account_id'])
         result.append(conv_dict)
     
     return result

@@ -187,6 +187,9 @@ export default function ConversationList({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             disabled={!isConnected}
+            autoComplete="off"
+            spellCheck={false}
+            name="telegram-search"
             placeholder={isConnected ? "Search chats or usernames..." : "Connect account to search..."}
             className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[#419FD9] dark:focus:border-[#419FD9] rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
           />

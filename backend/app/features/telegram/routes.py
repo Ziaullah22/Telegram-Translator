@@ -609,6 +609,11 @@ async def delete_account(
             detail="Account not found",
         )
 
+    # Get account info for session file deletion before we delete from DB
+    account_name = account['account_name']
+    user_id = account['user_id']
+    session_file = f"sessions/{user_id}_{account_name}.session"
+
     await telethon_service.disconnect_session(account_id)
 
     # Delete Telegram account from database
@@ -617,6 +622,17 @@ async def delete_account(
         account_id,
         current_user.user_id,
     )
+
+    # Clean up session file from disk
+    try:
+        if os.path.exists(session_file):
+            os.remove(session_file)
+            # Also clean up journal files if any
+            for suffix in ['-journal', '-wal', '-shm']:
+                if os.path.exists(session_file + suffix):
+                    os.remove(session_file + suffix)
+    except Exception as e:
+        logger.warning(f"Could not delete session file {session_file}: {e}")
 
     await manager.send_to_account(
         {
@@ -1115,6 +1131,49 @@ async def get_sessions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/accounts/{account_id}/logout")
+async def logout_account(
+    account_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Log out the current device session from Telegram"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        result = await telethon_service.logout(account_id)
+        # Also mark as disconnected in DB or just let it be
+        return result
+    except Exception as e:
+        logger.error(f"Failed to logout: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/accounts/{account_id}/sessions/terminate_all")
+async def terminate_all_sessions(
+    account_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Terminate all other Telegram sessions except current"""
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    try:
+        result = await telethon_service.terminate_all_sessions(account_id)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to terminate all sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/accounts/{account_id}/sessions/{session_hash}")
 async def terminate_session(
     account_id: int,
@@ -1135,6 +1194,8 @@ async def terminate_session(
     except Exception as e:
         logger.error(f"Failed to terminate session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
 
 
 @router.post("/accounts/{account_id}/2fa")

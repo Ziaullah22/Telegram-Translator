@@ -338,6 +338,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     type="password"
                                     value={currentPass}
                                     onChange={e => setCurrentPass(e.target.value)}
+                                    autoComplete="current-password"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="Current 2FA password"
                                 />
@@ -348,6 +349,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     type="password"
                                     value={newPass}
                                     onChange={e => setNewPass(e.target.value)}
+                                    autoComplete="new-password"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="New 2FA password"
                                 />
@@ -358,6 +360,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                     type="password"
                                     value={confirmPass}
                                     onChange={e => setConfirmPass(e.target.value)}
+                                    autoComplete="new-password"
                                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     placeholder="Confirm new password"
                                 />
