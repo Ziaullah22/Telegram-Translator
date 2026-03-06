@@ -6,8 +6,8 @@ export function useSocket() {
   const { isAuthenticated, token: authContextToken } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlers = useRef<Set<(data: any) => void>>(new Set());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;

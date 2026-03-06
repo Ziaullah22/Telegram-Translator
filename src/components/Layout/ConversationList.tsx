@@ -47,7 +47,7 @@ export default function ConversationList({
     isOpen: false,
     conversationId: null,
   });
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Batch-prefetch all conversation photos as soon as they are available
   useEffect(() => {

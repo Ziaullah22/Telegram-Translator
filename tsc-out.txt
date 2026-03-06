@@ -1,0 +1,4 @@
+﻿src/components/Auth/Logout.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/components/Modals/SearchUsersModal.tsx(25,35): error TS2503: Cannot find namespace 'NodeJS'.
+src/hooks/useSocket.ts(9,38): error TS2503: Cannot find namespace 'NodeJS'.
+src/hooks/useSocket.ts(10,39): error TS2503: Cannot find namespace 'NodeJS'.

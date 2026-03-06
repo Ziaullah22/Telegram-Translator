@@ -276,8 +276,15 @@ export default function ChatWindow({
   const [selectedMessages, setSelectedMessages] = useState<number[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteForEveryone, setDeleteForEveryone] = useState(true);
+  const [deleteForEveryone] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ messageId: number; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -714,21 +721,23 @@ export default function ChatWindow({
     <div id="chat-window" className="flex-1 flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
       {/* Selection Mode Header overlay */}
       {isSelectionMode && (
-        <div className="absolute top-0 left-0 right-0 h-16 bg-[#419FD9] dark:bg-[#1C2733] z-50 flex items-center justify-between px-6 shadow-md transition-all">
-          <div className="flex items-center space-x-6">
-            <button onClick={cancelSelection} className="text-white hover:bg-white/10 p-2 rounded-full transition-colors">
-              <X className="w-6 h-6" />
+        <div className="absolute top-0 left-0 right-0 h-14 bg-white dark:bg-[#212121] z-50 flex items-center justify-between px-4 shadow-sm border-b border-gray-100 dark:border-white/5 transition-all">
+          <div className="flex items-center space-x-4">
+            <button onClick={cancelSelection} className="text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 p-2 rounded-full transition-colors flex items-center justify-center">
+              <X className="w-5 h-5" />
             </button>
-            <span className="text-white font-medium">{selectedMessages.length} messages selected</span>
+            <span className="text-gray-900 dark:text-white font-medium text-[17px]">
+              {selectedMessages.length} {selectedMessages.length === 1 ? 'message' : 'messages'}
+            </span>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center">
             <button
               onClick={handleDeleteSelected}
               disabled={selectedMessages.length === 0}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 dark:text-red-400 rounded-lg transition-colors font-medium border border-red-500/20 disabled:opacity-50"
+              className="text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 p-2 rounded-full transition-colors disabled:opacity-50"
+              title="Delete"
             >
               <Trash className="w-5 h-5" />
-              <span>Delete</span>
             </button>
           </div>
         </div>
@@ -736,48 +745,71 @@ export default function ChatWindow({
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white dark:bg-[#1C2733] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 animate-fade-in">
+          <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-[320px] overflow-hidden animate-scale-in">
             <div className="p-6">
-              <div className="flex items-center justify-center mb-6">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center">
-                  <Trash className="w-8 h-8 text-red-500" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-center text-gray-900 dark:text-white mb-2">Delete Messages?</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-center text-sm mb-6">
-                Are you sure you want to delete {selectedMessages.length} message{selectedMessages.length > 1 ? 's' : ''}? This action cannot be undone.
+              <h3 className="text-[19px] font-medium text-gray-900 dark:text-white mb-2">
+                {selectedMessages.length > 1 ? 'Delete messages' : 'Delete message'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 text-[15px] mb-5">
+                Are you sure you want to delete {selectedMessages.length === 1 ? 'this message' : 'these messages'}?
               </p>
 
-              <div className="flex items-center space-x-3 mb-6 p-4 bg-gray-50 dark:bg-white/5 rounded-xl cursor-pointer" onClick={() => setDeleteForEveryone(!deleteForEveryone)}>
-                <div className={`w-5 h-5 rounded border ${deleteForEveryone ? 'bg-blue-500 border-blue-500' : 'border-gray-400'} flex items-center justify-center transition-colors`}>
-                  {deleteForEveryone && <CheckSquare className="w-4 h-4 text-white" />}
-                </div>
-                <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Delete for everyone</span>
-              </div>
-
-              <div className="flex flex-col space-y-2">
-                <button
-                  onClick={handleConfirmDelete}
-                  disabled={isDeleting}
-                  className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {isDeleting ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  ) : (
-                    <span>Delete</span>
-                  )}
-                </button>
+              <div className="flex items-center justify-end space-x-2 mt-2">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
                   disabled={isDeleting}
-                  className="w-full py-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 font-bold rounded-xl transition-colors"
+                  className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
                 >
                   Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-[#e53935] hover:bg-[#e53935]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center justify-center min-w-[80px]"
+                >
+                  {isDeleting ? (
+                    <div className="w-4 h-4 border-2 border-[#e53935]/30 border-t-[#e53935] rounded-full animate-spin"></div>
+                  ) : (
+                    "Delete"
+                  )}
                 </button>
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[200] w-48 bg-white/70 dark:bg-[#1c2733]/80 backdrop-blur-xl border border-gray-100/50 dark:border-white/10 rounded-xl shadow-2xl py-1 animate-scale-in"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setSelectedMessages([contextMenu.messageId]);
+              setShowDeleteConfirm(true);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2 flex items-center space-x-4 text-[#e53935] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <Trash className="w-[18px] h-[18px]" />
+            <span className="text-[15px] font-medium">Delete</span>
+          </button>
+          <div className="mx-2 my-1 border-b border-gray-200/50 dark:border-white/10" />
+          <button
+            onClick={() => {
+              setIsSelectionMode(true);
+              setSelectedMessages([contextMenu.messageId]);
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <CheckSquare className="w-[18px] h-[18px]" />
+            <span className="text-[15px] font-medium">Select</span>
+          </button>
         </div>
       )}
 
@@ -794,123 +826,142 @@ export default function ChatWindow({
       )}
 
       {/* Chat header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center space-x-4">
-              <PeerAvatar
-                accountId={currentAccount?.id}
-                peerId={
-                  currentConversation?.telegram_peer_id ||
-                  (currentConversation?.type === 'private' && !currentConversation?.lastMessage?.is_outgoing
-                    ? currentConversation?.lastMessage?.sender_user_id
-                    : undefined) ||
-                  (currentConversation?.type !== 'private' ? currentConversation?.id : undefined)
-                }
-                name={currentConversation?.title || 'Unknown'}
-                className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
-              />
-              <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">
-                  {currentConversation?.title || 'Translation Chat'}
-                </h2>
-                {currentAccount && (
-                  <p className="text-sm text-gray-400">
-                    {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
-                  </p>
-                )}
-              </div>
-              {/* Scheduled Messages Badge */}
-              {scheduledMessages.length > 0 && (
-                <div className="flex items-center space-x-2">
-                  {scheduledMessages.map((sm) => {
-                    const scheduledDate = new Date(sm.scheduled_at);
-                    const formattedDate = scheduledDate.toLocaleString('en-US', {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                      timeZoneName: 'short'
-                    });
-                    return (
-                      <div
-                        key={sm.id}
-                        className="flex items-center space-x-2 px-3 py-2 bg-blue-100 dark:bg-blue-500/20 border border-blue-200 dark:border-blue-500/40 rounded-lg shadow-sm"
-                      >
-                        <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-xs text-blue-700 dark:text-blue-300 font-bold">
-                            {formattedDate}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs font-medium">
-                            {sm.message_text}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleCancelScheduledMessage(sm.id)}
-                          className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 text-xs ml-2 flex-shrink-0 font-black p-1"
-                          title="Cancel scheduled message"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          {/* Chat Actions Menu */}
-          {currentConversation && (
-            <div className="relative ml-2">
-              <button
-                onClick={() => setShowChatMenu(p => !p)}
-                className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                title="More options"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                </svg>
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10 transition-colors duration-200 relative min-h-[72px]">
+        {isSelectionMode ? (
+          <div className="absolute inset-0 flex items-center justify-between px-6 bg-white dark:bg-gray-800 animate-fade-in z-20">
+            <div className="flex items-center space-x-6">
+              <button onClick={cancelSelection} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-1.5 rounded-full transition-colors focus:bg-gray-100 dark:focus:bg-gray-700 outline-none">
+                <X className="w-6 h-6" />
               </button>
-              {showChatMenu && (
-                <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-xl z-50 w-48 py-1 animate-scale-in">
-                  {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
-                    <button
-                      onClick={() => {
-                        setShowChatMenu(false);
-                        setConfirmModal({
-                          isOpen: true,
-                          title: 'Leave Group',
-                          message: 'Are you sure you want to leave this group? You will no longer receive messages from it.',
-                          type: 'danger',
-                          onConfirm: () => onLeaveConversation(currentConversation.id)
-                        });
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 font-medium flex items-center space-x-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                      <span>Leave Group</span>
-                    </button>
+              <span className="text-[17px] font-semibold text-gray-900 dark:text-white">
+                {selectedMessages.length} message{selectedMessages.length !== 1 && 's'} selected
+              </span>
+            </div>
+            <button
+              onClick={cancelSelection}
+              className="text-[#419FD9] hover:bg-[#419FD9]/10 rounded-md px-4 py-2 font-medium uppercase text-sm tracking-wide transition-colors outline-none"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between animate-fade-in">
+            <div className="flex-1">
+              <div className="flex items-center space-x-4">
+                <PeerAvatar
+                  accountId={currentAccount?.id}
+                  peerId={
+                    currentConversation?.telegram_peer_id ||
+                    (currentConversation?.type === 'private' && !currentConversation?.lastMessage?.is_outgoing
+                      ? currentConversation?.lastMessage?.sender_user_id
+                      : undefined) ||
+                    (currentConversation?.type !== 'private' ? currentConversation?.id : undefined)
+                  }
+                  name={currentConversation?.title || 'Unknown'}
+                  className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
+                />
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white truncate">
+                    {currentConversation?.title || 'Translation Chat'}
+                  </h2>
+                  {currentAccount && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
+                    </p>
                   )}
                 </div>
-              )}
+                {/* Scheduled Messages Badge */}
+                {scheduledMessages.length > 0 && (
+                  <div className="flex items-center space-x-2">
+                    {scheduledMessages.map((sm) => {
+                      const scheduledDate = new Date(sm.scheduled_at);
+                      const formattedDate = scheduledDate.toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                        timeZoneName: 'short'
+                      });
+                      return (
+                        <div
+                          key={sm.id}
+                          className="flex items-center space-x-2 px-3 py-2 bg-blue-100 dark:bg-blue-500/20 border border-blue-200 dark:border-blue-500/40 rounded-lg shadow-sm"
+                        >
+                          <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="text-xs text-blue-700 dark:text-blue-300 font-bold">
+                              {formattedDate}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs font-medium">
+                              {sm.message_text}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleCancelScheduledMessage(sm.id)}
+                            className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 text-xs ml-2 flex-shrink-0 font-black p-1"
+                            title="Cancel scheduled message"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          {/* Contact Info Button */}
-          {currentConversation && (
-            <button
-              id="chat-crm-btn"
-              onClick={() => setShowContactModal(true)}
-              className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
-              title="Contact CRM Info"
-            >
-              <User className="w-4 h-4" />
-              <span>CRM</span>
-            </button>
-          )}
-        </div>
+            {/* Chat Actions Menu */}
+            {currentConversation && (
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setShowChatMenu(p => !p)}
+                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="More options"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                  </svg>
+                </button>
+                {showChatMenu && (
+                  <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-xl z-50 w-48 py-1 animate-scale-in">
+                    {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
+                      <button
+                        onClick={() => {
+                          setShowChatMenu(false);
+                          setConfirmModal({
+                            isOpen: true,
+                            title: 'Leave Group',
+                            message: 'Are you sure you want to leave this group? You will no longer receive messages from it.',
+                            type: 'danger',
+                            onConfirm: () => onLeaveConversation(currentConversation.id)
+                          });
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 font-medium flex items-center space-x-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                        <span>Leave Group</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Contact Info Button */}
+            {currentConversation && (
+              <button
+                id="chat-crm-btn"
+                onClick={() => setShowContactModal(true)}
+                className="ml-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm font-medium"
+                title="Contact CRM Info"
+              >
+                <User className="w-4 h-4" />
+                <span>CRM</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Messages area */}
@@ -992,24 +1043,53 @@ export default function ChatWindow({
               elements.push(
                 <div
                   key={message.id}
-                  className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-4 group relative`}
-                  onClick={() => isSelectionMode && toggleMessageSelection(message.id)}
+                  className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group px-6 py-1.5 -mx-6 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
+                    }`}
+                  onClick={(e) => {
+                    if (isSelectionMode) {
+                      e.preventDefault();
+                      toggleMessageSelection(message.id);
+                    }
+                  }}
                   onContextMenu={(e) => {
+                    if (message.type === 'system') return;
                     e.preventDefault();
-                    toggleMessageSelection(message.id);
+                    if (isSelectionMode) {
+                      toggleMessageSelection(message.id);
+                    } else {
+                      let x = e.clientX;
+                      let y = e.clientY;
+
+                      // Keep within window bounds roughly
+                      if (x + 192 > window.innerWidth) x = window.innerWidth - 192 - 10;
+                      if (y + 110 > window.innerHeight) y = window.innerHeight - 110 - 10;
+
+                      setContextMenu({
+                        messageId: message.id,
+                        x,
+                        y
+                      });
+                    }
                   }}
                 >
-                  {/* Selection Checkbox */}
+                  {/* Selection Checkbox (Telegram Desktop: on the far left) */}
                   {isSelectionMode && (
-                    <div className={`absolute ${isOutgoing ? '-left-8' : '-right-8'} top-1/2 -translate-y-1/2 transition-opacity`}>
-                      <div className={`w-5 h-5 rounded border ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-400'} flex items-center justify-center`}>
-                        {isSelected && <CheckSquare className="w-4 h-4 text-white" />}
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center justify-center z-10 pointer-events-none">
+                      <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-all duration-200 ${isSelected
+                        ? 'bg-[#419FD9] border-[#419FD9] scale-105'
+                        : 'border-gray-400 dark:border-gray-500 bg-transparent'
+                        }`}>
+                        {isSelected && (
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  <div className={`max-w-xs lg:max-w-md ${isOutgoing ? 'ml-12' : 'mr-12'} ${isSelected ? 'opacity-80' : ''}`}>
-                    {/* Sender info for group/supergroup/channel incoming messages - Telegram Desktop doesn't show this in private chats */}
+                  <div className={`max-w-[75%] lg:max-w-md ${isSelectionMode ? 'ml-10' : ''} transition-all duration-200`}>
+                    {/* Sender info for group/supergroup/channel incoming messages */}
                     {!isOutgoing && currentConversation?.type !== 'private' && (
                       <div className="flex items-center space-x-2 mb-2 px-1">
                         <PeerAvatar
@@ -1165,224 +1245,239 @@ export default function ChatWindow({
       </div>
 
       {/* Message input */}
-      <div id="chat-input-area" className="bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 px-4 pt-3 pb-4 transition-colors duration-300">
-        {/* Template Selector */}
-        {showTemplates && templates.length > 0 && (
-          <div className="mb-3 p-3 bg-gray-100 dark:bg-[#0e1621] rounded-xl border border-gray-200 dark:border-white/10 max-h-48 overflow-y-auto">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Message Templates</span>
-              <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 p-1 rounded-lg transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              {templates.map((template) => (
-                <button
-                  key={template.id}
-                  onClick={() => handleTemplateSelect(template)}
-                  className="w-full text-left p-2 bg-gray-200 dark:bg-white/5 hover:bg-gray-300 dark:hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">{template.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {showTemplates && <div id="templates-menu-state-open" className="hidden" />}
-        {/* Top action row: Templates + Manage */}
-        <div className="flex items-center space-x-2 mb-3">
-          <button
-            id="chat-templates-btn"
-            type="button"
-            onClick={() => setShowTemplates(!showTemplates)}
-            disabled={!isConnected || !currentConversation}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>Templates</span>
-          </button>
-          <button
-            id="chat-templates-manage-btn"
-            type="button"
-            onClick={() => setShowTemplatesModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Manage</span>
-          </button>
-        </div>
-
-        {/* File Preview */}
-        {selectedFile && (
-          <div className="mb-3 p-3 bg-gray-100 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10">
-            <div className="flex items-start space-x-3">
-              {filePreview ? (
-                <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded-lg" />
-              ) : (
-                <div className="w-16 h-16 bg-gray-200 dark:bg-white/10 rounded-lg flex items-center justify-center">
-                  <Video className="w-7 h-7 text-gray-400" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{selectedFile.name}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-              </div>
-              <button onClick={handleRemoveFile} className="text-gray-400 hover:text-gray-700 dark:hover:text-white" type="button">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Input row */}
-        {currentConversation?.is_hidden ? (
-          <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+      <div id="chat-input-area" className={`bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 transition-colors duration-300 ${isSelectionMode ? 'p-2' : 'px-4 pt-3 pb-4'}`}>
+        {isSelectionMode ? (
+          <div className="flex justify-center items-center h-[56px] animate-fade-in">
             <button
-              onClick={() => conversationId && onJoinConversation?.(conversationId)}
-              className="flex-1 py-4 bg-[#419FD9] hover:bg-[#3b8fc4] text-white font-bold uppercase tracking-widest transition-all active:scale-[0.99] flex items-center justify-center"
+              onClick={handleDeleteSelected}
+              disabled={selectedMessages.length === 0}
+              className="flex items-center space-x-2 text-[#E53935] hover:bg-[#E53935]/10 px-8 py-2.5 rounded-lg transition-all font-medium disabled:opacity-50"
             >
-              Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
-            </button>
-          </div>
-        ) : currentConversation?.type === 'channel' ? (
-          <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
-            <button
-              onClick={() => conversationId && onToggleMute?.(conversationId)}
-              className="flex-1 py-3 text-[#419FD9] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all active:scale-[0.99]"
-            >
-              {currentConversation.is_muted ? 'Unmute' : 'Mute'}
+              <Trash className="w-5 h-5" />
+              <span className="uppercase text-sm tracking-wide">Delete</span>
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
-            <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
-
-            {/* Text input with emoji icon inside */}
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={
-                  !currentConversation
-                    ? 'Select a conversation to start messaging'
-                    : isConnected
-                      ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
-                      : 'Connect to an account to start messaging'
-                }
-                className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
-                disabled={!isConnected || !currentConversation || translating}
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                  title="Emojis"
-                >
-                  <Smile className="w-5 h-5" />
-                </button>
-                {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
-              </div>
-
-              {/* Emoji Picker Overlay */}
-              {showEmojiPicker && (
-                <div
-                  ref={pickerRef}
-                  style={{
-                    transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
-                    transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
-                  }}
-                  className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
-                >
-                  <div
-                    onMouseDown={onDragStart}
-                    className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <span className="text-sm font-black text-gray-900 dark:text-white tracking-wide uppercase">Select Emoji</span>
-                    </div>
-                    <button
-                      onClick={() => setShowEmojiPicker(false)}
-                      className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
-                    >
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white dark:bg-gray-800/50">
-                    {emojis.map((group) => (
-                      <div key={group.cat} className="mb-6">
-                        <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
-                        <div className="grid grid-cols-8 gap-1.5">
-                          {group.items.map((emoji, idx) => (
-                            <button
-                              key={`${group.cat}-${idx}`}
-                              type="button"
-                              onClick={() => addEmoji(emoji)}
-                              className="text-2xl hover:bg-blue-500/20 p-2 rounded-xl transition-all transform hover:scale-125 active:scale-90"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+          <>
+            {/* Template Selector */}
+            {showTemplates && templates.length > 0 && (
+              <div className="mb-3 p-3 bg-gray-100 dark:bg-[#0e1621] rounded-xl border border-gray-200 dark:border-white/10 max-h-48 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Message Templates</span>
+                  <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 p-1 rounded-lg transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Attachment button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!isConnected || !currentConversation || uploadingFile}
-              className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
-              title="Attach file"
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-
-            {/* Send / Send File button */}
-            {selectedFile ? (
-              <button
-                type="button"
-                onClick={handleSendFile}
-                disabled={uploadingFile || !isConnected || !currentConversation}
-                className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
-              >
-                {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
-                className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+                <div className="space-y-1.5">
+                  {templates.map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={() => handleTemplateSelect(template)}
+                      className="w-full text-left p-2 bg-gray-200 dark:bg-white/5 hover:bg-gray-300 dark:hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">{template.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
-            {/* Schedule button */}
-            <button
-              id="chat-schedule-btn"
-              type="button"
-              onClick={() => setShowScheduleModal(true)}
-              disabled={!newMessage.trim() || !isConnected || !currentConversation}
-              className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
-              title="Schedule Message"
-            >
-              <Clock className="w-4 h-4" />
-            </button>
-          </form>
-        )}
+            {showTemplates && <div id="templates-menu-state-open" className="hidden" />}
+            {/* Top action row: Templates + Manage */}
+            <div className="flex items-center space-x-2 mb-3">
+              <button
+                id="chat-templates-btn"
+                type="button"
+                onClick={() => setShowTemplates(!showTemplates)}
+                disabled={!isConnected || !currentConversation}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Templates</span>
+              </button>
+              <button
+                id="chat-templates-manage-btn"
+                type="button"
+                onClick={() => setShowTemplatesModal(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Manage</span>
+              </button>
+            </div>
 
-        <p className="text-xs text-blue-500 dark:text-[#4da2d9] mt-2">
-          Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
-        </p>
+            {/* File Preview */}
+            {selectedFile && (
+              <div className="mb-3 p-3 bg-gray-100 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10">
+                <div className="flex items-start space-x-3">
+                  {filePreview ? (
+                    <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded-lg" />
+                  ) : (
+                    <div className="w-16 h-16 bg-gray-200 dark:bg-white/10 rounded-lg flex items-center justify-center">
+                      <Video className="w-7 h-7 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{selectedFile.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                  <button onClick={handleRemoveFile} className="text-gray-400 hover:text-gray-700 dark:hover:text-white" type="button">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Input row */}
+            {currentConversation?.is_hidden ? (
+              <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+                <button
+                  onClick={() => conversationId && onJoinConversation?.(conversationId)}
+                  className="flex-1 py-4 bg-[#419FD9] hover:bg-[#3b8fc4] text-white font-bold uppercase tracking-widest transition-all active:scale-[0.99] flex items-center justify-center"
+                >
+                  Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
+                </button>
+              </div>
+            ) : currentConversation?.type === 'channel' ? (
+              <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+                <button
+                  onClick={() => conversationId && onToggleMute?.(conversationId)}
+                  className="flex-1 py-3 text-[#419FD9] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all active:scale-[0.99]"
+                >
+                  {currentConversation.is_muted ? 'Unmute' : 'Mute'}
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
+
+                {/* Text input with emoji icon inside */}
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder={
+                      !currentConversation
+                        ? 'Select a conversation to start messaging'
+                        : isConnected
+                          ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
+                          : 'Connect to an account to start messaging'
+                    }
+                    className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
+                    disabled={!isConnected || !currentConversation || translating}
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                      title="Emojis"
+                    >
+                      <Smile className="w-5 h-5" />
+                    </button>
+                    {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
+                  </div>
+
+                  {/* Emoji Picker Overlay */}
+                  {showEmojiPicker && (
+                    <div
+                      ref={pickerRef}
+                      style={{
+                        transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
+                        transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
+                      }}
+                      className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
+                    >
+                      <div
+                        onMouseDown={onDragStart}
+                        className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <span className="text-sm font-black text-gray-900 dark:text-white tracking-wide uppercase">Select Emoji</span>
+                        </div>
+                        <button
+                          onClick={() => setShowEmojiPicker(false)}
+                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                        >
+                          <X className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white dark:bg-gray-800/50">
+                        {emojis.map((group) => (
+                          <div key={group.cat} className="mb-6">
+                            <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
+                            <div className="grid grid-cols-8 gap-1.5">
+                              {group.items.map((emoji, idx) => (
+                                <button
+                                  key={`${group.cat}-${idx}`}
+                                  type="button"
+                                  onClick={() => addEmoji(emoji)}
+                                  className="text-2xl hover:bg-blue-500/20 p-2 rounded-xl transition-all transform hover:scale-125 active:scale-90"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Attachment button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!isConnected || !currentConversation || uploadingFile}
+                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
+                  title="Attach file"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+
+                {/* Send / Send File button */}
+                {selectedFile ? (
+                  <button
+                    type="button"
+                    onClick={handleSendFile}
+                    disabled={uploadingFile || !isConnected || !currentConversation}
+                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+                  >
+                    {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
+                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* Schedule button */}
+                <button
+                  id="chat-schedule-btn"
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  disabled={!newMessage.trim() || !isConnected || !currentConversation}
+                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
+                  title="Schedule Message"
+                >
+                  <Clock className="w-4 h-4" />
+                </button>
+              </form>
+            )}
+
+            <p className="text-xs text-blue-500 dark:text-[#4da2d9] mt-2">
+              Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
+            </p>
+          </>
+        )}
       </div>
 
       {/* Modals */}
