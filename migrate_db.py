@@ -35,12 +35,16 @@ async def migrate():
             """)
             print("✓ Check/Add column: conversations.is_hidden")
             
-            # 3. Update messages table: is_read
+            # 3. Update messages table: is_read, replies, reactions
             await conn.execute("""
                 ALTER TABLE messages 
-                ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE
+                ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS reply_to_telegram_id BIGINT,
+                ADD COLUMN IF NOT EXISTS reply_to_text TEXT,
+                ADD COLUMN IF NOT EXISTS reply_to_sender TEXT,
+                ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'
             """)
-            print("✓ Check/Add column: messages.is_read")
+            print("✓ Check/Add columns: messages.is_read, replies, reactions")
 
             # 4. Update messages table: media fields
             await conn.execute("""

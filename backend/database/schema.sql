@@ -79,7 +79,11 @@ CREATE TABLE IF NOT EXISTS messages (
   has_media BOOLEAN NOT NULL DEFAULT FALSE,
   media_file_name VARCHAR(255),
   is_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
-  is_read BOOLEAN NOT NULL DEFAULT FALSE
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  reply_to_telegram_id BIGINT,
+  reply_to_text TEXT,
+  reply_to_sender TEXT,
+  reactions JSONB DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
