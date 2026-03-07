@@ -62,6 +62,12 @@ export const adminApi = {
 
   // Statistics
   getStatistics: () => api.get('/admin/statistics'),
+  getAdminColleagueRanking: (limit?: number) => api.get('/analytics/admin/ranking/colleagues', { params: { limit } }),
+  getAdminAccountRanking: (limit?: number) => api.get('/analytics/admin/ranking/accounts', { params: { limit } }),
+  getAdminUserConversationRanking: (userId: number, limit?: number, accountId?: number) =>
+    api.get(`/analytics/admin/users/${userId}/ranking/conversations`, { params: { limit, account_id: accountId } }),
+  getAdminUserAccountRanking: (userId: number, limit?: number) =>
+    api.get(`/analytics/admin/users/${userId}/ranking/accounts`, { params: { limit } }),
 
   // Encryption Settings
   getEncryptionSettings: () => api.get('/admin/encryption/settings'),

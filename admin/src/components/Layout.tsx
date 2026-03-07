@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Users, MessageSquare, LayoutDashboard, LogOut, Shield } from 'lucide-react';
+import { Users, MessageSquare, LayoutDashboard, LogOut, Shield, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuthContext';
 
 const Layout = () => {
@@ -8,6 +8,7 @@ const Layout = () => {
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'Leaderboards', href: '/leaderboards', icon: Trophy },
     { name: 'Colleagues', href: '/colleagues', icon: Users },
     { name: 'Messages', href: '/messages', icon: MessageSquare },
     { name: 'Security', href: '/security', icon: Shield },
@@ -34,8 +35,8 @@ const Layout = () => {
                   key={item.name}
                   to={item.href}
                   className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                    ? 'bg-gray-800 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                     }`}
                 >
                   <Icon className="w-5 h-5 mr-3" />
