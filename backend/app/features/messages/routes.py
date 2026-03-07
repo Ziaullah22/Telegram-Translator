@@ -47,6 +47,8 @@ async def mark_as_read(
     return {"message": "Messages marked as read"}
 
 
+# --- PHASE 1: INCREMENTAL PAGINATION (BACKEND) ---
+# This slices the message history into small pieces (e.g., 30 at a time) to keep the app fast.
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: int,

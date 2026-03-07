@@ -934,6 +934,8 @@ class TelethonService:
 
         return await session.join_chat(peer_id)
 
+    # --- PHASE 3: SMART PREFETCHING (BACKEND) ---
+    # This silently downloads latest messages in the background so there is zero wait time.
     async def fetch_and_save_history(self, account_id: int, peer_id: int, limit: int = 50):
         """Fetch history and trigger handlers to save to DB as a background task"""
         # Run in background to avoid blocking the caller

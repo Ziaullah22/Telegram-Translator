@@ -1447,342 +1447,164 @@ export default function ChatWindow({
             </p>
           </div>
         ) : (
-          <Virtuoso
-            key={conversationId || 'empty'}
-            ref={virtuosoRef}
-            data={listItems}
-            className="h-full custom-scrollbar"
-            initialTopMostItemIndex={999999}
-            followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
-            increaseViewportBy={300}
-            atBottomStateChange={(atBottom) => {
-              isAtBottomRef.current = atBottom;
-            }}
-            startReached={async () => {
-              if (hasMoreMessages && !loadingMore && onLoadMoreMessages) {
-                setLoadingMore(true);
-                await onLoadMoreMessages();
-                setLoadingMore(false);
-              }
-            }}
-            components={{
-              Header: () => loadingMore ? (
-                <div className="flex justify-center py-3">
-                  <div className="flex items-center space-x-2 text-xs text-gray-400 bg-black/10 dark:bg-white/5 px-4 py-2 rounded-full backdrop-blur-sm">
-                    <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    <span>Loading older messages...</span>
-                  </div>
-                </div>
-              ) : null
-            }}
-            itemContent={(_, item) => {
-              if (item.type === 'date') {
-                return (
-                  <div key={item.id} className="flex justify-center my-3">
-                    <span className="px-4 py-1 rounded-full text-xs font-medium bg-black/20 dark:bg-black/30 text-gray-800 dark:text-gray-200 backdrop-blur-sm shadow-sm select-none">
-                      {item.label}
-                    </span>
-                  </div>
-                );
-              }
-
-              const message = item.data;
-              if (message.type === 'system') {
-                return (
-                  <div key={message.id} className="flex justify-center mb-4 px-6">
-                    <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-2xl">
-                      <p className="text-xs text-yellow-300 text-center">{message.original_text}</p>
-                      <p className="text-xs text-gray-500 text-center mt-1">{new Date(message.created_at).toLocaleString()}</p>
+          <>
+            {/* --- PHASE 2: VIRTUALIZED LIST --- */}
+            {/* This ensures only visible messages are rendered, keeping the list perfectly smooth. */}
+            <Virtuoso
+              key={conversationId || 'empty'}
+              ref={virtuosoRef}
+              data={listItems}
+              className="h-full custom-scrollbar"
+              initialTopMostItemIndex={999999}
+              followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
+              increaseViewportBy={300}
+              atBottomStateChange={(atBottom) => {
+                isAtBottomRef.current = atBottom;
+              }}
+              startReached={async () => {
+                if (hasMoreMessages && !loadingMore && onLoadMoreMessages) {
+                  setLoadingMore(true);
+                  await onLoadMoreMessages();
+                  setLoadingMore(false);
+                }
+              }}
+              components={{
+                Header: () => loadingMore ? (
+                  <div className="flex justify-center py-3">
+                    <div className="flex items-center space-x-2 text-xs text-gray-400 bg-black/10 dark:bg-white/5 px-4 py-2 rounded-full backdrop-blur-sm">
+                      <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                      <span>Loading older messages...</span>
                     </div>
                   </div>
-                );
-              }
+                ) : null
+              }}
+              itemContent={(_, item) => {
+                if (item.type === 'date') {
+                  return (
+                    <div key={item.id} className="flex justify-center my-3">
+                      <span className="px-4 py-1 rounded-full text-xs font-medium bg-black/20 dark:bg-black/30 text-gray-800 dark:text-gray-200 backdrop-blur-sm shadow-sm select-none">
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                }
 
-              const isOutgoing = isMessageOutgoing(message);
-              const isSelected = selectedMessages.includes(message.id);
-
-              return (
-                <div
-                  key={message.id}
-                  data-tg-id={message.telegram_message_id}
-                  className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group pl-14 pr-6 py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
-                    }`}
-                  onClick={(e) => {
-                    if (isSelectionMode) {
-                      e.preventDefault();
-                      toggleMessageSelection(message.id);
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    if (message.type === 'system' || (message as any).is_scheduled_virtual) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (isSelectionMode) {
-                      toggleMessageSelection(message.id);
-                    } else {
-                      // Find the message bubble (standard or emoji-only)
-                      const bubble = e.currentTarget.querySelector('.px-3.py-2, .py-1.px-1');
-                      const bubbleRect = bubble?.getBoundingClientRect();
-
-                      let x = e.clientX;
-                      let y = e.clientY;
-                      const menuWidth = 220;
-                      let showAbove = y > window.innerHeight / 2;
-                      // Forced downward if near the top (header)
-                      if (y - 320 < 72) showAbove = false;
-
-                      if (bubbleRect) {
-                        // Empty Side Logic:
-                        // Incoming (Left bubble) -> Empty side is RIGHT
-                        // Outgoing (Right bubble) -> Empty side is LEFT
-                        if (isOutgoing) {
-                          // Place menu to the LEFT of the bubble
-                          x = bubbleRect.left - (menuWidth / 2) - 12;
-                        } else {
-                          // Place menu to the RIGHT of the bubble
-                          x = bubbleRect.right + (menuWidth / 2) + 12;
-                        }
-                      } else {
-                        // Fallback to cursor center-clamping if bubble not found
-                        if (isOutgoing) x = window.innerWidth * 0.3;
-                        else x = window.innerWidth * 0.7;
-                      }
-
-                      // Safety clamping to screen edges
-                      if (x + menuWidth / 2 > window.innerWidth - 12) x = window.innerWidth - menuWidth / 2 - 12;
-                      if (x - menuWidth / 2 < 12) x = menuWidth / 2 + 12;
-
-                      setContextMenu({ message, x, y, showAbove });
-                    }
-                  }}
-                >
-                  {/* Selection Checkbox - left side, outside the bubble */}
-                  {isSelectionMode && (
-                    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center z-10 pointer-events-none">
-                      <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-all duration-200 ${isSelected
-                        ? 'bg-[#419FD9] border-[#419FD9] scale-105'
-                        : 'border-blue-400 dark:border-blue-400/60 bg-transparent'
-                        }`}>
-                        {isSelected && (
-                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
+                const message = item.data;
+                if (message.type === 'system') {
+                  return (
+                    <div key={message.id} className="flex justify-center mb-4 px-6">
+                      <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-2xl">
+                        <p className="text-xs text-yellow-300 text-center">{message.original_text}</p>
+                        <p className="text-xs text-gray-500 text-center mt-1">{new Date(message.created_at).toLocaleString()}</p>
                       </div>
                     </div>
-                  )}
+                  );
+                }
 
-                  <div className={`flex flex-col max-w-[85%] lg:max-w-[70%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
-                    {/* Sender info for group/supergroup/channel incoming messages */}
-                    {!isOutgoing && (message.sender_name || message.sender_username) && (
-                      <div className="flex items-center space-x-2 mb-1 pl-1">
-                        <PeerAvatar
-                          accountId={currentAccount?.id}
-                          peerId={message.sender_user_id}
-                          name={message.sender_name || 'Unknown'}
-                          className="w-8 h-8 rounded-full flex-shrink-0 text-xs font-bold uppercase shadow-sm"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 truncate">
-                            {message.sender_name}
-                          </p>
+                const isOutgoing = isMessageOutgoing(message);
+                const isSelected = selectedMessages.includes(message.id);
+
+                return (
+                  <div
+                    key={message.id}
+                    data-tg-id={message.telegram_message_id}
+                    className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group pl-14 pr-6 py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
+                      }`}
+                    onClick={(e) => {
+                      if (isSelectionMode) {
+                        e.preventDefault();
+                        toggleMessageSelection(message.id);
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      if (message.type === 'system' || (message as any).is_scheduled_virtual) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (isSelectionMode) {
+                        toggleMessageSelection(message.id);
+                      } else {
+                        // Find the message bubble (standard or emoji-only)
+                        const bubble = e.currentTarget.querySelector('.px-3.py-2, .py-1.px-1');
+                        const bubbleRect = bubble?.getBoundingClientRect();
+
+                        let x = e.clientX;
+                        let y = e.clientY;
+                        const menuWidth = 220;
+                        let showAbove = y > window.innerHeight / 2;
+                        // Forced downward if near the top (header)
+                        if (y - 320 < 72) showAbove = false;
+
+                        if (bubbleRect) {
+                          // Empty Side Logic:
+                          // Incoming (Left bubble) -> Empty side is RIGHT
+                          // Outgoing (Right bubble) -> Empty side is LEFT
+                          if (isOutgoing) {
+                            // Place menu to the LEFT of the bubble
+                            x = bubbleRect.left - (menuWidth / 2) - 12;
+                          } else {
+                            // Place menu to the RIGHT of the bubble
+                            x = bubbleRect.right + (menuWidth / 2) + 12;
+                          }
+                        } else {
+                          // Fallback to cursor center-clamping if bubble not found
+                          if (isOutgoing) x = window.innerWidth * 0.3;
+                          else x = window.innerWidth * 0.7;
+                        }
+
+                        // Safety clamping to screen edges
+                        if (x + menuWidth / 2 > window.innerWidth - 12) x = window.innerWidth - menuWidth / 2 - 12;
+                        if (x - menuWidth / 2 < 12) x = menuWidth / 2 + 12;
+
+                        setContextMenu({ message, x, y, showAbove });
+                      }
+                    }}
+                  >
+                    {/* Selection Checkbox - left side, outside the bubble */}
+                    {isSelectionMode && (
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center z-10 pointer-events-none">
+                        <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-all duration-200 ${isSelected
+                          ? 'bg-[#419FD9] border-[#419FD9] scale-105'
+                          : 'border-blue-400 dark:border-blue-400/60 bg-transparent'
+                          }`}>
+                          {isSelected && (
+                            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </div>
                       </div>
                     )}
 
-                    {/* Message bubble */}
-                    {isOnlyEmoji(message.translated_text || message.original_text) ? (
-                      <div className="py-1 px-1 inline-block">
-                        <span style={{ fontSize: '96px', lineHeight: '1.1' }} className="select-none block">
-                          {message.translated_text || message.original_text}
-                        </span>
-                        <div className="flex items-center justify-end mt-1 space-x-1">
-                          <div className="flex items-center space-x-1 bg-black/40 dark:bg-black/50 rounded-full px-2 py-0.5">
-                            <p className="text-[10px] text-white">
-                              {new Date(message.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                    <div className={`flex flex-col max-w-[85%] lg:max-w-[70%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                      {/* Sender info for group/supergroup/channel incoming messages */}
+                      {!isOutgoing && (message.sender_name || message.sender_username) && (
+                        <div className="flex items-center space-x-2 mb-1 pl-1">
+                          <PeerAvatar
+                            accountId={currentAccount?.id}
+                            peerId={message.sender_user_id}
+                            name={message.sender_name || 'Unknown'}
+                            className="w-8 h-8 rounded-full flex-shrink-0 text-xs font-bold uppercase shadow-sm"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 truncate">
+                              {message.sender_name}
                             </p>
-                            {isOutgoing && (
-                              <div className="flex items-center">
-                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                                <svg className="w-3 h-3 text-white -ml-1" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                              </div>
-                            )}
                           </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div
-                        className={`px-3 py-2 rounded-2xl break-words whitespace-pre-wrap overflow-hidden shadow-sm relative ${isOutgoing
-                          ? 'bg-telegram-bubble-out-light dark:bg-telegram-bubble-out-dark text-gray-900 dark:text-white rounded-br-md ml-auto'
-                          : 'bg-telegram-bubble-in-light dark:bg-telegram-bubble-in-dark text-gray-900 dark:text-gray-100 rounded-bl-md mr-auto'
-                          } ${(message as any).is_scheduled_virtual ? 'opacity-80 border border-dashed border-amber-400/40' : ''}`}
-                      >
-                        {/* Scheduled indicator strip */}
-                        {(message as any).is_scheduled_virtual && (
-                          <div className="flex items-center space-x-1 mb-1.5 pb-1.5 border-b border-amber-400/20">
-                            <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                            <span className="text-[11px] font-semibold text-amber-400 tracking-wide uppercase">Scheduled</span>
-                          </div>
-                        )}
-                        {/* Reply Preview inside bubble */}
-                        {message.reply_to_telegram_id && (
-                          <div
-                            className={`mb-2 pl-3 py-1 border-l-[3px] rounded bg-black/5 dark:bg-white/5 cursor-pointer max-w-full overflow-hidden ${isOutgoing ? 'border-[#3390ec]' : 'border-[#3390ec]'
-                              }`}
-                            onClick={() => {
-                              // Find the original message element and scroll to it
-                              const element = document.querySelector(`[data-tg-id="${message.reply_to_telegram_id}"]`);
-                              if (element) {
-                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                // Add a temporary highlight effect
-                                element.classList.add('bg-blue-500/10');
-                                setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
-                              }
-                            }}
-                          >
-                            <p className="text-[13px] font-bold text-[#3390ec] truncate mb-0.5">
-                              {message.reply_to_sender || 'User'}
-                            </p>
-                            <p className="text-[13px] text-gray-600 dark:text-gray-400 truncate leading-tight">
-                              {message.reply_to_text || 'Message'}
-                            </p>
-                          </div>
-                        )}
+                      )}
 
-                        {/* Auto-Reply Badge */}
-                        {message.type === 'auto_reply' && (
-                          <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
-                            <Zap className="w-3 h-3 text-yellow-400" />
-                            <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
-                          </div>
-                        )}
-
-                        {/* Photo - Display as inline image like Telegram */}
-                        {hasPhoto(message) && (
-                          <PhotoMessage
-                            message={message}
-                            loadedImages={loadedImages}
-                            loadImage={loadImage}
-                            onDownload={handleDownloadMedia}
-                            onImageLoad={() => {
-                              if (isAtBottomRef.current) {
-                                scrollToBottom('auto');
-                              }
-                            }}
-                          />
-                        )}
-
-                        {/* Video - Display as inline video player like Telegram */}
-                        {hasVideo(message) && (
-                          <VideoMessage
-                            message={message}
-                            loadedImages={loadedImages}
-                            loadImage={loadImage}
-                            onDownload={handleDownloadMedia}
-                            onImageLoad={() => {
-                              if (isAtBottomRef.current) {
-                                scrollToBottom('auto');
-                              }
-                            }}
-                          />
-                        )}
-
-                        {/* Document - keep as icon */}
-                        {message.type === 'document' && (
-                          <div className="mb-3">
-                            <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
-                              <div className="flex-shrink-0">
-                                <FileText className="w-8 h-8 text-green-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">
-                                  {message.media_file_name || '📄 Document'}
-                                </p>
-                                <p className="text-xs text-gray-400">Click to download</p>
-                              </div>
-                              <button
-                                onClick={() => handleDownloadMedia(message)}
-                                className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                                title="Download"
-                              >
-                                <Download className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Caption/Text */}
-                        {message.original_text && (
-                          <div className="mb-2">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <span className="text-xs font-medium text-blue-400">
-                                {message.source_language && `${message.source_language.toUpperCase()}`}
-                              </span>
-                              <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Translated caption/message */}
-                        {message.translated_text && (
-                          <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
-                            <p className={`text-sm font-bold leading-relaxed break-all ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>{message.translated_text}</p>
-                          </div>
-                        )}
-
-                        {/* Reactions display */}
-                        {message.reactions && Object.keys(message.reactions).length > 0 && (
-                          <div className={`mt-2 flex flex-wrap gap-1 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
-                            {Object.entries(message.reactions as Record<string, number> || {}).map(([emoji, count]) => (
-                              <div
-                                key={emoji}
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[12px] animate-fade-in border border-white/5"
-                              >
-                                <span>{emoji}</span>
-                                {count > 1 && <span className="font-medium text-[11px] opacity-70">{(count as number)}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Timestamp and read receipt */}
-                        <div className="flex items-center justify-end mt-2 space-x-1">
-                          {(message as any).is_scheduled_virtual ? (
-                            // Scheduled message footer: show clock icon + scheduled time + cancel button
-                            <div className="flex items-center space-x-1.5">
-                              <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                              <p className="text-[11px] text-amber-400 font-medium">
-                                {new Date(message.created_at).toLocaleString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </p>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCancelScheduledMessage((message as any).scheduled_message_id);
-                                }}
-                                className="text-red-400 hover:text-red-500 p-0.5 rounded transition-colors"
-                                title="Cancel scheduled message"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <p className="text-xs opacity-70">
+                      {/* Message bubble */}
+                      {isOnlyEmoji(message.translated_text || message.original_text) ? (
+                        <div className="py-1 px-1 inline-block">
+                          <span style={{ fontSize: '96px', lineHeight: '1.1' }} className="select-none block">
+                            {message.translated_text || message.original_text}
+                          </span>
+                          <div className="flex items-center justify-end mt-1 space-x-1">
+                            <div className="flex items-center space-x-1 bg-black/40 dark:bg-black/50 rounded-full px-2 py-0.5">
+                              <p className="text-[10px] text-white">
                                 {new Date(message.created_at).toLocaleTimeString([], {
                                   hour: '2-digit',
                                   minute: '2-digit'
@@ -1790,24 +1612,206 @@ export default function ChatWindow({
                               </p>
                               {isOutgoing && (
                                 <div className="flex items-center">
-                                  <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                   </svg>
-                                  <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <svg className="w-3 h-3 text-white -ml-1" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                   </svg>
                                 </div>
                               )}
-                            </>
-                          )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <div
+                          className={`px-3 py-2 rounded-2xl break-words whitespace-pre-wrap overflow-hidden shadow-sm relative ${isOutgoing
+                            ? 'bg-telegram-bubble-out-light dark:bg-telegram-bubble-out-dark text-gray-900 dark:text-white rounded-br-md ml-auto'
+                            : 'bg-telegram-bubble-in-light dark:bg-telegram-bubble-in-dark text-gray-900 dark:text-gray-100 rounded-bl-md mr-auto'
+                            } ${(message as any).is_scheduled_virtual ? 'opacity-80 border border-dashed border-amber-400/40' : ''}`}
+                        >
+                          {/* Scheduled indicator strip */}
+                          {(message as any).is_scheduled_virtual && (
+                            <div className="flex items-center space-x-1 mb-1.5 pb-1.5 border-b border-amber-400/20">
+                              <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                              <span className="text-[11px] font-semibold text-amber-400 tracking-wide uppercase">Scheduled</span>
+                            </div>
+                          )}
+                          {/* Reply Preview inside bubble */}
+                          {message.reply_to_telegram_id && (
+                            <div
+                              className={`mb-2 pl-3 py-1 border-l-[3px] rounded bg-black/5 dark:bg-white/5 cursor-pointer max-w-full overflow-hidden ${isOutgoing ? 'border-[#3390ec]' : 'border-[#3390ec]'
+                                }`}
+                              onClick={() => {
+                                // Find the original message element and scroll to it
+                                const element = document.querySelector(`[data-tg-id="${message.reply_to_telegram_id}"]`);
+                                if (element) {
+                                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  // Add a temporary highlight effect
+                                  element.classList.add('bg-blue-500/10');
+                                  setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
+                                }
+                              }}
+                            >
+                              <p className="text-[13px] font-bold text-[#3390ec] truncate mb-0.5">
+                                {message.reply_to_sender || 'User'}
+                              </p>
+                              <p className="text-[13px] text-gray-600 dark:text-gray-400 truncate leading-tight">
+                                {message.reply_to_text || 'Message'}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Auto-Reply Badge */}
+                          {message.type === 'auto_reply' && (
+                            <div className="flex items-center space-x-1 mb-2 pb-2 border-b border-white/20">
+                              <Zap className="w-3 h-3 text-yellow-400" />
+                              <span className="text-xs font-medium text-yellow-400">Auto-Reply</span>
+                            </div>
+                          )}
+
+                          {/* Photo - Display as inline image like Telegram */}
+                          {hasPhoto(message) && (
+                            <PhotoMessage
+                              message={message}
+                              loadedImages={loadedImages}
+                              loadImage={loadImage}
+                              onDownload={handleDownloadMedia}
+                              onImageLoad={() => {
+                                if (isAtBottomRef.current) {
+                                  scrollToBottom('auto');
+                                }
+                              }}
+                            />
+                          )}
+
+                          {/* Video - Display as inline video player like Telegram */}
+                          {hasVideo(message) && (
+                            <VideoMessage
+                              message={message}
+                              loadedImages={loadedImages}
+                              loadImage={loadImage}
+                              onDownload={handleDownloadMedia}
+                              onImageLoad={() => {
+                                if (isAtBottomRef.current) {
+                                  scrollToBottom('auto');
+                                }
+                              }}
+                            />
+                          )}
+
+                          {/* Document - keep as icon */}
+                          {message.type === 'document' && (
+                            <div className="mb-3">
+                              <div className="bg-gray-800/50 rounded-lg p-3 flex items-center space-x-3">
+                                <div className="flex-shrink-0">
+                                  <FileText className="w-8 h-8 text-green-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {message.media_file_name || '📄 Document'}
+                                  </p>
+                                  <p className="text-xs text-gray-400">Click to download</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDownloadMedia(message)}
+                                  className="flex-shrink-0 p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                                  title="Download"
+                                >
+                                  <Download className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Caption/Text */}
+                          {message.original_text && (
+                            <div className="mb-2">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <span className="text-xs font-medium text-blue-400">
+                                  {message.source_language && `${message.source_language.toUpperCase()}`}
+                                </span>
+                                <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Translated caption/message */}
+                          {message.translated_text && (
+                            <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
+                              <p className={`text-sm font-bold leading-relaxed break-all ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>{message.translated_text}</p>
+                            </div>
+                          )}
+
+                          {/* Reactions display */}
+                          {message.reactions && Object.keys(message.reactions).length > 0 && (
+                            <div className={`mt-2 flex flex-wrap gap-1 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+                              {Object.entries(message.reactions as Record<string, number> || {}).map(([emoji, count]) => (
+                                <div
+                                  key={emoji}
+                                  className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[12px] animate-fade-in border border-white/5"
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span className="font-medium text-[11px] opacity-70">{(count as number)}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Timestamp and read receipt */}
+                          <div className="flex items-center justify-end mt-2 space-x-1">
+                            {(message as any).is_scheduled_virtual ? (
+                              // Scheduled message footer: show clock icon + scheduled time + cancel button
+                              <div className="flex items-center space-x-1.5">
+                                <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                                <p className="text-[11px] text-amber-400 font-medium">
+                                  {new Date(message.created_at).toLocaleString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelScheduledMessage((message as any).scheduled_message_id);
+                                  }}
+                                  className="text-red-400 hover:text-red-500 p-0.5 rounded transition-colors"
+                                  title="Cancel scheduled message"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-xs opacity-70">
+                                  {new Date(message.created_at).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                                {isOutgoing && (
+                                  <div className="flex items-center">
+                                    <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                    <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            }}
-          />
+                );
+              }}
+            />
+          </>
         )}
       </div>
 

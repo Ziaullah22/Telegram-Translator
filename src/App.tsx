@@ -57,7 +57,8 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
-  // Phase 3: Message Caching & Memory Management
+  // --- PHASE 3: SMART MEMORY MANAGEMENT (FRONTEND) ---
+  // This unloads old chat data and keeps only the most recent 5 chats in memory.
   const messageCache = useRef<Record<number, { messages: TelegramMessage[], hasMore: boolean, lastViewed: number }>>({});
   const MAX_CACHE_SIZE = 5;
 
@@ -282,6 +283,8 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  // --- PHASE 1: INCREMENTAL PAGINATION (FRONTEND) ---
+  // This triggers when you scroll near the top, loading older messages one slice at a time.
   const loadMoreMessages = async (id: number) => {
     if (!hasMoreMessages) return;
     try {
