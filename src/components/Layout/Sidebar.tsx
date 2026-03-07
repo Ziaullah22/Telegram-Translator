@@ -102,39 +102,55 @@ export default function Sidebar({
                             </div>
                           ) : null;
                         })()}
+
+                        <div className="h-4 w-px bg-gray-200 dark:bg-white/10 mx-1" />
+
                         <button
-                          onClick={(e) => { e.stopPropagation(); onProfile(account); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(account);
+                          }}
                           className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
-                          title="Profile & Privacy"
+                          title="Settings"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-gray-500" />
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(account);
+                          }}
+                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                          title="Remove Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onProfile(account);
+                          }}
+                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                          title="Profile"
                         >
                           <User className="w-3.5 h-3.5 text-blue-500" />
                         </button>
+
                         <button
-                          onClick={(e) => { e.stopPropagation(); onSessions(account); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSessions(account);
+                          }}
                           className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
                           title="Active Sessions"
                         >
-                          <Shield className="w-3.5 h-3.5 text-orange-500" />
+                          <Shield className="w-3.5 h-3.5 text-amber-500" />
                         </button>
-                        <button
-                          id="account-edit-btn"
-                          onClick={(e) => { e.stopPropagation(); onEdit(account); }}
-                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          id="account-delete-btn"
-                          onClick={(e) => { e.stopPropagation(); onDelete(account); }}
-                          className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />
-                        </button>
+
                         {account.isConnected ? (
                           <button
-                            id="account-online-btn"
                             onClick={(e) => {
                               e.stopPropagation();
                               onDisconnect(account);
@@ -142,11 +158,10 @@ export default function Sidebar({
                             className={`p-1 rounded-lg transition-colors ${currentAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
                             title="Disconnect"
                           >
-                            <Wifi className={`w-3.5 h-3.5 ${currentAccount?.id === account.id ? 'text-green-600 dark:text-green-400' : 'text-green-500'}`} />
+                            <Wifi className="w-3.5 h-3.5 text-green-500" />
                           </button>
                         ) : (
                           <button
-                            id="account-offline-btn"
                             onClick={(e) => {
                               e.stopPropagation();
                               onConnect(account);

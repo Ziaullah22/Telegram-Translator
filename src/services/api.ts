@@ -172,7 +172,7 @@ export const telegramAPI = {
   },
 
   unhideConversation: async (conversationId: number) => {
-    const response = await api.post(`/telegram/conversations/${conversationId}/unhide`);
+    const response = await api.get(`/telegram/conversations/${conversationId}/unhide`);
     return response.data;
   },
 
@@ -521,4 +521,22 @@ export const autoResponderAPI = {
     const response = await api.get(`/auto-responder/logs?limit=${limit}`);
     return response.data;
   },
+};
+
+// Analytics API
+export const analyticsAPI = {
+  getConversationRanking: async (limit: number = 10, accountId?: number) => {
+    const response = await api.get('/analytics/ranking/conversations', {
+      params: { limit, account_id: accountId }
+    });
+    return response.data;
+  },
+  getAccountRanking: async (limit: number = 10) => {
+    const response = await api.get('/analytics/ranking/accounts', { params: { limit } });
+    return response.data;
+  },
+  getAdminAccountRanking: async (limit: number = 20) => {
+    const response = await api.get('/analytics/admin/ranking/accounts', { params: { limit } });
+    return response.data;
+  }
 };

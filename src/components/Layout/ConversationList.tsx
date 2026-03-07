@@ -307,7 +307,9 @@ export default function ConversationList({
                   <div className={`flex-1 min-w-0 ml-3 py-1 ${isActive ? '' : 'border-b border-gray-100 dark:border-white/5'}`}>
                     <div className="flex items-center justify-between">
                       <h3 className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
-                        {conversation.title || conversation.username || 'Unknown'}
+                        {conversation.username && (!conversation.title || conversation.title.startsWith('+'))
+                          ? `@${conversation.username}`
+                          : (conversation.title || 'Unknown')}
                       </h3>
                       <div className="flex items-center space-x-1 ml-2 flex-shrink-0 relative">
                         {isOutgoing && (

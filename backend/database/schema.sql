@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS telegram_accounts (
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   source_language VARCHAR(16) NOT NULL DEFAULT 'auto',
   target_language VARCHAR(16) NOT NULL DEFAULT 'en',
+  username VARCHAR(100), -- Store official @username
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used TIMESTAMPTZ
 );
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   telegram_peer_id BIGINT NOT NULL,
   title TEXT,
   type conversation_type NOT NULL,
+  username VARCHAR(100), -- Store official @username
   is_archived BOOLEAN NOT NULL DEFAULT FALSE,
   is_muted BOOLEAN NOT NULL DEFAULT FALSE,
   is_hidden BOOLEAN NOT NULL DEFAULT FALSE,

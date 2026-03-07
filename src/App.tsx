@@ -11,6 +11,7 @@ import Header from './components/Layout/Header';
 import Sidebar from './components/Layout/Sidebar';
 import ChatWindow from './components/Chat/ChatWindow';
 import ConversationList from './components/Layout/ConversationList';
+import AnalyticsPage from './components/Analytics/AnalyticsPage';
 import AddAccountModal from './components/Modals/AddAccountModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
 import ConfirmModal from './components/Modals/ConfirmModal';
@@ -256,11 +257,15 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  // --- PHASE 3: SMART MEMORY FLUSHING ---
+  // This removes (flushes) older chats from the memory to prevent the app from getting slow.
   const updateMessageCache = (id: number, msgs: TelegramMessage[], hasMore: boolean) => {
     messageCache.current[id] = { messages: msgs, hasMore, lastViewed: Date.now() };
     const entries = Object.entries(messageCache.current);
     if (entries.length > MAX_CACHE_SIZE) {
+      // Find the least recently used chat (oldest timestamp)
       const oldestId = entries.sort(([, a], [, b]) => a.lastViewed - b.lastViewed)[0][0];
+      // DELETE it from memory to reclaim space
       delete messageCache.current[Number(oldestId)];
     }
   };
@@ -470,6 +475,7 @@ function App() {
         <Header onStartTour={() => setShowTour(true)} />
         <Routes>
           <Route path="/auto-responder" element={<AutoResponderPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden">
               <Sidebar

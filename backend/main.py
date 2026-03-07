@@ -22,6 +22,7 @@ from app.features.scheduled.routes import router as scheduled_router
 from app.features.contacts.routes import router as contacts_router
 from app.features.auto_responder.routes import router as auto_responder_router
 from app.features.admin.routes import router as admin_router
+from app.features.analytics.routes import router as analytics_router
 from auth import get_current_user
 from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
@@ -81,16 +82,24 @@ async def lifespan(app: FastAPI):
             )
 
             if not conversation:
+                peer_title = message_data.get('peer_title', 'Unknown')
+                peer_username = message_data.get('sender_username') if message_data.get('conversation_type', 'private') == 'private' else None
+                
+                # Title Fallback: if name is phone number, use username if we have it
+                if message_data.get('conversation_type', 'private') == 'private' and peer_username and (not peer_title or peer_title.strip().startswith('+')):
+                    peer_title = f"@{peer_username}"
+
                 conversation_id = await db.fetchval(
                     """
-                    INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
+                    VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
                     """,
                     account_id,
                     peer_id,
-                    message_data.get('peer_title', 'Unknown'),
-                    message_data.get('conversation_type', 'private')
+                    peer_title,
+                    message_data.get('conversation_type', 'private'),
+                    peer_username
                 )
             else:
                 conversation_id = conversation['id']
@@ -111,26 +120,53 @@ async def lifespan(app: FastAPI):
             msg_type = message_data.get('type', 'text')
             text = message_data.get('text', '')
             
-            # Translate text if present
-            translated_text = None
-            source_lang = None
+            # Translation Logic:
+            # We want to show the message in the user's 'target_language' (translated) 
+            # and the 'source_language' (original).
+            
+            translated_text = text
+            source_lang = account['source_language']
+            
             if text:
                 try:
-                    translation = await translation_service.translate_text(
-                        text,
-                        account['target_language'],
-                        account['source_language']
-                    )
-                    translated_text = translation['translated_text']
-                    source_lang = translation['source_language']
+                    # Detect language first to see if it's already in the target language
+                    detected = translation_service.detect_language(text)
+                    
+                    target_lang = account['target_language']
+                    logger.info(f"Processing message: detected={detected}, target={target_lang}, account_src={account['source_language']}")
+                    
+                    if detected == target_lang:
+                        logger.info("Message already in target language, back-translating to original")
+                        back_translation = await translation_service.translate_text(
+                            text,
+                            account['source_language'],
+                            account['target_language']
+                        )
+                        processed_original = back_translation['translated_text']
+                        processed_translated = text
+                        source_lang = account['source_language']
+                    else:
+                        logger.info(f"Translating message to {target_lang}")
+                        translation = await translation_service.translate_text(
+                            text,
+                            target_lang,
+                            'auto'
+                        )
+                        processed_original = text
+                        processed_translated = translation['translated_text']
+                        source_lang = translation['source_language']
+                        logger.info(f"Translation result: {processed_translated[:50]}...")
                 except Exception as e:
                     logger.error(f"Translation error in handle_new_message: {e}")
-                    translated_text = text
-                    source_lang = account['source_language']
-            
+                    processed_original = text
+                    processed_translated = text
+            else:
+                processed_original = text
+                processed_translated = text
+
             # Encrypt message if encryption is enabled
             processed_original, processed_translated, is_encrypted = await encrypt_message_if_enabled(
-                db, text, translated_text
+                db, processed_original, processed_translated
             )
             
             # Handle reply information if present
@@ -194,8 +230,8 @@ async def lifespan(app: FastAPI):
                 "sender_username": message_data.get('sender_username'),
                 "peer_title": message_data.get('peer_title', ''),
                 "type": msg_type,
-                "original_text": text,
-                "translated_text": translated_text,
+                "original_text": processed_original,
+                "translated_text": processed_translated,
                 "source_language": source_lang,
                 "target_language": account['target_language'],
                 "created_at": created_at.isoformat() if isinstance(created_at, datetime) else created_at,
@@ -333,6 +369,7 @@ app.include_router(scheduled_router)
 app.include_router(contacts_router)
 app.include_router(auto_responder_router)
 app.include_router(admin_router)
+app.include_router(analytics_router)
 
 @app.get("/api/health")
 async def health_check():

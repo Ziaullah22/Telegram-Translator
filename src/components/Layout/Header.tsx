@@ -1,4 +1,4 @@
-import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon } from 'lucide-react';
+import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -47,6 +47,20 @@ export default function Header({ onStartTour }: HeaderProps) {
               <div className="flex items-center space-x-2 font-medium">
                 <Zap className="w-4 h-4" />
                 <span>Auto-Responder</span>
+              </div>
+            </button>
+
+            <button
+              id="nav-analytics"
+              onClick={() => navigate('/analytics')}
+              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/analytics'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                }`}
+            >
+              <div className="flex items-center space-x-2 font-medium">
+                <BarChart2 className="w-4 h-4" />
+                <span>Performance</span>
               </div>
             </button>
 

@@ -68,6 +68,7 @@ class ConversationResponse(BaseModel):
     last_message_at: Optional[datetime]
     last_message: Optional['MessageResponse'] = None
     unread_count: int = 0
+    username: Optional[str] = None
     is_hidden: bool = False
     is_muted: bool = False
 

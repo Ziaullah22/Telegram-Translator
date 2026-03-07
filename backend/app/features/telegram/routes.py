@@ -320,7 +320,10 @@ async def create_account(
 
     # If account exists but is inactive, reactivate it
     try:
-        if existing and not existing['is_active']:
+        tg_username = app_data.get('username')
+        
+        if existing:
+            # Reactivate and update configuration
             account_id = existing['id']
             await db.execute(
                 """
@@ -331,14 +334,16 @@ async def create_account(
                     target_language = $3,
                     app_id = $4,
                     app_hash = $5,
+                    username = $6,
                     last_used = NULL
-                WHERE id = $6
+                WHERE id = $7
                 """,
                 displayName,
                 sourceLanguage,
                 targetLanguage,
                 app_id,
                 app_hash,
+                tg_username,
                 account_id,
             )
             logger.info(f"Reactivated telegram account: {account_name} for user {current_user.user_id}")
@@ -347,13 +352,14 @@ async def create_account(
             account_id = await db.fetchval(
                 """
                 INSERT INTO telegram_accounts
-                (user_id, display_name, account_name, source_language, target_language, app_id, app_hash)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (user_id, display_name, account_name, username, source_language, target_language, app_id, app_hash)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id
                 """,
                 current_user.user_id,
                 displayName,
                 account_name,
+                tg_username,
                 sourceLanguage,
                 targetLanguage,
                 app_id,
@@ -725,6 +731,7 @@ async def get_conversations(
             "last_message_at": conv['msg_created_at'] or conv['created_at'],
             "last_message": last_message,
             "unread_count": conv['unread_count_db'] or 0,
+            "username": conv['username'],
             "is_muted": conv.get('is_muted', False),
             "is_hidden": conv.get('is_hidden', False),
         })
@@ -751,12 +758,18 @@ async def search_users(
             detail="Account not found",
         )
 
-    # Check if session is connected
+    # Try to get session, if not connected and account is active, try to connect it first
     session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        if account.get('is_active', True):
+            logger.info(f"Auto-connecting account {account_id} for user search")
+            await telethon_service.connect_session(account_id)
+            session = await telethon_service.get_session(account_id)
+            
     if not session or not session.is_connected:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account not connected",
+            detail="Account not connected. Please try connecting it from the sidebar first.",
         )
 
     try:
@@ -797,7 +810,17 @@ async def create_conversation(
     )
 
     if existing:
-        # Return existing conversation
+        # If existing record is missing username or has a phone number title, update it
+        if not existing['username'] or (existing['title'] and existing['title'].startswith('+')):
+            await db.execute(
+                "UPDATE conversations SET title = $1, username = $2 WHERE id = $3",
+                conversation_data.title or existing['title'],
+                conversation_data.username or existing['username'],
+                existing['id']
+            )
+            # Fetch updated version
+            existing = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", existing['id'])
+
         return {
             "id": existing['id'],
             "telegram_account_id": existing['telegram_account_id'],
@@ -808,6 +831,7 @@ async def create_conversation(
             "created_at": existing['created_at'],
             "last_message_at": existing.get('last_message_at'),
             "unread_count": 0,
+            "username": existing.get('username'),
             "is_hidden": existing.get('is_hidden', False),
             "is_muted": existing.get('is_muted', False),
         }
@@ -815,14 +839,15 @@ async def create_conversation(
     # Create new conversation
     conversation_id = await db.fetchval(
         """
-        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, is_hidden, is_muted)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         """,
         account_id,
         conversation_data.telegram_peer_id,
         conversation_data.title or conversation_data.username or "Unknown",
         conversation_data.type,
+        conversation_data.username,
         conversation_data.is_hidden,
         False, # is_muted
     )
@@ -844,6 +869,7 @@ async def create_conversation(
         "created_at": conversation['created_at'],
         "last_message_at": conversation.get('last_message_at'),
         "unread_count": 0,
+        "username": conversation['username'],
         "is_hidden": conversation.get('is_hidden', False),
         "is_muted": conversation.get('is_muted', False),
     }
@@ -1273,6 +1299,20 @@ async def get_peer_photo(
     )
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Try to get session, if not connected and account is active, try to connect it first
+    session = await telethon_service.get_session(account_id)
+    if not session or not session.is_connected:
+        if account.get('is_active', True):
+            logger.info(f"Auto-connecting account {account_id} for peer photo retrieval")
+            await telethon_service.connect_session(account_id)
+            session = await telethon_service.get_session(account_id)
+            
+    if not session or not session.is_connected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account not connected. Please try connecting it from the sidebar first.",
+        )
     
     try:
         photo_url = await telethon_service.get_peer_photo(account_id, peer_id)

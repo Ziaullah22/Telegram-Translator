@@ -31,6 +31,7 @@ class TelegramSession:
         # Entity cache: peer_id -> entity (populated from dialogs on connect)
         self.entity_cache: Dict[int, object] = {}
         self.telegram_user_id: Optional[int] = None
+        self.me: Optional[object] = None
 
     async def connect(self):
         try:
@@ -49,7 +50,18 @@ class TelegramSession:
                 app_version="1.0.0"
             )
 
-            await self.client.connect()
+            # Max retries for "database is locked" errors on Windows
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    await self.client.connect()
+                    break
+                except Exception as e:
+                    if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                        logger.warning(f"Database locked for account {self.account_id}, retrying in 1s... (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(1)
+                    else:
+                        raise e
             
             # Check if user is authorized
             if not await self.client.is_user_authorized():
@@ -61,19 +73,30 @@ class TelegramSession:
             self.is_connected = True
             logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
 
-            # Cache the account's own telegram ID for faster admin operations
+            # Cache the account's own telegram ID and username for faster operations
             try:
-                # Use a timeout for get_me to prevent startup hangs
+                # Use a timeout for get_me
                 me = await asyncio.wait_for(self.client.get_me(), timeout=10.0)
                 if me:
                     self.telegram_user_id = me.id
+                    self.me = me
+                    
+                    # Store username in database for cross-account search
+                    if getattr(me, 'username', None):
+                        from database import db
+                        await db.execute(
+                            "UPDATE telegram_accounts SET username = $1 WHERE id = $2",
+                            me.username, self.account_id
+                        )
+                        logger.info(f"Updated record for account {self.account_id} with username @{me.username}")
             except Exception as e:
                 logger.warning(f"Could not get 'me' for account {self.account_id} during connect: {e}")
+                self.me = None
 
             # Pre-warm entity cache using SAME ID format as our DB (_get_peer_id)
             try:
-                # limit the number of dialogs to fetch to keep connection fast
-                async for dialog in self.client.iter_dialogs(limit=100):
+                # Increase limit to 400 to ensure most active chats are cached correctly
+                async for dialog in self.client.iter_dialogs(limit=400):
                     if dialog.entity:
                         db_peer_id = self._get_peer_id(dialog.entity)
                         if db_peer_id:
@@ -129,10 +152,19 @@ class TelegramSession:
             for dialog in dialogs:
                 peer_id = self._get_peer_id(dialog.entity)
                 conv_type = self._get_conversation_type(dialog.entity)
+                
+                # Try to get username if it's a user
+                username = getattr(dialog.entity, 'username', None)
+                
+                # Improved Title Fallback: if name is phone number, use username if we have it
+                title = dialog.title or dialog.name
+                if conv_type == 'private' and username and (not title or title.strip().startswith('+')):
+                    title = f"@{username}"
 
                 result.append({
                     "peer_id": peer_id,
-                    "title": dialog.title or dialog.name,
+                    "title": title,
+                    "username": username,
                     "type": conv_type,
                     "unread_count": dialog.unread_count,
                     "last_message_date": dialog.date
@@ -290,6 +322,10 @@ class TelegramSession:
                     
                     full_name = " ".join(name_parts) if name_parts else (entity.username or entity.phone or "Unknown")
                     
+                    # If full name looks like a phone number, prefer username if available
+                    if full_name.startswith('+') and entity.username:
+                        full_name = f"@{entity.username}"
+
                     return {
                         "name": full_name,
                         "username": entity.username,
@@ -636,36 +672,97 @@ class TelegramSession:
             return None
 
     async def search_users(self, username: str, limit: int = 10):
-        """Search for Telegram users by username or phone number"""
+        """Search for Telegram users by username or phone number (with local fallback)"""
         if not self.client or not self.is_connected:
             return []
 
-        # Detect if this is a phone number search
-        cleaned = username.strip().replace(' ', '').replace('-', '')
-        
-        # Force + for phone numbers that look international (more than 7 digits)
-        if cleaned.isdigit() and len(cleaned) >= 10 and not cleaned.startswith('+'):
-            cleaned = '+' + cleaned
+        query = username.strip()
+        if not query:
+            return []
             
-        is_phone = cleaned.startswith('+') or (cleaned.isdigit() and len(cleaned) > 5)
+        # 1. First, search in our local entity cache (instant results for people we know)
+        local_results = []
+        clean_query = query.lower().lstrip('@')
         
-        if is_phone:
-            return await self._search_by_phone(cleaned, limit)
+        for peer_id, entity in self.entity_cache.items():
+            # Only match by name/username for strings
+            e_name = getattr(entity, 'first_name', '') or ''
+            e_last = getattr(entity, 'last_name', '') or ''
+            e_user = getattr(entity, 'username', '') or ''
+            e_title = getattr(entity, 'title', '') or ''
+            
+            fullname = f"{e_name} {e_last} {e_title}".lower()
+            if clean_query in fullname or clean_query in e_user.lower():
+                is_contact = getattr(entity, 'contact', False)
+                e_type = self._get_conversation_type(entity)
+                
+                local_results.append({
+                    "id": peer_id if isinstance(peer_id, int) and peer_id != 0 else getattr(entity, 'id', 0),
+                    "username": e_user or None,
+                    "first_name": e_name or None,
+                    "last_name": e_last or None,
+                    "title": e_title or None,
+                    "type": e_type,
+                    "is_contact": is_contact,
+                    "source": "cache"
+                })
+                if len(local_results) >= limit:
+                    break
 
+        # 2. Check for local managed accounts by phone/username (internal discovery)
+        # Handle formats consistently
+        simple_query = query.replace(' ', '').replace('-', '').lstrip('+')
+        if simple_query:
+            # Search our own accounts for matching phone OR display_name OR real username
+            local_account = await db.fetchrow(
+                """SELECT id, account_name, display_name, username 
+                   FROM telegram_accounts 
+                   WHERE account_name LIKE $1 OR display_name LIKE $1 OR username LIKE $1""",
+                f"%{simple_query}%"
+            )
+            if local_account:
+                # Add to results
+                local_results.append({
+                    "id": 0, # Placeholder if ID not in cache
+                    "username": local_account['username'] or local_account['account_name'],
+                    "first_name": local_account['display_name'],
+                    "type": "user",
+                    "source": "internal_db"
+                })
+
+        # 3. Detect if this is a phone number search (Telegram Global)
+        full_phone = query if query.startswith('+') else '+' + query.replace(' ', '').replace('-', '')
+        # Only call Telegram's phone search if it looks like a real phone number
+        if (full_phone.startswith('+') and len(full_phone) > 8) or (query.isdigit() and len(query) > 7):
+            phone_results = await self._search_by_phone(full_phone, limit)
+            if phone_results:
+                seen_usernames = {r.get('username') for r in local_results if r.get('username')}
+                for pr in phone_results:
+                    if pr.get('username') not in seen_usernames:
+                        local_results.append(pr)
+                return local_results[:limit]
+
+        # 4. Global Telegram Search
         try:
             from telethon.tl.functions.contacts import SearchRequest
             
-            # Search globally using Telegram's search
+            # Remove @ for global search
+            global_query = query.lstrip('@')
+            if len(global_query) < 3 and not (global_query.isdigit()):
+                # Global search requires at least 3 chars or must be digits
+                return local_results
+
             search_results = await self.client(SearchRequest(
-                q=username,
+                q=global_query,
                 limit=limit
             ))
             
-            results = []
+            results = local_results # Start with local matches
+            seen_ids = {r['id'] for r in results}
             
-            # Process users
+            # Process users from global search
             for user in search_results.users:
-                if isinstance(user, User) and not user.bot:
+                if isinstance(user, User) and not user.bot and user.id not in seen_ids:
                     results.append({
                         "id": user.id,
                         "username": user.username,
@@ -673,25 +770,31 @@ class TelegramSession:
                         "last_name": user.last_name,
                         "phone": user.phone,
                         "is_contact": user.contact or False,
-                        "type": "user"
+                        "type": "user",
+                        "source": "global"
                     })
+                    seen_ids.add(user.id)
             
-            # Process chats/channels
+            # Process chats/channels from global search
             for chat in search_results.chats:
-                chat_type = self._get_conversation_type(chat)
-                results.append({
-                    "id": self._get_peer_id(chat),
-                    "username": getattr(chat, 'username', None),
-                    "title": getattr(chat, 'title', None) or getattr(chat, 'name', None),
-                    "type": chat_type,
-                    "is_contact": False
-                })
+                db_id = self._get_peer_id(chat)
+                if db_id not in seen_ids:
+                    chat_type = self._get_conversation_type(chat)
+                    results.append({
+                        "id": db_id,
+                        "username": getattr(chat, 'username', None),
+                        "title": getattr(chat, 'title', None) or getattr(chat, 'name', None),
+                        "type": chat_type,
+                        "is_contact": False,
+                        "source": "global"
+                    })
+                    seen_ids.add(db_id)
             
             return results[:limit * 2]
                 
         except Exception as e:
             logger.error(f"Error searching users for {self.account_id}: {e}")
-            return []
+            return local_results # Return at least local matches on failure
 
     async def _search_by_phone(self, phone: str, limit: int = 10):
         """Search by phone number using ImportContacts"""
@@ -710,14 +813,26 @@ class TelegramSession:
                 # If Telegram has a real name for this user, it usually returns it in results.users
                 # even if we provided a different one in ImportContactsRequest (sometimes).
                 # But to be safe, we'll use the user's properties.
+                # Prioritize username and real names from Telegram
+                username = getattr(user, 'username', None)
+                first_name = getattr(user, 'first_name', None)
+                last_name = getattr(user, 'last_name', None)
+                
+                # If no real name but has username, name should be username
+                if not first_name and username:
+                    display_name = username
+                else:
+                    display_name = first_name or username or phone
+
                 found.append({
                     "id": user.id,
-                    "username": user.username,
-                    "first_name": user.first_name if user.first_name != phone else (user.username or phone),
-                    "last_name": user.last_name,
-                    "phone": user.phone or phone,
+                    "username": username,
+                    "first_name": display_name,
+                    "last_name": last_name,
+                    "phone": getattr(user, 'phone', phone),
                     "is_contact": False,
-                    "type": "user"
+                    "type": "user",
+                    "source": "phone_search"
                 })
             
             # Clean up temp contact
@@ -896,12 +1011,68 @@ class TelethonService:
         return await session.get_unread_messages()
 
     async def search_users(self, account_id: int, username: str, limit: int = 10):
-        """Search for Telegram users by username"""
+        """Search for Telegram users with cross-session discovery"""
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
-        return await session.search_users(username, limit)
+        # 1. Check all other active sessions for their own 'me' entity
+        # This ensures we find our other accounts with full details immediately
+        internal_results = []
+        clean_query = username.strip().lower().lstrip('@')
+        
+        if clean_query:
+            for other_id, other_session in self.sessions.items():
+                if not other_session.me:
+                    continue
+                
+                me = other_session.me
+                e_user = getattr(me, 'username', '') or ''
+                e_name = getattr(me, 'first_name', '') or ''
+                e_last = getattr(me, 'last_name', '') or ''
+                e_phone = getattr(me, 'phone', '') or ''
+                
+                fullname = f"{e_name} {e_last}".lower()
+                if clean_query in e_user.lower() or clean_query in fullname or clean_query in e_phone:
+                    # Found another of our accounts!
+                    internal_results.append({
+                        "id": me.id,
+                        "username": e_user or None,
+                        "first_name": e_name or e_user or e_phone,
+                        "last_name": e_last or None,
+                        "phone": e_phone or None,
+                        "type": "user",
+                        "is_contact": True,
+                        "source": "internal_active"
+                    })
+
+        # 2. Get results from the current session's search logic (cache, DB, Telegram)
+        session_results = await session.search_users(username, limit)
+        
+        # 3. Merge: prioritize active internal results and avoid duplicates
+        seen_ids = set()
+        final_results = []
+        
+        # Add internal active sessions first
+        for res in internal_results:
+            if res['id'] not in seen_ids:
+                final_results.append(res)
+                seen_ids.add(res['id'])
+                
+        # Add results from the main search
+        for res in session_results:
+            # If it's a real TG result (id != 0) and we haven't seen it
+            if res['id'] != 0 and res['id'] not in seen_ids:
+                final_results.append(res)
+                seen_ids.add(res['id'])
+            # If it's a DB result (id == 0), only add if we don't have many results
+            elif res['id'] == 0 and len(final_results) < limit:
+                # Check for username/phone match to avoid near-duplicates
+                is_duplicate = any((r.get('username') == res.get('username')) for r in final_results)
+                if not is_duplicate:
+                    final_results.append(res)
+
+        return final_results[:limit * 2]
 
     async def send_media(self, account_id: int, peer_id: int, file_path: str, caption: str = ""):
         """Send media file to a peer"""
@@ -985,6 +1156,10 @@ class TelethonService:
                     chat = await event.get_chat()
                     peer_title = getattr(chat, 'title', None) or sender_info["name"]
                     conversation_type = session._get_conversation_type(chat)
+                    
+                    # For private chats, if title is a phone number, try to use username
+                    if conversation_type == "private" and sender_info["username"] and (not peer_title or peer_title.startswith('+')):
+                        peer_title = f"@{sender_info['username']}"
                 except:
                     peer_title = sender_info["name"]
                     conversation_type = "private"
@@ -1444,35 +1619,44 @@ class TelethonService:
             raise Exception("Account not connected")
         
         import base64
+        from telethon.tl.types import PeerUser, PeerChannel, PeerChat
         
-        # Look up entity from our cache (keyed by both raw and full peer IDs)
+        # Look up entity from our cache
         entity = session.entity_cache.get(peer_id)
         
         if not entity:
-            # Try Telethon's own session cache as fallback
-            for peer_type in (peer_id, PeerUser(peer_id), PeerChannel(peer_id), PeerChat(peer_id)):
-                try:
-                    entity = await session.client.get_entity(peer_type)
-                    if entity:
-                        # Cache using DB-compatible ID format
-                        try:
-                            db_id = session._get_peer_id(entity)
-                            if db_id:
-                                session.entity_cache[db_id] = entity
-                        except Exception:
-                            pass
-                        raw_id = getattr(entity, 'id', None)
-                        if raw_id:
-                            session.entity_cache[raw_id] = entity
-                        break
-                except Exception:
-                    continue
+            # Determine correct Peer type based on ID format
+            # Users > 0, Chats < 0 but > -1000... , Channels < -1000...
+            try:
+                if peer_id > 0:
+                    peer_obj = PeerUser(peer_id)
+                elif peer_id < -1000000000000:
+                    # It's a channel (large negative)
+                    channel_id = abs(peer_id + 1000000000000)
+                    peer_obj = PeerChannel(channel_id)
+                else:
+                    # It's a small group chat
+                    chat_id = abs(peer_id)
+                    peer_obj = PeerChat(chat_id)
+                
+                # Try Telethon's own session cache/database
+                entity = await session.client.get_entity(peer_obj)
+                
+                # Update cache if found
+                if entity:
+                    session.entity_cache[peer_id] = entity
+                    raw_id = getattr(entity, 'id', None)
+                    if raw_id:
+                        session.entity_cache[raw_id] = entity
+            except Exception as e:
+                logger.warning(f"Fallback entity fetch failed for {peer_id} on account {account_id}: {e}")
 
         if not entity:
             logger.warning(f"Entity not found for peer {peer_id} in account {account_id}. Cache has {len(session.entity_cache)} entries.")
-            raise Exception(f"Entity not found for peer {peer_id}")
+            raise Exception(f"Profile not found for {peer_id}. Please wait for session to sync.")
         
         try:
+            # Some entities might have been deleted or have no photo
             photo_bytes = await session.client.download_profile_photo(entity, bytes)
         except Exception as e:
             logger.error(f"Error downloading photo for peer {peer_id}: {e}")

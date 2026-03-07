@@ -1333,14 +1333,23 @@ export default function ChatWindow({
                   className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
                 />
                 <div className="flex-1 min-w-0">
+                  {/* [FEATURE: Advanced Username Handling] 
+                      Automatically display the @username in the chat header if the conversation title is just a phone number. */}
                   <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white truncate">
-                    {currentConversation?.title || 'Translation Chat'}
+                    {currentConversation?.username && (!currentConversation?.title || currentConversation?.title.startsWith('+'))
+                      ? `@${currentConversation.username}`
+                      : (currentConversation?.title || 'Translation Chat')}
                   </h2>
-                  {currentAccount && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
-                    </p>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {currentConversation?.username && currentConversation.title && !currentConversation.title.startsWith('+') && (
+                      <span className="text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
+                    )}
+                    {currentAccount && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 {/* Scheduled Messages count in header (compact) */}
                 {scheduledMessages.length > 0 && (
@@ -1590,7 +1599,9 @@ export default function ChatWindow({
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 truncate">
-                              {message.sender_name}
+                              {message.sender_username && (!message.sender_name || message.sender_name.startsWith('+'))
+                                ? `@${message.sender_username}`
+                                : (message.sender_name || 'Unknown User')}
                             </p>
                           </div>
                         </div>

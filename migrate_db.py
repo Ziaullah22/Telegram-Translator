@@ -59,14 +59,28 @@ async def migrate():
             """)
             print("✓ Check/Add columns: messages media fields")
             
-            # 5. Update messages table: encryption
+            # 5. Update telegram_accounts table: username
+            await conn.execute("""
+                ALTER TABLE telegram_accounts 
+                ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+            """)
+            print("✓ Check/Add column: telegram_accounts.username")
+            
+            # 6. Update messages table: encryption
             await conn.execute("""
                 ALTER TABLE messages 
                 ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
             """)
             print("✓ Check/Add column: messages.is_encrypted")
             
-            # 6. Check/Create system_settings table
+            # 7. Update conversations table: username
+            await conn.execute("""
+                ALTER TABLE conversations 
+                ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+            """)
+            print("✓ Check/Add column: conversations.username")
+            
+            # 8. Check/Create system_settings table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS system_settings (
                 id INTEGER PRIMARY KEY DEFAULT 1,
