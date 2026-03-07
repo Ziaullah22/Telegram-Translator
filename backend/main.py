@@ -39,6 +39,20 @@ async def lifespan(app: FastAPI):
 
     await db.connect()
     logger.info("Database connected")
+
+    # Run migration for reply support
+    try:
+        await db.execute("""
+        ALTER TABLE messages
+          ADD COLUMN IF NOT EXISTS reply_to_telegram_id BIGINT,
+          ADD COLUMN IF NOT EXISTS reply_to_text TEXT,
+          ADD COLUMN IF NOT EXISTS reply_to_sender TEXT,
+          ADD COLUMN IF NOT EXISTS media_thumbnail TEXT,
+          ADD COLUMN IF NOT EXISTS media_duration INTEGER;
+        """)
+        logger.info("Database migration (reply support, thumbnails & duration) completed")
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
     
     # Initialize encryption service
     if settings.aes_encryption_key:
@@ -119,12 +133,29 @@ async def lifespan(app: FastAPI):
                 db, text, translated_text
             )
             
+            # Handle reply information if present
+            reply_to_tg_id = message_data.get('reply_to_msg_id')
+            reply_to_text = None
+            reply_to_sender = None
+            
+            if reply_to_tg_id:
+                # Try to find the message being replied to in our database to get its text/sender
+                replied_msg = await db.fetchrow(
+                    "SELECT original_text, translated_text, sender_name FROM messages WHERE conversation_id = $1 AND telegram_message_id = $2",
+                    conversation_id,
+                    reply_to_tg_id
+                )
+                if replied_msg:
+                    reply_to_text = replied_msg['translated_text'] or replied_msg['original_text']
+                    reply_to_sender = replied_msg['sender_name']
+
             message_id = await db.fetchval(
                 """
                 INSERT INTO messages
                 (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-                 source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                 source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name,
+                 reply_to_telegram_id, reply_to_text, reply_to_sender, media_thumbnail, media_duration)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 RETURNING id
                 """,
                 conversation_id,
@@ -140,7 +171,12 @@ async def lifespan(app: FastAPI):
                 created_at,
                 is_encrypted,
                 message_data.get('is_outgoing', False),
-                message_data.get('media_filename')
+                message_data.get('media_filename'),
+                reply_to_tg_id,
+                reply_to_text,
+                reply_to_sender,
+                message_data.get('media_thumbnail'),
+                message_data.get('media_duration')
             )
 
             await db.execute(
@@ -166,6 +202,11 @@ async def lifespan(app: FastAPI):
                 "edited_at": None,
                 "is_outgoing": message_data.get('is_outgoing', False),
                 "media_file_name": message_data.get('media_filename'),
+                "reply_to_telegram_id": reply_to_tg_id,
+                "reply_to_text": reply_to_text,
+                "reply_to_sender": reply_to_sender,
+                "media_thumbnail": message_data.get('media_thumbnail'),
+                "media_duration": message_data.get('media_duration'),
             }
 
             await manager.send_to_account(
@@ -189,6 +230,51 @@ async def lifespan(app: FastAPI):
             logger.error(traceback.format_exc())
 
     telethon_service.add_message_handler(handle_new_message)
+ 
+    async def handle_reaction(reaction_data: dict):
+        try:
+            account_id = reaction_data['account_id']
+            peer_id = reaction_data['peer_id']
+            tg_message_id = reaction_data['message_id']
+            reactions = reaction_data['reactions']
+            
+            # Find local message_id
+            message = await db.fetchrow(
+                """
+                SELECT m.id, ta.user_id 
+                FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+                WHERE c.telegram_account_id = $1 AND c.telegram_peer_id = $2 AND m.telegram_message_id = $3
+                """,
+                account_id,
+                peer_id,
+                tg_message_id
+            )
+            
+            if message:
+                import json
+                # Update DB
+                await db.execute(
+                    "UPDATE messages SET reactions = $1 WHERE id = $2",
+                    json.dumps(reactions),
+                    message['id']
+                )
+                
+                # Broadcast
+                await manager.send_to_account(
+                    {
+                        "type": "message_reaction",
+                        "message_id": message['id'],
+                        "reactions": reactions
+                    },
+                    account_id,
+                    message['user_id']
+                )
+        except Exception as e:
+            logger.error(f"Error in handle_reaction: {e}")
+
+    telethon_service.add_reaction_handler(handle_reaction)
     
     # Auto-connect accounts from database in the background
     async def auto_connect_accounts():

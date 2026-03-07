@@ -61,26 +61,6 @@ async def create_scheduled_message(
         # Notify scheduler
         await scheduler_service.add_scheduled_message(msg_id)
         
-        # Insert system message about scheduled message being created
-        scheduled_date = scheduled_at.strftime('%Y-%m-%d %H:%M')
-        system_text = f"Scheduled message set for {scheduled_date}: \"{scheduled_msg.message_text}\""
-        
-        system_created_at = datetime.now()
-        system_msg_id = await db.fetchval(
-            """
-            INSERT INTO messages
-            (conversation_id, sender_name, sender_username, type, original_text, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-            """,
-            scheduled_msg.conversation_id,
-            'System',
-            'system',
-            'system',
-            system_text,
-            system_created_at
-        )
-        
         # Get account info for WebSocket notification
         from websocket_manager import manager
         account_info = await db.fetchrow(
@@ -94,23 +74,18 @@ async def create_scheduled_message(
         )
         
         if account_info:
-            # Send system message via WebSocket
+            # Send scheduled message created notification
             await manager.send_to_account(
                 {
-                    "type": "new_message",
-                    "message": {
-                        "id": system_msg_id,
-                        "conversation_id": scheduled_msg.conversation_id,
-                        "telegram_message_id": None,
-                        "sender_user_id": None,
-                        "sender_name": "System",
-                        "sender_username": "system",
-                        "type": "system",
-                        "original_text": system_text,
-                        "translated_text": None,
-                        "source_language": None,
-                        "target_language": None,
-                        "created_at": system_created_at.isoformat(),
+                    "type": "scheduled_message_created",
+                    "scheduled_message": {
+                        "id": row['id'],
+                        "conversation_id": row['conversation_id'],
+                        "message_text": row['message_text'],
+                        "scheduled_at": row['scheduled_at'].isoformat(),
+                        "created_at": row['created_at'].isoformat(),
+                        "is_sent": row['is_sent'],
+                        "is_cancelled": row['is_cancelled']
                     }
                 },
                 account_info['account_id'],

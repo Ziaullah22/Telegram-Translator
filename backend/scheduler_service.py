@@ -231,15 +231,24 @@ class SchedulerService:
             conversation_id = message_data['conversation_id']
             message_text = message_data['message_text']
             
-            # Get account info for translation
+            # Get account and conversation info
             account = await db.fetchrow(
-                "SELECT user_id, target_language, source_language FROM telegram_accounts WHERE id = $1",
-                account_id
+                """
+                SELECT ta.user_id, ta.target_language, ta.source_language, c.title as peer_title
+                FROM telegram_accounts ta
+                JOIN conversations c ON c.telegram_account_id = ta.id
+                WHERE ta.id = $1 AND c.id = $2
+                """,
+                account_id,
+                conversation_id
             )
             
             if not account:
                 logger.error(f"Account {account_id} not found for scheduled message {message_id}")
                 return
+
+            logger.info(f"Scheduler sending to account_id={account_id}, user_id={account['user_id'] if account else 'NOT FOUND'}")
+            logger.info(f"Active WS connections: {list(manager.active_connections.keys())}")
             
             # Translate message
             translation = await translation_service.translate_text(
@@ -262,37 +271,20 @@ class SchedulerService:
                 """
                 INSERT INTO messages
                 (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type,
-                 original_text, translated_text, source_language, target_language, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                original_text, translated_text, source_language, target_language, created_at, is_outgoing)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
                 RETURNING id
                 """,
                 conversation_id,
                 sent_message.get('message_id'),
                 sent_message.get('sender_user_id'),
                 sent_message.get('sender_name'),
-                sent_message.get('sender_username'),
+                sent_message.get('sender_username') or sent_message.get('sender_name') or 'me',
                 'text',
                 message_text,
                 translation['translated_text'],
                 account['target_language'],
                 account['source_language'],
-                created_at
-            )
-            
-            # Insert system message about scheduled message being sent
-            system_text = f"Scheduled message sent: \"{message_text}\" → \"{translation['translated_text']}\""
-            system_msg_id = await db.fetchval(
-                """
-                INSERT INTO messages
-                (conversation_id, sender_name, sender_username, type, original_text, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id
-                """,
-                conversation_id,
-                'System',
-                'system',
-                'system',
-                system_text,
                 created_at
             )
             
@@ -314,7 +306,8 @@ class SchedulerService:
             )
             
             # Remove from scheduler
-            del self.scheduled_messages[message_id]
+            if message_id in self.scheduled_messages:
+                del self.scheduled_messages[message_id]
             
             # Notify frontend via WebSocket - sent message
             await manager.send_to_account(
@@ -326,47 +319,50 @@ class SchedulerService:
                         "telegram_message_id": sent_message.get('message_id'),
                         "sender_user_id": sent_message.get('sender_user_id'),
                         "sender_name": sent_message.get('sender_name'),
-                        "sender_username": sent_message.get('sender_username'),
+                        "sender_username": sent_message.get('sender_username') or 'User',
+                        "peer_title": account['peer_title'],
                         "type": "text",
                         "original_text": message_text,
                         "translated_text": translation['translated_text'],
                         "source_language": account['target_language'],
                         "target_language": account['source_language'],
-                        "created_at": created_at.isoformat() if created_at else None
+                        "created_at": created_at.isoformat() if created_at else None,
+                        "edited_at": None,
+                        "is_outgoing": True,
+                        "reply_to_telegram_id": None,
+                        "reply_to_text": None,
+                        "reply_to_sender": None
                     }
                 },
                 account_id,
                 account['user_id']
             )
             
-            # Notify frontend via WebSocket - system message
-            await manager.send_to_account(
-                {
-                    "type": "new_message",
-                    "message": {
-                        "id": system_msg_id,
-                        "conversation_id": conversation_id,
-                        "telegram_message_id": None,
-                        "sender_user_id": None,
-                        "sender_name": "System",
-                        "sender_username": "system",
-                        "type": "system",
-                        "original_text": system_text,
-                        "translated_text": None,
-                        "source_language": None,
-                        "target_language": None,
-                        "created_at": created_at.isoformat() if created_at else None
-                    }
-                },
-                account_id,
-                account['user_id']
-            )
-            
+            logger.info(f"Sending WebSocket notification to account_id={account_id}, user_id={account['user_id']}")
             await manager.send_to_account(
                 {
                     "type": "scheduled_message_sent",
                     "scheduled_message_id": message_id,
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "message": {
+                        "id": msg_id,
+                        "conversation_id": conversation_id,
+                        "telegram_message_id": sent_message.get('message_id'),
+                        "sender_user_id": sent_message.get('sender_user_id'),
+                        "sender_name": sent_message.get('sender_name'),
+                        "sender_username": sent_message.get('sender_username') or 'User',
+                        "peer_title": account['peer_title'],
+                        "type": "text",
+                        "original_text": message_text,
+                        "translated_text": translation['translated_text'],
+                        "source_language": account['target_language'],
+                        "target_language": account['source_language'],
+                        "created_at": created_at.isoformat() if created_at else None,
+                        "is_outgoing": True,
+                        "reply_to_telegram_id": None,
+                        "reply_to_text": None,
+                        "reply_to_sender": None
+                    }
                 },
                 account_id,
                 account['user_id']

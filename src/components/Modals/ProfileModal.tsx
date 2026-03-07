@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Camera, User, Phone, AtSign, FileText, Lock, Shield, Loader2, Check } from 'lucide-react';
+import { X, Camera, Loader2, Check } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -144,42 +144,44 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-[#1c2431] rounded-2xl shadow-2xl w-full max-w-lg mx-4 border border-gray-100 dark:border-white/10 overflow-hidden">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 animate-fade-in" onClick={onClose}>
+            <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden animate-scale-in flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10 bg-gradient-to-r from-blue-600/10 to-blue-400/5">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <User className="w-5 h-5 text-blue-500" />
+                <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5">
+                    <h3 className="text-[19px] font-medium text-gray-900 dark:text-white">
                         Telegram Profile
-                    </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                    </h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded-full transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-100 dark:border-white/10">
+                <div className="flex px-2 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
                     {(['info', 'privacy', '2fa'] as const).map(tab => (
                         <button
                             key={tab}
                             onClick={() => { setActiveTab(tab); setError(''); setSuccess(''); }}
-                            className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === tab
-                                ? 'text-blue-500 border-b-2 border-blue-500'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                            className={`flex-1 py-3.5 text-[14px] font-medium transition-all relative ${activeTab === tab
+                                ? 'text-[#3390ec]'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-white'
                                 }`}
                         >
-                            {tab === 'info' ? 'Profile Info' : tab === 'privacy' ? 'Privacy' : '2FA Security'}
+                            {tab === 'info' ? 'Info' : tab === 'privacy' ? 'Privacy' : '2FA Security'}
+                            {activeTab === tab && (
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3390ec] rounded-t-full" />
+                            )}
                         </button>
                     ))}
                 </div>
 
-                <div className="p-6 max-h-[60vh] overflow-y-auto">
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                     {/* Alerts */}
                     {error && (
-                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm text-red-600 dark:text-red-400">{error}</div>
+                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg text-sm text-red-600 dark:text-red-400">{error}</div>
                     )}
                     {success && (
-                        <div className="mb-4 p-3 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
+                        <div className="mb-4 p-3 bg-green-50 dark:bg-green-500/10 border border-green-100 dark:border-green-500/20 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
                             <Check className="w-4 h-4" />{success}
                         </div>
                     )}
@@ -189,92 +191,83 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                         <div>
                             {loading ? (
                                 <div className="flex items-center justify-center py-12">
-                                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                                    <Loader2 className="w-7 h-7 animate-spin text-[#3390ec]" />
                                 </div>
                             ) : (
-                                <div className="space-y-5">
+                                <div className="space-y-6">
                                     {/* Avatar */}
-                                    <div className="flex items-center gap-5">
-                                        <div className="relative flex-shrink-0">
+                                    <div className="flex items-center gap-5 pb-2">
+                                        <div className="relative flex-shrink-0 group">
                                             {profile?.photo_url ? (
-                                                <img src={profile.photo_url} alt="Profile" className="w-20 h-20 rounded-full object-cover border-4 border-blue-100 dark:border-blue-900/50" />
+                                                <img src={profile.photo_url} alt="Profile" className="w-20 h-20 rounded-full object-cover shadow-sm" />
                                             ) : (
-                                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-3xl font-black">
+                                                <div className="w-20 h-20 rounded-full bg-[#3390ec] flex items-center justify-center text-white text-3xl font-black">
                                                     {(firstName || '?').charAt(0).toUpperCase()}
                                                 </div>
                                             )}
                                             <button
                                                 onClick={() => fileInputRef.current?.click()}
-                                                className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
+                                                className="absolute bottom-0 right-0 w-7 h-7 bg-[#3390ec] text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-[#212121] transition-transform group-hover:scale-110"
                                                 title="Change photo"
                                             >
                                                 <Camera className="w-3.5 h-3.5" />
                                             </button>
                                             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
                                         </div>
-                                        <div>
-                                            <p className="font-bold text-gray-900 dark:text-white text-lg">{firstName} {lastName}</p>
-                                            {profile?.username && <p className="text-sm text-blue-500">@{profile.username}</p>}
-                                            {profile?.phone && <p className="text-xs text-gray-400 flex items-center gap-1 mt-1"><Phone className="w-3 h-3" />{profile.phone}</p>}
+                                        <div className="min-w-0">
+                                            <p className="font-medium text-gray-900 dark:text-white text-lg truncate">{firstName} {lastName}</p>
+                                            {profile?.username && <p className="text-[14px] text-[#3390ec]">@{profile.username}</p>}
+                                            {profile?.phone && <p className="text-[13px] text-gray-400 mt-1">{profile.phone}</p>}
                                         </div>
                                     </div>
 
                                     {/* Fields */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">First Name</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">First Name</label>
                                             <input
                                                 value={firstName}
                                                 onChange={e => setFirstName(e.target.value)}
-                                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
                                                 placeholder="First name"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">Last Name</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">Last Name</label>
                                             <input
                                                 value={lastName}
                                                 onChange={e => setLastName(e.target.value)}
-                                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
                                                 placeholder="Last name"
                                             />
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="flex items-center gap-1 text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">
-                                            <AtSign className="w-3 h-3" />Username (read-only)
-                                        </label>
-                                        <input
-                                            value={profile?.username || ''}
-                                            disabled
-                                            className="w-full px-3 py-2.5 bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="flex items-center gap-1 text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">
-                                            <FileText className="w-3 h-3" />Bio
-                                        </label>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">Bio</label>
                                         <textarea
                                             value={bio}
                                             onChange={e => setBio(e.target.value)}
                                             rows={3}
                                             maxLength={70}
-                                            className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
+                                            className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition resize-none"
                                             placeholder="A few words about yourself..."
                                         />
-                                        <p className="text-xs text-gray-400 mt-1 text-right">{bio.length}/70</p>
+                                        <div className="flex justify-between items-center mt-1">
+                                            <span className="text-[11px] text-gray-400 ml-1">Public description</span>
+                                            <span className="text-[11px] text-gray-400">{bio.length}/70</span>
+                                        </div>
                                     </div>
 
-                                    <button
-                                        onClick={handleSaveInfo}
-                                        disabled={saving}
-                                        className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                        Save Changes
-                                    </button>
+                                    <div className="flex justify-end pt-2">
+                                        <button
+                                            onClick={handleSaveInfo}
+                                            disabled={saving}
+                                            className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[120px] justify-center"
+                                        >
+                                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Profile"}
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -282,44 +275,44 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
 
                     {/* Privacy Tab */}
                     {activeTab === 'privacy' && (
-                        <div className="space-y-5">
-                            <div>
-                                <label className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white mb-1">
-                                    <Phone className="w-4 h-4 text-blue-500" />
-                                    Who can see my phone number
-                                </label>
-                                <p className="text-xs text-gray-500 mb-4">Control who can see your phone number in your Telegram profile</p>
+                        <div className="space-y-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <h4 className="text-[14px] font-medium text-gray-900 dark:text-white mb-1">Phone Number</h4>
+                                    <p className="text-[13px] text-gray-500">Control who can see your phone number</p>
+                                </div>
                                 <div className="space-y-2">
                                     {[
-                                        { value: 'everybody', label: 'Everybody', desc: 'All Telegram users' },
-                                        { value: 'contacts', label: 'My Contacts', desc: 'Only people in your contacts' },
-                                        { value: 'nobody', label: 'Nobody', desc: 'No one can see it' },
+                                        { value: 'everybody', label: 'Everybody', desc: 'All users' },
+                                        { value: 'contacts', label: 'Contacts', desc: 'People in your contacts' },
+                                        { value: 'nobody', label: 'Nobody', desc: 'No one' },
                                     ].map(opt => (
-                                        <label key={opt.value} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${phonePrivacy === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}>
+                                        <label key={opt.value} className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${phonePrivacy === opt.value ? 'border-[#3390ec] bg-[#3390ec]/5' : 'border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
                                             <input
                                                 type="radio"
                                                 name="phone_privacy"
                                                 value={opt.value}
                                                 checked={phonePrivacy === (opt.value as typeof phonePrivacy)}
                                                 onChange={() => setPhonePrivacy(opt.value as typeof phonePrivacy)}
-                                                className="accent-blue-500"
+                                                className="accent-[#3390ec]"
                                             />
                                             <div>
-                                                <p className="font-semibold text-sm text-gray-900 dark:text-white">{opt.label}</p>
-                                                <p className="text-xs text-gray-500">{opt.desc}</p>
+                                                <p className={`font-medium text-[14px] ${phonePrivacy === opt.value ? 'text-[#3390ec]' : 'text-gray-900 dark:text-white'}`}>{opt.label}</p>
+                                                <p className="text-[12px] text-gray-500">{opt.desc}</p>
                                             </div>
                                         </label>
                                     ))}
                                 </div>
                             </div>
-                            <button
-                                onClick={handleSavePrivacy}
-                                disabled={saving}
-                                className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                            >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-                                Save Privacy Settings
-                            </button>
+                            <div className="flex justify-end pt-2">
+                                <button
+                                    onClick={handleSavePrivacy}
+                                    disabled={saving}
+                                    className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[140px] justify-center"
+                                >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Update Privacy"}
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -327,59 +320,60 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                     {activeTab === '2fa' && (
                         <form
                             onSubmit={(e) => { e.preventDefault(); handleChange2FA(); }}
-                            className="space-y-4"
+                            className="space-y-5"
                             autoComplete="off"
                         >
-                            <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-500/10 rounded-xl border border-blue-200 dark:border-blue-500/30">
-                                <Lock className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                                <p className="text-sm text-blue-700 dark:text-blue-300">
-                                    Two-Factor Authentication adds an extra layer of security to your Telegram account.
+                            <div className="p-4 bg-[#3390ec]/5 rounded-lg border border-[#3390ec]/10">
+                                <p className="text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed">
+                                    Two-Step Verification adds an extra layer of security. You will be asked for this password when you log in on a new device.
                                 </p>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">Current Password (leave empty if none)</label>
-                                <input
-                                    type="password"
-                                    value={currentPass}
-                                    onChange={e => setCurrentPass(e.target.value)}
-                                    autoComplete="off"
-                                    name="current-2fa-pass"
-                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
-                                    placeholder="Current 2FA password"
-                                />
+
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">Current Password</label>
+                                    <input
+                                        type="password"
+                                        value={currentPass}
+                                        onChange={e => setCurrentPass(e.target.value)}
+                                        autoComplete="off"
+                                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
+                                        placeholder="Old password (if any)"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">New Password</label>
+                                    <input
+                                        type="password"
+                                        value={newPass}
+                                        onChange={e => setNewPass(e.target.value)}
+                                        autoComplete="new-password"
+                                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
+                                        placeholder="Enter new password"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wider ml-1">Confirm New Password</label>
+                                    <input
+                                        type="password"
+                                        value={confirmPass}
+                                        onChange={e => setConfirmPass(e.target.value)}
+                                        autoComplete="new-password"
+                                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
+                                        placeholder="Repeat new password"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">New Password</label>
-                                <input
-                                    type="password"
-                                    value={newPass}
-                                    onChange={e => setNewPass(e.target.value)}
-                                    autoComplete="new-password"
-                                    name="new-2fa-pass"
-                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
-                                    placeholder="New 2FA password"
-                                />
+
+                            <div className="flex justify-end pt-2">
+                                <button
+                                    type="submit"
+                                    disabled={saving || !newPass}
+                                    className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[140px] justify-center"
+                                >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Set Password"}
+                                </button>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">Confirm New Password</label>
-                                <input
-                                    type="password"
-                                    value={confirmPass}
-                                    onChange={e => setConfirmPass(e.target.value)}
-                                    autoComplete="new-password"
-                                    name="confirm-2fa-pass"
-                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
-                                    placeholder="Confirm new password"
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={saving || !newPass}
-                                className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                            >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                                Update 2FA Password
-                            </button>
                         </form>
                     )}
                 </div>

@@ -2,7 +2,7 @@ import asyncio
 import os
 import logging
 from typing import Dict, Optional, List, Callable
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, functions, types
 from telethon.tl.types import User, Chat, Channel, Message, PeerUser, PeerChat, PeerChannel
 from telethon.errors import FloodWaitError, UserDeactivatedError, AuthKeyUnregisteredError, SessionPasswordNeededError
 from telethon.sessions import SQLiteSession
@@ -197,10 +197,11 @@ class TelegramSession:
                                     # Get sender info safely
                                     sender_info = await self._get_sender_info_safe(msg.sender_id)
                                     
-                                    # Determine message type and extract filename
+                                    # Determine message type, extract filename and duration
                                     msg_type = "text"
                                     has_media = False
                                     media_filename = None
+                                    duration = None
                                     
                                     if msg.photo:
                                         msg_type = "photo"
@@ -209,17 +210,24 @@ class TelegramSession:
                                     elif msg.video:
                                         msg_type = "video"
                                         has_media = True
+                                        from telethon.tl.types import DocumentAttributeVideo
                                         if msg.document and hasattr(msg.document, 'attributes'):
                                             for attr in msg.document.attributes:
                                                 if hasattr(attr, 'file_name'):
                                                     media_filename = attr.file_name
-                                                    break
+                                                if isinstance(attr, DocumentAttributeVideo):
+                                                    duration = getattr(attr, 'duration', None)
                                         if not media_filename:
                                             media_filename = f"video_{msg.id}.mp4"
                                     elif msg.voice:
                                         msg_type = "voice"
+                                        from telethon.tl.types import DocumentAttributeAudio
                                         has_media = True
                                         media_filename = f"voice_{msg.id}.ogg"
+                                        if msg.document and hasattr(msg.document, 'attributes'):
+                                            for attr in msg.document.attributes:
+                                                if isinstance(attr, DocumentAttributeAudio):
+                                                    duration = getattr(attr, 'duration', None)
                                     elif msg.document:
                                         msg_type = "document"
                                         has_media = True
@@ -247,7 +255,9 @@ class TelegramSession:
                                         "is_outgoing": msg.out,
                                         "type": msg_type,
                                         "has_media": has_media,
-                                        "media_filename": media_filename
+                                        "media_filename": media_filename,
+                                        "media_thumbnail": await self._extract_thumbnail(msg),
+                                        "media_duration": duration
                                     })
 
                                     await self.client.send_read_acknowledge(dialog.entity, max_id=msg.id)
@@ -290,7 +300,7 @@ class TelegramSession:
         
         return {"name": "Unknown", "username": None, "phone": None}
 
-    async def send_message(self, peer_id: int, text: str, max_retries: int = 3):
+    async def send_message(self, peer_id: int, text: str, max_retries: int = 3, reply_to: int = None):
         if not self.client or not self.is_connected:
             raise Exception("Client not connected")
 
@@ -305,7 +315,7 @@ class TelegramSession:
         retry_count = 0
         while retry_count <= max_retries:
             try:
-                message = await self.client.send_message(peer_id, text)
+                message = await self.client.send_message(peer_id, text, reply_to=reply_to)
                 self.last_message_time = datetime.now()  # Update last message time
                 
                 # Get current user information
@@ -332,6 +342,24 @@ class TelegramSession:
             except Exception as e:
                 logger.error(f"Error sending message for {self.account_id}: {e}")
                 raise
+
+    async def send_reaction(self, peer_id: int, message_id: int, emoji: str):
+        """Send a reaction to a message"""
+        if not self.client or not self.is_connected:
+            raise Exception("Client not connected")
+        
+        try:
+            # emoji can be None to remove reaction, but typically a string
+            reaction = [types.ReactionEmoji(emoticon=emoji)] if emoji else []
+            await self.client(functions.messages.SendReactionRequest(
+                peer=peer_id,
+                msg_id=message_id,
+                reaction=reaction
+            ))
+        except Exception as e:
+            logger.error(f"Error sending reaction for {self.account_id}: {e}")
+            # Don't re-raise if it's just a reaction error, but for now we will
+            raise
 
     async def send_media(self, peer_id: int, file_path: str, caption: str = "", max_retries: int = 3):
         """Send a media file (photo, video, document) to a peer"""
@@ -466,10 +494,11 @@ class TelegramSession:
                         sender_name = sender.title or "Unknown"
                     sender_username = getattr(sender, 'username', None)
 
-                # Determine message type and extract filename
+                # Determine message type, extract filename and duration
                 msg_type = "text"
                 has_media = False
                 media_filename = None
+                duration = None
                 
                 if msg.photo:
                     msg_type = "photo"
@@ -478,17 +507,24 @@ class TelegramSession:
                 elif msg.video:
                     msg_type = "video"
                     has_media = True
+                    from telethon.tl.types import DocumentAttributeVideo
                     if msg.document and hasattr(msg.document, 'attributes'):
                         for attr in msg.document.attributes:
                             if hasattr(attr, 'file_name'):
                                 media_filename = attr.file_name
-                                break
+                            if isinstance(attr, DocumentAttributeVideo):
+                                duration = getattr(attr, 'duration', None)
                     if not media_filename:
                         media_filename = f"video_{msg.id}.mp4"
                 elif msg.voice:
                     msg_type = "voice"
+                    from telethon.tl.types import DocumentAttributeAudio
                     has_media = True
                     media_filename = f"voice_{msg.id}.ogg"
+                    if msg.document and hasattr(msg.document, 'attributes'):
+                        for attr in msg.document.attributes:
+                            if isinstance(attr, DocumentAttributeAudio):
+                                duration = getattr(attr, 'duration', None)
                 elif msg.document:
                     msg_type = "document"
                     has_media = True
@@ -511,7 +547,10 @@ class TelegramSession:
                     "is_outgoing": msg.out,
                     "type": msg_type,
                     "has_media": has_media,
-                    "media_filename": media_filename
+                    "media_filename": media_filename,
+                    "media_thumbnail": await self._extract_thumbnail(msg),
+                    "media_duration": duration,
+                    "reply_to_message_id": msg.reply_to.reply_to_msg_id if msg.reply_to else None
                 })
 
             return result
@@ -536,6 +575,53 @@ class TelegramSession:
         elif isinstance(entity, Channel):
             return "channel" if entity.broadcast else "supergroup"
         return "private"
+
+    async def _extract_thumbnail(self, msg) -> Optional[str]:
+        """Extract a base64 encoded thumbnail from a message (stripped or smallest size)"""
+        try:
+            import base64
+            from telethon.tl.types import PhotoStrippedSize, PhotoSize, PhotoSizeProgressive
+            from telethon.utils import stripped_to_jpg
+            
+            photo = msg.photo
+            document = msg.document
+            
+            # 1. Try PhotoStrippedSize first (fastest, no download)
+            sizes = []
+            if photo:
+                sizes = photo.sizes
+            elif document and msg.video:
+                sizes = getattr(document, 'thumbs', [])
+                
+            for size in sizes:
+                if isinstance(size, PhotoStrippedSize):
+                    jpg_bytes = stripped_to_jpg(size.bytes)
+                    return base64.b64encode(jpg_bytes).decode('utf-8')
+            
+            # 2. Fallback: Download smallest thumb if stripped not found
+            if not self.client or not self.client.is_connected:
+                return None
+                
+            media = photo or document
+            if not media:
+                return None
+                
+            # Download tiny thumbnail to bytes (usually < 20KB)
+            # -1 usually gets the smallest available thumb
+            try:
+                thumb_bytes = await asyncio.wait_for(
+                    self.client.download_media(media, thumb=-1, file=bytes),
+                    timeout=5.0
+                )
+                if thumb_bytes:
+                    return base64.b64encode(thumb_bytes).decode('utf-8')
+            except Exception as e:
+                logger.debug(f"Failed to download small thumb fallback: {e}")
+                
+            return None
+        except Exception as e:
+            logger.debug(f"Thumbnail extraction failed: {e}")
+            return None
 
     async def search_users(self, username: str, limit: int = 10):
         """Search for Telegram users by username or phone number"""
@@ -659,11 +745,42 @@ class TelegramSession:
             logger.error(f"Dialog deletion error: {e}")
             return False
 
+    async def forward_messages(self, from_peer_id: int, message_ids: List[int], to_peer_id: int):
+        """Forward one or more messages (with media) to another chat using Telethon's native forward"""
+        if not self.client or not self.is_connected:
+            raise Exception("Client not connected")
+        try:
+            result = await self.client.forward_messages(
+                entity=to_peer_id,
+                messages=message_ids,
+                from_peer=from_peer_id,
+            )
+            me = await self.client.get_me()
+            # result can be a list or single Message
+            msgs = result if isinstance(result, list) else [result]
+            return [
+                {
+                    "message_id": m.id,
+                    "date": m.date,
+                    "sender_user_id": me.id,
+                    "sender_name": f"{me.first_name or ''} {me.last_name or ''}".strip() or me.username or "Unknown",
+                    "sender_username": me.username,
+                    "type": "photo" if m.photo else ("video" if m.video else ("document" if m.document else "text")),
+                    "text": m.text or m.message or "",
+                }
+                for m in msgs if m
+            ]
+        except Exception as e:
+            logger.error(f"Error forwarding messages for {self.account_id}: {e}")
+            raise
+
+
 
 class TelethonService:
     def __init__(self):
         self.sessions: Dict[int, TelegramSession] = {}
         self.message_handlers: List[Callable] = []
+        self.reaction_handlers: List[Callable] = []
         self.polling_task: Optional[asyncio.Task] = None
         self.polling_interval = 10  # seconds
         os.makedirs("sessions", exist_ok=True)
@@ -671,6 +788,10 @@ class TelethonService:
     def add_message_handler(self, handler):
         if handler not in self.message_handlers:
             self.message_handlers.append(handler)
+
+    def add_reaction_handler(self, handler):
+        if handler not in self.reaction_handlers:
+            self.reaction_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
         if account_id in self.sessions and self.sessions[account_id].is_connected:
@@ -736,11 +857,11 @@ class TelethonService:
 
         return await session.get_messages(peer_id, limit)
 
-    async def send_message(self, account_id: int, peer_id: int, text: str):
+    async def send_message(self, account_id: int, peer_id: int, text: str, reply_to: int = None):
         session = await self.get_session(account_id)
-        if session:
-            return await session.send_message(peer_id, text)
-        return None
+        if not session:
+            raise Exception("Telegram account is not connected. Please reconnect your account.")
+        return await session.send_message(peer_id, text, reply_to=reply_to)
 
     async def delete_messages(self, account_id: int, peer_id: int, message_ids: List[int], revoke: bool = True):
         session = await self.get_session(account_id)
@@ -777,6 +898,13 @@ class TelethonService:
             raise Exception("Session not connected")
 
         return await session.send_media(peer_id, file_path, caption)
+
+    async def forward_messages(self, account_id: int, from_peer_id: int, message_ids: List[int], to_peer_id: int):
+        """Forward messages (text + media) natively via Telethon"""
+        session = self.sessions.get(account_id)
+        if not session:
+            raise Exception("Session not connected")
+        return await session.forward_messages(from_peer_id, message_ids, to_peer_id)
 
     async def download_media(self, account_id: int, telegram_message_id: int, peer_id: int, download_path: str):
         """Download media from a message"""
@@ -847,10 +975,11 @@ class TelethonService:
                     peer_title = sender_info["name"]
                     conversation_type = "private"
 
-                # Determine message type and extract filename
+                # Determine message type and extract duration
                 msg_type = "text"
                 has_media = False
                 media_filename = None
+                duration = None
                 
                 if message.photo:
                     msg_type = "photo"
@@ -859,17 +988,24 @@ class TelethonService:
                 elif message.video:
                     msg_type = "video"
                     has_media = True
+                    from telethon.tl.types import DocumentAttributeVideo
                     if message.document and hasattr(message.document, 'attributes'):
                         for attr in message.document.attributes:
                             if hasattr(attr, 'file_name'):
                                 media_filename = attr.file_name
-                                break
+                            if isinstance(attr, DocumentAttributeVideo):
+                                duration = getattr(attr, 'duration', None)
                     if not media_filename:
                         media_filename = f"video_{message.id}.mp4"
                 elif message.voice:
                     msg_type = "voice"
                     has_media = True
                     media_filename = f"voice_{message.id}.ogg"
+                    from telethon.tl.types import DocumentAttributeAudio
+                    if message.document and hasattr(message.document, 'attributes'):
+                        for attr in message.document.attributes:
+                            if isinstance(attr, DocumentAttributeAudio):
+                                duration = getattr(attr, 'duration', None)
                 elif message.document:
                     msg_type = "document"
                     has_media = True
@@ -895,7 +1031,10 @@ class TelethonService:
                     "is_outgoing": message.out,
                     "type": msg_type,
                     "has_media": has_media,
-                    "media_filename": media_filename
+                    "media_filename": media_filename,
+                    "media_thumbnail": await session._extract_thumbnail(message),
+                    "media_duration": duration,
+                    "reply_to_msg_id": message.reply_to.reply_to_msg_id if message.reply_to else None
                 }
                 print("message_data", message_data)
 
@@ -912,6 +1051,31 @@ class TelethonService:
 
             except Exception as e:
                 logger.error(f"Error handling new message: {e}")
+
+        # @session.client.on(events.MessageReactions)
+        # async def handle_reactions(event):
+        #     try:
+        #         reactions_dict = {}
+        #         if event.reactions and hasattr(event.reactions, 'results'):
+        #             for r in event.reactions.results:
+        #                 emoji = getattr(r.reaction, 'emoticon', None)
+        #                 if emoji:
+        #                     reactions_dict[emoji] = r.count
+        #         
+        #         chat = await event.get_input_chat()
+        #         peer_id = session._get_peer_id(chat)
+        #         
+        #         reaction_data = {
+        #             "account_id": session.account_id,
+        #             "peer_id": peer_id,
+        #             "message_id": event.msg_id,
+        #             "reactions": reactions_dict
+        #         }
+        #         
+        #         for handler in self.reaction_handlers:
+        #             await handler(reaction_data)
+        #     except Exception as e:
+        #         logger.error(f"Error handling reactions event: {e}")
 
     async def _check_unread_messages_on_start(self, account_id: int):
         """Check for unread messages immediately when session starts"""
@@ -938,9 +1102,12 @@ class TelethonService:
                             "conversation_type": msg_data.get("conversation_type", "private"),
                             "date": msg_data["date"],
                             "is_outgoing": msg_data["is_outgoing"],
-                            "type": msg_data.get("type", "text"),
-                            "has_media": msg_data.get("has_media", False),
-                            "media_filename": msg_data.get("media_filename")
+                            "type": msg_data["type"],
+                            "has_media": msg_data["has_media"],
+                            "media_filename": msg_data["media_filename"],
+                            "media_thumbnail": msg_data.get("media_thumbnail"),
+                            "media_duration": msg_data.get("media_duration"),
+                            "reply_to_msg_id": msg_data.get("reply_to_message_id")
                         }
                         
                         # Call all registered handlers
@@ -1300,6 +1467,13 @@ class TelethonService:
         if photo_bytes:
             return f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
         return None  # Entity has no profile photo set
+
+    async def send_reaction(self, account_id: int, peer_id: int, message_id: int, emoji: str):
+        """Send a reaction to a message"""
+        session = self.sessions.get(account_id)
+        if not session:
+            raise Exception("Account not connected")
+        return await session.send_reaction(peer_id, message_id, emoji)
 
 
 telethon_service = TelethonService()

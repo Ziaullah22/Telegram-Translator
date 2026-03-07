@@ -96,11 +96,19 @@ class MessageResponse(BaseModel):
     edited_at: Optional[datetime]
     is_outgoing: bool = False
     media_file_name: Optional[str] = None
+    reply_to_telegram_id: Optional[int] = None
+    reply_to_text: Optional[str] = None
+    reply_to_sender: Optional[str] = None
+    reactions: Optional[dict] = None
 
 class MessageSend(BaseModel):
     conversation_id: int
     text: str
     translate: bool = True
+    reply_to_message_id: Optional[int] = None # This is the telegram_message_id to reply to
+
+class MessageReact(BaseModel):
+    emoji: str
 
 class TranslationRequest(BaseModel):
     text: str
@@ -139,11 +147,11 @@ class MessageTemplateResponse(BaseModel):
 class ScheduledMessageCreate(BaseModel):
     conversation_id: int
     message_text: str = Field(..., min_length=1)
-    days_delay: int = Field(..., ge=1)  # Number of days to wait before sending
+    days_delay: float = Field(..., gt=0)  # Fractional days supported (e.g., 0.021 = 30 min)
 
 class ScheduledMessageUpdate(BaseModel):
     message_text: Optional[str] = Field(None, min_length=1)
-    days_delay: Optional[int] = Field(None, ge=1)
+    days_delay: Optional[float] = Field(None, gt=0)
 
 class ScheduledMessageResponse(BaseModel):
     id: int

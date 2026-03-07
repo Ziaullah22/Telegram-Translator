@@ -5,7 +5,7 @@ from datetime import datetime
 from app.core.database import db
 from app.core.security import get_current_user
 from app.core.encryption import encrypt_message_if_enabled, decrypt_message_if_encrypted
-from models import MessageResponse, MessageSend
+from models import MessageResponse, MessageSend, MessageReact
 from telethon_service import telethon_service
 from translation_service import translation_service
 from websocket_manager import manager
@@ -98,7 +98,7 @@ async def get_messages(
         created_at = msg['created_at'] if msg['created_at'] is not None else datetime.now()
         
         # Decrypt message if encrypted
-        is_encrypted = msg.get('is_encrypted', False)
+        is_encrypted = msg['is_encrypted']
         original_text, translated_text = await decrypt_message_if_encrypted(
             is_encrypted, msg['original_text'], msg['translated_text']
         )
@@ -117,8 +117,12 @@ async def get_messages(
             "target_language": msg['target_language'],
             "created_at": created_at,
             "edited_at": msg['edited_at'],
-            "is_outgoing": msg.get('is_outgoing', False),
-            "media_file_name": msg.get('media_file_name'),
+            "is_outgoing": msg['is_outgoing'],
+            "media_file_name": msg['media_file_name'],
+            "reply_to_telegram_id": msg['reply_to_telegram_id'],
+            "reply_to_text": msg['reply_to_text'],
+            "reply_to_sender": msg['reply_to_sender'],
+            "reactions": json.loads(msg['reactions']) if msg['reactions'] else {},
         })
 
     return result
@@ -165,6 +169,7 @@ async def send_message(
             conversation['telegram_account_id'],
             conversation['telegram_peer_id'],
             translated_text,
+            reply_to=message_data.reply_to_message_id
         )
 
         # Encrypt message if encryption is enabled
@@ -176,8 +181,9 @@ async def send_message(
             """
             INSERT INTO messages
             (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-             source_language, target_language, created_at, is_encrypted, is_outgoing)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             source_language, target_language, created_at, is_encrypted, is_outgoing,
+             reply_to_telegram_id, reply_to_text, reply_to_sender)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING id
             """,
             message_data.conversation_id,
@@ -193,6 +199,9 @@ async def send_message(
             sent_message['date'],
             is_encrypted,
             True,
+            message_data.reply_to_message_id,
+            None, # We'll populate this later if needed, or just leave it for outgoing
+            None
         )
 
         await db.execute(
@@ -217,6 +226,9 @@ async def send_message(
             "created_at": sent_message['date'].isoformat() if sent_message['date'] else None,
             "edited_at": None,
             "is_outgoing": True,
+            "reply_to_telegram_id": message_data.reply_to_message_id,
+            "reply_to_text": None,
+            "reply_to_sender": None,
         }
 
         await manager.send_to_account(
@@ -565,3 +577,195 @@ async def delete_messages_endpoint(
     return {"message": f"Deleted {len(found_local_ids)} messages", "deleted_ids": found_local_ids}
 
 
+@router.post("/forward")
+async def forward_messages(
+    source_conversation_id: int = Form(...),
+    target_conversation_id: int = Form(...),
+    message_ids: str = Form(...),  # comma-separated local DB message IDs
+    current_user = Depends(get_current_user),
+):
+    """Forward messages (text + media) to another conversation using Telethon native forward"""
+    import json as _json
+
+    # Parse message IDs
+    try:
+        local_ids = [int(x.strip()) for x in message_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid message_ids format")
+
+    if not local_ids:
+        raise HTTPException(status_code=400, detail="No message IDs provided")
+
+    # Verify source conversation
+    source = await db.fetchrow(
+        """
+        SELECT c.*, ta.user_id, ta.target_language, ta.source_language
+        FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE c.id = $1 AND ta.user_id = $2
+        """,
+        source_conversation_id,
+        current_user.user_id,
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="Source conversation not found")
+
+    # Verify target conversation (must belong to same account)
+    target = await db.fetchrow(
+        """
+        SELECT c.*, ta.user_id, ta.target_language, ta.source_language
+        FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE c.id = $1 AND ta.user_id = $2 AND c.telegram_account_id = $3
+        """,
+        target_conversation_id,
+        current_user.user_id,
+        source['telegram_account_id'],
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Target conversation not found or belongs to different account")
+
+    # Get the Telegram message IDs for these local DB IDs
+    db_messages = await db.fetch(
+        "SELECT id, telegram_message_id, type, original_text, media_file_name FROM messages WHERE id = ANY($1) AND conversation_id = $2",
+        local_ids,
+        source_conversation_id,
+    )
+    if not db_messages:
+        raise HTTPException(status_code=404, detail="Messages not found")
+
+    tg_message_ids = [m['telegram_message_id'] for m in db_messages if m['telegram_message_id']]
+    if not tg_message_ids:
+        raise HTTPException(status_code=400, detail="Messages have no Telegram IDs to forward")
+
+    try:
+        forwarded = await telethon_service.forward_messages(
+            source['telegram_account_id'],
+            source['telegram_peer_id'],
+            tg_message_ids,
+            target['telegram_peer_id'],
+        )
+    except Exception as e:
+        logger.error(f"Forward failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to forward: {str(e)}")
+
+    # Save forwarded messages to DB and broadcast
+    saved_messages = []
+    now = datetime.utcnow()
+    for fw, orig_db_msg in zip(forwarded, db_messages):
+        msg_id = await db.fetchval(
+            """
+            INSERT INTO messages
+            (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username,
+             type, original_text, translated_text, created_at, is_outgoing, media_file_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10)
+            RETURNING id
+            """,
+            target_conversation_id,
+            fw['message_id'],
+            fw['sender_user_id'],
+            fw['sender_name'],
+            fw.get('sender_username') or 'User',
+            fw['type'],
+            fw['text'] or orig_db_msg['original_text'] or '',
+            fw['date'] or now,
+            True,
+            orig_db_msg['media_file_name'],
+        )
+
+        msg_response = {
+            "id": msg_id,
+            "conversation_id": target_conversation_id,
+            "telegram_message_id": fw['message_id'],
+            "sender_user_id": fw['sender_user_id'],
+            "sender_name": fw['sender_name'],
+            "sender_username": fw.get('sender_username') or 'User',
+            "type": fw['type'],
+            "original_text": fw['text'] or orig_db_msg['original_text'] or '',
+            "translated_text": fw['text'] or orig_db_msg['original_text'] or '',
+            "created_at": (fw['date'] or now).isoformat() if fw.get('date') else now.isoformat(),
+            "is_outgoing": True,
+            "media_file_name": orig_db_msg['media_file_name'],
+        }
+        saved_messages.append(msg_response)
+
+        # Broadcast so it appears in the target chat instantly
+        await manager.send_to_account(
+            {"type": "new_message", "message": msg_response},
+            source['telegram_account_id'],
+            current_user.user_id,
+        )
+
+    await db.execute(
+        "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
+        target_conversation_id,
+    )
+
+    return {"forwarded": len(saved_messages), "messages": saved_messages}
+
+
+@router.post("/{message_id}/react")
+async def react_to_message(
+    message_id: int,
+    reaction_data: MessageReact,
+    current_user = Depends(get_current_user),
+):
+    # 1. Fetch message from DB
+    message = await db.fetchrow(
+        """
+        SELECT m.*, c.telegram_account_id, c.telegram_peer_id 
+        FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        WHERE m.id = $1
+        """,
+        message_id,
+    )
+    
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+        
+    try:
+        # 2. Call telethon_service
+        await telethon_service.send_reaction(
+            account_id=message['telegram_account_id'],
+            peer_id=message['telegram_peer_id'],
+            message_id=message['telegram_message_id'],
+            emoji=reaction_data.emoji
+        )
+        
+        # 3. Update local DB reactions
+        # We'll just store/update the reaction from the current user
+        # For simplicity, we'll store it as a counts dict
+        current_reactions = json.loads(message['reactions']) if message['reactions'] else {}
+        
+        # Incremental logic: if we just reacted with this emoji, increment it
+        # (This is a bit simplified, but gives immediate feedback)
+        current_reactions[reaction_data.emoji] = current_reactions.get(reaction_data.emoji, 0) + 1
+        
+        await db.execute(
+            "UPDATE messages SET reactions = $1 WHERE id = $2",
+            json.dumps(current_reactions),
+            message_id
+        )
+        
+        # 4. Broadcast via WebSocket
+        await manager.send_to_account(
+            {
+                "type": "message_reaction",
+                "message_id": message_id,
+                "reactions": current_reactions
+            },
+            message['telegram_account_id'],
+            current_user.user_id,
+        )
+        
+        return {"reactions": current_reactions}
+        
+    except Exception as e:
+        logger.error(f"Error reacting to message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to react: {str(e)}",
+        )
+
+import json

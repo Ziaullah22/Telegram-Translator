@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   title TEXT,
   type conversation_type NOT NULL,
   is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+  is_muted BOOLEAN NOT NULL DEFAULT FALSE,
+  is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_message_at TIMESTAMPTZ
 );

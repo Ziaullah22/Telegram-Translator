@@ -1,8 +1,7 @@
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2 } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
-import ConfirmModal from '../Modals/ConfirmModal';
 import PeerAvatar, { prefetchAvatars } from '../Common/PeerAvatar';
 
 interface ConversationListProps {
@@ -47,7 +46,15 @@ export default function ConversationList({
     isOpen: false,
     conversationId: null,
   });
+  const [contextMenu, setContextMenu] = useState<{ conversation: TelegramChat; x: number; y: number } | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close context menu when clicking anywhere
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null);
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
 
   // Batch-prefetch all conversation photos as soon as they are available
   useEffect(() => {
@@ -112,15 +119,8 @@ export default function ConversationList({
         title: user.title || title,
         username: user.username,
         type: targetType,
-        is_hidden: false, // Unhide immediately so it opens directly
+        is_hidden: isGroup, // Hide if it's a group we haven't joined yet to trigger "Join" button UI
       });
-
-      // Automatically join if it's a group/channel
-      if (isGroup) {
-        telegramAPI.joinConversation(conversation.id).catch(err => {
-          console.error('Auto-join failed:', err);
-        });
-      }
 
       // Select immediately to show chat window
       onConversationSelect({
@@ -279,6 +279,10 @@ export default function ConversationList({
                 <div
                   key={conversation.id}
                   onClick={() => onConversationSelect(conversation)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ conversation, x: e.clientX, y: e.clientY });
+                  }}
                   className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group ${isActive
                     ? 'bg-[#419FD9] shadow-inner'
                     : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
@@ -314,22 +318,10 @@ export default function ConversationList({
                         {conversation.is_muted && (
                           <BellOff className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`} />
                         )}
-                        {conversation.lastMessage && (
-                          <span className={`text-[11px] transition-opacity duration-200 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'} ${!isActive ? 'group-hover:opacity-0' : ''}`}>
-                            {formatConvDate(conversation.lastMessage.created_at)}
+                        {!isActive && (
+                          <span className={`text-[11px] transition-opacity duration-200 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'} group-hover:opacity-0`}>
+                            {conversation.lastMessage ? formatConvDate(conversation.lastMessage.created_at) : ''}
                           </span>
-                        )}
-                        {!isActive && onDeleteConversation && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteModal({ isOpen: true, conversationId: conversation.id });
-                            }}
-                            className="absolute right-0 top-0 p-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-10"
-                            title="Remove User"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         )}
                       </div>
                     </div>
@@ -352,19 +344,100 @@ export default function ConversationList({
         )}
       </div>
 
-      <ConfirmModal
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, conversationId: null })}
-        onConfirm={() => {
-          if (deleteModal.conversationId && onDeleteConversation) {
-            onDeleteConversation(deleteModal.conversationId);
-          }
-        }}
-        title="Remove User"
-        message="Are you sure you want to remove this user? This will delete the account and chat history from both sides. This action cannot be undone."
-        confirmText="Remove User"
-        type="danger"
-      />
+      {/* Context Menu (Right Click) */}
+      {contextMenu && (
+        <div
+          className="fixed z-[200] w-52 bg-white dark:bg-[#232323] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-scale-in"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Mute/Unmute */}
+          <button
+            onClick={() => {
+              // Trigger mute logic if available, for now just placeholder as per logic in main window
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          >
+            <Bell className="w-[18px] h-[18px] text-gray-500" />
+            <span className="text-[15px]">{contextMenu.conversation.is_muted ? 'Unmute' : 'Mute'}</span>
+          </button>
+
+          <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
+
+          {/* Delete */}
+          <button
+            onClick={() => {
+              setDeleteModal({ isOpen: true, conversationId: contextMenu.conversation.id });
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-[#ff595a] hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 className="w-[18px] h-[18px]" />
+            <span className="text-[15px] font-medium">Delete chat</span>
+          </button>
+        </div>
+      )}
+
+      {/* Modern Deletion Modal (Same template as single message delete) */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 animate-fade-in">
+          <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-[320px] overflow-hidden animate-scale-in">
+            <div className="p-6">
+              {(() => {
+                const chatToDelete = conversations.find(c => c.id === deleteModal.conversationId);
+                const isGroup = chatToDelete?.type === 'group' || chatToDelete?.type === 'supergroup';
+                const isChannel = chatToDelete?.type === 'channel';
+
+                let title = 'Delete Chat';
+                let message = 'Are you sure you want to delete this chat? This cannot be undone.';
+                let confirmText = 'Delete';
+
+                if (isGroup) {
+                  title = 'Leave Group';
+                  message = 'Are you sure you want to leave this group? You will no longer receive messages from it.';
+                  confirmText = 'Leave';
+                } else if (isChannel) {
+                  title = 'Leave Channel';
+                  message = 'Are you sure you want to leave this channel? You will no longer receive updates.';
+                  confirmText = 'Leave';
+                }
+
+                return (
+                  <>
+                    <h3 className="text-[19px] font-medium text-gray-900 dark:text-white mb-2">
+                      {title}
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-300 text-[15px] mb-5">
+                      {message}
+                    </p>
+
+                    <div className="flex items-center justify-end space-x-2 mt-2">
+                      <button
+                        onClick={() => setDeleteModal({ isOpen: false, conversationId: null })}
+                        className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (deleteModal.conversationId && onDeleteConversation) {
+                            onDeleteConversation(deleteModal.conversationId);
+                          }
+                          setDeleteModal({ isOpen: false, conversationId: null });
+                        }}
+                        className="px-4 py-2 text-[#e53935] hover:bg-[#e53935]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
+                      >
+                        {confirmText}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

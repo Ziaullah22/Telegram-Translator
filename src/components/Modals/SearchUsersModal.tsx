@@ -78,24 +78,23 @@ export default function SearchUsersModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 animate-fade-in" onClick={onClose}>
+      <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden animate-scale-in flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Search Users</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5">
+          <h3 className="text-[19px] font-medium text-gray-900 dark:text-white">
+            Search Users
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Search Input */}
-        <div className="p-4 border-b border-gray-700">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="w-5 h-5 text-gray-400" />
+        <div className="p-4 border-b border-gray-100 dark:border-white/5">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+              <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-[#3390ec]' : 'text-gray-400'}`} />
             </div>
             <input
               type="text"
@@ -104,37 +103,37 @@ export default function SearchUsersModal({
               placeholder="Search by username..."
               autoFocus
               disabled={!isConnected}
-              className="w-full pl-10 pr-10 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition-all disabled:opacity-50"
             />
             {isSearching && (
-              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center">
+                <Loader2 className="w-4 h-4 text-[#3390ec] animate-spin" />
               </div>
             )}
           </div>
         </div>
 
         {/* Results */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar min-h-[300px]">
           {!searchQuery.trim() ? (
-            <div className="text-center py-8">
-              <Search className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">
-                Enter a username to search for users
+            <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
+              <Search className="w-16 h-16 text-gray-400 mb-4 stroke-[1.5]" />
+              <p className="text-[15px] text-gray-500 px-10">
+                Type a username to find people on Telegram
               </p>
             </div>
-          ) : isSearching ? (
-            <div className="text-center py-8">
-              <Loader2 className="w-12 h-12 text-blue-500 mx-auto mb-3 animate-spin" />
+          ) : isSearching && searchResults.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Loader2 className="w-10 h-10 text-[#3390ec] animate-spin mb-4" />
               <p className="text-gray-400 text-sm">Searching...</p>
             </div>
           ) : searchResults.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">No Result</p>
+            <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
+              <MessageCircle className="w-16 h-16 text-gray-400 mb-4 stroke-[1.5]" />
+              <p className="text-[15px] text-gray-500 px-10">No users found</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="p-2 space-y-1">
               {searchResults.map((user) => {
                 const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
                 const subtitle = user.username ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone : '';
@@ -143,31 +142,37 @@ export default function SearchUsersModal({
                   <div
                     key={user.id}
                     onClick={() => handleUserClick(user)}
-                    className="flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-700 text-gray-200"
+                    className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-white/5 group"
                   >
                     {/* Avatar */}
-                    <PeerAvatar
-                      accountId={accountId}
-                      peerId={user.id}
-                      name={displayName}
-                      className="w-12 h-12 rounded-full flex-shrink-0 text-lg"
-                    />
+                    <div className="relative">
+                      <PeerAvatar
+                        accountId={accountId}
+                        peerId={user.id}
+                        name={displayName}
+                        className="w-12 h-12 rounded-full flex-shrink-0"
+                      />
+                    </div>
 
                     {/* User Info */}
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium truncate">
-                        {displayName}
-                      </h3>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[14px] font-medium text-gray-900 dark:text-white truncate group-hover:text-[#3390ec] transition-colors">
+                          {displayName}
+                        </h4>
+                      </div>
                       {subtitle && (
-                        <p className="text-xs text-gray-400 truncate">
+                        <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
                           {subtitle}
                         </p>
                       )}
                     </div>
 
-                    {/* User Icon */}
-                    <div className="opacity-50">
-                      <MessageCircle className="w-5 h-5" />
+                    {/* Action Icon */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity pr-1">
+                      <div className="p-2 bg-[#3390ec]/10 text-[#3390ec] rounded-full">
+                        <MessageCircle className="w-4 h-4" />
+                      </div>
                     </div>
                   </div>
                 );

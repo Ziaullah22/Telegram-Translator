@@ -34,9 +34,14 @@ export interface TelegramMessage {
   target_language?: string;
   created_at: string;
   is_outgoing: boolean;
-  replyToMessageId?: number;
+  reply_to_telegram_id?: number;
+  reply_to_text?: string;
+  reply_to_sender?: string;
   has_media?: boolean;
   media_file_name?: string;
+  media_thumbnail?: string;
+  media_duration?: number;
+  reactions?: Record<string, number>;
 }
 
 export interface TelegramChat {

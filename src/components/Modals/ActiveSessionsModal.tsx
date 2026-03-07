@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Monitor, Smartphone, Tablet, Globe, Loader2, Trash2, Shield, MapPin, Info } from 'lucide-react';
+import { X, Monitor, Smartphone, Tablet, Globe, Loader2, Trash2, Info } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
+import ConfirmModal from './ConfirmModal';
 
 interface SessionData {
     hash: string;
@@ -31,6 +32,8 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
     const [error, setError] = useState('');
     const [terminatingHash, setTerminatingHash] = useState<string | null>(null);
     const [terminatingAll, setTerminatingAll] = useState(false);
+    const [sessionToTerminate, setSessionToTerminate] = useState<SessionData | null>(null);
+    const [showTerminateAllConfirm, setShowTerminateAllConfirm] = useState(false);
 
     useEffect(() => {
         if (isOpen && account) {
@@ -52,25 +55,33 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
         }
     };
 
-    const handleTerminate = async (session: SessionData) => {
+    const handleTerminate = (session: SessionData) => {
         if (!account || session.current) return;
-        if (!confirm(`Terminate session on ${session.device_model}?`)) return;
-        setTerminatingHash(session.hash);
+        setSessionToTerminate(session);
+    };
+
+    const confirmTerminate = async () => {
+        if (!account || !sessionToTerminate) return;
+        setTerminatingHash(sessionToTerminate.hash);
         try {
-            await telegramAPI.terminateSession(account.id, session.hash);
-            setSessions(prev => prev.filter(s => s.hash !== session.hash));
+            await telegramAPI.terminateSession(account.id, sessionToTerminate.hash);
+            setSessions(prev => prev.filter(s => s.hash !== sessionToTerminate.hash));
         } catch (e: any) {
             setError(e.response?.data?.detail || 'Failed to terminate session.');
         } finally {
             setTerminatingHash(null);
+            setSessionToTerminate(null);
         }
     };
 
-    const handleTerminateAll = async () => {
+    const handleTerminateAll = () => {
         const otherSessions = sessions.filter(s => !s.current);
         if (!account || otherSessions.length === 0) return;
-        if (!confirm('Are you sure you want to log out all other devices? This will terminate all sessions except the one you are currently using.')) return;
+        setShowTerminateAllConfirm(true);
+    };
 
+    const confirmTerminateAll = async () => {
+        if (!account) return;
         setTerminatingAll(true);
         try {
             await telegramAPI.terminateAllSessions(account.id);
@@ -79,6 +90,7 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
             setError(e.response?.data?.detail || 'Failed to terminate all sessions.');
         } finally {
             setTerminatingAll(false);
+            setShowTerminateAllConfirm(false);
         }
     };
 
@@ -112,73 +124,54 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
     const otherSessions = sessions.filter(s => !s.current);
 
     return (
-        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-[#1c2431] rounded-2xl shadow-2xl w-full max-w-lg mx-4 border border-gray-100 dark:border-white/10 overflow-hidden">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 animate-fade-in" onClick={onClose}>
+            <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden animate-scale-in flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10 bg-gradient-to-r from-blue-600/10 to-blue-400/5">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-blue-500" />
-                        Active Sessions
-                    </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5">
+                    <h3 className="text-[19px] font-medium text-gray-900 dark:text-white">Active Sessions</h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded-full transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {otherSessions.length > 0 && (
-                    <div className="px-6 py-3 bg-red-50 dark:bg-red-500/5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-red-600 dark:text-red-400">Security Check</span>
-                        <button
-                            onClick={handleTerminateAll}
-                            disabled={terminatingAll || loading}
-                            className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-50"
-                        >
-                            {terminatingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                            Terminate all others
-                        </button>
-                    </div>
-                )}
-
-                <div className="p-6 max-h-[65vh] overflow-y-auto">
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                     {error && (
-                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-sm text-red-600 dark:text-red-400">{error}</div>
+                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg text-sm text-red-600 dark:text-red-400">{error}</div>
                     )}
 
                     {loading ? (
                         <div className="flex items-center justify-center py-16">
-                            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                            <Loader2 className="w-8 h-8 animate-spin text-[#3390ec]" />
                         </div>
                     ) : sessions.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
-                            <Shield className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                            <p>No sessions found</p>
+                            <p>No active sessions found</p>
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-6">
                             {/* Security Note */}
-                            <div className="p-3 bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20 rounded-xl flex gap-3 text-xs text-blue-800 dark:text-blue-300">
-                                <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <div className="p-4 bg-[#3390ec]/5 border border-[#3390ec]/10 rounded-lg flex gap-3 text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed">
+                                <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#3390ec]" />
                                 <p>
-                                    To keep your account secure, you can <b>Terminate</b> other active devices. Your current device session cannot be terminated from here to prevent accidental disconnection.
+                                    You can terminate other active sessions to keep your account secure. Your current session is highlighted below.
                                 </p>
                             </div>
 
                             {/* Current Session */}
                             {currentSession && (
                                 <div>
-                                    <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2">This Device</h3>
-                                    <div className="p-4 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl">
-                                        <div className="flex items-start gap-3">
-                                            <div className="flex-shrink-0 mt-0.5">{getDeviceIcon(currentSession.device_model, currentSession.platform)}</div>
+                                    <h3 className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-2.5 ml-1">Current Session</h3>
+                                    <div className="p-4 bg-[#3390ec]/10 border border-[#3390ec]/20 rounded-lg">
+                                        <div className="flex items-start gap-4">
+                                            <div className="flex-shrink-0 mt-0.5 text-[#3390ec]">{getDeviceIcon(currentSession.device_model, currentSession.platform)}</div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="font-bold text-gray-900 dark:text-white text-sm">{currentSession.device_model}</p>
-                                                <p className="text-xs text-gray-500">{currentSession.app_name} {currentSession.app_version}</p>
-                                                <p className="text-xs text-gray-400 mt-1">{currentSession.platform} {currentSession.system_version}</p>
-                                                <div className="flex items-center gap-2 mt-1.5">
-                                                    <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/20 px-2 py-0.5 rounded-full">Current</span>
+                                                <p className="font-medium text-gray-900 dark:text-white text-[15px]">{currentSession.device_model}</p>
+                                                <p className="text-[13px] text-gray-400 mt-0.5">{currentSession.app_name} {currentSession.app_version}</p>
+                                                <div className="flex items-center gap-3 mt-2">
+                                                    <span className="text-[11px] font-medium text-[#3390ec] uppercase tracking-wider">Online</span>
                                                     {currentSession.country && (
-                                                        <span className="text-xs text-gray-400 flex items-center gap-0.5">
-                                                            <MapPin className="w-3 h-3" />{currentSession.region ? `${currentSession.region}, ` : ''}{currentSession.country}
+                                                        <span className="text-[12px] text-gray-500 truncate">
+                                                            {currentSession.region ? `${currentSession.region}, ` : ''}{currentSession.country}
                                                         </span>
                                                     )}
                                                 </div>
@@ -190,38 +183,39 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
 
                             {/* Other Sessions */}
                             {otherSessions.length > 0 && (
-                                <div>
-                                    <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2">
-                                        Other Sessions ({otherSessions.length})
-                                    </h3>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between mb-2 px-1">
+                                        <h3 className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Other Sessions</h3>
+                                        <button
+                                            onClick={handleTerminateAll}
+                                            disabled={terminatingAll}
+                                            className="text-[11px] font-medium text-red-500 uppercase tracking-wider hover:underline"
+                                        >
+                                            Terminate All Others
+                                        </button>
+                                    </div>
                                     <div className="space-y-2">
                                         {otherSessions.map(session => (
-                                            <div key={session.hash} className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl flex items-start gap-3 group">
-                                                <div className="flex-shrink-0 mt-0.5">{getDeviceIcon(session.device_model, session.platform)}</div>
+                                            <div key={session.hash} className="p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 rounded-lg flex items-start gap-4 hover:border-gray-200 dark:hover:border-white/10 transition-all">
+                                                <div className="flex-shrink-0 mt-0.5 text-gray-400">{getDeviceIcon(session.device_model, session.platform)}</div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="font-bold text-gray-900 dark:text-white text-sm">{session.device_model}</p>
-                                                    <p className="text-xs text-gray-500">{session.app_name} {session.app_version}</p>
-                                                    <p className="text-xs text-gray-400 mt-0.5">{session.platform} {session.system_version}</p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-xs text-gray-400">Active {formatDate(session.date_active)}</span>
-                                                        {session.country && (
-                                                            <span className="text-xs text-gray-400 flex items-center gap-0.5">
-                                                                <MapPin className="w-3 h-3" />{session.country}
-                                                            </span>
-                                                        )}
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="font-medium text-gray-900 dark:text-white text-[14px]">{session.device_model}</p>
+                                                        <button
+                                                            onClick={() => handleTerminate(session)}
+                                                            disabled={terminatingHash === session.hash}
+                                                            className="text-red-500 hover:text-red-600 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                                            title="Terminate"
+                                                        >
+                                                            {terminatingHash === session.hash ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                                        </button>
                                                     </div>
+                                                    <p className="text-[12px] text-gray-400 mt-0.5">{session.app_name} {session.app_version}</p>
+                                                    <p className="text-[12px] text-gray-500 mt-1">
+                                                        Active {formatDate(session.date_active)}
+                                                        {session.country && ` • ${session.country}`}
+                                                    </p>
                                                 </div>
-                                                <button
-                                                    onClick={() => handleTerminate(session)}
-                                                    disabled={terminatingHash === session.hash}
-                                                    className="flex-shrink-0 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                                                    title="Terminate session"
-                                                >
-                                                    {terminatingHash === session.hash
-                                                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                                                        : <Trash2 className="w-4 h-4" />
-                                                    }
-                                                </button>
                                             </div>
                                         ))}
                                     </div>
@@ -229,19 +223,38 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                             )}
                         </div>
                     )}
-                </div>
 
-                <div className="px-6 pb-6">
-                    <button
-                        onClick={loadSessions}
-                        disabled={loading}
-                        className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                    >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-                        Refresh Sessions
-                    </button>
+                    <div className="flex justify-end pt-6 mt-2">
+                        <button
+                            onClick={loadSessions}
+                            disabled={loading}
+                            className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[140px] justify-center"
+                        >
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh List"}
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            <ConfirmModal
+                isOpen={!!sessionToTerminate}
+                onClose={() => setSessionToTerminate(null)}
+                onConfirm={confirmTerminate}
+                title="Terminate Session"
+                message={`Are you sure you want to terminate the session on ${sessionToTerminate?.device_model}?`}
+                confirmText="Terminate"
+                type="danger"
+            />
+
+            <ConfirmModal
+                isOpen={showTerminateAllConfirm}
+                onClose={() => setShowTerminateAllConfirm(false)}
+                onConfirm={confirmTerminateAll}
+                title="Terminate All Other Sessions"
+                message="Are you sure you want to log out all other devices? This will terminate all sessions except the one you are currently using."
+                confirmText="Terminate All"
+                type="danger"
+            />
         </div>
     );
 }

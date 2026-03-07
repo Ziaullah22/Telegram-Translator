@@ -13,6 +13,7 @@ import ChatWindow from './components/Chat/ChatWindow';
 import ConversationList from './components/Layout/ConversationList';
 import AddAccountModal from './components/Modals/AddAccountModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
+import ConfirmModal from './components/Modals/ConfirmModal';
 import AutoResponderPage from './components/AutoResponder/AutoResponderPage';
 import UserGuideTour from './components/Modals/UserGuideTour';
 import ProfileModal from './components/Modals/ProfileModal';
@@ -23,7 +24,7 @@ import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
 import { Zap, X } from 'lucide-react';
 
 // Types
-import type { TelegramAccount, TelegramMessage, TelegramChat } from './types';
+import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage } from './types';
 
 function App() {
   // Auth state
@@ -42,7 +43,6 @@ function App() {
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [showEditAccountModal, setShowEditAccountModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<TelegramAccount | null>(null);
-  // unreadCounts[accountId][conversationId] = count
   const [unreadCounts, setUnreadCounts] = useState<Record<number, Record<number, number>>>({});
   const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number; avatar?: string } | null>(null);
   const [showTour, setShowTour] = useState(false);
@@ -52,40 +52,35 @@ function App() {
   const [profileAccount, setProfileAccount] = useState<TelegramAccount | null>(null);
   const [showSessionsModal, setShowSessionsModal] = useState(false);
   const [sessionsAccount, setSessionsAccount] = useState<TelegramAccount | null>(null);
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+  const [accountToDelete, setAccountToDelete] = useState<TelegramAccount | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
-  // Load accounts on mount
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadAccounts();
-    }
-  }, [isAuthenticated]);
+  // Phase 3: Message Caching & Memory Management
+  const messageCache = useRef<Record<number, { messages: TelegramMessage[], hasMore: boolean, lastViewed: number }>>({});
+  const MAX_CACHE_SIZE = 5;
 
-  // Refs for current state to be used in the socket listener without stale closures
+  // Refs for current state
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
   const conversationsRef = useRef<TelegramChat[]>(conversations);
 
-  useEffect(() => {
-    currentAccountRef.current = currentAccount;
-  }, [currentAccount]);
+  useEffect(() => { currentAccountRef.current = currentAccount; }, [currentAccount]);
+  useEffect(() => { currentConversationRef.current = currentConversation; }, [currentConversation]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
+  // Load accounts on mount
   useEffect(() => {
-    currentConversationRef.current = currentConversation;
-  }, [currentConversation]);
-
-  useEffect(() => {
-    conversationsRef.current = conversations;
-  }, [conversations]);
+    if (isAuthenticated) loadAccounts();
+  }, [isAuthenticated]);
 
   // Handle notification sound
   useEffect(() => {
-    // Create audio once
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
   }, []);
 
-  // Hook into native notifications
+  // Native notifications
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
@@ -99,556 +94,349 @@ function App() {
     }
   }, []);
 
+  const handleNotificationClick = useCallback(async (accId: number, convId: number) => {
+    const acc = accounts.find(a => Number(a.id) === accId);
+    if (!acc) return;
+    if (!currentAccountRef.current || Number(currentAccountRef.current.id) !== accId) {
+      setCurrentAccount(acc);
+      setMessages([]);
+      setCurrentConversation(null);
+      setConversations([]);
+      if (acc.isConnected) {
+        try {
+          const convs = await conversationsAPI.getConversations(accId);
+          setConversations(convs);
+          const target = convs.find(c => Number(c.id) === convId);
+          if (target) {
+            setCurrentConversation(target);
+            // We'll load the messages in a separate flow or call the helper
+          }
+        } catch (e) { console.error(e); }
+      }
+    } else {
+      const target = conversationsRef.current.find(c => Number(c.id) === convId);
+      if (target) setCurrentConversation(target);
+    }
+    setNotification(null);
+  }, [accounts]);
+
   const showNativeNotification = useCallback((title: string, body: string, accountId: number, conversationId: number, icon?: string) => {
     if ("Notification" in window && Notification.permission === "granted") {
       const n = new Notification(title, {
         body: body,
         icon: icon || '/logo192.png',
         tag: `chat-${conversationId}`,
-        // @ts-ignore - renotify is supported by modern browsers
+        // @ts-ignore
         renotify: true,
-        requireInteraction: true // Keep it showing like Telegram
+        requireInteraction: true
       });
-
       n.onclick = (e) => {
         e.preventDefault();
         window.focus();
-        // Force focus for Chrome/Edge
-        if (window.opener) {
-          window.opener.focus();
-        }
         handleNotificationClick(accountId, conversationId);
         n.close();
       };
     }
-  }, []);
+  }, [handleNotificationClick]);
 
-  // Socket event listeners
+  // WebSocket
   useEffect(() => {
     const unsubscribe = onMessage((data: any) => {
-      // DEBUG: console.log('WebSocket Event:', data);
-
       if (data?.type === 'new_message' && data.message) {
-        // Force to numbers for robust comparison
         const incomingAccountId = Number(data.account_id);
         const incomingConversationId = Number(data.message.conversation_id);
-
-        // Use refs to get absolute latest values
         const activeAcc = currentAccountRef.current;
         const activeConv = currentConversationRef.current;
         const activeAccountId = activeAcc ? Number(activeAcc.id) : null;
         const activeConversationId = activeConv ? Number(activeConv.id) : null;
 
-        console.log(`Real-time match check: Incoming(Acc:${incomingAccountId}, Conv:${incomingConversationId}) vs Active(Acc:${activeAccountId}, Conv:${activeConversationId})`);
-
-        // Deduplicate using the permanent message ID
-        if (data.message.id && processedMessageIds.current.has(data.message.id)) {
-          return;
-        }
+        if (data.message.id && processedMessageIds.current.has(data.message.id)) return;
         if (data.message.id) {
           processedMessageIds.current.add(data.message.id);
-          // Keep set size manageable
           if (processedMessageIds.current.size > 500) {
-            const firstElement = processedMessageIds.current.values().next().value;
-            if (firstElement !== undefined) processedMessageIds.current.delete(firstElement);
+            const first = processedMessageIds.current.values().next().value;
+            if (first !== undefined) processedMessageIds.current.delete(first);
           }
         }
 
-        // Calculate total unread count for UI if needed
         const isActiveConv = activeAccountId === incomingAccountId && activeConversationId === incomingConversationId;
 
-        // Play sound and show notification for incoming messages
         if (!data.message.is_outgoing) {
           const isMuted = conversationsRef.current.some(c => Number(c.id) === incomingConversationId && c.is_muted);
-
           if (!isMuted) {
             playNotificationSound();
-
             if (!isActiveConv) {
               const title = data.message.sender_name || data.message.peer_title || 'New Message';
               const body = data.message.original_text || 'Sent an attachment';
               const avatar = data.message.sender_avatar || undefined;
-
-              setNotification({
-                title: title,
-                message: body,
-                id: Date.now(),
-                accountId: incomingAccountId,
-                conversationId: incomingConversationId,
-                avatar: avatar
-              });
-
-              // Show native notification if window is blurred
-              if (!document.hasFocus()) {
-                showNativeNotification(title, body, incomingAccountId, incomingConversationId, avatar);
-              }
-
-              // Auto hide in-app notification
+              setNotification({ title, message: body, id: Date.now(), accountId: incomingAccountId, conversationId: incomingConversationId, avatar });
+              if (!document.hasFocus()) showNativeNotification(title, body, incomingAccountId, incomingConversationId, avatar);
               setTimeout(() => setNotification(null), 8000);
             }
           }
         }
 
-        // Update central unreadCounts map
         setUnreadCounts(prev => {
           const next = { ...prev };
           const byConv = { ...(next[incomingAccountId] || {}) };
-
-          if (!isActiveConv) {
-            byConv[incomingConversationId] = (byConv[incomingConversationId] || 0) + 1;
-            next[incomingAccountId] = byConv;
-          } else {
-            byConv[incomingConversationId] = 0;
-            next[incomingAccountId] = byConv;
-          }
+          if (!isActiveConv) byConv[incomingConversationId] = (byConv[incomingConversationId] || 0) + 1;
+          else byConv[incomingConversationId] = 0;
+          next[incomingAccountId] = byConv;
           return next;
         });
 
-        // If message belongs to the currently selected account
         if (activeAccountId === incomingAccountId) {
           setConversations(prev => {
             const index = prev.findIndex(c => Number(c.id) === incomingConversationId);
-
-            if (index === -1) {
-              // New conversation, add to top
-              return [{
-                id: incomingConversationId,
-                title: data.message.peer_title || 'Unknown',
-                type: 'private',
-                lastMessage: data.message,
-              }, ...prev] as TelegramChat[];
-            }
-
-            // Existing conversation, update and move to top
+            if (index === -1) return [{ id: incomingConversationId, title: data.message.peer_title || 'Unknown', type: 'private', lastMessage: data.message }, ...prev] as TelegramChat[];
             const updated = [...prev];
-            const conversation = {
-              ...updated[index],
-              lastMessage: data.message,
-            };
-            updated.splice(index, 1); // remove from old position
-            return [conversation, ...updated]; // add to top
+            const conversation = { ...updated[index], lastMessage: data.message };
+            updated.splice(index, 1);
+            return [conversation, ...updated];
           });
 
-          // If current view is the same conversation, append message
           if (activeConversationId === incomingConversationId) {
             setMessages(prev => {
-              // Check if message already exists
-              const isDuplicate = prev.some(msg =>
-                Number(msg.id) === Number(data.message.id) ||
-                (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0)
-              );
+              const isDuplicate = prev.some(msg => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
               if (isDuplicate) return prev;
-
-              // Filter out the optimistic temp message for the same text
-              const filtered = prev.filter(msg =>
-                !(msg.id < 0 && msg.original_text === data.message.original_text)
-              );
+              const filtered = prev.filter(msg => !(msg.id < 0 && msg.original_text === data.message.original_text));
               return [...filtered, data.message];
             });
           }
         }
-      }
 
+        if (messageCache.current[incomingConversationId]) {
+          const cached = messageCache.current[incomingConversationId];
+          const isDup = cached.messages.some((msg: TelegramMessage) => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
+          if (!isDup) {
+            const filt = cached.messages.filter((msg: TelegramMessage) => !(msg.id < 0 && msg.original_text === data.message.original_text));
+            messageCache.current[incomingConversationId] = { ...cached, messages: [...filt, data.message] };
+          }
+        }
+      }
+      if (data?.type === 'message_reaction') {
+        const messageId = Number(data.message_id);
+        const reactions = data.reactions;
+        setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, reactions } : msg));
+      }
       if (data?.type === 'conversation_deleted') {
-        const deletedConversationId = Number(data.conversation_id);
-        setConversations(prev => prev.filter(c => c.id !== deletedConversationId));
-        if (currentConversationRef.current?.id === deletedConversationId) {
-          setCurrentConversation(null);
-          setMessages([]);
-        }
+        const delId = Number(data.conversation_id);
+        setConversations(prev => prev.filter(c => c.id !== delId));
+        if (currentConversationRef.current?.id === delId) { setCurrentConversation(null); setMessages([]); }
       }
-
       if (data?.type === 'messages_deleted') {
-        const deletedConversationId = Number(data.conversation_id);
-        const deletedIds = data.message_ids as number[];
-
-        // If current view is the same conversation, remove messages
-        if (currentConversationRef.current?.id === deletedConversationId) {
-          setMessages(prev => prev.filter(msg => !deletedIds.includes(msg.id)));
-        }
-      }
-
-      if (data?.type === 'account_deleted') {
-        const deletedAccountId = Number(data.account_id);
-        setAccounts(prev => prev.filter(acc => acc.id !== deletedAccountId));
-        if (currentAccountRef.current?.id === deletedAccountId) {
-          setCurrentAccount(null);
-          setConversations([]);
-          setMessages([]);
-        }
-      }
-
-      // Handle connection/disconnection status updates
-      if (data?.type === 'account_connected' && typeof data.account_id === 'number') {
-        const accId = Number(data.account_id);
-        setAccounts(prev => prev.map(acc => acc.id === accId ? { ...acc, isConnected: true } : acc));
-      }
-      if (data?.type === 'account_disconnected' && typeof data.account_id === 'number') {
-        const accId = Number(data.account_id);
-        setAccounts(prev => prev.map(acc => acc.id === accId ? { ...acc, isConnected: false } : acc));
-      }
-      if (data?.type === 'account_updated' && data.account) {
-        const updatedAcc = data.account;
-        // Map backend snake_case to frontend camelCase if necessary (check types)
-        const camelAcc = {
-          ...updatedAcc,
-          isConnected: updatedAcc.is_connected // backend uses is_connected
-        };
-
-        setAccounts(prev => prev.map(acc => acc.id === updatedAcc.id ? { ...acc, ...camelAcc } : acc));
-        if (currentAccountRef.current?.id === updatedAcc.id) {
-          setCurrentAccount(prev => prev ? { ...prev, ...camelAcc } : null);
-        }
+        const delId = Number(data.conversation_id);
+        const delIds = data.message_ids as number[];
+        if (currentConversationRef.current?.id === delId) setMessages(prev => prev.filter(msg => !delIds.includes(msg.id)));
       }
     });
-
     return unsubscribe;
-  }, [onMessage]); // Removed currentAccount/currentConversation from deps to avoid frequent listener resets
+  }, [onMessage, playNotificationSound, showNativeNotification]);
 
   const loadAccounts = async () => {
     try {
-      const accountsList = await telegramAPI.getAccounts();
-      setAccounts(accountsList);
-
-      // CRITICAL: Update currentAccount if it's already selected to ensure UI updates instantly
-      setCurrentAccount(prev => {
-        if (!prev) return null;
-        const updated = accountsList.find(a => a.id === prev.id);
-        return updated || prev;
-      });
-
-      // Initialize unreadCounts for all accounts based on total count from backend
-      setUnreadCounts(prev => {
-        const next = { ...prev };
-        accountsList.forEach(acc => {
-          // Use a special key -1 to store the initial total unread count for each account
-          // This will be replaced by real per-conversation counts once an account is selected.
-          const currentTotal = Object.values(next[acc.id] || {}).reduce((s, n) => s + (n || 0), 0);
-          if (acc.unreadCount && acc.unreadCount > 0 && currentTotal === 0) {
-            next[acc.id] = { [-1]: acc.unreadCount };
-          }
-        });
-        return next;
-      });
-    } catch (error) {
-      console.error('Failed to load accounts:', error);
-    }
+      const list = await telegramAPI.getAccounts();
+      setAccounts(list);
+      setCurrentAccount(prev => prev ? list.find(a => a.id === prev.id) || prev : null);
+    } catch (e) { console.error(e); }
   };
 
   const loadConversations = async (accountId: number) => {
     try {
-      const conversations = await conversationsAPI.getConversations(accountId);
-      setConversations(conversations);
-
-      // Update unread counts in state
+      const convs = await conversationsAPI.getConversations(accountId);
+      setConversations(convs);
       setUnreadCounts(prev => {
         const next = { ...prev };
-        const accCounts: Record<number, number> = {};
-        conversations.forEach(c => {
-          if (c.unreadCount) accCounts[c.id] = c.unreadCount;
-        });
-        next[accountId] = accCounts;
+        const counts: Record<number, number> = {};
+        convs.forEach(c => { if (c.unreadCount) counts[c.id] = c.unreadCount; });
+        next[accountId] = counts;
         return next;
       });
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
+    } catch (e) { console.error(e); }
+  };
+
+  const updateMessageCache = (id: number, msgs: TelegramMessage[], hasMore: boolean) => {
+    messageCache.current[id] = { messages: msgs, hasMore, lastViewed: Date.now() };
+    const entries = Object.entries(messageCache.current);
+    if (entries.length > MAX_CACHE_SIZE) {
+      const oldestId = entries.sort(([, a], [, b]) => a.lastViewed - b.lastViewed)[0][0];
+      delete messageCache.current[Number(oldestId)];
     }
   };
 
-  const loadMessages = async (conversationId: number) => {
+  const loadMessages = async (id: number) => {
+    if (messageCache.current[id]) {
+      const c = messageCache.current[id];
+      setMessages(c.messages);
+      setHasMoreMessages(c.hasMore);
+      return;
+    }
+    setMessages([]);
+    setHasMoreMessages(true);
     try {
-      const messages = await messagesAPI.getMessages(conversationId, 30);
-      setMessages(messages);
-      setHasMoreMessages(messages.length === 30);
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    }
+      const data = await messagesAPI.getMessages(id, 20);
+      if (currentConversationRef.current?.id !== id) return;
+      setMessages(data);
+      setHasMoreMessages(data.length === 20);
+      updateMessageCache(id, data, data.length === 20);
+    } catch (e) { console.error(e); }
   };
 
-  const loadMoreMessages = async (conversationId: number) => {
+  const loadMoreMessages = async (id: number) => {
     if (!hasMoreMessages) return;
     try {
-      // Find the oldest message ID currently loaded
-      const oldestId = messages.length > 0 ? Math.min(...messages.map((m: any) => m.id)) : undefined;
-      const older = await messagesAPI.getMessages(conversationId, 30, oldestId);
-      if (older.length === 0) {
-        setHasMoreMessages(false);
-        return;
-      }
-      setMessages(prev => [...older, ...prev]);
-      setHasMoreMessages(older.length === 30);
-    } catch (error) {
-      console.error('Failed to load more messages:', error);
-    }
+      const persistent = messagesRef.current.filter((m: any) => m.telegram_message_id > 0);
+      if (persistent.length === 0) return;
+      const oldest = Math.min(...persistent.map((m: any) => m.telegram_message_id));
+      const older = await messagesAPI.getMessages(id, 20, oldest);
+      if (currentConversationRef.current?.id !== id) return;
+      if (older.length === 0) { setHasMoreMessages(false); return; }
+      setMessages(prev => {
+        const ids = new Set(prev.map((m: TelegramMessage) => m.id));
+        const fresh = older.filter((m: TelegramMessage) => !ids.has(m.id));
+        return [...fresh, ...prev];
+      });
+      setHasMoreMessages(older.length === 20);
+    } catch (e) { console.error(e); }
   };
 
-  const handleAccountSelect = (account: TelegramAccount) => {
-    setCurrentAccount(account);
-    setMessages([]); // Clear messages when switching accounts
-    setCurrentConversation(null); // Clear current conversation
-    setConversations([]); // Clear conversations
+  // Add ref for messages to avoid stale closure in loadMore
+  const messagesRef = useRef<TelegramMessage[]>(messages);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
-    // Only load conversations if the account is connected
-    if (account.isConnected) {
-      loadConversations(account.id);
-    }
+  const handleAccountSelect = (acc: TelegramAccount) => {
+    setCurrentAccount(acc);
+    setMessages([]);
+    setCurrentConversation(null);
+    setConversations([]);
+    if (acc.isConnected) loadConversations(acc.id);
   };
 
-  const handleConversationSelect = (conversation: TelegramChat) => {
-    setCurrentConversation(conversation);
-    setMessages([]); // Clear messages when switching conversations
-
-    // Reset unread count in central map for this conversation
+  const handleConversationSelect = (conv: TelegramChat) => {
+    setCurrentConversation(conv);
+    loadMessages(conv.id);
     if (currentAccount) {
       setUnreadCounts(prev => {
         const next = { ...prev };
-        const byConv = { ...(next[currentAccount.id] || {}) };
-        if (byConv[conversation.id]) byConv[conversation.id] = 0;
-        next[currentAccount.id] = byConv;
+        const id = Number(currentAccount.id);
+        const by = { ...(next[id] || {}) };
+        if (by[conv.id]) by[conv.id] = 0;
+        next[id] = by;
         return next;
       });
     }
-
-    // Load messages regardless of hidden status
-    loadMessages(conversation.id);
-
-    // Mark as read in backend
-    messagesAPI.markAsRead(conversation.id).catch(err =>
-      console.error('Failed to mark as read:', err)
-    );
+    messagesAPI.markAsRead(conv.id).catch(e => console.error(e));
   };
 
-  const handleNotificationClick = async (accountId: number, conversationId: number) => {
-    // 1. Find the account
-    const targetAccount = accounts.find(a => Number(a.id) === accountId);
-    if (!targetAccount) return;
-
-    // 2. Select account if it's not the current one
-    if (!currentAccount || Number(currentAccount.id) !== accountId) {
-      setCurrentAccount(targetAccount);
-      setMessages([]);
-      setCurrentConversation(null);
-      setConversations([]);
-
-      // Load target account conversations
-      if (targetAccount.isConnected) {
-        try {
-          const convs = await conversationsAPI.getConversations(accountId);
-          setConversations(convs);
-
-          // Find conversation in newly loaded list
-          const targetConv = convs.find(c => Number(c.id) === conversationId);
-          if (targetConv) {
-            handleConversationSelect(targetConv);
-          }
-        } catch (error) {
-          console.error('Failed to load convs during notification click:', error);
-        }
-      }
-    } else {
-      // Already on the right account, find and select conversation
-      const targetConv = conversations.find(c => Number(c.id) === conversationId);
-      if (targetConv) {
-        handleConversationSelect(targetConv);
-      } else {
-        // Fallback: reload conversations and try to find the target
-        try {
-          const convs = await conversationsAPI.getConversations(accountId);
-          setConversations(convs);
-          const freshTarget = convs.find(c => Number(c.id) === conversationId);
-          if (freshTarget) {
-            handleConversationSelect(freshTarget);
-          }
-        } catch (error) {
-          console.error('Failed to find conversation during refresh:', error);
-        }
-      }
-    }
-    setNotification(null); // Clear notification after click
-  };
-
-  const handleConnectAccount = async (account: TelegramAccount) => {
+  const handleConnectAccount = async (acc: TelegramAccount) => {
     try {
-      await telegramAPI.connectAccount(account.id);
+      await telegramAPI.connectAccount(acc.id);
       await loadAccounts();
-
-      // If this is the current account, load its conversations
-      if (currentAccount && currentAccount.id === account.id) {
-        loadConversations(account.id);
-      }
-    } catch (error: any) {
-      console.error('Failed to connect account:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to connect to Telegram';
-      alert(errorMessage);
-    }
+      if (currentAccount?.id === acc.id) loadConversations(acc.id);
+    } catch (e: any) { alert(e.response?.data?.detail || e.message); }
   };
 
-  const handleDisconnectAccount = async (account: TelegramAccount) => {
+  const handleDisconnectAccount = async (acc: TelegramAccount) => {
     try {
-      await telegramAPI.disconnectAccount(account.id);
+      await telegramAPI.disconnectAccount(acc.id);
       await loadAccounts();
-
-      // If this is the current account, clear conversations
-      if (currentAccount && currentAccount.id === account.id) {
-        setConversations([]);
-        setCurrentConversation(null);
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error('Failed to disconnect account:', error);
-    }
+      if (currentAccount?.id === acc.id) { setConversations([]); setCurrentConversation(null); setMessages([]); }
+    } catch (e) { console.error(e); }
   };
 
-  const handleEditAccount = (account: TelegramAccount) => {
-    setEditingAccount(account);
-    setShowEditAccountModal(true);
+  const handleEditAccount = (acc: TelegramAccount) => { setEditingAccount(acc); setShowEditAccountModal(true); };
+
+  const handleHardDelete = (acc: TelegramAccount) => {
+    setAccountToDelete(acc);
   };
 
-  const handleHardDelete = async (account: TelegramAccount) => {
-    if (!confirm(`Delete "${account.displayName || account.accountName}"? This cannot be undone.`)) return;
+  const confirmHardDelete = async () => {
+    if (!accountToDelete) return;
     try {
-      await telegramAPI.deleteAccount(account.id);
-      // If this was the active account, clear UI
-      if (currentAccount?.id === account.id) {
+      await telegramAPI.deleteAccount(accountToDelete.id);
+      if (currentAccount?.id === accountToDelete.id) {
         setCurrentAccount(null);
         setCurrentConversation(null);
         setConversations([]);
         setMessages([]);
       }
       await loadAccounts();
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-      alert('Failed to delete account.');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAccountToDelete(null);
     }
   };
 
-  const handleSendMessage = async (text: string) => {
+  const handleReact = async (mid: number, emoji: string) => {
     if (!currentAccount || !currentAccount.isConnected || !currentConversation) return;
-
-    // Create an optimistic local message
-    const tempMessage: TelegramMessage = {
-      id: -Date.now(), // Negative ID for temporary message
-      conversation_id: currentConversation.id,
-      telegram_message_id: 0,
-      sender_name: currentAccount.displayName || currentAccount.accountName,
-      sender_username: currentAccount.accountName,
-      peer_title: currentConversation.title || 'Chat',
-      type: 'text',
-      original_text: text,
-      translated_text: text,
-      source_language: currentAccount.targetLanguage, // Local is usually target
-      target_language: currentAccount.sourceLanguage,
-      created_at: new Date().toISOString(),
-      is_outgoing: true,
-    };
-
-    // Add instantly to UI
-    setMessages(prev => [...prev, tempMessage]);
-
     try {
-      // Send message to backend
-      const response = await messagesAPI.sendMessage(
-        currentConversation.id,
-        text,
-        true // translate the message
-      );
+      setMessages(prev => prev.map(m => m.id === mid ? { ...m, reactions: { ...(m.reactions || {}), [emoji]: ((m.reactions || {})[emoji] || 0) + 1 } } : m));
+      await messagesAPI.reactToMessage(mid, emoji);
+    } catch (e) { console.error(e); }
+  };
 
-      // Replace temp message with server message
-      if (response && response.id) {
-        setMessages(prev =>
-          prev.map(msg => msg.id === tempMessage.id ? response : msg)
-        );
-      }
-
-      console.log('Message sent successfully:', response);
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      // Remove temp message on error
-      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
-      alert('Failed to send message. Please check your connection.');
-    }
+  const handleSendMessage = async (text: string, replyId?: number) => {
+    if (!currentAccount || !currentAccount.isConnected || !currentConversation) return;
+    const replied = replyId ? messages.find(m => m.telegram_message_id === replyId) : null;
+    const temp: TelegramMessage = {
+      id: -Date.now(), conversation_id: currentConversation.id, telegram_message_id: 0,
+      sender_name: currentAccount.displayName || currentAccount.accountName,
+      sender_username: currentAccount.accountName, peer_title: currentConversation.title || 'Chat',
+      type: 'text', original_text: text, translated_text: text,
+      source_language: currentAccount.targetLanguage, target_language: currentAccount.sourceLanguage,
+      created_at: new Date().toISOString(), is_outgoing: true, reply_to_telegram_id: replyId,
+      reply_to_text: replied ? (replied.translated_text || replied.original_text) : undefined,
+      reply_to_sender: replied ? replied.sender_name : undefined
+    };
+    setMessages(prev => [...prev, temp]);
+    try {
+      const res = await messagesAPI.sendMessage(currentConversation.id, text, true, replyId);
+      if (res && res.id) setMessages(prev => prev.map(m => m.id === temp.id ? res : m));
+    } catch (e) { setMessages(prev => prev.filter(m => m.id !== temp.id)); alert('Failed'); }
   };
 
   const handleSendMedia = async (file: File, caption: string) => {
     if (!currentAccount || !currentAccount.isConnected || !currentConversation) return;
-
-    const tempId = -Date.now();
-    const tempMessage: TelegramMessage = {
-      id: tempId,
-      conversation_id: currentConversation.id,
-      telegram_message_id: 0,
+    const tid = -Date.now();
+    const temp: TelegramMessage = {
+      id: tid, conversation_id: currentConversation.id, telegram_message_id: 0,
       sender_name: currentAccount.displayName || currentAccount.accountName,
-      sender_username: currentAccount.accountName,
-      peer_title: currentConversation.title || 'Chat',
+      sender_username: currentAccount.accountName, peer_title: currentConversation.title || 'Chat',
       type: file.type.startsWith('image/') ? 'photo' : (file.type.startsWith('video/') ? 'video' : 'document'),
-      original_text: caption,
-      translated_text: caption,
-      created_at: new Date().toISOString(),
-      is_outgoing: true,
-      has_media: true,
-      media_file_name: file.name
+      original_text: caption, translated_text: caption, created_at: new Date().toISOString(),
+      is_outgoing: true, has_media: true, media_file_name: file.name
     };
-
-    setMessages(prev => [...prev, tempMessage]);
-
+    setMessages(prev => [...prev, temp]);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('conversation_id', currentConversation.id.toString());
-      formData.append('caption', caption);
-
-      const response = await messagesAPI.sendMedia(formData);
-
-      if (response && response.id) {
-        setMessages(prev =>
-          prev.map(msg => msg.id === tempId ? response : msg)
-        );
-      }
-    } catch (error) {
-      console.error('Failed to send media:', error);
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      alert('Failed to send media. Please check your connection.');
-    }
+      const fd = new FormData(); fd.append('file', file); fd.append('conversation_id', currentConversation.id.toString()); fd.append('caption', caption);
+      const res = await messagesAPI.sendMedia(fd);
+      if (res && res.id) setMessages(prev => prev.map(m => m.id === tid ? res : m));
+    } catch (e) { setMessages(prev => prev.filter(m => m.id !== tid)); alert('Failed'); }
   };
 
-  const handleLeaveConversation = async (conversationId: number) => {
+  const handleLeaveConversation = async (id: number) => {
     try {
-      await telegramAPI.leaveConversation(conversationId);
-      setConversations(prev => prev.filter(c => c.id !== conversationId));
-      if (currentConversation?.id === conversationId) {
-        setCurrentConversation(null);
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error('Failed to leave conversation:', error);
-    }
+      await telegramAPI.leaveConversation(id);
+      setConversations(prev => prev.filter(c => c.id !== id));
+      if (messageCache.current[id]) delete messageCache.current[id];
+      if (currentConversation?.id === id) { setCurrentConversation(null); setMessages([]); }
+    } catch (e) { console.error(e); }
   };
 
-  const handleDeleteConversation = async (conversationId: number) => {
+  const handleDeleteConversation = async (id: number) => {
     try {
-      await telegramAPI.deleteConversation(conversationId);
-      setConversations(prev => prev.filter(c => c.id !== conversationId));
-      if (currentConversation?.id === conversationId) {
-        setCurrentConversation(null);
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
-    }
+      await telegramAPI.deleteConversation(id);
+      setConversations(prev => prev.filter(c => c.id !== id));
+      if (messageCache.current[id]) delete messageCache.current[id];
+      if (currentConversation?.id === id) { setCurrentConversation(null); setMessages([]); }
+    } catch (e) { console.error(e); }
   };
 
-  const handleDeleteMessages = async (conversationId: number, messageIds: number[], revoke: boolean) => {
-    try {
-      await messagesAPI.deleteMessages(conversationId, messageIds, revoke);
-      // Remove already handled by WebSocket normally, but we can do it optimistically
-      setMessages(prev => prev.filter(msg => !messageIds.includes(msg.id)));
-    } catch (error) {
-      console.error('Failed to delete messages:', error);
-      throw error;
-    }
+  const handleDeleteMessages = async (id: number, mids: number[], revoke: boolean) => {
+    try { await messagesAPI.deleteMessages(id, mids, revoke); setMessages(prev => prev.filter(m => !mids.includes(m.id))); } catch (e) { throw e; }
   };
 
-  // Loading screen
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center transition-colors duration-500">
@@ -660,50 +448,25 @@ function App() {
     );
   }
 
-  // Authentication screens
   if (!isAuthenticated) {
     return (
       <Router>
         <Routes>
-          <Route
-            path="/login"
-            element={
-              <LoginForm onSwitchToRegister={() => setAuthMode('register')} />
-            }
-          />
+          <Route path="/login" element={<LoginForm onSwitchToRegister={() => setAuthMode('register')} />} />
           <Route path="/logout" element={<Logout />} />
-          <Route
-            path="/register"
-            element={
-              <RegisterForm onSwitchToLogin={() => setAuthMode('login')} />
-            }
-          />
-          <Route
-            path="*"
-            element={
-              authMode === 'login' ? (
-                <LoginForm onSwitchToRegister={() => setAuthMode('register')} />
-              ) : (
-                <RegisterForm onSwitchToLogin={() => setAuthMode('login')} />
-              )
-            }
-          />
+          <Route path="/register" element={<RegisterForm onSwitchToLogin={() => setAuthMode('login')} />} />
+          <Route path="*" element={authMode === 'login' ? <LoginForm onSwitchToRegister={() => setAuthMode('register')} /> : <RegisterForm onSwitchToLogin={() => setAuthMode('login')} />} />
         </Routes>
       </Router>
     );
   }
 
-  // Main application
   return (
     <Router>
       <div className="h-screen flex flex-col bg-telegram-side-list-light dark:bg-telegram-side-list-dark transition-colors duration-500 text-gray-900 dark:text-white">
         <Header onStartTour={() => setShowTour(true)} />
-
         <Routes>
-          {/* Auto-Responder Page */}
           <Route path="/auto-responder" element={<AutoResponderPage />} />
-
-          {/* Main Chat Interface */}
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden">
               <Sidebar
@@ -747,71 +510,48 @@ function App() {
                     await telegramAPI.joinConversation(id);
                     if (currentAccount) {
                       await loadConversations(currentAccount.id);
-                      // Update current conversation state to reflect it's no longer hidden
                       setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
-                      // Immediately load any already-saved messages
                       loadMessages(id);
-                      // Backend fetches history in background (with translation), reload after 5s to catch them
-                      setTimeout(() => loadMessages(id), 5000);
+                      setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
                     }
-                  } catch (error) {
-                    console.error('Failed to join conversation:', error);
-                  }
+                  } catch (e) { console.error(e); }
                 }}
                 onToggleMute={async (id) => {
                   try {
                     const result = await telegramAPI.toggleMute(id);
                     setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
                     setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
-                  } catch (error) {
-                    console.error('Failed to toggle mute:', error);
-                  }
+                  } catch (e) { console.error(e); }
                 }}
                 onLeaveConversation={handleLeaveConversation}
+                onDeleteConversation={handleDeleteConversation}
                 onDeleteMessages={handleDeleteMessages}
                 hasMoreMessages={hasMoreMessages}
                 onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
+                onReact={handleReact}
+                scheduledMessages={scheduledMessages}
+                setScheduledMessages={setScheduledMessages}
+                conversations={conversations}
               />
             </div>
           } />
         </Routes>
 
-        {/* Modals */}
-        <AddAccountModal
-          isOpen={showAddAccountModal}
-          onClose={() => setShowAddAccountModal(false)}
-          onSuccess={loadAccounts}
+        <AddAccountModal isOpen={showAddAccountModal} onClose={() => setShowAddAccountModal(false)} onSuccess={loadAccounts} />
+        <EditAccountModal isOpen={showEditAccountModal} account={editingAccount} onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }} onSuccess={loadAccounts} />
+        <ProfileModal isOpen={showProfileModal} account={profileAccount} onClose={() => { setShowProfileModal(false); setProfileAccount(null); }} />
+        <ActiveSessionsModal isOpen={showSessionsModal} account={sessionsAccount} onClose={() => { setShowSessionsModal(false); setSessionsAccount(null); }} />
+        <ConfirmModal
+          isOpen={!!accountToDelete}
+          onClose={() => setAccountToDelete(null)}
+          onConfirm={confirmHardDelete}
+          title="Delete Account"
+          message={`Are you sure you want to delete "${accountToDelete?.displayName || accountToDelete?.accountName}"? This action cannot be undone.`}
+          confirmText="Delete"
+          type="danger"
         />
-        <EditAccountModal
-          isOpen={showEditAccountModal}
-          account={editingAccount}
-          onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }}
-          onSuccess={loadAccounts}
-        />
+        <UserGuideTour isOpen={showTour} onClose={() => setShowTour(false)} hasAccounts={accounts.length > 0} hasConversation={!!currentConversation} currentStep={tourStep} onStepChange={setTourStep} />
 
-        <ProfileModal
-          isOpen={showProfileModal}
-          account={profileAccount}
-          onClose={() => { setShowProfileModal(false); setProfileAccount(null); }}
-        />
-
-        <ActiveSessionsModal
-          isOpen={showSessionsModal}
-          account={sessionsAccount}
-          onClose={() => { setShowSessionsModal(false); setSessionsAccount(null); }}
-        />
-
-        {/* User Guide Tour */}
-        <UserGuideTour
-          isOpen={showTour}
-          onClose={() => setShowTour(false)}
-          hasAccounts={accounts.length > 0}
-          hasConversation={!!currentConversation}
-          currentStep={tourStep}
-          onStepChange={setTourStep}
-        />
-
-        {/* Real-time notification popup - Refined Telegram Style */}
         {notification && (
           <div className="fixed bottom-8 right-8 z-[9000] animate-slide-up pointer-events-none">
             <div
@@ -821,11 +561,7 @@ function App() {
               <div className="flex items-center space-x-4">
                 <div className="relative flex-shrink-0">
                   {notification.avatar ? (
-                    <img
-                      src={notification.avatar}
-                      alt=""
-                      className="w-14 h-14 rounded-full object-cover border-2 border-gray-100 dark:border-gray-700"
-                    />
+                    <img src={notification.avatar} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-gray-100 dark:border-gray-700" />
                   ) : (
                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-black text-xl shadow-lg border-2 border-gray-100 dark:border-gray-700">
                       {notification.title.charAt(0)}

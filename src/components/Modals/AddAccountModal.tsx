@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { X, Upload, Loader, AlertCircle } from 'lucide-react';
+import { X, Loader, AlertCircle } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 
 interface AddAccountFormData {
@@ -139,89 +139,79 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] transition-opacity duration-300">
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden transform transition-all animate-scale-in">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-          <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Add Telegram Account</h2>
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-[60] animate-fade-in" onClick={handleClose}>
+      <div className="bg-white dark:bg-[#212121] rounded-xl max-w-md w-full shadow-xl overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5">
+          <h3 className="text-[19px] font-medium text-gray-900 dark:text-white">Add Telegram Account</h3>
           <button
             id="modal-close-btn"
             onClick={handleClose}
             disabled={loading}
-            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-gray-700 p-2 rounded-xl transition-all duration-300"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded-full transition-colors"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5">
           {error && (
-            <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl flex items-center space-x-3 text-red-600 dark:text-red-400 animate-shake">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-bold">{error}</p>
+            <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg flex items-center space-x-2 text-red-600 dark:text-red-400">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <p className="text-sm font-medium">{error}</p>
             </div>
           )}
 
-          <div className="space-y-2">
-            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+          <div className="space-y-1.5">
+            <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
               TData Archive (Zip/Rar)
             </label>
-            <div id="tdata-upload-box" className="relative group">
+            <div id="tdata-upload-box" className="relative">
               <input
                 ref={fileInputRef}
                 type="file"
                 onChange={(e) => handleFileChange(e.target.files)}
-                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:text-[10px] file:font-black file:uppercase file:tracking-widest hover:file:bg-blue-700 transition-all focus:ring-4 focus:ring-blue-500/10 disabled:opacity-50"
+                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[#3390ec]/20 file:text-[#3390ec] file:text-[11px] file:font-medium transition-all focus:ring-1 focus:ring-[#3390ec] disabled:opacity-50 text-sm"
                 accept=".zip,.rar"
                 disabled={loading || validating}
               />
               {validating && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                  <Loader className="w-5 h-5 animate-spin text-blue-500" />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader className="w-4 h-4 animate-spin text-[#3390ec]" />
                 </div>
               )}
             </div>
-            {validating && (
-              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">
-                Validating session...
-              </p>
-            )}
             {validationInfo && !error && (
-              <p className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest flex items-center">
-                <span className="mr-1.5 text-lg">✓</span> Session found: {validationInfo.accountName}
-              </p>
-            )}
-            {!validating && !validationInfo && !error && (
-              <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
-                Upload your Telegram TData folder as a zip archive
+              <p className="text-[11px] font-medium text-green-500 ml-1">
+                ✓ Session found: {validationInfo.accountName}
               </p>
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+          <div className="space-y-1.5">
+            <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
               Account Display Name
             </label>
             <input
               {...register('displayName', { required: 'Display name is required' })}
               id="display-name-input"
               type="text"
-              className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm transition-all"
               placeholder="e.g., Marketing Team"
               disabled={loading}
             />
             {errors.displayName && (
-              <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">{errors.displayName.message}</p>
+              <p className="text-[11px] text-red-500 ml-1">{errors.displayName.message}</p>
             )}
           </div>
 
           <div id="language-selection-container" className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
                 Source
               </label>
               <select
                 {...register('sourceLanguage')}
-                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm appearance-none cursor-pointer"
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
                 <option value="auto">Auto-detect</option>
@@ -235,13 +225,13 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
                 Target
               </label>
               <select
                 {...register('targetLanguage')}
-                className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-sm appearance-none cursor-pointer"
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
                 <option value="en">English</option>
@@ -255,12 +245,12 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             </div>
           </div>
 
-          <div className="flex space-x-3 pt-4">
+          <div className="flex items-center justify-end space-x-2 pt-4">
             <button
               type="button"
               onClick={handleClose}
               disabled={loading}
-              className="flex-1 px-4 py-4 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all"
+              className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
             >
               Cancel
             </button>
@@ -268,18 +258,12 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
               type="submit"
               id="modal-add-btn"
               disabled={loading}
-              className="flex-1 px-4 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 text-white rounded-2xl shadow-xl shadow-blue-600/30 transition-all font-black uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2"
+              className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center justify-center min-w-[120px]"
             >
               {loading ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  <span>Processing...</span>
-                </>
+                <div className="w-4 h-4 border-2 border-[#3390ec]/30 border-t-[#3390ec] rounded-full animate-spin" />
               ) : (
-                <>
-                  <Upload className="w-5 h-5" />
-                  <span>Connect Account</span>
-                </>
+                "Connect Account"
               )}
             </button>
           </div>

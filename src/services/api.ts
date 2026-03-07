@@ -321,11 +321,12 @@ export const messagesAPI = {
     return response.data;
   },
 
-  sendMessage: async (conversationId: number, text: string, translate: boolean = true) => {
+  sendMessage: async (conversationId: number, text: string, translate: boolean = true, reply_to_message_id?: number) => {
     const response = await api.post('/messages/send', {
       conversation_id: conversationId,
       text,
-      translate
+      translate,
+      reply_to_message_id
     });
     return response.data;
   },
@@ -336,6 +337,23 @@ export const messagesAPI = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  },
+
+  forwardMessages: async (sourceConversationId: number, targetConversationId: number, messageIds: number[]): Promise<{ forwarded: number }> => {
+    const formData = new FormData();
+    formData.append('source_conversation_id', String(sourceConversationId));
+    formData.append('target_conversation_id', String(targetConversationId));
+    formData.append('message_ids', messageIds.join(','));
+    const response = await api.post('/messages/forward', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+    return response.data;
+  },
+
+  reactToMessage: async (messageId: number, emoji: string) => {
+    const response = await api.post(`/messages/${messageId}/react`, { emoji });
     return response.data;
   },
 

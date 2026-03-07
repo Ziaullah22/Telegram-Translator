@@ -1,0 +1,42 @@
+[
+  {
+    "id": 2539,
+    "telegram_message_id": null,
+    "original_text": "Scheduled message set for 2026-03-06 14:24: \"hi zia\"",
+    "type": "system",
+    "created_at": "2026-03-06T22:23:58.862500+00:00",
+    "is_outgoing": false
+  },
+  {
+    "id": 2537,
+    "telegram_message_id": null,
+    "original_text": "Scheduled message set for 2026-03-06 14:16: \"hello\"",
+    "type": "system",
+    "created_at": "2026-03-06T22:15:33.522726+00:00",
+    "is_outgoing": false
+  },
+  {
+    "id": 2535,
+    "telegram_message_id": null,
+    "original_text": "Scheduled message set for 2026-03-06 14:03: \"hello\"",
+    "type": "system",
+    "created_at": "2026-03-06T22:02:43.305337+00:00",
+    "is_outgoing": false
+  },
+  {
+    "id": 2534,
+    "telegram_message_id": null,
+    "original_text": "Scheduled message manually cancelled (was scheduled for 2026-03-07 13:41): \"Hello zia\"",
+    "type": "system",
+    "created_at": "2026-03-06T22:02:34.742449+00:00",
+    "is_outgoing": false
+  },
+  {
+    "id": 2533,
+    "telegram_message_id": null,
+    "original_text": "Scheduled message manually cancelled (was scheduled for 2026-03-06 22:03): \"hello\"",
+    "type": "system",
+    "created_at": "2026-03-06T22:02:17.587104+00:00",
+    "is_outgoing": false
+  }
+]

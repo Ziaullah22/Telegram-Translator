@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Power, PowerOff, Image, Video, X } from 'lucide-rea
 import { autoResponderAPI } from '../../services/api';
 import type { AutoResponderRule } from '../../types';
 import AutoResponderModal from './AutoResponderModal.tsx';
+import ConfirmModal from '../Modals/ConfirmModal';
 
 export default function AutoResponderPage() {
   const [rules, setRules] = useState<AutoResponderRule[]>([]);
@@ -10,6 +11,7 @@ export default function AutoResponderPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<AutoResponderRule | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ruleToDelete, setRuleToDelete] = useState<number | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -38,14 +40,20 @@ export default function AutoResponderPage() {
     setShowModal(true);
   };
 
-  const handleDelete = async (ruleId: number) => {
-    if (!confirm('Are you sure you want to delete this rule?')) return;
+  const handleDelete = (ruleId: number) => {
+    setRuleToDelete(ruleId);
+  };
+
+  const confirmDelete = async () => {
+    if (ruleToDelete === null) return;
     try {
-      await autoResponderAPI.deleteRule(ruleId);
+      await autoResponderAPI.deleteRule(ruleToDelete);
       await loadRules();
     } catch (err: any) {
       console.error('Failed to delete rule:', err);
       alert('Failed to delete rule');
+    } finally {
+      setRuleToDelete(null);
     }
   };
 
@@ -228,6 +236,15 @@ export default function AutoResponderPage() {
           rule={editingRule}
         />
       )}
+      <ConfirmModal
+        isOpen={ruleToDelete !== null}
+        onClose={() => setRuleToDelete(null)}
+        onConfirm={confirmDelete}
+        title="Delete Rule"
+        message="Are you sure you want to delete this auto-responder rule? This action cannot be undone."
+        confirmText="Delete"
+        type="danger"
+      />
     </div>
   );
 }
