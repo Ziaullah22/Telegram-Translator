@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, Trash2, CheckSquare, Reply, Forward, Play } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -503,9 +503,11 @@ export default function ChatWindow({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteForEveryone] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ message: TelegramMessage; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ message: TelegramMessage; x: number; y: number; showAbove: boolean } | null>(null);
   const [replyMessage, setReplyMessage] = useState<TelegramMessage | null>(null);
   const [forwardMessage, setForwardMessage] = useState<TelegramMessage | null>(null);
+  const [reactingToMessageId, setReactingToMessageId] = useState<number | null>(null);
+  const [reactionAnchor, setReactionAnchor] = useState<{ x: number; y: number; showAbove: boolean } | null>(null);
   const emojiStrip = ['❤️', '🔥', '👍', '😂', '😍', '🙏'];
   const inputRef = useRef<HTMLInputElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -518,6 +520,19 @@ export default function ChatWindow({
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
   }, []);
+
+  // Lock scroll when context menu or reaction picker is open
+  useEffect(() => {
+    const isActive = !!contextMenu || (!!reactingToMessageId && showEmojiPicker);
+    if (isActive) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [contextMenu, reactingToMessageId, showEmojiPicker, reactionAnchor]);
 
   const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -570,8 +585,13 @@ export default function ChatWindow({
   }, []);
 
   const addEmoji = (emoji: string) => {
-    setNewMessage(prev => prev + emoji);
-    // Keep focus on input if possible, but for simplicity just toggle for now
+    if (reactingToMessageId !== null) {
+      if (onReact) onReact(reactingToMessageId, emoji);
+      setReactingToMessageId(null);
+      setShowEmojiPicker(false);
+    } else {
+      setNewMessage(prev => prev + emoji);
+    }
   };
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
@@ -1030,26 +1050,76 @@ export default function ChatWindow({
 
   return (
     <div id="chat-window" className="relative flex-1 flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
-      {/* Selection Mode Header overlay */}
+      {/* Selection Mode Header Bar - Telegram style: CANCEL (left) | FORWARD DELETE (right) */}
       {isSelectionMode && (
-        <div className="absolute top-0 left-0 right-0 h-14 bg-white dark:bg-[#212121] z-50 flex items-center justify-between px-4 shadow-sm border-b border-gray-100 dark:border-white/5 transition-all">
-          <div className="flex items-center space-x-4">
-            <button onClick={cancelSelection} className="text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 p-2 rounded-full transition-colors flex items-center justify-center">
-              <X className="w-5 h-5" />
+        <div className="absolute top-0 left-0 right-0 z-50 bg-white dark:bg-[#212121] border-b border-gray-100 dark:border-white/5 shadow-sm flex items-center justify-between px-4 py-0" style={{ height: '72px' }}>
+          {/* Left side: Cancel as plain text */}
+          <button
+            onClick={cancelSelection}
+            className="flex items-center space-x-2 px-3 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-semibold rounded-md transition-colors uppercase text-[15px] tracking-wide"
+          >
+            <X className="w-6 h-6 mr-1" />
+            <span>Cancel</span>
+          </button>
+
+          {/* Right side: Forward + Delete as filled buttons grouped together */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                const msgs = messages.filter(m => selectedMessages.includes(m.id));
+                if (msgs.length > 0) setForwardMessage(msgs[0]);
+              }}
+              disabled={selectedMessages.length === 0}
+              className="flex items-center space-x-1.5 px-4 py-1.5 bg-[#40a7e3] hover:bg-[#3396d1] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
+            >
+              <span>Forward {selectedMessages.length > 0 ? selectedMessages.length : ''}</span>
             </button>
-            <span className="text-gray-900 dark:text-white font-medium text-[17px]">
-              {selectedMessages.length} {selectedMessages.length === 1 ? 'message' : 'messages'}
-            </span>
-          </div>
-          <div className="flex items-center">
             <button
               onClick={handleDeleteSelected}
               disabled={selectedMessages.length === 0}
-              className="text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 p-2 rounded-full transition-colors disabled:opacity-50"
-              title="Delete"
+              className="flex items-center space-x-1.5 px-4 py-1.5 bg-[#40a7e3] hover:bg-[#3396d1] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
             >
-              <Trash className="w-5 h-5" />
+              <span>Delete {selectedMessages.length > 0 ? selectedMessages.length : ''}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reaction Emoji Picker Popover */}
+      {reactingToMessageId && showEmojiPicker && (
+        <div
+          className="fixed z-[300] animate-scale-in"
+          style={{
+            top: reactionAnchor?.y ? (reactionAnchor.showAbove ? Math.max(80, reactionAnchor.y - 12) : Math.min(window.innerHeight - 420, reactionAnchor.y + 12)) : '50%',
+            left: reactionAnchor?.x || '50%',
+            transform: reactionAnchor?.showAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white dark:bg-[#212121] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl w-[320px] h-[400px] flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
+              <span className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Reactions</span>
+              <button onClick={() => { setShowEmojiPicker(false); setReactingToMessageId(null); setReactionAnchor(null); }} className="hover:bg-gray-100 dark:hover:bg-white/5 p-1 rounded-lg">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 grid grid-cols-6 gap-2 custom-scrollbar">
+              {emojis.flatMap(g => g.items).map((emoji, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    if (onReact) onReact(reactingToMessageId, emoji);
+                    setReactingToMessageId(null);
+                    setShowEmojiPicker(false);
+                    setReactionAnchor(null);
+                    setContextMenu(null);
+                  }}
+                  className="w-11 h-11 flex items-center justify-center text-2xl hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all hover:scale-125"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1094,115 +1164,133 @@ export default function ChatWindow({
       {/* Context Menu */}
       {contextMenu && (
         <div
-          className="fixed z-[200] w-52 bg-white dark:bg-[#232323] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-scale-in"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-[200] flex flex-col items-center animate-scale-in"
+          style={{
+            top: contextMenu.showAbove ? contextMenu.y - 4 : contextMenu.y + 12,
+            left: contextMenu.x,
+            transform: contextMenu.showAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Emoji reaction strip */}
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 dark:border-white/5">
+          {/* Reaction Bubble (Above) */}
+          <div className="relative mb-2 px-1.5 py-1.5 bg-white dark:bg-[#212121] border border-gray-100 dark:border-white/10 rounded-full shadow-xl flex items-center space-x-1">
             {emojiStrip.map((emoji) => (
               <button
                 key={emoji}
                 onClick={() => {
-                  if (onReact) {
-                    onReact(contextMenu.message.id, emoji);
-                  }
+                  if (onReact) onReact(contextMenu.message.id, emoji);
                   setContextMenu(null);
                 }}
-                className="text-[22px] hover:scale-125 transition-transform px-0.5"
-                title={`React with ${emoji}`}
+                className="w-10 h-10 flex items-center justify-center text-[24px] hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all hover:scale-125"
               >
                 {emoji}
               </button>
             ))}
             <button
-              onClick={() => setContextMenu(null)}
-              className="text-[22px] hover:scale-125 transition-transform px-0.5 opacity-50"
-              title="More"
-            >+</button>
-          </div>
-
-          {/* Reply */}
-          <button
-            onClick={() => {
-              setReplyMessage(contextMenu.message);
-              setContextMenu(null);
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <Reply className="w-[18px] h-[18px] text-gray-500" />
-            <span className="text-[15px]">Reply</span>
-          </button>
-
-          {/* Copy */}
-          <button
-            onClick={() => {
-              const text = contextMenu.message.translated_text || contextMenu.message.original_text || '';
-              navigator.clipboard.writeText(text).catch(() => { });
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <Copy className="w-[18px] h-[18px] text-gray-500" />
-            <span className="text-[15px]">Copy</span>
-          </button>
-
-          {/* Save Image (only for photo messages) */}
-          {(contextMenu.message.type === 'photo' || contextMenu.message.type === 'video') && (
-            <button
               onClick={() => {
-                handleDownloadMedia(contextMenu.message);
+                const mid = contextMenu.message.id;
+                setReactionAnchor({ x: contextMenu.x, y: contextMenu.y, showAbove: contextMenu.showAbove });
+                setReactingToMessageId(mid);
+                setShowEmojiPicker(true);
                 setContextMenu(null);
               }}
-              className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-white/10 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
             >
-              <Download className="w-[18px] h-[18px] text-gray-500" />
-              <span className="text-[15px]">{contextMenu.message.type === 'video' ? 'Save Video' : 'Save Image'}</span>
+              <ChevronDown className="w-5 h-5" />
             </button>
-          )}
 
-          {/* Forward */}
-          <button
-            onClick={() => {
-              setForwardMessage(contextMenu.message);
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <Forward className="w-[18px] h-[18px] text-gray-500" />
-            <span className="text-[15px]">Forward</span>
-          </button>
+            {/* Pointer / Tail for reaction bubble (only when showing above) */}
+            {contextMenu.showAbove && (
+              <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-white dark:bg-[#212121] border-r border-b border-gray-100 dark:border-white/10 rotate-45" />
+            )}
+            {!contextMenu.showAbove && (
+              <div className="absolute -top-1.5 right-6 w-3 h-3 bg-white dark:bg-[#212121] border-l border-t border-gray-100 dark:border-white/10 rotate-45" />
+            )}
+          </div>
 
-          <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
+          {/* Main Action Menu */}
+          <div className="w-[220px] bg-white dark:bg-[#212121] border border-gray-100 dark:border-white/10 rounded-[20px] shadow-2xl overflow-hidden py-1">
+            {/* Reply */}
+            <button
+              onClick={() => {
+                setReplyMessage(contextMenu.message);
+                setContextMenu(null);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
+            >
+              <Reply className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-white" />
+              <span className="text-[15px] font-medium">Reply</span>
+            </button>
 
-          {/* Select */}
-          <button
-            onClick={() => {
-              setIsSelectionMode(true);
-              setSelectedMessages([contextMenu.message.id]);
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <CheckSquare className="w-[18px] h-[18px] text-gray-500" />
-            <span className="text-[15px]">Select</span>
-          </button>
 
-          <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
+            {/* Copy Text */}
+            <button
+              onClick={() => {
+                const text = contextMenu.message.translated_text || contextMenu.message.original_text || '';
+                navigator.clipboard.writeText(text).catch(() => { });
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
+            >
+              <Copy className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-white" />
+              <span className="text-[15px] font-medium">Copy Text</span>
+            </button>
 
-          {/* Delete */}
-          <button
-            onClick={() => {
-              setSelectedMessages([contextMenu.message.id]);
-              setShowDeleteConfirm(true);
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2.5 flex items-center space-x-3 text-[#e53935] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <Trash className="w-[18px] h-[18px]" />
-            <span className="text-[15px]">Delete</span>
-          </button>
+            {/* Forward */}
+            <button
+              onClick={() => {
+                setForwardMessage(contextMenu.message);
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
+            >
+              <Forward className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-white" />
+              <span className="text-[15px] font-medium">Forward</span>
+            </button>
+
+            {/* Save Image (conditional) */}
+            {(contextMenu.message.type === 'photo' || contextMenu.message.type === 'video') && (
+              <button
+                onClick={() => {
+                  handleDownloadMedia(contextMenu.message);
+                  setContextMenu(null);
+                }}
+                className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
+              >
+                <Download className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-white" />
+                <span className="text-[15px] font-medium">{contextMenu.message.type === 'video' ? 'Save Video' : 'Save Image'}</span>
+              </button>
+            )}
+
+            {/* Delete */}
+            <button
+              onClick={() => {
+                setSelectedMessages([contextMenu.message.id]);
+                setShowDeleteConfirm(true);
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-4 text-[#e53935] hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors group"
+            >
+              <Trash className="w-5 h-5 text-[#e53935]/70 group-hover:text-[#e53935]" />
+              <span className="text-[15px] font-medium">Delete</span>
+            </button>
+
+            <div className="my-1 border-t border-gray-100 dark:border-white/5 mx-2" />
+
+            {/* Select */}
+            <button
+              onClick={() => {
+                setIsSelectionMode(true);
+                setSelectedMessages([contextMenu.message.id]);
+                setContextMenu(null);
+              }}
+              className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
+            >
+              <CheckCircle2 className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-white" />
+              <span className="text-[15px] font-medium">Select</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -1216,26 +1304,17 @@ export default function ChatWindow({
             <span className="font-medium">Contact information saved successfully!</span>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Chat header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10 transition-colors duration-200 relative min-h-[72px]">
+        {/* In selection mode, the absolute overlay above covers the header — just show as normal */}
         {isSelectionMode ? (
-          <div className="absolute inset-0 flex items-center justify-between px-6 bg-white dark:bg-gray-800 animate-fade-in z-20">
-            <div className="flex items-center space-x-6">
-              <button onClick={cancelSelection} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-1.5 rounded-full transition-colors focus:bg-gray-100 dark:focus:bg-gray-700 outline-none">
-                <X className="w-6 h-6" />
-              </button>
-              <span className="text-[17px] font-semibold text-gray-900 dark:text-white">
-                {selectedMessages.length} message{selectedMessages.length !== 1 && 's'} selected
-              </span>
-            </div>
-            <button
-              onClick={cancelSelection}
-              className="text-[#419FD9] hover:bg-[#419FD9]/10 rounded-md px-4 py-2 font-medium uppercase text-sm tracking-wide transition-colors outline-none"
-            >
-              Clear
-            </button>
+          <div className="flex items-center space-x-6 animate-fade-in">
+            <span className="text-[17px] font-semibold text-gray-900 dark:text-white">
+              {selectedMessages.length} message{selectedMessages.length !== 1 && 's'} selected
+            </span>
           </div>
         ) : (
           <div className="flex items-center justify-between animate-fade-in">
@@ -1351,7 +1430,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 relative overflow-hidden dark:bg-[#0E1621] chat-telegram-bg">
+      <div className={`flex-1 relative overflow-hidden dark:bg-[#0E1621] chat-telegram-bg ${(!!contextMenu || (!!reactingToMessageId && showEmojiPicker)) ? 'pointer-events-none !overflow-hidden' : ''}`}>
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <Languages className="w-16 h-16 text-gray-600 mx-auto mb-4" />
@@ -1429,7 +1508,7 @@ export default function ChatWindow({
                 <div
                   key={message.id}
                   data-tg-id={message.telegram_message_id}
-                  className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group px-6 py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
+                  className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group pl-14 pr-6 py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
                     }`}
                   onClick={(e) => {
                     if (isSelectionMode) {
@@ -1440,23 +1519,52 @@ export default function ChatWindow({
                   onContextMenu={(e) => {
                     if (message.type === 'system' || (message as any).is_scheduled_virtual) return;
                     e.preventDefault();
+                    e.stopPropagation();
                     if (isSelectionMode) {
                       toggleMessageSelection(message.id);
                     } else {
+                      // Find the message bubble (standard or emoji-only)
+                      const bubble = e.currentTarget.querySelector('.px-3.py-2, .py-1.px-1');
+                      const bubbleRect = bubble?.getBoundingClientRect();
+
                       let x = e.clientX;
                       let y = e.clientY;
-                      if (x + 208 > window.innerWidth) x = window.innerWidth - 208 - 8;
-                      if (y + 340 > window.innerHeight) y = window.innerHeight - 340 - 8;
-                      setContextMenu({ message, x, y });
+                      const menuWidth = 220;
+                      let showAbove = y > window.innerHeight / 2;
+                      // Forced downward if near the top (header)
+                      if (y - 320 < 72) showAbove = false;
+
+                      if (bubbleRect) {
+                        // Empty Side Logic:
+                        // Incoming (Left bubble) -> Empty side is RIGHT
+                        // Outgoing (Right bubble) -> Empty side is LEFT
+                        if (isOutgoing) {
+                          // Place menu to the LEFT of the bubble
+                          x = bubbleRect.left - (menuWidth / 2) - 12;
+                        } else {
+                          // Place menu to the RIGHT of the bubble
+                          x = bubbleRect.right + (menuWidth / 2) + 12;
+                        }
+                      } else {
+                        // Fallback to cursor center-clamping if bubble not found
+                        if (isOutgoing) x = window.innerWidth * 0.3;
+                        else x = window.innerWidth * 0.7;
+                      }
+
+                      // Safety clamping to screen edges
+                      if (x + menuWidth / 2 > window.innerWidth - 12) x = window.innerWidth - menuWidth / 2 - 12;
+                      if (x - menuWidth / 2 < 12) x = menuWidth / 2 + 12;
+
+                      setContextMenu({ message, x, y, showAbove });
                     }
                   }}
                 >
-                  {/* Selection Checkbox */}
+                  {/* Selection Checkbox - left side, outside the bubble */}
                   {isSelectionMode && (
-                    <div className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center justify-center z-10 pointer-events-none">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center z-10 pointer-events-none">
                       <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-all duration-200 ${isSelected
                         ? 'bg-[#419FD9] border-[#419FD9] scale-105'
-                        : 'border-gray-400 dark:border-gray-500 bg-transparent'
+                        : 'border-blue-400 dark:border-blue-400/60 bg-transparent'
                         }`}>
                         {isSelected && (
                           <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -1706,26 +1814,8 @@ export default function ChatWindow({
       {/* Message input */}
       <div id="chat-input-area" className={`bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 transition-colors duration-300 ${isSelectionMode ? 'p-2' : 'px-4 pt-3 pb-4'}`}>
         {isSelectionMode ? (
-          <div className="flex justify-center items-center h-[56px] space-x-4 animate-fade-in">
-            <button
-              onClick={() => {
-                const firstMsg = selectedMessages.length > 0 ? messages.find(m => m.id === selectedMessages[0]) : null;
-                setForwardMessage(firstMsg || null);
-              }}
-              disabled={selectedMessages.length === 0}
-              className="flex items-center space-x-2 text-[#3390ec] hover:bg-[#3390ec]/10 px-8 py-2.5 rounded-lg transition-all font-medium disabled:opacity-50"
-            >
-              <Forward className="w-5 h-5" />
-              <span className="uppercase text-sm tracking-wide">Forward</span>
-            </button>
-            <button
-              onClick={handleDeleteSelected}
-              disabled={selectedMessages.length === 0}
-              className="flex items-center space-x-2 text-[#E53935] hover:bg-[#E53935]/10 px-8 py-2.5 rounded-lg transition-all font-medium disabled:opacity-50"
-            >
-              <Trash className="w-5 h-5" />
-              <span className="uppercase text-sm tracking-wide">Delete</span>
-            </button>
+          <div className="h-14 flex items-center justify-center">
+            <p className="text-[13px] text-gray-400">{selectedMessages.length} selected &mdash; use buttons above to forward or delete</p>
           </div>
         ) : (
           <>
@@ -1855,7 +1945,10 @@ export default function ChatWindow({
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                     <button
                       type="button"
-                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      onClick={() => {
+                        setReactingToMessageId(null);
+                        setShowEmojiPicker(!showEmojiPicker);
+                      }}
                       className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                       title="Emojis"
                     >
@@ -1864,8 +1957,8 @@ export default function ChatWindow({
                     {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
                   </div>
 
-                  {/* Emoji Picker Overlay */}
-                  {showEmojiPicker && (
+                  {/* Emoji Picker Overlay (Input focus) */}
+                  {showEmojiPicker && !reactingToMessageId && (
                     <div
                       ref={pickerRef}
                       style={{
@@ -2000,7 +2093,7 @@ export default function ChatWindow({
         type={confirmModal.type}
       />
       <ForwardMessageModal
-        isOpen={!!forwardMessage || (isSelectionMode && !!forwardMessage)}
+        isOpen={!!forwardMessage}
         onClose={() => {
           setForwardMessage(null);
           if (isSelectionMode) {
@@ -2015,6 +2108,6 @@ export default function ChatWindow({
         currentAccountId={currentAccount?.id}
       />
 
-    </div>
+    </div >
   );
 }

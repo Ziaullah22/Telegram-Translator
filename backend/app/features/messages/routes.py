@@ -12,6 +12,7 @@ from websocket_manager import manager
 import logging
 import os
 import aiofiles
+import json
 
 
 logger = logging.getLogger(__name__)
@@ -585,7 +586,6 @@ async def forward_messages(
     current_user = Depends(get_current_user),
 ):
     """Forward messages (text + media) to another conversation using Telethon native forward"""
-    import json as _json
 
     # Parse message IDs
     try:
@@ -627,7 +627,7 @@ async def forward_messages(
 
     # Get the Telegram message IDs for these local DB IDs
     db_messages = await db.fetch(
-        "SELECT id, telegram_message_id, type, original_text, media_file_name FROM messages WHERE id = ANY($1) AND conversation_id = $2",
+        "SELECT id, telegram_message_id, type, original_text, translated_text, media_file_name FROM messages WHERE id = ANY($1) AND conversation_id = $2",
         local_ids,
         source_conversation_id,
     )
@@ -653,12 +653,17 @@ async def forward_messages(
     saved_messages = []
     now = datetime.utcnow()
     for fw, orig_db_msg in zip(forwarded, db_messages):
+        # fw['text'] is what Telegram has (the translated/sent text).
+        # We preserve the original language text from our DB and the translation from our DB.
+        fwd_original = orig_db_msg['original_text'] or fw['text'] or ''
+        fwd_translated = orig_db_msg['translated_text'] or orig_db_msg['original_text'] or fw['text'] or ''
+
         msg_id = await db.fetchval(
             """
             INSERT INTO messages
             (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username,
              type, original_text, translated_text, created_at, is_outgoing, media_file_name)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             """,
             target_conversation_id,
@@ -667,7 +672,8 @@ async def forward_messages(
             fw['sender_name'],
             fw.get('sender_username') or 'User',
             fw['type'],
-            fw['text'] or orig_db_msg['original_text'] or '',
+            fwd_original,
+            fwd_translated,
             fw['date'] or now,
             True,
             orig_db_msg['media_file_name'],
@@ -681,8 +687,8 @@ async def forward_messages(
             "sender_name": fw['sender_name'],
             "sender_username": fw.get('sender_username') or 'User',
             "type": fw['type'],
-            "original_text": fw['text'] or orig_db_msg['original_text'] or '',
-            "translated_text": fw['text'] or orig_db_msg['original_text'] or '',
+            "original_text": fwd_original,
+            "translated_text": fwd_translated,
             "created_at": (fw['date'] or now).isoformat() if fw.get('date') else now.isoformat(),
             "is_outgoing": True,
             "media_file_name": orig_db_msg['media_file_name'],
@@ -726,6 +732,7 @@ async def react_to_message(
         
     try:
         # 2. Call telethon_service
+        logger.info(f"Sending reaction: account={message['telegram_account_id']}, peer={message['telegram_peer_id']}, msg_id={message['telegram_message_id']}, emoji={reaction_data.emoji}")
         await telethon_service.send_reaction(
             account_id=message['telegram_account_id'],
             peer_id=message['telegram_peer_id'],
@@ -767,5 +774,3 @@ async def react_to_message(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to react: {str(e)}",
         )
-
-import json

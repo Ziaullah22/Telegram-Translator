@@ -349,16 +349,28 @@ class TelegramSession:
             raise Exception("Client not connected")
         
         try:
+            # Sanitize emoji: strip variation selectors (U+FE0F) which often cause "Invalid reaction" errors
+            sanitized_emoji = emoji.replace('\ufe0f', '') if emoji else None
+            logger.info(f"Reacting with emoji: {emoji} (bytes: {emoji.encode('utf-8') if emoji else 'None'}) -> Sanitized: {sanitized_emoji} (bytes: {sanitized_emoji.encode('utf-8') if sanitized_emoji else 'None'})")
+            
             # emoji can be None to remove reaction, but typically a string
-            reaction = [types.ReactionEmoji(emoticon=emoji)] if emoji else []
+            reaction = [types.ReactionEmoji(emoticon=sanitized_emoji)] if sanitized_emoji else []
+            
+            # Use get_input_entity to ensure we have a valid InputPeer correctly resolved
+            try:
+                peer = await self.client.get_input_entity(peer_id)
+            except Exception as e:
+                # Fallback to direct resolution if cache fails
+                logger.warning(f"Input entity failed for {peer_id}, trying full get_entity: {e}")
+                peer = await self.client.get_entity(peer_id)
+
             await self.client(functions.messages.SendReactionRequest(
-                peer=peer_id,
+                peer=peer,
                 msg_id=message_id,
                 reaction=reaction
             ))
         except Exception as e:
-            logger.error(f"Error sending reaction for {self.account_id}: {e}")
-            # Don't re-raise if it's just a reaction error, but for now we will
+            logger.error(f"Error sending reaction for account {self.account_id}: {e}")
             raise
 
     async def send_media(self, peer_id: int, file_path: str, caption: str = "", max_retries: int = 3):
