@@ -1,3 +1,13 @@
+/**
+ * ADMIN SECURITY SETTINGS PAGE
+ * 
+ * Manages system-wide security features, primarily message encryption.
+ * Features:
+ * 1. Toggle AES-256-GCM encryption for all incoming/outgoing messages
+ * 2. Monitor encryption statistics (Total messages vs Encrypted messages)
+ * 3. View encryption timeline (When it was enabled/disabled)
+ * 4. Verification of encryption service availability
+ */
 import { useState, useEffect } from 'react';
 import { Shield, Lock, Unlock, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { adminApi } from '../services/api';
@@ -54,7 +64,7 @@ export default function SecuritySettings() {
       setSuccess(null);
 
       await adminApi.updateEncryptionSettings({ encryption_enabled: newState });
-      
+
       setSuccess(
         newState
           ? 'Encryption enabled successfully. All new messages will be encrypted.'
@@ -166,11 +176,10 @@ export default function SecuritySettings() {
                 : 'New messages are stored in plain text. Enable encryption to secure message content.'}
             </p>
             <div className="flex items-center gap-2 text-sm">
-              <span className={`px-3 py-1 rounded-full font-medium ${
-                settings.encryption_enabled
+              <span className={`px-3 py-1 rounded-full font-medium ${settings.encryption_enabled
                   ? 'bg-green-100 text-green-700'
                   : 'bg-gray-100 text-gray-700'
-              }`}>
+                }`}>
                 {settings.encryption_enabled ? 'Enabled' : 'Disabled'}
               </span>
               {settings.encryption_service_available && (
@@ -183,11 +192,10 @@ export default function SecuritySettings() {
           <button
             onClick={toggleEncryption}
             disabled={updating || !settings.encryption_service_available}
-            className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-              settings.encryption_enabled
+            className={`px-6 py-3 rounded-lg font-medium transition-colors ${settings.encryption_enabled
                 ? 'bg-red-600 hover:bg-red-700 text-white disabled:bg-red-300'
                 : 'bg-green-600 hover:bg-green-700 text-white disabled:bg-green-300'
-            } disabled:cursor-not-allowed`}
+              } disabled:cursor-not-allowed`}
           >
             {updating ? (
               'Updating...'

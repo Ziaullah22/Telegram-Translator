@@ -9,28 +9,15 @@ interface AuthContextType extends AuthState {
     logout: () => void;
 }
 
-/**
- * AUTH CONTEXT
- * Global state provider for user authentication.
- * Manages JWT tokens via cookies, user profiles, and login/logout flows.
- */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    /**
-     * INITIAL AUTH STATE
-     * user: Current user object from /auth/me.
-     * token: The active JWT access token.
-     * isAuthenticated: Boolean flag for protected route access.
-     * isLoading: Used for initial app load to prevent flickering.
-     */
     const [authState, setAuthState] = useState<AuthState>({
         user: null,
         token: null,
         isAuthenticated: false,
         isLoading: true,
     });
-
 
     useEffect(() => {
         const initAuth = async () => {

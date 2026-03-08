@@ -6,20 +6,7 @@ import inspect
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------
-# TRANSLATION SERVICE (translation_service.py)
-# ---------------------------------------------------------
-# Provides language detection and translation capabilities.
-# Integrates with the Google Translate API (via googletrans) 
-# to dynamically localize messages for users in real-time.
-
 class TranslationService:
-    """
-    GOOGLE TRANSLATE WRAPPER
-    Manages translation requests and language identification.
-    Ensures safe handling of both sync and async return types 
-    from the underlying library.
-    """
     def __init__(self):
         self.translator = Translator()
 
@@ -29,14 +16,8 @@ class TranslationService:
         target_language: str,
         source_language: str = "auto"
     ) -> dict:
-        """
-        PERFORMS TEXT TRANSLATION
-        Converts text from source_language to target_language.
-        If source_language is 'auto', the service will detect it first.
-        """
         try:
             result = self.translator.translate(
-
                 text,
                 dest=target_language,
                 src=source_language

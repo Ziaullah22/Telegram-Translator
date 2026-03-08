@@ -11,17 +11,8 @@ from models import (
 import logging
 import os
 
-# ---------------------------------------------------------
-# AUTO-RESPONDER CONTROLLER (app/features/auto_responder/routes.py)
-# ---------------------------------------------------------
-# Manages automated response rules and trigger histories.
-# Features:
-# 1. CRUD operations for keyword-response rules.
-# 2. Media attachment (Photo/Video) for automated replies.
-# 3. Detailed logging of trigger events for performance review.
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auto-responder", tags=["auto-responder"])
-
 
 
 @router.get("/rules", response_model=List[AutoResponderRuleResponse])

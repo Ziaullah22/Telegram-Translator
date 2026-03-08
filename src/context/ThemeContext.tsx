@@ -7,13 +7,7 @@ interface ThemeContextType {
     toggleTheme: () => void;
 }
 
-/**
- * THEME CONTEXT
- * Provides global dark/light mode state and persistence.
- * Toggles the 'dark' class on the document root for Tailwind-compatible styling.
- */
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setTheme] = useState<Theme>(() => {

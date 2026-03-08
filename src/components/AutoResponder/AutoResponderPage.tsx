@@ -1,3 +1,13 @@
+/**
+ * AUTO-RESPONDER PAGE
+ * 
+ * Manages automated message rules for the user side.
+ * Features:
+ * 1. Create rules based on keywords (Exact match or contains)
+ * 2. Set responses with optional media (Video/Photo)
+ * 3. Priority system for multiple matching rules
+ * 4. Language-specific responding
+ */
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Power, PowerOff, Image, Video, X } from 'lucide-react';
 import { autoResponderAPI } from '../../services/api';
@@ -5,35 +15,13 @@ import type { AutoResponderRule } from '../../types';
 import AutoResponderModal from './AutoResponderModal.tsx';
 import ConfirmModal from '../Modals/ConfirmModal';
 
-/**
- * ---------------------------------------------------------
- * AUTO-RESPONDER DASHBOARD (src/components/AutoResponder/AutoResponderPage.tsx)
- * ---------------------------------------------------------
- * The main interface for managing automated response rules.
- * 
- * FEATURES:
- * 1. Rule Listing: View all keyword-based rules with status badges.
- * 2. Status Toggling: Quickly enable/disable rules without deleting them.
- * 3. Priority Display: Shows which rules take precedence.
- * 4. Multi-language Support: Visual indicators for rule language.
- * 5. Integrated Modals: Handles rule creation and deletion confirmations.
- */
 export default function AutoResponderPage() {
-
-  /**
-   * STATE MANAGEMENT
-   * rules: List of all configured auto-reply rules.
-   * loading: Initial data fetch status.
-   * showModal: Controls the Create/Edit rule overlay.
-   * editingRule: The specific rule object being modified (null for new rule).
-   */
   const [rules, setRules] = useState<AutoResponderRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<AutoResponderRule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ruleToDelete, setRuleToDelete] = useState<number | null>(null);
-
 
   useEffect(() => {
     loadRules();

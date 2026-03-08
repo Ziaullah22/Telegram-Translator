@@ -9,6 +9,13 @@ import MessageReview from './pages/MessageReview';
 import SecuritySettings from './pages/SecuritySettings';
 import Layout from './components/Layout';
 
+/**
+ * ADMIN PANEL ENTRY POINT
+ * 
+ * Handles routing and authentication wrapper for the admin dashboard.
+ * Routes include Dashboard, Leaderboards, Colleague Management, and Message Review.
+ */
+
 function AppRoutes() {
   const { isAuthenticated, loading } = useAuth();
 

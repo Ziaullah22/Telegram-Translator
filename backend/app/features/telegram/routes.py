@@ -33,15 +33,8 @@ else:  # Linux
     rarfile.UNRAR_TOOL = "unrar"
 
 
-# ---------------------------------------------------------
-# TELEGRAM CONTROLLER (app/features/telegram/routes.py)
-# ---------------------------------------------------------
-# This logic handles all direct interactions with the Telegram 
-# accounts, including TData zip/rar uploads, account creation, 
-# connection status monitoring, and message sending/reading.
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
-
 
 
 @router.post("/accounts/validate-tdata")
@@ -197,8 +190,6 @@ async def validate_tdata(
 
 @router.get("/accounts", response_model=List[TelegramAccountResponse])
 async def get_accounts(current_user = Depends(get_current_user)):
-    """Retrieve all active Telegram accounts linked to the current user profile."""
-
     accounts = await db.fetch(
         """
         SELECT ta.id, ta.account_name, ta.display_name, ta.is_active,
@@ -245,12 +236,6 @@ async def create_account(
     tdata: UploadFile = File(None),
     current_user = Depends(get_current_user),
 ):
-    """
-    IMPORT TELEGRAM ACCOUNT (TData)
-    Extracts session data from a zip/rar archive and registers it 
-    as a new manageable account for the user.
-    """
-
     if not tdata:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -674,8 +659,6 @@ async def get_conversations(
     account_id: int,
     current_user = Depends(get_current_user),
 ):
-    """Fetch the latest chat list (conversations) for a specific Telegram account."""
-
     account = await db.fetchrow(
         "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
         account_id,

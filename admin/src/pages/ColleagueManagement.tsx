@@ -1,3 +1,13 @@
+/**
+ * ADMIN COLLEAGUE MANAGEMENT PAGE
+ * 
+ * Provides tools for managing team members (colleagues).
+ * Features:
+ * 1. Create, Edit, and Delete colleague accounts
+ * 2. Toggle active/inactive status
+ * 3. Monitor individual colleague metrics (Accounts count, Total messages)
+ * 4. Search colleagues by username or email
+ */
 import { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, Search, CheckCircle, XCircle, Power } from 'lucide-react';
 import { adminApi } from '../services/api';

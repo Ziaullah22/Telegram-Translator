@@ -1,17 +1,9 @@
-# ---------------------------------------------------------
-# DATA MODELS (models.py)
-# ---------------------------------------------------------
-# Defines the Pydantic schemas used for API request biological
-# authentication, validation, and serialized responses.
-# These models ensure consistent data flow between the 
-# backend and the React frontend.
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from datetime import datetime
+from enum import Enum
 
 class UserCreate(BaseModel):
-    """
-    REGISTRATION SCHEMA
-    Used when creating a new platform administrator/user.
-    """
-
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     email: Optional[str] = None

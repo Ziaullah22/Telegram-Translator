@@ -1,12 +1,7 @@
-# ---------------------------------------------------------
-# GLOBAL SETTINGS (config.py)
-# ---------------------------------------------------------
-# Centralized configuration management using Pydantic Settings.
-# Automatically loads variables from the '.env' file.
-# Includes database URLs, JWT security keys, and encryption tokens.
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
-
     # PostgreSQL connection string, e.g. postgresql://postgres:password@localhost:5432/telegram_translator
     database_url: str
 

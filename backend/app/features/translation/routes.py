@@ -1,12 +1,11 @@
-# ---------------------------------------------------------
-# TRANSLATION CONTROLLER (app/features/translation/routes.py)
-# ---------------------------------------------------------
-# Provides standalone translation endpoints for the frontend.
-# Useful for translating UI elements, templates, or drafted
-# messages on-demand without sending them.
+from fastapi import APIRouter, Depends, Form, HTTPException, status, Request
+from typing import Optional
+from app.core.security import get_current_user
+from models import TranslationRequest, TranslationResponse
+from translation_service import translation_service
+
 
 router = APIRouter(prefix="/api/translation", tags=["translation"])
-
 
 
 @router.post("/translate", response_model=TranslationResponse)

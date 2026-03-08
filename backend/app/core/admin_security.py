@@ -1,13 +1,8 @@
-# ---------------------------------------------------------
-# ADMIN SECURITY (app/core/admin_security.py)
-# ---------------------------------------------------------
-# Manages administrative credentials using Fernet symmetric 
-# encryption. This ensures that even system administrators 
-# with server access cannot read the platform's master 
-# admin password directly from the file system.
-
+"""
+Admin security module with encrypted password storage.
+Uses Fernet symmetric encryption to ensure even server administrators cannot read the password.
+"""
 from cryptography.fernet import Fernet
-
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta

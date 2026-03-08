@@ -8,22 +8,9 @@ from config import settings
 from models import TokenData
 from database import db
 
-# ---------------------------------------------------------
-# AUTHENTICATION SERVICE (auth.py)
-# ---------------------------------------------------------
-# Manages secure password hashing using bcrypt and JWT 
-# (JSON Web Token) generation for session management.
-# Includes dependency-injection helpers for FastAPI route protection.
-
 security = HTTPBearer()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    BCRYPT PASSWORD VERIFICATION
-    Safe comparison between a raw string and a stored hash.
-    Truncates to 72 bytes to prevent bcrypt limitation issues.
-    """
-
     # Bcrypt has a 72-byte limit, truncate if necessary
     password_bytes = plain_password.encode('utf-8')[:72]
     return bcrypt.checkpw(password_bytes, hashed_password.encode('utf-8'))

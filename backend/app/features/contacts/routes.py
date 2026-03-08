@@ -1,13 +1,13 @@
-# ---------------------------------------------------------
-# CONTACTS CONTROLLER (app/features/contacts/routes.py)
-# ---------------------------------------------------------
-# Provides a mini-CRM for each Telegram conversation.
-# Stores detailed metadata like address, phone numbers, 
-# product interest, and sales status for deep customer 
-# relationship management.
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from datetime import datetime
+import logging
+
+from auth import get_current_user
+from database import db
+from models import ContactInfoCreate, ContactInfoUpdate, ContactInfoResponse, TokenData
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
-
 logger = logging.getLogger(__name__)
 
 @router.get("/conversation/{conversation_id}", response_model=Optional[ContactInfoResponse])

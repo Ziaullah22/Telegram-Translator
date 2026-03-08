@@ -12,17 +12,8 @@ from models import UserCreate, UserLogin, Token, UserResponse
 import logging
 
 
-# ---------------------------------------------------------
-# AUTHENTICATION CONTROLLER (app/features/auth/routes.py)
-# ---------------------------------------------------------
-# Manages user accounts and session security.
-# Features:
-# 1. User registration with password hashing.
-# 2. Login with JWT (JSON Web Token) generation.
-# 3. Secure retrieval of the current authenticated user's profile.
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
 
 
 @router.post("/register", response_model=Token)

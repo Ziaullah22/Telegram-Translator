@@ -1,19 +1,24 @@
+/**
+ * --- MAIN API SERVICE (USER SIDE) ---
+ * 
+ * This file centralizes all network requests for the main translator application.
+ * It uses Axios with interceptors for authentication and error handling.
+ * Categories: Auth, Telegram, Translation, CRM, Automation, Analytics.
+ */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
 
+// --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
 
-/**
- * AXIOS CONFIGURATION
- * Centralized API client with interceptors for auth tokens and automatic 401 redirection.
- */
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
 });
 
-// Attaches the JWT 'auth_token' from cookies to every request header.
+// --- INTERCEPTOR: AUTH TOKEN ---
+// Automatically injects the JWT auth token from cookies into every request header
 api.interceptors.request.use((config) => {
   const token = Cookies.get('auth_token');
   if (token) {
@@ -22,10 +27,14 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Global error handler: if a session expires (401), redirect back to login.
+// --- INTERCEPTOR: ERROR HANDLING ---
+// Global response handling for authentication errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // If the server returns 401 (Unauthorized) or 403 (Forbidden), 
+    // it means the session has expired or is invalid.
+    // We redirect to /login EXCEPT if the error happened during the login/register call itself.
     if ((error.response?.status === 401 || error.response?.status === 403) &&
       !error.config.url?.includes('/auth/login') &&
       !error.config.url?.includes('/auth/register')) {
@@ -36,10 +45,8 @@ api.interceptors.response.use(
   }
 );
 
-/**
- * AUTH API
- * Handles user authentication: Login, Registration, and fetching personal Profile.
- */
+// --- AUTHENTICATION SERVICES ---
+// Handles user login, registration, and session verification
 export const authAPI = {
   login: async (username: string, password: string): Promise<{ access_token: string; token_type: string }> => {
     const response = await api.post('/auth/login', { username, password });
@@ -57,10 +64,8 @@ export const authAPI = {
   },
 };
 
-/**
- * TELEGRAM ACCOUNT API
- * Manages Telegram accounts: Connecting new accounts, validating TData, managing sessions, and profile settings.
- */
+// --- TELEGRAM ACCOUNT MANAGEMENT ---
+// Handles TData validation, connecting/disconnecting accounts, profile updates, and privacy settings
 export const telegramAPI = {
   validateTData: async (file: File): Promise<{
     valid: boolean;
@@ -72,7 +77,9 @@ export const telegramAPI = {
     const formData = new FormData();
     formData.append('tdata', file);
     const response = await api.post('/telegram/accounts/validate-tdata', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     return response.data;
   },
@@ -96,7 +103,9 @@ export const telegramAPI = {
 
   addAccount: async (data: FormData): Promise<TelegramAccount> => {
     const response = await api.post('/telegram/accounts', data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     const a = response.data;
     return {
@@ -221,7 +230,7 @@ export const telegramAPI = {
     formData.append('photo', file);
     const response = await api.post(`/telegram/accounts/${accountId}/profile/photo`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000,
+      timeout: 60000, // Photos can take a while to upload
     });
     return response.data;
   },
@@ -265,11 +274,10 @@ export const telegramAPI = {
   },
 };
 
-/**
- * TRANSLATION API
- * Provides translation services via various engines and manages supported languages.
- */
+// --- TRANSLATION SERVICES ---
+// Interfaces with Google Translate/DeepL/LibreTranslate on the backend
 export const translationAPI = {
+  // Translates text from source to target using the specified engine
   translate: async (
     text: string,
     targetLanguage: string,
@@ -285,22 +293,23 @@ export const translationAPI = {
     return response.data;
   },
 
+  // Returns a list of available translation engine names
   getEngines: async (): Promise<{ engines: string[] }> => {
     const response = await api.get('/translation/engines');
     return response.data;
   },
 
+  // Returns all supported languages for translation
   getLanguages: async (): Promise<{ languages: Language[] }> => {
     const response = await api.get('/translation/languages');
     return response.data;
   },
 };
 
-/**
- * CONVERSATIONS API
- * Fetches the specific chat list (private, groups, channels) for a given Telegram account.
- */
+// --- CONVERSATION SERVICES ---
+// Manages the chat/conversation metadata for connected Telegram accounts
 export const conversationsAPI = {
+  // Fetches all active conversations for a specific Telegram account
   getConversations: async (accountId: number): Promise<TelegramChat[]> => {
     const response = await api.get(`/telegram/accounts/${accountId}/conversations`);
     const items = response.data as any[];
@@ -321,10 +330,7 @@ export const conversationsAPI = {
   },
 };
 
-/**
- * MESSAGES API
- * Core messaging functionality: Sending text/media, forwarding, deleting, and marking as read.
- */
+// Messages API
 export const messagesAPI = {
   getMessages: async (conversationId: number, limit: number = 30, before_id?: number) => {
     const response = await api.get(`/messages/conversations/${conversationId}/messages`, {
@@ -345,7 +351,9 @@ export const messagesAPI = {
 
   sendMedia: async (formData: FormData): Promise<TelegramMessage> => {
     const response = await api.post('/messages/send-media', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     return response.data;
   },
@@ -387,47 +395,64 @@ export const messagesAPI = {
   },
 };
 
-/**
- * TEMPLATES & SCHEDULING API
- * Manages reusable message templates and logic for scheduling messages in the future.
- */
+// --- HEALTH & STATUS SERVICES ---
+// Used to verify if the backend and database are reachable
+export const healthAPI = {
+  check: async (): Promise<{ status: string; database: string }> => {
+    const response = await api.get('/health');
+    return response.data;
+  },
+};
+
+// --- MESSAGE TEMPLATE SERVICES ---
+// Handles CRUD operations for quick-reply templates
 export const templatesAPI = {
+  // Get all templates owned by the current user
   getTemplates: async (): Promise<MessageTemplate[]> => {
     const response = await api.get('/templates');
     return response.data;
   },
 
+  // Get a single template's details
   getTemplate: async (templateId: number): Promise<MessageTemplate> => {
     const response = await api.get(`/templates/${templateId}`);
     return response.data;
   },
 
+  // Create a new reusable message template
   createTemplate: async (name: string, content: string): Promise<MessageTemplate> => {
     const response = await api.post('/templates', { name, content });
     return response.data;
   },
 
+  // Update an existing template's name or content
   updateTemplate: async (templateId: number, data: { name?: string; content?: string }): Promise<MessageTemplate> => {
     const response = await api.put(`/templates/${templateId}`, data);
     return response.data;
   },
 
+  // Delete a template permanently
   deleteTemplate: async (templateId: number): Promise<void> => {
     await api.delete(`/templates/${templateId}`);
   },
 };
 
+// --- SCHEDULED MESSAGE SERVICES ---
+// Manages messages set to be sent automatically after a delay
 export const scheduledMessagesAPI = {
+  // Get all active scheduled tasks for the user
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
     const response = await api.get('/scheduled-messages');
     return response.data;
   },
 
+  // Get scheduled tasks specifically for one conversation
   getScheduledMessagesByConversation: async (conversationId: number): Promise<ScheduledMessage[]> => {
     const response = await api.get(`/scheduled-messages/conversation/${conversationId}`);
     return response.data;
   },
 
+  // Create a new scheduling task with a delay in days
   createScheduledMessage: async (conversationId: number, messageText: string, daysDelay: number): Promise<ScheduledMessage> => {
     const response = await api.post('/scheduled-messages', {
       conversation_id: conversationId,
@@ -437,65 +462,88 @@ export const scheduledMessagesAPI = {
     return response.data;
   },
 
+  // Update text or delay of a pending scheduled message
   updateScheduledMessage: async (messageId: number, data: { message_text?: string; days_delay?: number }): Promise<ScheduledMessage> => {
     const response = await api.put(`/scheduled-messages/${messageId}`, data);
     return response.data;
   },
 
+  // Cancel and delete a scheduled message task
   cancelScheduledMessage: async (messageId: number): Promise<void> => {
     await api.delete(`/scheduled-messages/${messageId}`);
   },
 };
 
-/**
- * CONTACT CRM API
- * Manages contact-specific CRM details like custom notes.
- */
+// --- CONTACT CRM SERVICES ---
+// Manages detailed lead/contact information linked to conversations
 export const contactsAPI = {
+  // Fetch profile/leadsheet for a specific conversation
   getContactInfo: async (conversationId: number): Promise<ContactInfo | null> => {
     const response = await api.get(`/contacts/conversation/${conversationId}`);
     return response.data;
   },
 
+  // Initialize a new contact info record
   createContactInfo: async (data: Partial<ContactInfo>): Promise<ContactInfo> => {
     const response = await api.post('/contacts', data);
     return response.data;
   },
 
+  // Update existing contact details (Address, Note, Payment Method, etc.)
   updateContactInfo: async (contactId: number, data: Partial<ContactInfo>): Promise<ContactInfo> => {
     const response = await api.put(`/contacts/${contactId}`, data);
     return response.data;
   },
 
+  // Remove a contact record
   deleteContactInfo: async (contactId: number): Promise<void> => {
     await api.delete(`/contacts/${contactId}`);
   },
 };
 
-/**
- * AUTO-RESPONDER API
- * Manages automation rules and logs.
- */
+// --- AUTO-RESPONDER SERVICES ---
+// Manages keyword-based automated replies
 export const autoResponderAPI = {
+  // List all rules defined by the user
   getRules: async (): Promise<AutoResponderRule[]> => {
     const response = await api.get('/auto-responder/rules');
     return response.data;
   },
 
-  createRule: async (data: any): Promise<AutoResponderRule> => {
+  // Create a new automation rule with keywords and response text
+  createRule: async (data: {
+    name: string;
+    keywords: string[];
+    response_text: string;
+    language: string;
+    media_type?: string;
+    priority?: number;
+    is_active?: boolean;
+  }): Promise<AutoResponderRule> => {
     const response = await api.post('/auto-responder/rules', data);
     return response.data;
   },
 
-  updateRule: async (ruleId: number, data: any): Promise<AutoResponderRule> => {
+  // Modify an existing automation rule
+  updateRule: async (ruleId: number, data: {
+    name?: string;
+    keywords?: string[];
+    response_text?: string;
+    language?: string;
+    media_type?: string;
+    priority?: number;
+    is_active?: boolean;
+  }): Promise<AutoResponderRule> => {
     const response = await api.patch(`/auto-responder/rules/${ruleId}`, data);
     return response.data;
   },
 
+  // Permanently delete a rule
   deleteRule: async (ruleId: number): Promise<void> => {
     await api.delete(`/auto-responder/rules/${ruleId}`);
   },
 
+  // Attach a photo or video to an auto-responder rule
   uploadMedia: async (ruleId: number, file: File): Promise<{ message: string; media_type: string; file_path: string }> => {
     const formData = new FormData();
     formData.append('media', file);
@@ -507,20 +555,19 @@ export const autoResponderAPI = {
     return response.data;
   },
 
+  // Detach media from a rule
   deleteMedia: async (ruleId: number): Promise<void> => {
     await api.delete(`/auto-responder/rules/${ruleId}/media`);
   },
 
-  getLogs: async (limit: number = 50): Promise<any[]> => {
+  // Fetch history/logs of when rules were triggered
+  getLogs: async (limit: number = 50): Promise<AutoResponderLog[]> => {
     const response = await api.get(`/auto-responder/logs?limit=${limit}`);
     return response.data;
   },
 };
 
-/**
- * ANALYTICS API
- * Fetches rankings for response times and overall performance metrics.
- */
+// Analytics API
 export const analyticsAPI = {
   getConversationRanking: async (limit: number = 10, accountId?: number) => {
     const response = await api.get('/analytics/ranking/conversations', {
@@ -536,14 +583,4 @@ export const analyticsAPI = {
     const response = await api.get('/analytics/admin/ranking/accounts', { params: { limit } });
     return response.data;
   }
-};
-
-/**
- * HEALTH CHECK API
- */
-export const healthAPI = {
-  check: async (): Promise<{ status: string; database: string }> => {
-    const response = await api.get('/health');
-    return response.data;
-  },
 };

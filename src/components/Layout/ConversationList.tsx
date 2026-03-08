@@ -1,3 +1,13 @@
+/**
+ * CONVERSATION LIST COMPONENT
+ * 
+ * Displays the list of chats (private, groups, channels) for the current account.
+ * Responsibilities:
+ * 1. Local and global search (Telegram search)
+ * 2. Real-time updates for unread counts and last messages
+ * 3. Avatar pre-fetching for smooth scrolling
+ * 4. Context menu for chat actions (Mute, Delete)
+ */
 import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
@@ -29,11 +39,6 @@ const formatConvDate = (dateStr: string) => {
   }
 };
 
-/**
- * CONVERSATION LIST COMPONENT
- * The left sidebar that displays all active chats, search functionality, 
- * unread badges, and real-time activity for the current Telegram account.
- */
 export default function ConversationList({
   conversations,
   currentConversation,
@@ -44,13 +49,6 @@ export default function ConversationList({
   accountId,
   onConversationCreated,
 }: ConversationListProps) {
-  /**
-   * SEARCH & STATE
-   * searchQuery: User input for global Telegram search or local filtering.
-   * searchResults: Dynamic list of users/groups found on Telegram.
-   * isSearching: Loading state for global search API calls.
-   * contextMenu: Right-click menu state (mute/delete).
-   */
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -60,7 +58,6 @@ export default function ConversationList({
   });
   const [contextMenu, setContextMenu] = useState<{ conversation: TelegramChat; x: number; y: number } | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
 
   // Close context menu when clicking anywhere
   useEffect(() => {

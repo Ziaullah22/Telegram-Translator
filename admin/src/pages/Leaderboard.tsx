@@ -1,7 +1,15 @@
+/**
+ * --- ADMIN LEADERBOARD PAGE ---
+ * 
+ * Provides an administrative view of response performance across the entire organization.
+ * Admins can "impersonate" any colleague to see their specific rankings or view 
+ * global stats across different accounts.
+ * 
+ * Hierarchy: Select Colleague -> Select Account (Session) -> View Chat Rankings
+ */
 import { useState, useEffect } from 'react';
 import { Trophy, Clock, RefreshCw, User as UserIcon, Activity, Smartphone, Users, BarChart2, ChevronDown } from 'lucide-react';
 import { adminApi } from '../services/api';
-import { useSocket } from '../hooks/useSocket';
 
 interface RankingData {
     id: number;
@@ -41,23 +49,13 @@ interface LeaderboardTableProps {
     accountId?: number | 'all';
 }
 
-/**
- * LEADERBOARD TABLE COMPONENT
- * Displays a ranked list of users or accounts based on their average response time.
- * Supports real-time updates via WebSocket.
- */
 const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTableProps) => {
     const [data, setData] = useState<RankingData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    /**
-     * DATA FETCHING
-     * Fetches ranking data from the analytics API.
-     * @param silent If true, suppresses the loading spinner for background updates.
-     */
-    const fetchData = async (silent = false) => {
-        if (!silent) setLoading(true);
+    const fetchData = async () => {
+        setLoading(true);
         setError(null);
         try {
             let res;
@@ -71,33 +69,13 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
             console.error('Error fetching ranking:', err);
             setError('Failed to load ranking data');
         } finally {
-            if (!silent) setLoading(false);
+            setLoading(false);
         }
     };
 
-    /**
-     * REAL-TIME UPDATES (WEBSOCKET)
-     * Hook into the global WebSocket to detect new messages.
-     * When any message is detected, we silently refresh the leaderboard.
-     */
-    const { onMessage } = useSocket();
-
     useEffect(() => {
         fetchData();
-        // Fallback: refresh every 30 seconds if socket is disconnected
-        const interval = setInterval(() => fetchData(true), 30000);
-        return () => clearInterval(interval);
     }, [type, userId, accountId]);
-
-    // WebSocket listener for instant leaderboard updates
-    useEffect(() => {
-        const unsubscribe = onMessage((data: any) => {
-            if (data?.type === 'new_message') {
-                fetchData(true);
-            }
-        });
-        return unsubscribe;
-    }, [onMessage, type, userId, accountId]);
 
     // Exact replica styling from `ResponseTimeRanking.tsx`
     return (
@@ -118,7 +96,7 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
                     </div>
                 </div>
                 <button
-                    onClick={() => fetchData()}
+                    onClick={fetchData}
                     disabled={loading}
                     className="p-2 hover:bg-gray-100 rounded-xl transition-all border border-transparent hover:border-gray-200 text-gray-500 active:scale-95"
                 >
@@ -157,7 +135,7 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
                                 <td colSpan={4} className="py-12 text-center text-gray-400 italic text-sm font-medium">No performance data available yet.</td>
                             </tr>
                         ) : (
-                            data.map((item: RankingData, index: number) => {
+                            data.map((item, index) => {
                                 const perf = getPerformanceInfo(item.avg_response_time);
                                 return (
                                     <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">

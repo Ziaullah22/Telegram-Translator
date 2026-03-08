@@ -15,18 +15,8 @@ import aiofiles
 import json
 
 
-# ---------------------------------------------------------
-# MESSAGE CONTROLLER (app/features/messages/routes.py)
-# ---------------------------------------------------------
-# The core engine for real-time conversation management.
-# Features:
-# 1. Paginated message history retrieval (Phase 1).
-# 2. Sending translated text and media (Photos/Videos/Docs).
-# 3. Message interaction: Read receipts, Reactions, and Deletion.
-# 4. Native Telegram message forwarding across conversations.
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
-
 
 
 @router.post("/conversations/{conversation_id}/read")

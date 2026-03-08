@@ -1,3 +1,13 @@
+/**
+ * LOGIN FORM COMPONENT
+ * 
+ * Handles user authentication for the colleague side of the application.
+ * Features:
+ * 1. Form validation using react-hook-form
+ * 2. Theme toggling (Light/Dark mode)
+ * 3. Error handling for failed login attempts
+ * 4. Link to the Admin Panel
+ */
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { MessageCircle, AlertCircle, Loader, Eye, EyeOff, Lock, User, Sun, Moon } from 'lucide-react';
@@ -14,25 +24,13 @@ interface LoginFormProps {
   onSwitchToRegister: () => void;
 }
 
-/**
- * LOGIN FORM COMPONENT
- * Provides the user authentication interface.
- * Handles JWT token generation via the auth service and session establishment.
- */
 export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
-  /**
-   * AUTHENTICATION STATE
-   * loading: Prevents multiple submissions during API call.
-   * error: Displays server-side validation or connection errors.
-   * showPassword: UI toggle for password visibility.
-   */
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-
 
   const {
     register,

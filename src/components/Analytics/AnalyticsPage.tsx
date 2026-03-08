@@ -1,3 +1,12 @@
+/**
+ * ANALYTICS PAGE
+ * 
+ * Provides a dashboard for viewing response time statistics.
+ * Allows users to:
+ * 1. Filter statistics by specific Telegram accounts
+ * 2. View rankings of contacts based on their response speed
+ * 3. Monitor overall performance metrics
+ */
 import React, { useState, useEffect } from 'react';
 import ResponseTimeRanking from './ResponseTimeRanking';
 import { BarChart2, Activity, ArrowLeft, ChevronDown, Smartphone } from 'lucide-react';
@@ -7,22 +16,11 @@ import type { TelegramAccount } from '../../types';
 
 const AnalyticsPage: React.FC = () => {
     const navigate = useNavigate();
-
-    /**
-     * STATE MANAGEMENT
-     * accounts: List of all connected/inactive Telegram sessions.
-     * selectedAccountId: The active filter (either a specific account ID or 'all').
-     */
     const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
     const [selectedAccountId, setSelectedAccountId] = useState<number | 'all'>('all');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-    /**
-     * INITIALIZATION
-     * Fetches the list of available Telegram accounts to populate the filter dropdown.
-     */
     useEffect(() => {
-
         const fetchAccounts = async () => {
             try {
                 const data = await telegramAPI.getAccounts();

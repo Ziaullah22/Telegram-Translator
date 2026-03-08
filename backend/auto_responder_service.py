@@ -8,34 +8,11 @@ from translation_service import translation_service
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------
-# AUTO-RESPONDER SERVICE (auto_responder_service.py)
-# ---------------------------------------------------------
-# Manages automated replies to incoming Telegram messages.
-# Features:
-# 1. Keyword-based matching with case-insensitivity.
-# 2. Cross-language matching (translates incoming msg to match rule).
-# 3. Supports text, image, and video responses.
-# 4. Logs all trigger events for auditing and analytics.
-
 class AutoResponderService:
-    """
-    AUTOMATED RESPONSE ENGINE
-    Processes every incoming message to check against active rules.
-    Prioritizes rules by their 'priority' field.
-    """
     def __init__(self):
         self.enabled = True
     
     async def check_and_respond(self, message_data: Dict[str, Any], user_id: int) -> bool:
-        """
-        MAIN MATCHING LOGIC
-        1. Filters out outgoing messages.
-        2. Retrieves active rules for the user.
-        3. Attempts to match keywords in the original or translated text.
-        4. Triggers an automated response if a match is found.
-        """
-
         """
         Check if message matches any auto-responder rules and send response if matched.
         Returns True if a response was sent, False otherwise.

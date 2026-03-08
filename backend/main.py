@@ -28,14 +28,6 @@ from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
 from app.core.admin_security import ADMIN_SECRET_KEY, ADMIN_ALGORITHM
 
-# ---------------------------------------------------------
-# APPLICATION ENTRY POINT (main.py)
-# ---------------------------------------------------------
-# This file initializes the FastAPI application, sets up middleware, 
-# registers all individual feature routers, and manages the main 
-# application lifecycle (lifespan). It also handles the primary 
-# WebSocket connection for real-time message broadcasting.
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -44,12 +36,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    APP LIFESPAN MANAGEMENT
-    Handles startup and shutdown events for the entire backend.
-    Includes database connectivity, migrations, and service initialization.
-    """
-
     logger.info("Starting application...")
 
     await db.connect()
@@ -77,14 +63,6 @@ async def lifespan(app: FastAPI):
         logger.warning("AES encryption key not configured - encryption features disabled")
 
     async def handle_new_message(message_data: dict):
-        """
-        CORE MESSAGE PROCESSOR
-        Executed every time the Telethon service detects a new Telegram message.
-        1. Identifies the user and target language.
-        2. Performs language detection and translation.
-        3. Encrypts and persists the message to the database.
-        4. Broadcasts the update via WebSocket for real-time UI refresh.
-        """
         try:
             account_id = message_data['account_id']
             peer_id = message_data['peer_id']
@@ -93,7 +71,6 @@ async def lifespan(app: FastAPI):
                 "SELECT user_id, target_language, source_language FROM telegram_accounts WHERE id = $1",
                 account_id
             )
-
 
             if not account:
                 return
@@ -400,16 +377,8 @@ async def health_check():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    GLOBAL WEBSOCKET HANDLER
-    Manages connections for both normal users and administrators.
-    - User Authentication: via standard 'auth_token'.
-    - Admin Authentication: via 'admin_token'.
-    Ensures real-time updates are only dispatched to authorized sessions.
-    """
     try:
         token = websocket.query_params.get("token")
-
         if not token:
             logger.warning("WebSocket attempt without token")
             await websocket.close(code=1008)

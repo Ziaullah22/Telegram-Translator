@@ -1,6 +1,14 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
+/**
+ * --- ADMIN API SERVICE CONFIGURATION ---
+ * 
+ * This file centralizes all communications between the Admin Dashboard and the Backend.
+ * It handles automatic authentication injection (via admin_token) and global error
+ * handling for unauthorized sessions.
+ */
+
 const api = axios.create({
   baseURL: '/api',
   headers: {
@@ -8,7 +16,8 @@ const api = axios.create({
   },
 });
 
-// Add token to requests
+// --- REQUEST INTERCEPTOR: AUTHENTICATION ---
+// Automatically attaches the 'admin_token' from browser cookies to every outgoing request.
 api.interceptors.request.use((config) => {
   const token = Cookies.get('admin_token');
   if (token) {
@@ -17,12 +26,14 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 and 403 errors
+// --- RESPONSE INTERCEPTOR: ERROR HANDLING ---
+// Detects 401 (Unauthorized) or 403 (Forbidden) statuses globally.
+// This usually means the session has expired or the account was deactivated.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
-      // Unauthorized or account deactivated
+      // Clear invalid token and force a redirect to login page
       Cookies.remove('admin_token');
       window.location.href = '/login';
     }
@@ -30,12 +41,19 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * --- ADMIN API ENDPOINTS ---
+ * 
+ * Categorized groups of functions for managing the platform.
+ */
 export const adminApi = {
-  // Authentication
+  // --- GROUP 1: AUTHENTICATION ---
+  // Simple password-based entry for the admin panel.
   login: (password: string) => api.post('/admin/auth/login', { password }),
   verifyToken: () => api.get('/admin/auth/verify'),
 
-  // Colleagues (Users)
+  // --- GROUP 2: COLLEAGUE MANAGEMENT (RBAC) ---
+  // Manage accounts and access levels for other workers/colleagues.
   getColleagues: () => api.get('/admin/colleagues'),
   getColleague: (id: number) => api.get(`/admin/colleagues/${id}`),
   createColleague: (data: { username: string; password: string; email?: string }) =>
@@ -46,7 +64,8 @@ export const adminApi = {
   resetColleaguePassword: (id: number, password: string) =>
     api.post(`/admin/colleagues/${id}/reset-password`, { password }),
 
-  // Messages
+  // --- GROUP 3: MESSAGE AUDIT & REVIEW ---
+  // Monitor traffic across all accounts for compliance and monitoring.
   getMessages: (params?: {
     user_id?: number;
     account_id?: number;
@@ -60,7 +79,8 @@ export const adminApi = {
     account_id?: number;
   }) => api.get('/admin/conversations', { params }),
 
-  // Statistics
+  // --- GROUP 4: ANALYTICS & STATS ---
+  // High-level data visualization for performance tracking.
   getStatistics: () => api.get('/admin/statistics'),
   getAdminColleagueRanking: (limit?: number) => api.get('/analytics/admin/ranking/colleagues', { params: { limit } }),
   getAdminAccountRanking: (limit?: number) => api.get('/analytics/admin/ranking/accounts', { params: { limit } }),
@@ -69,7 +89,8 @@ export const adminApi = {
   getAdminUserAccountRanking: (userId: number, limit?: number) =>
     api.get(`/analytics/admin/users/${userId}/ranking/accounts`, { params: { limit } }),
 
-  // Encryption Settings
+  // --- GROUP 5: SECURITY & ENCRYPTION ---
+  // Controls the global message visibility and database encryption flags.
   getEncryptionSettings: () => api.get('/admin/encryption/settings'),
   updateEncryptionSettings: (data: { encryption_enabled: boolean }) =>
     api.put('/admin/encryption/settings', data),

@@ -1,3 +1,14 @@
+/**
+ * CHAT WINDOW COMPONENT
+ * 
+ * This is the heart of the chat interface, responsible for:
+ * 1. Rendering the message list with virtualization (Virtuoso)
+ * 2. Handling message input with auto-translation
+ * 3. Media display (Photos/Videos with IndexedDB caching)
+ * 4. Context menus for message actions (Forward, Reply, Delete, React)
+ * 5. Message selection and bulk operations
+ * 6. Managing scheduled messages and templates
+ */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
@@ -10,26 +21,21 @@ import ConfirmModal from '../Modals/ConfirmModal';
 import PeerAvatar from '../Common/PeerAvatar';
 import ForwardMessageModal from '../Modals/ForwardMessageModal';
 
-/**
- * CHAT WINDOW COMPONENT
- * The core messaging interface. Handles message rendering (text, emoji, media),
- * virtualization for high performance, infinite scrolling, reply logic, 
- * translation management, and UI actions (forwarding, deleting, reacting).
- */
-
-
-// Helper to check if string contains only emojis
+// --- UTILITY: EMOJI DETECTION ---
+// Determines if a message contains ONLY emojis (up to 10).
+// If true, the UI renders "Big Emojis" similar to Telegram Desktop.
 const isOnlyEmoji = (str: string) => {
   if (!str) return false;
   const cleanStr = str.replace(/\s/g, '');
-  if (!cleanStr || cleanStr.length > 10) return false; // Limit length for big emoji
+  if (!cleanStr || cleanStr.length > 10) return false;
 
-  // Basic emoji range check
+  // Regex covering major emoji ranges (Smileys, Symbols, Transport, etc.)
   const emojiRegex = /^(\u2702|\u2705|\u2708|\u2709|\u270A-\u270D|\u270F|\u2712|\u2714|\u2716|\u271D|\u2721|\u2728|\u2733|\u2734|\u2744|\u2747|\u274C|\u274E|\u2753-\u2755|\u2757|\u2763|\u2764|\u2795-\u2797|\u27A1|\u27B0|\u27BF|\u2934|\u2935|\u2B05-\u2B07|\u2B1B|\u2B1C|\u2B50|\u2B55|\u3030|\u303D|\u3297|\u3299|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\uD83D[\uDE00-\uDE4F]|\uD83D[\uDE80-\uDEFF]|\uD83E[\uDD00-\uDDFF])+$/u;
   return emojiRegex.test(cleanStr);
 };
 
-// Helper to format bytes to human readable string
+// --- UTILITY: FILE SIZE FORMATTING ---
+// Converts raw bytes into a human-readable string (e.g., 1.5 MB)
 const formatBytes = (bytes: number, decimals = 1) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -39,7 +45,8 @@ const formatBytes = (bytes: number, decimals = 1) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-// Helper to format duration in m:ss
+// --- UTILITY: TIME FORMATTING ---
+// Formats seconds into a video/audio duration string like "3:45"
 const formatDuration = (seconds?: number) => {
   if (!seconds) return '';
   const mins = Math.floor(seconds / 60);
@@ -47,11 +54,14 @@ const formatDuration = (seconds?: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-// --- IndexedDB Cache for Persistent Media ---
+// --- PERSISTENT CACHE: INDEXED DB ---
+// Messages with large photos or videos are cached locally to prevent 
+// re-downloading them every time the user switches chats.
 const DB_NAME = 'TG_Media_Cache';
 const STORE_NAME = 'blobs';
 const DB_VERSION = 1;
 
+// Opens (or creates) the client-side database
 const openMediaDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -66,6 +76,7 @@ const openMediaDB = (): Promise<IDBDatabase> => {
   });
 };
 
+// Retrieves a cached Blob (image/video data) by message ID
 const getCachedMedia = async (id: number): Promise<Blob | null> => {
   try {
     const db = await openMediaDB();
@@ -77,11 +88,12 @@ const getCachedMedia = async (id: number): Promise<Blob | null> => {
       request.onerror = () => reject(request.error);
     });
   } catch (e) {
-    console.warn('IDB Get Failed', e);
+    console.warn('Media Cache Read failed:', e);
     return null;
   }
 };
 
+// Saves a downloaded Blob to the local database
 const setCachedMedia = async (id: number, blob: Blob) => {
   try {
     const db = await openMediaDB();
@@ -93,11 +105,12 @@ const setCachedMedia = async (id: number, blob: Blob) => {
       tx.onerror = () => reject(tx.error);
     });
   } catch (e) {
-    console.warn('IDB Save Failed', e);
+    console.warn('Media Cache Write failed:', e);
   }
 };
 
-// Photo Message Component - displays images inline like Telegram
+// --- COMPONENT: PHOTO MESSAGE ---
+// Displays an image with progressive download, blurring, and persistent caching
 const PhotoMessage: React.FC<{
   message: TelegramMessage;
   loadedImages: Record<number, string>;
@@ -110,7 +123,7 @@ const PhotoMessage: React.FC<{
   const [error, setError] = useState(false);
   const [progress, setProgress] = useState<{ loaded: number; total: number; percentage: number } | null>(null);
 
-  // Auto-check persistent cache on mount
+  // Check the browser's IndexedDB for a cached version of this photo on mount
   useEffect(() => {
     if (!imageUrl && !loading) {
       getCachedMedia(message.id).then(blob => {
@@ -122,6 +135,7 @@ const PhotoMessage: React.FC<{
     }
   }, [message.id]);
 
+  // Initiates the media download from the backend API
   const startDownload = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (loading || imageUrl) return;
@@ -136,7 +150,7 @@ const PhotoMessage: React.FC<{
     });
   };
 
-  // Check if media was deleted
+  // If the media file was previously available but is now deleted (TDLib logic)
   if (imageUrl === 'DELETED') {
     return (
       <div className="mb-2">
@@ -151,6 +165,7 @@ const PhotoMessage: React.FC<{
     );
   }
 
+  // Placeholder state: Shows a blurred thumbnail and a download button
   if (!imageUrl) {
     return (
       <div className="mb-2">
@@ -158,7 +173,7 @@ const PhotoMessage: React.FC<{
           className="relative overflow-hidden rounded-xl min-w-[240px] min-h-[180px] cursor-pointer group transition-all border border-gray-200/10 shadow-lg"
           onClick={startDownload}
         >
-          {/* Blurred Thumbnail Background */}
+          {/* STAGE 1: Low-Quality Blurred Placeholder (Base64 from API) */}
           {message.media_thumbnail && (
             <div
               className="absolute inset-0 bg-cover bg-center scale-110 transition-transform duration-500 group-hover:scale-105"
@@ -169,18 +184,18 @@ const PhotoMessage: React.FC<{
             />
           )}
 
-          {/* Fallback pattern/color if no thumbnail */}
           {!message.media_thumbnail && (
             <div className="absolute inset-0 bg-gradient-to-br from-gray-700/40 to-gray-900/40 flex items-center justify-center opacity-50">
               <ImageIcon className="w-20 h-20 text-white/10 blur-[2px]" />
             </div>
           )}
 
-          {/* Content Overlay */}
+          {/* STAGE 2: Interactive Download Overlay */}
           <div className="relative z-10 flex flex-col items-center justify-center min-h-[180px] w-full bg-black/5 group-hover:bg-black/10 transition-colors">
             <div className="flex flex-col items-center space-y-3">
               <div className="relative flex items-center justify-center">
                 {loading ? (
+                  // Circular progress indicator while downloading
                   <div className="relative w-14 h-14 flex items-center justify-center">
                     <svg className="w-full h-full -rotate-90 transform">
                       <circle
@@ -209,21 +224,20 @@ const PhotoMessage: React.FC<{
                     </span>
                   </div>
                 ) : (
+                  // Static download icon link
                   <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform border border-white/20">
                     <Download className="w-7 h-7 text-white" />
                   </div>
                 )}
               </div>
               <div className="text-center px-4">
-                <p className="text-[13px] font-bold text-white drop-shadow-lg">
-                  Photo
-                </p>
+                <p className="text-[13px] font-bold text-white drop-shadow-lg">Photo</p>
                 {progress && progress.total > 0 && (
                   <p className="text-[11px] text-white font-medium mt-0.5 drop-shadow-md">
                     {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
                   </p>
                 )}
-                {error && <p className="text-xs text-red-500 mt-1 font-bold">Failed to load. Click to retry.</p>}
+                {error && <p className="text-xs text-red-500 mt-1 font-bold tracking-tight">Failed to load. Click to retry.</p>}
               </div>
             </div>
           </div>
@@ -232,14 +246,10 @@ const PhotoMessage: React.FC<{
     );
   }
 
+  // STAGE 3: Final High-Resolution Display
   return (
     <div className="mb-2">
-      <div
-        className="relative rounded-lg overflow-hidden cursor-pointer group max-w-md shadow-sm border border-black/5 dark:border-white/5"
-        onClick={() => {
-          // Optional: Open a full screen preview if needed, for now just allow re-download/save via menu
-        }}
-      >
+      <div className="relative rounded-lg overflow-hidden cursor-pointer group max-w-md shadow-sm border border-black/5 dark:border-white/5">
         <img
           src={imageUrl}
           alt={message.media_file_name || 'Photo'}
@@ -247,7 +257,7 @@ const PhotoMessage: React.FC<{
           style={{ display: 'block' }}
           onLoad={() => onImageLoad?.()}
         />
-        {/* Full View / Save overlay on hover */}
+        {/* Hover Action: Download to User's computer */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
           <div className="opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-300">
             <div
@@ -255,22 +265,23 @@ const PhotoMessage: React.FC<{
                 e.stopPropagation();
                 onDownload(message);
               }}
-              className="bg-black/60 hover:bg-black/80 p-3 rounded-full text-white flex items-center justify-center space-x-2 backdrop-blur-sm"
+              className="bg-black/60 hover:bg-black/80 p-3 rounded-full text-white flex items-center justify-center space-x-2 backdrop-blur-sm shadow-xl"
             >
               <Download className="w-5 h-5" />
-              <span className="text-xs font-medium">Save to system</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Save to disk</span>
             </div>
           </div>
         </div>
       </div>
       {message.media_file_name && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1 italic">{message.media_file_name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 px-1 font-medium">{message.media_file_name}</p>
       )}
     </div>
   );
 };
 
-// Video Message Component - displays videos inline like Telegram
+// --- COMPONENT: VIDEO MESSAGE ---
+// Handles video playback, buffering states, and persistent storage
 const VideoMessage: React.FC<{
   message: TelegramMessage;
   loadedImages: Record<number, string>;
@@ -283,7 +294,7 @@ const VideoMessage: React.FC<{
   const [error, setError] = useState(false);
   const [progress, setProgress] = useState<{ loaded: number; total: number; percentage: number } | null>(null);
 
-  // Auto-check persistent cache on mount
+  // Sync with IndexedDB cache on component initialization
   useEffect(() => {
     if (!videoUrl && !loading) {
       getCachedMedia(message.id).then(blob => {
@@ -295,6 +306,7 @@ const VideoMessage: React.FC<{
     }
   }, [message.id]);
 
+  // Request the video binary from the server
   const startDownload = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (loading || videoUrl) return;
@@ -309,7 +321,7 @@ const VideoMessage: React.FC<{
     });
   };
 
-  // Check if media was deleted
+  // If the video link is broken or expired
   if (videoUrl === 'DELETED') {
     return (
       <div className="mb-2">
@@ -324,6 +336,7 @@ const VideoMessage: React.FC<{
     );
   }
 
+  // Pre-download state: Shows play button overlay on top of blurred thumbnail
   if (!videoUrl) {
     const durationStr = formatDuration(message.media_duration);
 
@@ -333,7 +346,7 @@ const VideoMessage: React.FC<{
           className="relative overflow-hidden rounded-xl min-w-[240px] min-h-[180px] cursor-pointer group transition-all border border-purple-500/10 shadow-lg"
           onClick={startDownload}
         >
-          {/* Blurred Thumbnail Background */}
+          {/* Blurred Placeholder */}
           {message.media_thumbnail && (
             <div
               className="absolute inset-0 bg-cover bg-center scale-110 transition-transform duration-500 group-hover:scale-105"
@@ -344,7 +357,6 @@ const VideoMessage: React.FC<{
             />
           )}
 
-          {/* Fallback pattern/color if no thumbnail */}
           {!message.media_thumbnail && (
             <div className="absolute inset-0 bg-gradient-to-br from-purple-900/40 to-gray-900/40 flex items-center justify-center opacity-50">
               <Play className="w-20 h-20 text-white/10 blur-[2px]" />
@@ -378,9 +390,7 @@ const VideoMessage: React.FC<{
                         className="text-white transition-all duration-300"
                       />
                     </svg>
-                    <span className="absolute text-[11px] font-bold text-white">
-                      {progress?.percentage || 0}%
-                    </span>
+                    <span className="absolute text-[11px] font-bold text-white">{progress?.percentage || 0}%</span>
                   </div>
                 ) : (
                   <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform border border-white/20">
@@ -389,9 +399,7 @@ const VideoMessage: React.FC<{
                 )}
               </div>
               <div className="text-center px-4">
-                <p className="text-[13px] font-bold text-white drop-shadow-lg">
-                  Video
-                </p>
+                <p className="text-[13px] font-bold text-white drop-shadow-lg">Video</p>
                 {progress && progress.total > 0 && (
                   <p className="text-[11px] text-white font-medium mt-0.5 drop-shadow-md">
                     {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
@@ -401,7 +409,7 @@ const VideoMessage: React.FC<{
               </div>
             </div>
 
-            {/* Duration Tag like in the screenshot */}
+            {/* Video duration tag (e.g., 0:45) */}
             {durationStr && !loading && (
               <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded flex items-center space-x-1 border border-white/10">
                 <Video className="w-3 h-3 text-white fill-white" />
@@ -414,11 +422,10 @@ const VideoMessage: React.FC<{
     );
   }
 
+  // Final Playback state: HTML5 Video player with controls
   return (
     <div className="mb-2">
-      <div
-        className="relative rounded-lg overflow-hidden max-w-md bg-gray-900/50 shadow-sm border border-black/5 dark:border-white/5"
-      >
+      <div className="relative rounded-lg overflow-hidden max-w-md bg-gray-900/50 shadow-sm border border-black/5 dark:border-white/5">
         <video
           src={videoUrl}
           controls
@@ -427,19 +434,15 @@ const VideoMessage: React.FC<{
           loop
           muted
           playsInline
-          className="w-full h-auto max-h-[450px] object-contain"
+          className="w-full h-auto max-h-[450px] object-contain shadow-2xl"
           style={{ display: 'block' }}
           preload="auto"
         >
           Your browser does not support the video tag.
         </video>
-        {/* Full View / Save overlay on top right */}
         <div className="absolute top-2 right-2 flex space-x-2">
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownload(message);
-            }}
+            onClick={(e) => { e.stopPropagation(); onDownload(message); }}
             className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white transition-all backdrop-blur-sm"
             title="Save video to system"
           >
@@ -448,7 +451,7 @@ const VideoMessage: React.FC<{
         </div>
       </div>
       {message.media_file_name && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1 italic">{message.media_file_name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 px-1 font-medium">{message.media_file_name}</p>
       )}
     </div>
   );
@@ -497,6 +500,7 @@ export default function ChatWindow({
   setScheduledMessages,
   conversations,
 }: ChatWindowProps): JSX.Element {
+  // --- UI & INTERACTION STATE ---
   const [showChatMenu, setShowChatMenu] = useState(false);
   const conversationId = currentConversation?.id;
   const [newMessage, setNewMessage] = useState('');
@@ -517,12 +521,15 @@ export default function ChatWindow({
   const [reactingToMessageId, setReactingToMessageId] = useState<number | null>(null);
   const [reactionAnchor, setReactionAnchor] = useState<{ x: number; y: number; showAbove: boolean } | null>(null);
   const emojiStrip = ['❤️', '🔥', '👍', '😂', '😍', '🙏'];
+
+  // --- REFS FOR VIRTUALIZATION & SCROLLING ---
   const inputRef = useRef<HTMLInputElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isAtBottomRef = useRef(true);
   const lastScrolledId = useRef<number | null>(null);
   const initialScrollAnchorRef = useRef<boolean>(true);
 
+  // Close context menu on any window click
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
@@ -623,36 +630,37 @@ export default function ChatWindow({
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper to check if message has photo media
+  // --- UTILITY: MEDIA TYPE DETECTION ---
   const hasPhoto = (message: TelegramMessage) => {
     return message.type === 'photo' ||
       (message.type === 'auto_reply' && message.media_file_name?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   };
 
-
-  // Helper to check if message has video media
-
-  // Helper to check if message has video media
   const hasVideo = (message: TelegramMessage) => {
     return message.type === 'video' ||
       (message.type === 'auto_reply' && message.media_file_name?.match(/\.(mp4|webm|mov|avi)$/i));
   };
 
-  // Sort messages by timestamp and include unsent scheduled messages
+  // --- MESSAGE LIST PROCESSING ---
+  // Merges real message history with "Virtual Scheduled Bubbles".
+  // Virtual bubbles allow the user to see what they have planned in the timeline
+  // without waiting for the server to actually send the message.
   const sortedMessages = useMemo(() => {
-    // Track sent outgoing texts to hide virtual scheduled bubbles once the real message arrives
+    // Collect all outgoing text bodies that have already been confirmed by the server
     const sentOutgoingTexts = new Set(messages.filter(m => m.is_outgoing && m.telegram_message_id > 0).map(m => m.original_text?.trim()));
 
     const virtualScheduled = scheduledMessages
       .filter(sm => {
+        // Only show pending tasks
         if (sm.is_sent || sm.is_cancelled) return false;
-        // Hide virtual bubble if a real outgoing message with same text already landed
+        // If a real outgoing message with the EXACT same text is already in the chat, 
+        // it means the scheduled task just fired. Hide the virtual bubble to avoid duplication.
         if (sentOutgoingTexts.has(sm.message_text?.trim())) return false;
         return true;
       })
       .map(sm => ({
-        id: -(sm.id + 900000), // negative to avoid collision with real message IDs
-        scheduled_message_id: sm.id,  // store real scheduled ID for cancel action
+        id: -(sm.id + 900000), // Unique negative ID to avoid conflicts
+        scheduled_message_id: sm.id,
         conversation_id: sm.conversation_id,
         telegram_message_id: 0,
         sender_name: currentAccount?.displayName || 'Me',
@@ -663,13 +671,15 @@ export default function ChatWindow({
         translated_text: undefined,
         created_at: sm.scheduled_at,
         is_outgoing: true,
-        is_scheduled_virtual: true,
+        is_scheduled_virtual: true, // Special flag to render "Queued" icon
         scheduled_at: sm.scheduled_at,
       } as any));
 
     return [...messages, ...virtualScheduled].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [messages, scheduledMessages, currentAccount, currentConversation]);
 
+  // --- LIST TRANSFORMATION ---
+  // Injects "Date Separators" (e.g., Today, Yesterday, March 5) into the flat array
   const listItems = useMemo(() => {
     const items: ({ type: 'date'; label: string; id: string } | { type: 'message'; data: TelegramMessage })[] = [];
     let lastDateLabel = '';
@@ -680,6 +690,7 @@ export default function ChatWindow({
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86400000);
+
       if (diffDays === 0) return 'Today';
       if (diffDays === 1) return 'Yesterday';
       if (date.getFullYear() === now.getFullYear()) {
@@ -691,6 +702,7 @@ export default function ChatWindow({
     sortedMessages.forEach((message) => {
       const dateLabel = getDateLabel(message.created_at);
       if (dateLabel !== lastDateLabel) {
+        // New day detected, push separator FIRST
         items.push({ type: 'date', label: dateLabel, id: `sep-${message.id}` });
         lastDateLabel = dateLabel;
       }
@@ -801,11 +813,12 @@ export default function ChatWindow({
     setTimeout(() => setContactSaveAlert(false), 3000);
   };
 
+  // --- FILE ATTACHMENT HANDLERS ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (max 50MB)
+    // Reject huge files to avoid browser crashes and server timeouts
     if (file.size > 50 * 1024 * 1024) {
       alert('File size must be less than 50MB');
       return;
@@ -813,7 +826,7 @@ export default function ChatWindow({
 
     setSelectedFile(file);
 
-    // Create preview for images
+    // If it's an image, create a local preview URL so the user can see what they are about to send
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -838,17 +851,20 @@ export default function ChatWindow({
 
     setUploadingFile(true);
     try {
+      // Execute the sendMedia callback passed from App.tsx
       await onSendMedia(selectedFile, newMessage);
-      // Clear file and message
+      // Clean up UI on success
       handleRemoveFile();
       setNewMessage('');
     } catch (error) {
-      // Error is handled in the callback
     } finally {
       setUploadingFile(false);
     }
   };
 
+  // --- MEDIA DOWNLOAD LOGIC (STREAMED) ---
+  // Downloads photos/videos from the server using the auth token.
+  // Uses Streams to track download progress real-time.
   const loadImage = async (
     message: TelegramMessage,
     onProgress?: (progress: { loaded: number; total: number; percentage: number }) => void
@@ -858,7 +874,7 @@ export default function ChatWindow({
       return loadedImages[message.id];
     }
 
-    // 2. Check persistent IndexedDB cache
+    // 2. Check persistent IndexedDB cache (stored from previous sessions)
     try {
       const cachedBlob = await getCachedMedia(message.id);
       if (cachedBlob) {
@@ -867,39 +883,32 @@ export default function ChatWindow({
         return url;
       }
     } catch (e) {
-      console.warn('Cache lookup failed', e);
+      console.warn('Persistent cache lookup failed', e);
     }
 
+    // 3. Fallback: Download from API
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
       const url = `/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
 
       const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
-      // Check if media was deleted (410 Gone)
+      // Special handling for 410 Gone: The media file was cleared by TDLib to save server space
       if (response.status === 410) {
-        // Mark as deleted
         setLoadedImages(prev => ({ ...prev, [message.id]: 'DELETED' }));
         return 'DELETED';
       }
 
-      if (!response.ok) {
-        throw new Error('Failed to load media');
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
+      if (!response.ok || !response.body) throw new Error('Download stream missing or failed');
 
       const contentLength = +(response.headers.get('Content-Length') || 0);
       const reader = response.body.getReader();
       let loadedValue = 0;
       const chunks: Uint8Array[] = [];
 
+      // Read the stream chunk-by-chunk to update the circular progress UI
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -919,15 +928,15 @@ export default function ChatWindow({
       const blob = new Blob(chunks as any[]);
       const imageUrl = window.URL.createObjectURL(blob);
 
-      // Save to persistent cache
+      // Save to IndexedDB so we don't have to download this again
       await setCachedMedia(message.id, blob);
 
-      // Cache the loaded image in memory
+      // Cache the memory URL so switching between tabs doesn't cause a flicker
       setLoadedImages(prev => ({ ...prev, [message.id]: imageUrl }));
 
       return imageUrl;
     } catch (error) {
-      console.error('Failed to load media:', error);
+      console.error('Final media fetch failed:', error);
       return null;
     }
   };
@@ -1315,9 +1324,9 @@ export default function ChatWindow({
       )
       }
 
-      {/* Chat header */}
+      {/* --- SECTION: CHAT HEADER --- */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10 transition-colors duration-200 relative min-h-[72px]">
-        {/* In selection mode, the absolute overlay above covers the header — just show as normal */}
+        {/* In selection mode, the absolute overlay above covers the header */}
         {isSelectionMode ? (
           <div className="flex items-center space-x-6 animate-fade-in">
             <span className="text-[17px] font-semibold text-gray-900 dark:text-white">
@@ -1359,7 +1368,7 @@ export default function ChatWindow({
                     )}
                   </div>
                 </div>
-                {/* Scheduled Messages count in header (compact) */}
+                {/* Compact display of pending tasks for this chat */}
                 {scheduledMessages.length > 0 && (
                   <div className="flex items-center space-x-1 px-2 py-1 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-md">
                     <Clock className="w-3.5 h-3.5 text-blue-500" />
@@ -1370,7 +1379,8 @@ export default function ChatWindow({
                 )}
               </div>
             </div>
-            {/* Chat Actions Menu */}
+            
+            {/* Conversation Settings Menu (Delete/Leave) */}
             {currentConversation && (
               <div className="relative ml-2">
                 <button
@@ -1384,7 +1394,7 @@ export default function ChatWindow({
                 </button>
                 {showChatMenu && (
                   <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] z-50 w-52 py-1 animate-scale-in">
-                    {/* Private Chat Options */}
+                    {/* Private Chat Options: Allows full deletion */}
                     {currentConversation.type === 'private' && onDeleteConversation && (
                       <button
                         onClick={() => {
@@ -1404,7 +1414,7 @@ export default function ChatWindow({
                       </button>
                     )}
 
-                    {/* Group/Channel Options */}
+                    {/* Group/Channel Options: Allows leaving */}
                     {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
                       <button
                         onClick={() => {
@@ -1430,7 +1440,8 @@ export default function ChatWindow({
                 )}
               </div>
             )}
-            {/* Contact Info Button */}
+            
+            {/* [FEATURE: Contact CRM] - Link to external or internal contact data */}
             {currentConversation && (
               <button
                 id="chat-crm-btn"
@@ -1509,13 +1520,14 @@ export default function ChatWindow({
                   );
                 }
 
+                // --- RENDERER: SYSTEM ANNOUNCEMENT ---
                 const message = item.data;
                 if (message.type === 'system') {
                   return (
                     <div key={message.id} className="flex justify-center mb-4 px-6">
                       <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-2xl">
-                        <p className="text-xs text-yellow-300 text-center">{message.original_text}</p>
-                        <p className="text-xs text-gray-500 text-center mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                        <p className="text-xs text-yellow-300 text-center font-medium leading-relaxed">{message.original_text}</p>
+                        <p className="text-[10px] text-gray-500 text-center mt-1 uppercase tracking-wider">{new Date(message.created_at).toLocaleString()}</p>
                       </div>
                     </div>
                   );
@@ -1925,27 +1937,30 @@ export default function ChatWindow({
               </div>
             )}
 
-            {/* Input row */}
-            {currentConversation?.is_hidden ? (
-              <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
-                <button
-                  onClick={() => conversationId && onJoinConversation?.(conversationId)}
-                  className="flex-1 py-4 bg-[#419FD9] hover:bg-[#3b8fc4] text-white font-bold uppercase tracking-widest transition-all active:scale-[0.99] flex items-center justify-center"
-                >
-                  Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
-                </button>
-              </div>
-            ) : currentConversation?.type === 'channel' ? (
-              <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
-                <button
-                  onClick={() => conversationId && onToggleMute?.(conversationId)}
-                  className="flex-1 py-3 text-[#419FD9] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all active:scale-[0.99]"
-                >
-                  {currentConversation.is_muted ? 'Unmute' : 'Mute'}
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+              {/* --- INPUT AREA: UNJOINED STATE --- */}
+              {/* If user is viewing a public chat they haven't joined yet */}
+              {currentConversation?.is_hidden ? (
+                <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+                  <button
+                    onClick={() => conversationId && onJoinConversation?.(conversationId)}
+                    className="flex-1 py-4 bg-[#419FD9] hover:bg-[#3b8fc4] text-white font-bold uppercase tracking-widest transition-all active:scale-[0.99] flex items-center justify-center"
+                  >
+                    Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
+                  </button>
+                </div>
+              ) : currentConversation?.type === 'channel' ? (
+                // --- INPUT AREA: CHANNEL (READ-ONLY) ---
+                <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
+                  <button
+                    onClick={() => conversationId && onToggleMute?.(conversationId)}
+                    className="flex-1 py-3 text-[#419FD9] font-bold uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-white/5 transition-all active:scale-[0.99]"
+                  >
+                    {currentConversation.is_muted ? 'Unmute' : 'Mute'}
+                  </button>
+                </div>
+              ) : (
+                // --- INPUT AREA: STANDARD CHAT ---
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
                 <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
 
                 {/* Text input with emoji icon inside */}

@@ -1,3 +1,13 @@
+/**
+ * --- ADMIN MESSAGE REVIEW PAGE ---
+ * 
+ * Allows administrators to monitor all conversations across all colleagues.
+ * Features:
+ * 1. Multi-level filtering: Colleague -> Telegram Account -> Conversation
+ * 2. Live WebSocket streaming: New messages appear automatically
+ * 3. Media processing: Unified download and rendering for images/videos/files
+ * 4. Audit Trail: Distinguishes between manual sends and Auto-Replies
+ */
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Cookies from 'js-cookie';
@@ -5,7 +15,8 @@ import { Search, Filter, ArrowLeft, MessageSquare, Image as ImageIcon, Video as 
 import { adminApi } from '../services/api';
 import { Message, Conversation, ColleagueWithAccounts } from '../types';
 
-// Image Message Component
+// --- COMPONENT: IMAGE MESSAGE ---
+// Handles lazy loading and rendering of image media in the audit trail.
 const ImageMessage: React.FC<{
   message: Message;
   loadedMedia: Record<number, string>;
@@ -18,6 +29,7 @@ const ImageMessage: React.FC<{
   const [loading, setLoading] = useState(!loadedMedia[message.id]);
   const [error, setError] = useState(false);
 
+  // Load the image binary when the component enters the viewport or the message changes
   useEffect(() => {
     const hasMedia = message.media_file_name || ['photo', 'video', 'voice', 'document', 'sticker'].includes(message.type);
     if (!loadedMedia[message.id] && hasMedia) {
@@ -34,6 +46,7 @@ const ImageMessage: React.FC<{
     }
   }, [message, loadedMedia, loadMedia]);
 
+  // Loading Placeholder
   if (loading) {
     return (
       <div className="mb-2 rounded-lg overflow-hidden bg-gray-100 max-w-xs">
@@ -47,6 +60,7 @@ const ImageMessage: React.FC<{
     );
   }
 
+  // Handle deleted/expired media from Telegram servers
   if (imageUrl === 'DELETED') {
     return (
       <div className="mb-2 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center space-x-2">
@@ -77,6 +91,7 @@ const ImageMessage: React.FC<{
         alt={message.media_file_name || 'Photo'}
         className={`w-full h-auto max-h-[500px] bg-gray-100 ${isSticker ? '' : 'object-contain'} ${isMediaOnly ? 'rounded-2xl' : 'rounded-t-2xl'}`}
       />
+      {/* Download Hover Overlay */}
       {!isSticker && (
         <div className={`absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center ${isMediaOnly ? 'rounded-2xl' : 'rounded-t-2xl'}`}>
           <div className="opacity-0 group-hover:opacity-100 bg-black/40 text-white rounded-full p-2 transition-opacity duration-200">
@@ -165,14 +180,7 @@ const VideoMessage: React.FC<{
   );
 };
 
-/**
- * MESSAGE REVIEW COMPONENT (ADMIN)
- * A powerful auditing tool for administrators to monitor all conversations 
- * across the entire platform. Supports advanced filtering, media playback, 
- * and real-time message stream via WebSocket.
- */
 const MessageReview = () => {
-
   const { userId } = useParams();
   const navigate = useNavigate();
 
@@ -243,6 +251,8 @@ const MessageReview = () => {
   }, [selectedConversationId, messages.length === MESSAGES_PER_PAGE]); // Trigger on initial load
 
 
+  // --- FETCH: CONVERSATIONS ---
+  // Retrieves the list of chats based on selected colleague and/or account.
   const fetchConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
@@ -253,7 +263,7 @@ const MessageReview = () => {
       const response = await adminApi.getConversations(params);
       setConversations(response.data);
     } catch (error) {
-      console.error('Failed to fetch conversations:', error);
+      console.error('Final conversations fetch failed:', error);
       setConversations([]);
     } finally {
       setLoadingConversations(false);
@@ -333,7 +343,8 @@ const MessageReview = () => {
     selectedConvRef.current = selectedConversationId;
   }, [selectedConversationId]);
 
-  // WebSocket Connection
+  // --- WEBSOCKET: REAL-TIME AUDIT STREAM ---
+  // Establishes a permanent connection to listen for new messages across ALL accounts.
   useEffect(() => {
     const adminToken = Cookies.get('admin_token');
     if (!adminToken) return;
@@ -344,58 +355,53 @@ const MessageReview = () => {
     socketRef.current = socket;
 
     socket.onopen = () => {
-      console.log('Admin WebSocket connected');
+      console.log('Admin stream established');
     };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+
+        // Handle incoming messages for the selected view
         if (data.type === 'new_message') {
           const newMessage = data.message;
           const currentSelectedId = selectedConvRef.current;
 
-          // Update conversations list (bring the relevant conversation to the top)
+          // Push the conversation to the top of the sidebar list
           setConversations(prev => {
             const index = prev.findIndex(c => c.id === newMessage.conversation_id);
             if (index !== -1) {
               const updated = [...prev];
-              updated[index] = {
-                ...updated[index],
-                last_message_at: newMessage.created_at
-              };
-              // Move to top
+              updated[index] = { ...updated[index], last_message_at: newMessage.created_at };
               const item = updated.splice(index, 1)[0];
               return [item, ...updated];
             }
             return prev;
           });
 
-          // Add message to view if it's the current conversation
+          // If the user is currently watching THIS conversation, append the message
           if (newMessage.conversation_id === currentSelectedId) {
             setMessages(prev => {
-              // Check if message already exists
-              if (prev.some(m => m.id === newMessage.id || m.telegram_message_id === newMessage.telegram_message_id)) {
-                return prev;
-              }
+              if (prev.some(m => m.id === newMessage.id || m.telegram_message_id === newMessage.telegram_message_id)) return prev;
               const updated = [...prev, newMessage];
-              // Scroll to bottom
+
+              // Auto-scroll to bottom if the viewer is already near the bottom
               setTimeout(() => {
                 if (messagesContainerRef.current) {
                   const container = messagesContainerRef.current;
-                  // If we are within 250px of bottom, or it's an outgoing message, scroll down
                   const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 250;
-                  if (isNearBottom || newMessage.sender_user_id === selectedConvRef.current) {
-                    container.scrollTo({
-                      top: container.scrollHeight,
-                      behavior: 'smooth'
-                    });
+                  if (isNearBottom || isMessageFromAccount(newMessage)) {
+                    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
                   }
                 }
               }, 50);
               return updated;
             });
           }
-        } else if (data.type === 'messages_deleted') {
+        }
+
+        // Handle deletions (sync UI with background events)
+        else if (data.type === 'messages_deleted') {
           const { conversation_id, message_ids } = data;
           if (conversation_id === selectedConvRef.current) {
             setMessages(prev => prev.filter(m => !message_ids.includes(m.id)));
@@ -414,7 +420,6 @@ const MessageReview = () => {
             accounts: colleague.accounts.filter(acc => acc.id !== account_id)
           })));
 
-          // If viewing conversations for this account, refresh or clear
           if (selectedAccountId === account_id) {
             setSelectedAccountId(null);
             setConversations([]);
@@ -422,12 +427,12 @@ const MessageReview = () => {
           }
         }
       } catch (err) {
-        console.error('Error handling WebSocket message:', err);
+        console.error('Admin WS parse error:', err);
       }
     };
 
     socket.onclose = () => {
-      console.log('Admin WebSocket disconnected');
+      console.log('Admin stream closed');
     };
 
     return () => {

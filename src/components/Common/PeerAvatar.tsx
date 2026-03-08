@@ -79,25 +79,11 @@ export function prefetchAvatars(accountId: number, peers: { peerId: number }[]) 
 
 // ------------------------------------------------------------------
 
-/**
- * PEER AVATAR COMPONENT
- * Renders user/group/channel identity across the app.
- * Features:
- * 1. Generates consistent initials and colors from names.
- * 2. Implements a persistent photo cache to minimize Telegram API hits.
- * 3. Supports batch pre-fetching of images.
- */
 export default function PeerAvatar({
     accountId, peerId, name, photoUrl: propPhoto,
     className = '', isActive = false
 }: PeerAvatarProps) {
-    /**
-     * CACHE SYSTEM
-     * Looks up photos in local memory or browser storage before querying the server.
-     * If a peerId is provided, the component automatically attempts to fetch the latest bio photo.
-     */
     const cacheKey = accountId && peerId ? `${accountId}_${peerId}` : null;
-
     const cached = cacheKey ? cacheGet(cacheKey) : undefined;
 
     // If prop photo provided directly, use it immediately

@@ -2,15 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import Cookies from 'js-cookie';
 import { useAuth } from './useAuth';
 
-/**
- * USE SOCKET HOOK
- * Manages a persistent WebSocket connection to the backend.
- * Provides real-time event broadcasting to UI components.
- */
 export function useSocket() {
   const { isAuthenticated, token: authContextToken } = useAuth();
-
-  // Connection state refs
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlers = useRef<Set<(data: any) => void>>(new Set());
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,13 +12,7 @@ export function useSocket() {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
-  /**
-   * CONNECTION LOGIC
-   * Establishes a secure/insecure WebSocket connection using the user's JWT token.
-   * Includes error handling, heartbeat (ping/pong), and automatic exponential backoff for reconnection.
-   */
   const connect = useCallback(() => {
-
     // Only attempt connection if authenticated
     if (!isAuthenticated) return;
 
