@@ -16,6 +16,19 @@ interface SidebarProps {
   unreadCounts: Record<number, Record<number, number>>; // accountId -> { conversationId: count }
 }
 
+/**
+ * ---------------------------------------------------------
+ * ACCOUNT ORCHESTRATION SIDEBAR (src/components/Layout/Sidebar.tsx)
+ * ---------------------------------------------------------
+ * Manages the multi-session environment for Telegram accounts.
+ * 
+ * CORE FEATURES:
+ * 1. Account Selection: Switches between isolated Telegram sessions.
+ * 2. Real-time Status: Reflects MTProto connection state (Online/Offline).
+ * 3. Quick Actions: Direct access to Profile, Multi-Device Sessions, and Language settings.
+ * 4. Aggregate Notifications: Collates unread message counts across all conversations.
+ * 5. Intelligent Sorting: Prioritizes active connections with natural-sort alphanumeric ordering.
+ */
 export default function Sidebar({
   accounts,
   currentAccount,
@@ -29,8 +42,14 @@ export default function Sidebar({
   onSessions,
   unreadCounts,
 }: SidebarProps) {
-  // Natural sort function that handles numbers correctly (1,2,3,11,23 instead of 1,11,2,23,3)
+
+  /**
+   * SORTING LOGIC
+   * naturalSort: Ensures numeric display names are ordered logically.
+   * sortedAccounts: Prioritizes active (connected) accounts and sorts them alphabetically.
+   */
   const naturalSort = (a: string, b: string): number => {
+
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
   };
 

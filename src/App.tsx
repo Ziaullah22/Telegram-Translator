@@ -28,26 +28,45 @@ import { Zap, X } from 'lucide-react';
 import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage } from './types';
 
 function App() {
-  // Auth state
+  /**
+   * AUTHENTICATION STATE
+   * Manages user login status and whether they are currently viewing the login or register form.
+   */
   const { isAuthenticated, isLoading } = useAuth();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
-  // Socket connection
+  /**
+   * REAL-TIME UPDATES (WEBSOCKET)
+   * Connects to the backend via WebSocket to receive instant updates like new messages.
+   */
   const { onMessage } = useSocket();
 
-  // App state
+  /**
+   * APPLICATION DATA STATE
+   * Tracks Telegram accounts, active conversations, message history, and UI visibility.
+   */
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
   const [currentAccount, setCurrentAccount] = useState<TelegramAccount | null>(null);
   const [conversations, setConversations] = useState<TelegramChat[]>([]);
   const [currentConversation, setCurrentConversation] = useState<TelegramChat | null>(null);
   const [messages, setMessages] = useState<TelegramMessage[]>([]);
+
+  // Modal visibility states
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [showEditAccountModal, setShowEditAccountModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<TelegramAccount | null>(null);
+
+  // Unread badge tracking for accounts and conversations
   const [unreadCounts, setUnreadCounts] = useState<Record<number, Record<number, number>>>({});
+
+  // Flash notifications (toasts)
   const [notification, setNotification] = useState<{ title: string; message: string; id: number; accountId: number; conversationId: number; avatar?: string } | null>(null);
+
+  // Interactive User Tour state
   const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
+
+  // Pagination and auxiliary states
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileAccount, setProfileAccount] = useState<TelegramAccount | null>(null);
@@ -55,15 +74,21 @@ function App() {
   const [sessionsAccount, setSessionsAccount] = useState<TelegramAccount | null>(null);
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
   const [accountToDelete, setAccountToDelete] = useState<TelegramAccount | null>(null);
+
+  // Refs for audio and persistent tracking
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedMessageIds = useRef<Set<number>>(new Set());
 
-  // --- PHASE 3: SMART MEMORY MANAGEMENT (FRONTEND) ---
-  // This unloads old chat data and keeps only the most recent 5 chats in memory.
+  // --- FEATURE: SMART MEMORY MANAGEMENT (PHASE 3) ---
+  // This unloads old chat data and keeps only the most recent 5 chats in memory 
+  // to maintain high performance even with thousands of messages.
   const messageCache = useRef<Record<number, { messages: TelegramMessage[], hasMore: boolean, lastViewed: number }>>({});
   const MAX_CACHE_SIZE = 5;
 
-  // Refs for current state
+  /**
+   * STATE REFS
+   * Used to access the latest state within WebSocket handlers to avoid stale closures.
+   */
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
   const conversationsRef = useRef<TelegramChat[]>(conversations);
@@ -72,23 +97,29 @@ function App() {
   useEffect(() => { currentConversationRef.current = currentConversation; }, [currentConversation]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
-  // Load accounts on mount
+  /**
+   * INITIALIZATION
+   * Loads Telegram accounts after the user is authenticated.
+   */
   useEffect(() => {
     if (isAuthenticated) loadAccounts();
   }, [isAuthenticated]);
 
-  // Handle notification sound
+  /**
+   * NOTIFICATION SYSTEM SETUP
+   * Pre-loads the sound effect and requests permission for browser push notifications.
+   */
   useEffect(() => {
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
   }, []);
 
-  // Native notifications
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
   }, []);
 
+  // Helper to play notification sound
   const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -96,6 +127,10 @@ function App() {
     }
   }, []);
 
+  /**
+   * NOTIFICATION CLICK HANDLER
+   * When a notification is clicked, this switches to the corresponding account and chat automatically.
+   */
   const handleNotificationClick = useCallback(async (accId: number, convId: number) => {
     const acc = accounts.find(a => Number(a.id) === accId);
     if (!acc) return;
@@ -111,7 +146,6 @@ function App() {
           const target = convs.find(c => Number(c.id) === convId);
           if (target) {
             setCurrentConversation(target);
-            // We'll load the messages in a separate flow or call the helper
           }
         } catch (e) { console.error(e); }
       }
@@ -122,6 +156,7 @@ function App() {
     setNotification(null);
   }, [accounts]);
 
+  // Triggers native browser push notifications
   const showNativeNotification = useCallback((title: string, body: string, accountId: number, conversationId: number, icon?: string) => {
     if ("Notification" in window && Notification.permission === "granted") {
       const n = new Notification(title, {
@@ -141,9 +176,13 @@ function App() {
     }
   }, [handleNotificationClick]);
 
-  // WebSocket
+  /**
+   * WS MESSAGE LISTENER (CORE REAL-TIME LOGIC)
+   * Listens for all incoming events from the backend (new messages, reactions, deletions).
+   */
   useEffect(() => {
     const unsubscribe = onMessage((data: any) => {
+      // HANDLE NEW MESSAGE EVENT
       if (data?.type === 'new_message' && data.message) {
         const incomingAccountId = Number(data.account_id);
         const incomingConversationId = Number(data.message.conversation_id);
@@ -152,6 +191,7 @@ function App() {
         const activeAccountId = activeAcc ? Number(activeAcc.id) : null;
         const activeConversationId = activeConv ? Number(activeConv.id) : null;
 
+        // Prevent duplicate processing
         if (data.message.id && processedMessageIds.current.has(data.message.id)) return;
         if (data.message.id) {
           processedMessageIds.current.add(data.message.id);
@@ -163,6 +203,7 @@ function App() {
 
         const isActiveConv = activeAccountId === incomingAccountId && activeConversationId === incomingConversationId;
 
+        // Handle incoming unread messages (sounds, notifications, counters)
         if (!data.message.is_outgoing) {
           const isMuted = conversationsRef.current.some(c => Number(c.id) === incomingConversationId && c.is_muted);
           if (!isMuted) {
@@ -178,6 +219,7 @@ function App() {
           }
         }
 
+        // Update global unread counters
         setUnreadCounts(prev => {
           const next = { ...prev };
           const byConv = { ...(next[incomingAccountId] || {}) };
@@ -187,6 +229,7 @@ function App() {
           return next;
         });
 
+        // Update conversation list snapshot (move chat to top if new message arrived)
         if (activeAccountId === incomingAccountId) {
           setConversations(prev => {
             const index = prev.findIndex(c => Number(c.id) === incomingConversationId);
@@ -197,6 +240,7 @@ function App() {
             return [conversation, ...updated];
           });
 
+          // If viewing this chat, push message directly to the screen
           if (activeConversationId === incomingConversationId) {
             setMessages(prev => {
               const isDuplicate = prev.some(msg => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
@@ -207,6 +251,7 @@ function App() {
           }
         }
 
+        // Update the Phase 3 memory cache
         if (messageCache.current[incomingConversationId]) {
           const cached = messageCache.current[incomingConversationId];
           const isDup = cached.messages.some((msg: TelegramMessage) => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
@@ -216,11 +261,15 @@ function App() {
           }
         }
       }
+
+      // HANDLE REACTIONS
       if (data?.type === 'message_reaction') {
         const messageId = Number(data.message_id);
         const reactions = data.reactions;
         setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, reactions } : msg));
       }
+
+      // HANDLE DELETIONS
       if (data?.type === 'conversation_deleted') {
         const delId = Number(data.conversation_id);
         setConversations(prev => prev.filter(c => c.id !== delId));
@@ -235,10 +284,14 @@ function App() {
     return unsubscribe;
   }, [onMessage, playNotificationSound, showNativeNotification]);
 
+  /**
+   * DATA FETCHING HELPERS
+   */
   const loadAccounts = async () => {
     try {
       const list = await telegramAPI.getAccounts();
       setAccounts(list);
+      // Synchronize current active account if it was already selected
       setCurrentAccount(prev => prev ? list.find(a => a.id === prev.id) || prev : null);
     } catch (e) { console.error(e); }
   };
@@ -247,6 +300,8 @@ function App() {
     try {
       const convs = await conversationsAPI.getConversations(accountId);
       setConversations(convs);
+
+      // Sync unread badge counts from backend data
       setUnreadCounts(prev => {
         const next = { ...prev };
         const counts: Record<number, number> = {};
@@ -257,19 +312,23 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // --- PHASE 3: SMART MEMORY FLUSHING ---
-  // This removes (flushes) older chats from the memory to prevent the app from getting slow.
+  /**
+   * MEMORY CACHE UTILITY
+   * Part of Phase 3 performance scaling. Prevents memory leaks by capping the number of chats stored.
+   */
   const updateMessageCache = (id: number, msgs: TelegramMessage[], hasMore: boolean) => {
     messageCache.current[id] = { messages: msgs, hasMore, lastViewed: Date.now() };
     const entries = Object.entries(messageCache.current);
     if (entries.length > MAX_CACHE_SIZE) {
-      // Find the least recently used chat (oldest timestamp)
       const oldestId = entries.sort(([, a], [, b]) => a.lastViewed - b.lastViewed)[0][0];
-      // DELETE it from memory to reclaim space
       delete messageCache.current[Number(oldestId)];
     }
   };
 
+  /**
+   * MESSAGE LOADING (CORE)
+   * Fetches the first page of messages for a chat, or pulls them from memory cache if available.
+   */
   const loadMessages = async (id: number) => {
     if (messageCache.current[id]) {
       const c = messageCache.current[id];
@@ -288,8 +347,10 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // --- PHASE 1: INCREMENTAL PAGINATION (FRONTEND) ---
-  // This triggers when you scroll near the top, loading older messages one slice at a time.
+  /**
+   * INFINITE SCROLL (PHASE 1)
+   * Fetches older messages incrementally as the user scrolls up.
+   */
   const loadMoreMessages = async (id: number) => {
     if (!hasMoreMessages) return;
     try {
@@ -308,10 +369,12 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // Add ref for messages to avoid stale closure in loadMore
   const messagesRef = useRef<TelegramMessage[]>(messages);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
+  /**
+   * UI ACTION HANDLERS
+   */
   const handleAccountSelect = (acc: TelegramAccount) => {
     setCurrentAccount(acc);
     setMessages([]);
@@ -323,6 +386,8 @@ function App() {
   const handleConversationSelect = (conv: TelegramChat) => {
     setCurrentConversation(conv);
     loadMessages(conv.id);
+
+    // Clear unread count locally for instant feedback
     if (currentAccount) {
       setUnreadCounts(prev => {
         const next = { ...prev };
@@ -333,6 +398,7 @@ function App() {
         return next;
       });
     }
+    // Mark as read in backend
     messagesAPI.markAsRead(conv.id).catch(e => console.error(e));
   };
 
@@ -387,6 +453,8 @@ function App() {
   const handleSendMessage = async (text: string, replyId?: number) => {
     if (!currentAccount || !currentAccount.isConnected || !currentConversation) return;
     const replied = replyId ? messages.find(m => m.telegram_message_id === replyId) : null;
+
+    // Create optimistic temporary message for instant UI feedback
     const temp: TelegramMessage = {
       id: -Date.now(), conversation_id: currentConversation.id, telegram_message_id: 0,
       sender_name: currentAccount.displayName || currentAccount.accountName,
@@ -398,10 +466,16 @@ function App() {
       reply_to_sender: replied ? replied.sender_name : undefined
     };
     setMessages(prev => [...prev, temp]);
+
     try {
       const res = await messagesAPI.sendMessage(currentConversation.id, text, true, replyId);
+      // Replace optimistic message with the real one from backend
       if (res && res.id) setMessages(prev => prev.map(m => m.id === temp.id ? res : m));
-    } catch (e) { setMessages(prev => prev.filter(m => m.id !== temp.id)); alert('Failed'); }
+    } catch (e) {
+      // Rollback on failure
+      setMessages(prev => prev.filter(m => m.id !== temp.id));
+      alert('Failed to send message');
+    }
   };
 
   const handleSendMedia = async (file: File, caption: string) => {
@@ -417,7 +491,10 @@ function App() {
     };
     setMessages(prev => [...prev, temp]);
     try {
-      const fd = new FormData(); fd.append('file', file); fd.append('conversation_id', currentConversation.id.toString()); fd.append('caption', caption);
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('conversation_id', currentConversation.id.toString());
+      fd.append('caption', caption);
       const res = await messagesAPI.sendMedia(fd);
       if (res && res.id) setMessages(prev => prev.map(m => m.id === tid ? res : m));
     } catch (e) { setMessages(prev => prev.filter(m => m.id !== tid)); alert('Failed'); }
@@ -442,9 +519,16 @@ function App() {
   };
 
   const handleDeleteMessages = async (id: number, mids: number[], revoke: boolean) => {
-    try { await messagesAPI.deleteMessages(id, mids, revoke); setMessages(prev => prev.filter(m => !mids.includes(m.id))); } catch (e) { throw e; }
+    try {
+      await messagesAPI.deleteMessages(id, mids, revoke);
+      setMessages(prev => prev.filter(m => !mids.includes(m.id)));
+    } catch (e) { throw e; }
   };
 
+  /**
+   * RENDER LOGIC
+   * Splits UI between Loading state, Guest/Auth forms, and the main Dashboard.
+   */
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center transition-colors duration-500">
@@ -521,6 +605,7 @@ function App() {
                       await loadConversations(currentAccount.id);
                       setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
                       loadMessages(id);
+                      // Fallback refresh for server lag
                       setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
                     }
                   } catch (e) { console.error(e); }
@@ -546,6 +631,7 @@ function App() {
           } />
         </Routes>
 
+        {/* Global Modals for Management */}
         <AddAccountModal isOpen={showAddAccountModal} onClose={() => setShowAddAccountModal(false)} onSuccess={loadAccounts} />
         <EditAccountModal isOpen={showEditAccountModal} account={editingAccount} onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }} onSuccess={loadAccounts} />
         <ProfileModal isOpen={showProfileModal} account={profileAccount} onClose={() => { setShowProfileModal(false); setProfileAccount(null); }} />
@@ -561,6 +647,7 @@ function App() {
         />
         <UserGuideTour isOpen={showTour} onClose={() => setShowTour(false)} hasAccounts={accounts.length > 0} hasConversation={!!currentConversation} currentStep={tourStep} onStepChange={setTourStep} />
 
+        {/* Real-time Toast Notifications */}
         {notification && (
           <div className="fixed bottom-8 right-8 z-[9000] animate-slide-up pointer-events-none">
             <div

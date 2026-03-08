@@ -165,7 +165,14 @@ const VideoMessage: React.FC<{
   );
 };
 
+/**
+ * MESSAGE REVIEW COMPONENT (ADMIN)
+ * A powerful auditing tool for administrators to monitor all conversations 
+ * across the entire platform. Supports advanced filtering, media playback, 
+ * and real-time message stream via WebSocket.
+ */
 const MessageReview = () => {
+
   const { userId } = useParams();
   const navigate = useNavigate();
 

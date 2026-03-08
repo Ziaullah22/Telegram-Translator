@@ -1,4 +1,17 @@
+/**
+ * ---------------------------------------------------------
+ * CORE TYPE DEFINITIONS (src/types/index.ts)
+ * ---------------------------------------------------------
+ * The central type system for the entire frontend application.
+ * Defines the structure for all major entities across the project.
+ * 
+ * MAJOR ENTITIES:
+ * - User & Auth: Session and account identity.
+ * - Telegram: Accounts, Chats, and Message schemas.
+ * - Features: Auto-Responder rules, Scheduled messages, and CRM Contacts.
+ */
 export interface User {
+
   id: number;
   username: string;
   email?: string;

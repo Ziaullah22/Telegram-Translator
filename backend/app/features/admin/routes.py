@@ -11,11 +11,18 @@ from app.core.admin_security import (
 from app.core.encryption import get_encryption_service, decrypt_message_if_encrypted
 from database import db
 from auth import get_password_hash
-import logging
-
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------
+# ADMIN CONTROLLER (admin/routes.py)
+# ---------------------------------------------------------
+# Provides high-level administrative functions, including:
+# 1. Colleague management (Create/Update/Delete/Status).
+# 2. Platform-wide message auditing and keyword monitoring.
+# 3. Global encryption settings management.
+# 4. Detailed analytics and performance statistics.
+# Restricted by separate admin authentication logic.
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
 
 # Request/Response Models
 class AdminLoginRequest(BaseModel):

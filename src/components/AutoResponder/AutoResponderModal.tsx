@@ -10,12 +10,26 @@ interface AutoResponderModalProps {
   rule?: AutoResponderRule | null;
 }
 
+/**
+ * ---------------------------------------------------------
+ * AUTO-RESPONDER EDITOR MODAL (src/components/AutoResponder/AutoResponderModal.tsx)
+ * ---------------------------------------------------------
+ * A comprehensive form for configuring complex auto-reply logic.
+ * 
+ * CORE CAPABILITIES:
+ * 1. Multi-keyword Mapping: Users can add/remove multiple triggers per rule.
+ * 2. Rich Text Responses: Editable text area for the automated reply.
+ * 3. Media Handling: Direct file upload for Photo/Video attachments.
+ * 4. Advanced Logic: Language targeting and priority weighting.
+ * 5. API Sync: Communicates with backend to persist changes and manage files.
+ */
 export default function AutoResponderModal({
   isOpen,
   onClose,
   onSuccess,
   rule,
 }: AutoResponderModalProps) {
+
   const [name, setName] = useState('');
   const [keywords, setKeywords] = useState<string[]>(['']);
   const [responseText, setResponseText] = useState('');

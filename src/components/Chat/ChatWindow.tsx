@@ -10,6 +10,14 @@ import ConfirmModal from '../Modals/ConfirmModal';
 import PeerAvatar from '../Common/PeerAvatar';
 import ForwardMessageModal from '../Modals/ForwardMessageModal';
 
+/**
+ * CHAT WINDOW COMPONENT
+ * The core messaging interface. Handles message rendering (text, emoji, media),
+ * virtualization for high performance, infinite scrolling, reply logic, 
+ * translation management, and UI actions (forwarding, deleting, reacting).
+ */
+
+
 // Helper to check if string contains only emojis
 const isOnlyEmoji = (str: string) => {
   if (!str) return false;

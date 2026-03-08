@@ -9,11 +9,27 @@ from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------
+# SCHEDULER SERVICE (scheduler_service.py)
+# ---------------------------------------------------------
+# Manages future-dated Telegram messages. 
+# Features:
+# 1. Background task loop (check every 30s).
+# 2. Persistence (loads pending msgs on startup).
+# 3. Auto-cancellation (cancels pending msg if party responds).
+# 4. WebSocket notifications for sent/cancelled status.
+
 class SchedulerService:
+    """
+    MESSAGE SCHEDULING ENGINE
+    Handles the queuing, sending, and cancelling of scheduled messages.
+    Uses an asyncio loop to process messages when their 'scheduled_at' time arrives.
+    """
     def __init__(self):
         self.scheduled_messages: Dict[int, dict] = {}  # message_id -> message_data
         self.scheduler_task: Optional[asyncio.Task] = None
         self.check_interval = 30  # Check every 30 seconds
+
         
     async def start(self):
         """Start the scheduler service"""
@@ -81,8 +97,15 @@ class SchedulerService:
             logger.info(f"Removed scheduled message {message_id} from scheduler")
     
     async def cancel_scheduled_messages_for_conversation(self, conversation_id: int):
-        """Cancel all scheduled messages for a conversation (when opposite party responds)"""
+        """
+        AUTO-CANCELLATION LOGIC
+        Triggered when a received message is processed.
+        Cancels all pending scheduled messages for the conversation 
+        to prevent bot-like behavior (e.g., sending a follow-up 
+        after the person has already replied).
+        """
         try:
+
             # Get scheduled messages before cancelling
             scheduled_msgs = await db.fetch(
                 """

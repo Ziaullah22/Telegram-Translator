@@ -1,16 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
-from typing import List
-from datetime import datetime
-from database import db
-from auth import get_current_user
-from models import (
-    MessageTemplateCreate,
-    MessageTemplateUpdate,
-    MessageTemplateResponse,
-    TokenData
-)
+# ---------------------------------------------------------
+# TEMPLATES CONTROLLER (app/features/templates/routes.py)
+# ---------------------------------------------------------
+# Manages reusable message templates for quick response.
+# Allows users to create, update, and delete text snippets 
+# that can be instantly inserted into chats.
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
+
 
 @router.post("", response_model=MessageTemplateResponse)
 async def create_template(

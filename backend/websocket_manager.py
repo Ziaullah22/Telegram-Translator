@@ -5,13 +5,31 @@ import json
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------
+# WEBSOCKET MANAGER (websocket_manager.py)
+# ---------------------------------------------------------
+# Handles real-time communication by maintaining a registry 
+# of active WebSocket connections. Supports targeted 
+# messaging for specific users and global broadcasting 
+# for administrative oversight.
+
 class ConnectionManager:
+    """
+    WEBSOCKET CONNECTION REGISTRY
+    active_connections: Tracks open sockets per user_id.
+    admin_connections: Tracks global sockets for admin monitoring.
+    """
     def __init__(self):
         self.active_connections: Dict[int, Set[WebSocket]] = {}
         self.admin_connections: Set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket, user_id: int = None, is_admin: bool = False):
+        """
+        REGISTERS A NEW SOCKET
+        Accepts the handshake and maps the connection to the user/admin.
+        """
         await websocket.accept()
+
 
         if is_admin:
             self.admin_connections.add(websocket)

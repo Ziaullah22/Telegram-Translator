@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from typing import List, Optional
-from database import db
-from auth import get_current_user
-from pydantic import BaseModel
-from datetime import datetime
+# ---------------------------------------------------------
+# ANALYTICS CONTROLLER (app/features/analytics/routes.py)
+# ---------------------------------------------------------
+# Tracks and calculates response time metrics.
+# Logic:
+# 1. Identifies "response pairs" (an outgoing streak followed by 
+#    the first incoming reply).
+# 2. Ranks Conversations, Accounts, and Colleagues (Users) by 
+#    their average response speed.
+# 3. Provides both User-level and Admin-level auditing.
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
 
 class RankingItem(BaseModel):
     id: int

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import Cookies from 'js-cookie';
 
+/**
+ * ADMIN USE SOCKET HOOK
+ * Manages the WebSocket connection for the administrative dashboard.
+ * Authenticats using 'admin_token' to receive global management events.
+ */
 export function useSocket() {
     const wsRef = useRef<WebSocket | null>(null);
     const messageHandlers = useRef<Set<(data: any) => void>>(new Set());
@@ -10,8 +15,13 @@ export function useSocket() {
     const reconnectAttempts = useRef(0);
     const maxReconnectAttempts = 5;
 
+    /**
+     * CONNECTION LOGIC
+     * Handles establishing the WebSocket with automatic retry and auth token retrieval.
+     */
     const connect = useCallback(() => {
         const token = Cookies.get('admin_token');
+
 
         if (!token) {
             return;

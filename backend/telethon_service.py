@@ -11,13 +11,22 @@ from database import db
 import json
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
-
-
-# Using standard SQLiteSession as WAL mode can sometimes cause issues during intense reloads on Windows
-from telethon.sessions import SQLiteSession
+# ---------------------------------------------------------
+# TELEGRAM SERVICE (telethon_service.py)
+# ---------------------------------------------------------
+# This service acts as the bridge between the application and the 
+# Telegram MTProto API using the Telethon library.
+# It manages multiple Telegram account sessions simultaneously, 
+# handling real-time events, message sending/receiving, 
+# and entity (user/chat/channel) caching.
 
 class TelegramSession:
+    """
+    TELEGRAM SESSION WRAPPER
+    Encapsulates a single Telethon client instance for a specific account.
+    Handles connection persistence, rate limiting, and local caching.
+    """
+
     def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str):
         self.account_id = account_id
         self.client: Optional[TelegramClient] = None
@@ -142,8 +151,16 @@ class TelegramSession:
             logger.info(f"Disconnected session: {self.account_id}")
 
     async def get_dialogs(self, limit: int = 50):
+        """
+        FETCHES ACTIVE CHATS (DIALOGS)
+        Retrieves the list of most recent conversations from Telegram.
+        1. Queries dialogues with the specified limit.
+        2. Normalizes entity titles and usernames.
+        3. Returns unread counts and last message dates for UI updates.
+        """
         if not self.client or not self.is_connected:
             return []
+
 
         try:
             dialogs = await self.client.get_dialogs(limit=limit)
@@ -904,6 +921,13 @@ class TelegramSession:
 
 
 class TelethonService:
+    """
+    CENTRAL TELEGRAM ORCHESTRATOR
+    Manages the lifecycle of multiple Telegram sessions.
+    - Connects/Disconnects authenticated accounts.
+    - Routes incoming events (messages/reactions) to registered handlers.
+    - Manages background polling for unread messages.
+    """
     def __init__(self):
         self.sessions: Dict[int, TelegramSession] = {}
         self.message_handlers: List[Callable] = []
@@ -911,6 +935,7 @@ class TelethonService:
         self.polling_task: Optional[asyncio.Task] = None
         self.polling_interval = 10  # seconds
         os.makedirs("sessions", exist_ok=True)
+
 
     def add_message_handler(self, handler):
         if handler not in self.message_handlers:

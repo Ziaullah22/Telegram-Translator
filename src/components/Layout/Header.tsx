@@ -7,7 +7,20 @@ interface HeaderProps {
   onStartTour: () => void;
 }
 
+/**
+ * ---------------------------------------------------------
+ * APPLICATION HEADER (src/components/Layout/Header.tsx)
+ * ---------------------------------------------------------
+ * Provides primary navigation and global user controls.
+ * 
+ * COMPONENTS:
+ * 1. Global Navigation: Direct links to Chat, Auto-Responder, and Performance.
+ * 2. Theme Toggle: Switches between light and dark modes across the app.
+ * 3. User Identity: Displays session status and username.
+ * 4. Help Link: Direct entry point for the interactive user tour.
+ */
 export default function Header({ onStartTour }: HeaderProps) {
+
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

@@ -14,13 +14,25 @@ interface LoginFormProps {
   onSwitchToRegister: () => void;
 }
 
+/**
+ * LOGIN FORM COMPONENT
+ * Provides the user authentication interface.
+ * Handles JWT token generation via the auth service and session establishment.
+ */
 export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
+  /**
+   * AUTHENTICATION STATE
+   * loading: Prevents multiple submissions during API call.
+   * error: Displays server-side validation or connection errors.
+   * showPassword: UI toggle for password visibility.
+   */
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+
 
   const {
     register,

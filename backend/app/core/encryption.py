@@ -1,9 +1,13 @@
-"""
-AES-256 Encryption Service for Secure Message Storage
-This module provides encryption/decryption functionality for messages using AES-256-GCM.
-Designed to be modular and can be easily enabled/disabled via admin settings.
-"""
+# ---------------------------------------------------------
+# ENCRYPTION SERVICE (app/core/encryption.py)
+# ---------------------------------------------------------
+# Provides AES-256-GCM encryption for message storage.
+# Ensures that even if the database is compromised, the original
+# and translated message texts remain unreadable without the 
+# platform's master encryption key.
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import os

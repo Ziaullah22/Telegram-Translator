@@ -30,6 +30,11 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    /**
+     * DATA FETCHING
+     * Retrieves analytics ranking data based on the provided 'type' (conversations or accounts).
+     * @param silent If true, refreshes without showing a loading spinner (for background updates).
+     */
     const fetchData = async (silent = false) => {
         if (!silent) setLoading(true);
         setError(null);
@@ -51,20 +56,25 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
         }
     };
 
+    /**
+     * REAL-TIME UPDATES (WEBSOCKET)
+     * LISTENS for 'new_message' events to trigger an instant leaderboard refresh.
+     * This ensures the ranking is always up-to-date with the latest message response times.
+     */
     const { onMessage } = useSocket();
 
     useEffect(() => {
         fetchData();
-        // Auto-refresh every 30 seconds silently (no loading spinner)
+        // Fallback polling (30s) if WebSocket is not active
         const interval = setInterval(() => fetchData(true), 30000);
         return () => clearInterval(interval);
     }, [type, limit, accountId]);
 
-    // WebSocket real-time updates: Refetch stats instantly whenever a new message is detected
+    // WebSocket listener for instant data refresh
     useEffect(() => {
-        const unsubscribe = onMessage((data) => {
+        const unsubscribe = onMessage((data: any) => {
             if (data?.type === 'new_message') {
-                // Perform a silent refresh when any message happens (send or receive)
+                // Refresh rankings silently when any activity is detected
                 fetchData(true);
             }
         });

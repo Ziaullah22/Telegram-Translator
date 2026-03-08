@@ -41,11 +41,21 @@ interface LeaderboardTableProps {
     accountId?: number | 'all';
 }
 
+/**
+ * LEADERBOARD TABLE COMPONENT
+ * Displays a ranked list of users or accounts based on their average response time.
+ * Supports real-time updates via WebSocket.
+ */
 const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTableProps) => {
     const [data, setData] = useState<RankingData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    /**
+     * DATA FETCHING
+     * Fetches ranking data from the analytics API.
+     * @param silent If true, suppresses the loading spinner for background updates.
+     */
     const fetchData = async (silent = false) => {
         if (!silent) setLoading(true);
         setError(null);
@@ -65,20 +75,24 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
         }
     };
 
+    /**
+     * REAL-TIME UPDATES (WEBSOCKET)
+     * Hook into the global WebSocket to detect new messages.
+     * When any message is detected, we silently refresh the leaderboard.
+     */
     const { onMessage } = useSocket();
 
     useEffect(() => {
         fetchData();
-        // Auto-refresh every 30 seconds silently
+        // Fallback: refresh every 30 seconds if socket is disconnected
         const interval = setInterval(() => fetchData(true), 30000);
         return () => clearInterval(interval);
     }, [type, userId, accountId]);
 
-    // WebSocket real-time updates for admin
+    // WebSocket listener for instant leaderboard updates
     useEffect(() => {
-        const unsubscribe = onMessage((data) => {
+        const unsubscribe = onMessage((data: any) => {
             if (data?.type === 'new_message') {
-                // Perform a silent refresh when any message happens
                 fetchData(true);
             }
         });

@@ -1,16 +1,19 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule } from '../types';
 
 const API_BASE_URL = '/api';
 
-// Create axios instance with default config
+/**
+ * AXIOS CONFIGURATION
+ * Centralized API client with interceptors for auth tokens and automatic 401 redirection.
+ */
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
 });
 
-// Request interceptor to add auth token
+// Attaches the JWT 'auth_token' from cookies to every request header.
 api.interceptors.request.use((config) => {
   const token = Cookies.get('auth_token');
   if (token) {
@@ -19,12 +22,10 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for error handling
+// Global error handler: if a session expires (401), redirect back to login.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only redirect to login if we have a 401/403 on a non-auth endpoint
-    // This allows login/register to handle their own errors
     if ((error.response?.status === 401 || error.response?.status === 403) &&
       !error.config.url?.includes('/auth/login') &&
       !error.config.url?.includes('/auth/register')) {
@@ -35,7 +36,10 @@ api.interceptors.response.use(
   }
 );
 
-// Auth API
+/**
+ * AUTH API
+ * Handles user authentication: Login, Registration, and fetching personal Profile.
+ */
 export const authAPI = {
   login: async (username: string, password: string): Promise<{ access_token: string; token_type: string }> => {
     const response = await api.post('/auth/login', { username, password });
@@ -53,7 +57,10 @@ export const authAPI = {
   },
 };
 
-// Telegram API
+/**
+ * TELEGRAM ACCOUNT API
+ * Manages Telegram accounts: Connecting new accounts, validating TData, managing sessions, and profile settings.
+ */
 export const telegramAPI = {
   validateTData: async (file: File): Promise<{
     valid: boolean;
@@ -65,9 +72,7 @@ export const telegramAPI = {
     const formData = new FormData();
     formData.append('tdata', file);
     const response = await api.post('/telegram/accounts/validate-tdata', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
@@ -91,9 +96,7 @@ export const telegramAPI = {
 
   addAccount: async (data: FormData): Promise<TelegramAccount> => {
     const response = await api.post('/telegram/accounts', data, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     const a = response.data;
     return {
@@ -218,7 +221,7 @@ export const telegramAPI = {
     formData.append('photo', file);
     const response = await api.post(`/telegram/accounts/${accountId}/profile/photo`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000, // Photos can take a while to upload
+      timeout: 60000,
     });
     return response.data;
   },
@@ -262,7 +265,10 @@ export const telegramAPI = {
   },
 };
 
-// Translation API
+/**
+ * TRANSLATION API
+ * Provides translation services via various engines and manages supported languages.
+ */
 export const translationAPI = {
   translate: async (
     text: string,
@@ -290,7 +296,10 @@ export const translationAPI = {
   },
 };
 
-// Conversations API
+/**
+ * CONVERSATIONS API
+ * Fetches the specific chat list (private, groups, channels) for a given Telegram account.
+ */
 export const conversationsAPI = {
   getConversations: async (accountId: number): Promise<TelegramChat[]> => {
     const response = await api.get(`/telegram/accounts/${accountId}/conversations`);
@@ -312,7 +321,10 @@ export const conversationsAPI = {
   },
 };
 
-// Messages API
+/**
+ * MESSAGES API
+ * Core messaging functionality: Sending text/media, forwarding, deleting, and marking as read.
+ */
 export const messagesAPI = {
   getMessages: async (conversationId: number, limit: number = 30, before_id?: number) => {
     const response = await api.get(`/messages/conversations/${conversationId}/messages`, {
@@ -333,9 +345,7 @@ export const messagesAPI = {
 
   sendMedia: async (formData: FormData): Promise<TelegramMessage> => {
     const response = await api.post('/messages/send-media', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
@@ -377,15 +387,10 @@ export const messagesAPI = {
   },
 };
 
-// Health check
-export const healthAPI = {
-  check: async (): Promise<{ status: string; database: string }> => {
-    const response = await api.get('/health');
-    return response.data;
-  },
-};
-
-// Message Templates API
+/**
+ * TEMPLATES & SCHEDULING API
+ * Manages reusable message templates and logic for scheduling messages in the future.
+ */
 export const templatesAPI = {
   getTemplates: async (): Promise<MessageTemplate[]> => {
     const response = await api.get('/templates');
@@ -412,7 +417,6 @@ export const templatesAPI = {
   },
 };
 
-// Scheduled Messages API
 export const scheduledMessagesAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
     const response = await api.get('/scheduled-messages');
@@ -443,7 +447,10 @@ export const scheduledMessagesAPI = {
   },
 };
 
-// Contact CRM API
+/**
+ * CONTACT CRM API
+ * Manages contact-specific CRM details like custom notes.
+ */
 export const contactsAPI = {
   getContactInfo: async (conversationId: number): Promise<ContactInfo | null> => {
     const response = await api.get(`/contacts/conversation/${conversationId}`);
@@ -465,35 +472,22 @@ export const contactsAPI = {
   },
 };
 
-// Auto-Responder API
+/**
+ * AUTO-RESPONDER API
+ * Manages automation rules and logs.
+ */
 export const autoResponderAPI = {
   getRules: async (): Promise<AutoResponderRule[]> => {
     const response = await api.get('/auto-responder/rules');
     return response.data;
   },
 
-  createRule: async (data: {
-    name: string;
-    keywords: string[];
-    response_text: string;
-    language: string;
-    media_type?: string;
-    priority?: number;
-    is_active?: boolean;
-  }): Promise<AutoResponderRule> => {
+  createRule: async (data: any): Promise<AutoResponderRule> => {
     const response = await api.post('/auto-responder/rules', data);
     return response.data;
   },
 
-  updateRule: async (ruleId: number, data: {
-    name?: string;
-    keywords?: string[];
-    response_text?: string;
-    language?: string;
-    media_type?: string;
-    priority?: number;
-    is_active?: boolean;
-  }): Promise<AutoResponderRule> => {
+  updateRule: async (ruleId: number, data: any): Promise<AutoResponderRule> => {
     const response = await api.patch(`/auto-responder/rules/${ruleId}`, data);
     return response.data;
   },
@@ -517,13 +511,16 @@ export const autoResponderAPI = {
     await api.delete(`/auto-responder/rules/${ruleId}/media`);
   },
 
-  getLogs: async (limit: number = 50): Promise<AutoResponderLog[]> => {
+  getLogs: async (limit: number = 50): Promise<any[]> => {
     const response = await api.get(`/auto-responder/logs?limit=${limit}`);
     return response.data;
   },
 };
 
-// Analytics API
+/**
+ * ANALYTICS API
+ * Fetches rankings for response times and overall performance metrics.
+ */
 export const analyticsAPI = {
   getConversationRanking: async (limit: number = 10, accountId?: number) => {
     const response = await api.get('/analytics/ranking/conversations', {
@@ -539,4 +536,14 @@ export const analyticsAPI = {
     const response = await api.get('/analytics/admin/ranking/accounts', { params: { limit } });
     return response.data;
   }
+};
+
+/**
+ * HEALTH CHECK API
+ */
+export const healthAPI = {
+  check: async (): Promise<{ status: string; database: string }> => {
+    const response = await api.get('/health');
+    return response.data;
+  },
 };

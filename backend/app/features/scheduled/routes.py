@@ -1,20 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from typing import List
-from datetime import datetime, timedelta
-from database import db
-from auth import get_current_user
-from models import (
-    ScheduledMessageCreate,
-    ScheduledMessageUpdate,
-    ScheduledMessageResponse,
-    TokenData
-)
-from scheduler_service import scheduler_service
-import logging
-
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------
+# SCHEDULED MESSAGES CONTROLLER (app/features/scheduled/routes.py)
+# ---------------------------------------------------------
+# Manages future-dated Telegram messages.
+# Features:
+# 1. Queueing new messages with a custom delay (fractional days).
+# 2. Listing, updating, and cancelling pending scheduled tasks.
+# 3. Automatic system message logging upon manual cancellation.
 
 router = APIRouter(prefix="/api/scheduled-messages", tags=["scheduled-messages"])
+
 
 @router.post("", response_model=ScheduledMessageResponse)
 async def create_scheduled_message(

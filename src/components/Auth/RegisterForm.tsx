@@ -16,7 +16,20 @@ interface RegisterFormProps {
   onSwitchToLogin: () => void;
 }
 
+/**
+ * ---------------------------------------------------------
+ * REGISTRATION CONTROLLER (src/components/Auth/RegisterForm.tsx)
+ * ---------------------------------------------------------
+ * Manages unique account creation for new users.
+ * 
+ * FEATURES:
+ * 1. Double-Entry Validation: Confirms passwords match before submission.
+ * 2. Visual Feedback: Real-time validation errors for length and format.
+ * 3. Success State: Visual confirmation with easy redirection to login.
+ * 4. Secure Flow: Forwards registration data to AuthContext for persistence.
+ */
 export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
