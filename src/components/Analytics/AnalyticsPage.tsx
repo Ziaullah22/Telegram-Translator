@@ -27,6 +27,13 @@ const AnalyticsPage: React.FC = () => {
         ? null
         : accounts.find(a => a.id === selectedAccountId);
 
+    // Auto-select first account if none selected and accounts are loaded
+    useEffect(() => {
+        if (selectedAccountId === 'all' && accounts.length > 0) {
+            setSelectedAccountId(accounts[0].id);
+        }
+    }, [accounts, selectedAccountId]);
+
     return (
         <div className="flex-1 bg-gray-50 dark:bg-[#0e1621] p-8 overflow-y-auto custom-scrollbar">
             <div className="max-w-6xl mx-auto space-y-8">
@@ -60,13 +67,6 @@ const AnalyticsPage: React.FC = () => {
                                             Select Perspective
                                         </div>
                                         <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                                            <button
-                                                onClick={() => { setSelectedAccountId('all'); setIsDropdownOpen(false); }}
-                                                className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center gap-2 hover:bg-blue-500/10 transition-colors ${selectedAccountId === 'all' ? 'text-blue-500' : 'text-gray-600 dark:text-gray-300'}`}
-                                            >
-                                                <Activity className="w-3.5 h-3.5" />
-                                                Global Overview
-                                            </button>
                                             {accounts.map(acc => (
                                                 <button
                                                     key={acc.id}
@@ -110,7 +110,7 @@ const AnalyticsPage: React.FC = () => {
                         <div>
                             <p className="text-xs text-gray-500 uppercase font-black tracking-widest">Active Focus</p>
                             <p className="text-lg font-bold text-gray-900 dark:text-gray-100 italic truncate max-w-[150px]">
-                                {selectedAccount ? (selectedAccount.displayName || selectedAccount.accountName) : "All Sessions"}
+                                {selectedAccount?.displayName || selectedAccount?.accountName || "..."}
                             </p>
                         </div>
                     </div>
@@ -118,15 +118,13 @@ const AnalyticsPage: React.FC = () => {
 
                 {/* Stats List */}
                 <div className="flex flex-col gap-8">
-                    <ResponseTimeRanking
-                        type="accounts"
-                        title="Fastest Sessions Leaderboard"
-                    />
-                    <ResponseTimeRanking
-                        type="conversations"
-                        title={selectedAccount ? `Statistics for ${selectedAccount.displayName || selectedAccount.accountName}` : "Individual Chat Statistics"}
-                        accountId={selectedAccountId === 'all' ? undefined : selectedAccountId}
-                    />
+                    {selectedAccountId !== 'all' && (
+                        <ResponseTimeRanking
+                            type="conversations"
+                            title={`Statistics for ${selectedAccount?.displayName || selectedAccount?.accountName}`}
+                            accountId={selectedAccountId}
+                        />
+                    )}
                 </div>
             </div>
         </div>

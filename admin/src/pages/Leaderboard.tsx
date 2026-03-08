@@ -211,7 +211,15 @@ const Leaderboard = () => {
                 try {
                     // Fetch accounts by getting user conversations/accounts. 
                     const res = await adminApi.getAdminUserAccountRanking(selectedColleagueId);
-                    setAccounts(res.data || []);
+                    const accs = res.data || [];
+                    setAccounts(accs);
+
+                    // Auto-select first account if available
+                    if (accs.length > 0) {
+                        setSelectedAccountId(accs[0].id);
+                    } else {
+                        setSelectedAccountId('all');
+                    }
                 } catch (err) {
                     console.error("Failed to load accounts for colleague", err);
                 }
@@ -219,8 +227,8 @@ const Leaderboard = () => {
             fetchAccounts();
         } else {
             setAccounts([]);
+            setSelectedAccountId('all');
         }
-        setSelectedAccountId('all');
     }, [selectedColleagueId]);
 
     const selectedColleague = selectedColleagueId === 'all'
@@ -297,13 +305,6 @@ const Leaderboard = () => {
                                                 Select Session
                                             </div>
                                             <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                                                <button
-                                                    onClick={() => { setSelectedAccountId('all'); setIsAccountDropdownOpen(false); }}
-                                                    className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center gap-2 hover:bg-blue-500/10 transition-colors ${selectedAccountId === 'all' ? 'text-blue-500' : 'text-gray-600'}`}
-                                                >
-                                                    <Activity className="w-3.5 h-3.5" />
-                                                    Global Overview
-                                                </button>
                                                 {accounts.map(acc => (
                                                     <button
                                                         key={acc.id}
@@ -348,16 +349,8 @@ const Leaderboard = () => {
                                 <div className="flex items-start gap-4">
                                     <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">2</div>
                                     <div>
-                                        <p className="font-bold text-gray-900">View Global Session Stats</p>
-                                        <p>By default, the dashboard will show their "Global Overview"—a complete summary of their chat speed across <strong>all</strong> of their active connected Telegram sessions simultaneously.</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-start gap-4">
-                                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">3</div>
-                                    <div>
-                                        <p className="font-bold text-gray-900">Filter by Specific Account</p>
-                                        <p>Once a colleague is selected, a new <strong>Session Filter</strong> appears next to it. You can select exactly one of their connected accounts (e.g., "Work Phone") to drill down and only monitor response times inside that isolated device.</p>
+                                        <p className="font-bold text-gray-900">Select Target Session</p>
+                                        <p>After selecting a colleague, use the <strong>Session Filter</strong> to pick exactly one of their connected accounts. The dashboard will show detailed response metrics for that specific device.</p>
                                     </div>
                                 </div>
                             </div>
@@ -370,16 +363,10 @@ const Leaderboard = () => {
                             <div>
                                 <h1 className="text-3xl font-black text-gray-900 uppercase tracking-wider italic flex items-center gap-3">
                                     <BarChart2 className="w-8 h-8 text-blue-500" />
-                                    {selectedAccount ? (
-                                        <>Statistics <span className="text-blue-500">for {selectedAccount.title}</span></>
-                                    ) : (
-                                        <>Global <span className="text-blue-500">Statistics</span></>
-                                    )}
+                                    <>Statistics <span className="text-blue-500">for {selectedAccount?.title}</span></>
                                 </h1>
                                 <p className="text-gray-500 mt-2 font-medium">
-                                    {selectedAccount
-                                        ? "Detailed response metrics for this specific session."
-                                        : "Monitor response times and team performance across all platforms."}
+                                    Detailed response metrics for this specific session.
                                 </p>
                             </div>
 
@@ -398,17 +385,14 @@ const Leaderboard = () => {
 
                         {/* Stats List Identical to AnalyticsPage */}
                         <div className="flex flex-col gap-8">
-                            <LeaderboardTable
-                                type="user-account"
-                                title="Fastest Sessions Leaderboard"
-                                userId={selectedColleagueId}
-                            />
-                            <LeaderboardTable
-                                type="user-conversation"
-                                title={selectedAccount ? `Statistics for ${selectedAccount.title}` : "Individual Chat Statistics"}
-                                accountId={selectedAccountId === 'all' ? undefined : selectedAccountId}
-                                userId={selectedColleagueId}
-                            />
+                            {selectedAccountId !== 'all' && (
+                                <LeaderboardTable
+                                    type="user-conversation"
+                                    title={`Statistics for ${selectedAccount?.title}`}
+                                    accountId={selectedAccountId}
+                                    userId={selectedColleagueId}
+                                />
+                            )}
                         </div>
                     </>
                 )}
