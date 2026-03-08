@@ -32,17 +32,34 @@ async def get_conversation_ranking(
         params.append(account_id)
 
     query = f"""
-    WITH response_pairs AS (
+    WITH user_convs AS (
+        -- Scope to ONLY this user's conversations upfront to avoid cross-user confusion
+        SELECT c.id as conv_id
+        FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1
+          AND c.type = 'private'
+          AND c.is_archived = FALSE
+          AND c.is_hidden = FALSE
+          AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%bot%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
+          {account_filter}
+    ),
+    response_pairs AS (
         SELECT 
             m_in.conversation_id,
             m_in.created_at AS received_at,
+            -- Find first outgoing reply after this incoming message
             (SELECT MIN(m_out.created_at) FROM messages m_out 
              WHERE m_out.conversation_id = m_in.conversation_id 
              AND m_out.created_at > m_in.created_at 
              AND m_out.is_outgoing = TRUE) AS responded_at
         FROM messages m_in
+        -- Only look at messages inside the target user's conversations
+        JOIN user_convs uc ON uc.conv_id = m_in.conversation_id
         WHERE m_in.is_outgoing = FALSE
-          -- [FEATURE: Analytics Logic] Only take the FIRST message of an unreplied incoming streak
+          -- Only take the FIRST incoming message of each new streak
           AND NOT EXISTS (
               SELECT 1 FROM messages m_prev 
               WHERE m_prev.conversation_id = m_in.conversation_id 
@@ -61,21 +78,11 @@ async def get_conversation_ranking(
         c.id,
         c.username,
         c.title,
-        AVG(EXTRACT(EPOCH FROM (responded_at - received_at)))::FLOAT as avg_response_time,
+        AVG(EXTRACT(EPOCH FROM (rp.responded_at - rp.received_at)))::FLOAT as avg_response_time,
         COUNT(rp.conversation_id)::INT as total_responses
     FROM conversations c
-    -- [FEATURE: Analytics Logic] INNER JOIN ensures we only show chats that have at least one reply
     JOIN response_pairs rp ON rp.conversation_id = c.id
-    JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
-    WHERE ta.user_id = $1 
-      AND rp.responded_at IS NOT NULL
-      AND c.type = 'private'
-      AND c.is_archived = FALSE
-      AND c.is_hidden = FALSE
-      AND c.telegram_peer_id != 777000
-      AND c.title NOT ILIKE '%bot%'
-      AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
-      {account_filter}
+    WHERE rp.responded_at IS NOT NULL
     GROUP BY c.id, c.username, c.title
     ORDER BY avg_response_time ASC, c.id DESC
     LIMIT $2
@@ -297,7 +304,21 @@ async def get_admin_user_conversation_ranking(
         params.append(account_id)
 
     query = f"""
-    WITH response_pairs AS (
+    WITH user_convs AS (
+        -- Scope to ONLY the target user's conversations upfront
+        SELECT c.id as conv_id
+        FROM conversations c
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1
+          AND c.type = 'private'
+          AND c.is_archived = FALSE
+          AND c.is_hidden = FALSE
+          AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%bot%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
+          {account_filter}
+    ),
+    response_pairs AS (
         SELECT 
             m_in.conversation_id,
             m_in.created_at AS received_at,
@@ -306,8 +327,8 @@ async def get_admin_user_conversation_ranking(
              AND m_out.created_at > m_in.created_at 
              AND m_out.is_outgoing = TRUE) AS responded_at
         FROM messages m_in
+        JOIN user_convs uc ON uc.conv_id = m_in.conversation_id
         WHERE m_in.is_outgoing = FALSE
-          -- [FEATURE: Analytics Logic] Only take the FIRST message of an unreplied incoming streak
           AND NOT EXISTS (
               SELECT 1 FROM messages m_prev 
               WHERE m_prev.conversation_id = m_in.conversation_id 
@@ -326,21 +347,11 @@ async def get_admin_user_conversation_ranking(
         c.id,
         c.username,
         c.title,
-        AVG(EXTRACT(EPOCH FROM (responded_at - received_at)))::FLOAT as avg_response_time,
+        AVG(EXTRACT(EPOCH FROM (rp.responded_at - rp.received_at)))::FLOAT as avg_response_time,
         COUNT(rp.conversation_id)::INT as total_responses
     FROM conversations c
-    -- [FEATURE: Analytics Logic] INNER JOIN ensures we only show chats that have at least one reply
     JOIN response_pairs rp ON rp.conversation_id = c.id
-    JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
-    WHERE ta.user_id = $1 
-      AND rp.responded_at IS NOT NULL
-      AND c.type = 'private'
-      AND c.is_archived = FALSE
-      AND c.is_hidden = FALSE
-      AND c.telegram_peer_id != 777000
-      AND c.title NOT ILIKE '%bot%'
-      AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
-      {account_filter}
+    WHERE rp.responded_at IS NOT NULL
     GROUP BY c.id, c.username, c.title
     ORDER BY avg_response_time ASC, c.id DESC
     LIMIT $2
