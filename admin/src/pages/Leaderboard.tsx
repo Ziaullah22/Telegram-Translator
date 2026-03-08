@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trophy, Clock, RefreshCw, User as UserIcon, Activity, Smartphone, Users, BarChart2, ChevronDown } from 'lucide-react';
 import { adminApi } from '../services/api';
+import { useSocket } from '../hooks/useSocket';
 
 interface RankingData {
     id: number;
@@ -45,8 +46,8 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (silent = false) => {
+        if (!silent) setLoading(true);
         setError(null);
         try {
             let res;
@@ -60,13 +61,29 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
             console.error('Error fetching ranking:', err);
             setError('Failed to load ranking data');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
+    const { onMessage } = useSocket();
+
     useEffect(() => {
         fetchData();
+        // Auto-refresh every 30 seconds silently
+        const interval = setInterval(() => fetchData(true), 30000);
+        return () => clearInterval(interval);
     }, [type, userId, accountId]);
+
+    // WebSocket real-time updates for admin
+    useEffect(() => {
+        const unsubscribe = onMessage((data) => {
+            if (data?.type === 'new_message') {
+                // Perform a silent refresh when any message happens
+                fetchData(true);
+            }
+        });
+        return unsubscribe;
+    }, [onMessage, type, userId, accountId]);
 
     // Exact replica styling from `ResponseTimeRanking.tsx`
     return (
@@ -87,7 +104,7 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
                     </div>
                 </div>
                 <button
-                    onClick={fetchData}
+                    onClick={() => fetchData()}
                     disabled={loading}
                     className="p-2 hover:bg-gray-100 rounded-xl transition-all border border-transparent hover:border-gray-200 text-gray-500 active:scale-95"
                 >
@@ -126,7 +143,7 @@ const LeaderboardTable = ({ title, type, userId, accountId }: LeaderboardTablePr
                                 <td colSpan={4} className="py-12 text-center text-gray-400 italic text-sm font-medium">No performance data available yet.</td>
                             </tr>
                         ) : (
-                            data.map((item, index) => {
+                            data.map((item: RankingData, index: number) => {
                                 const perf = getPerformanceInfo(item.avg_response_time);
                                 return (
                                     <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">

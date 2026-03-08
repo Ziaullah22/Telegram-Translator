@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsAPI } from '../../services/api';
 import { Trophy, Clock, RefreshCw, User as UserIcon, Activity } from 'lucide-react';
+import { useSocket } from '../../hooks/useSocket';
 
 interface RankingData {
     id: number;
@@ -29,8 +30,8 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (silent = false) => {
+        if (!silent) setLoading(true);
         setError(null);
         try {
             let ranking;
@@ -46,13 +47,29 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
             console.error('Error fetching ranking:', err);
             setError('Failed to load ranking data');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
+    const { onMessage } = useSocket();
+
     useEffect(() => {
         fetchData();
+        // Auto-refresh every 30 seconds silently (no loading spinner)
+        const interval = setInterval(() => fetchData(true), 30000);
+        return () => clearInterval(interval);
     }, [type, limit, accountId]);
+
+    // WebSocket real-time updates: Refetch stats instantly whenever a new message is detected
+    useEffect(() => {
+        const unsubscribe = onMessage((data) => {
+            if (data?.type === 'new_message') {
+                // Perform a silent refresh when any message happens (send or receive)
+                fetchData(true);
+            }
+        });
+        return unsubscribe;
+    }, [onMessage, type, limit, accountId]);
 
     const formatTime = (seconds: number) => {
         if (seconds === 0) return '0s';
@@ -93,7 +110,7 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
                     </div>
                 </div>
                 <button
-                    onClick={fetchData}
+                    onClick={() => fetchData()}
                     disabled={loading}
                     className="p-2 hover:bg-white dark:hover:bg-white/10 rounded-xl transition-all border border-transparent hover:border-gray-200 dark:hover:border-white/10 text-gray-500 active:scale-95"
                 >
@@ -132,7 +149,7 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
                                 <td colSpan={4} className="py-12 text-center text-gray-400 italic text-sm font-medium">No performance data available yet.</td>
                             </tr>
                         ) : (
-                            data.map((item, index) => {
+                            data.map((item: RankingData, index: number) => {
                                 const perf = getPerformanceInfo(item.avg_response_time);
                                 return (
                                     <tr key={item.id} className="group hover:bg-blue-50/30 dark:hover:bg-blue-500/[0.03] transition-colors">
