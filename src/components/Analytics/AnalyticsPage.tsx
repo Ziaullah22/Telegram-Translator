@@ -60,6 +60,7 @@ const AnalyticsPage: React.FC = () => {
                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Filter Stats:</span>
                         <div className="relative">
                             <button
+                                id="analytics-filter-btn"
                                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                                 className="flex items-center gap-3 bg-white dark:bg-[#17212b] text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl border border-gray-100 dark:border-white/5 text-xs font-black uppercase tracking-widest shadow-sm hover:border-blue-500/50 transition-all active:scale-95"
                             >
@@ -97,7 +98,7 @@ const AnalyticsPage: React.FC = () => {
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-black text-gray-900 dark:text-white uppercase tracking-wider italic flex items-center gap-3">
+                        <h1 id="analytics-header" className="text-3xl font-black text-gray-900 dark:text-white uppercase tracking-wider italic flex items-center gap-3">
                             <BarChart2 className="w-8 h-8 text-blue-500" />
                             {selectedAccount ? (
                                 <>Statistics <span className="text-blue-500">for {selectedAccount.displayName || selectedAccount.accountName}</span></>
@@ -112,7 +113,7 @@ const AnalyticsPage: React.FC = () => {
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-4 bg-white dark:bg-[#17212b] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
+                    <div id="analytics-active-focus" className="flex items-center gap-4 bg-white dark:bg-[#17212b] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
                         <div className="p-3 bg-green-500/10 rounded-xl text-green-500">
                             <Activity className="w-6 h-6" />
                         </div>

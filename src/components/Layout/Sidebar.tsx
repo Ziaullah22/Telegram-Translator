@@ -116,6 +116,7 @@ export default function Sidebar({
                         <div className="h-4 w-px bg-gray-200 dark:bg-white/10 mx-1" />
 
                         <button
+                          id="account-edit-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             onEdit(account);
@@ -127,6 +128,7 @@ export default function Sidebar({
                         </button>
 
                         <button
+                          id="account-delete-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             onDelete(account);
@@ -138,6 +140,7 @@ export default function Sidebar({
                         </button>
 
                         <button
+                          id="account-profile-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             onProfile(account);
@@ -149,6 +152,7 @@ export default function Sidebar({
                         </button>
 
                         <button
+                          id="account-sessions-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             onSessions(account);
@@ -161,6 +165,7 @@ export default function Sidebar({
 
                         {account.isConnected ? (
                           <button
+                            id="account-online-btn"
                             onClick={(e) => {
                               e.stopPropagation();
                               onDisconnect(account);
@@ -172,6 +177,7 @@ export default function Sidebar({
                           </button>
                         ) : (
                           <button
+                            id="account-online-btn"
                             onClick={(e) => {
                               e.stopPropagation();
                               onConnect(account);

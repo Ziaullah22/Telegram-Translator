@@ -87,7 +87,7 @@ export default function ScheduleMessageModal({
 
   return (
     <div id="schedule-modal-container" className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70] p-4 animate-fade-in" onClick={handleClose}>
-      <div className="bg-white dark:bg-[#212121] rounded-xl w-full max-w-[340px] shadow-xl overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+      <div id="schedule-modal-content" className="bg-white dark:bg-[#212121] rounded-xl w-full max-w-[340px] shadow-xl overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="p-6 pb-2">
           <h3 className="text-[19px] font-medium text-gray-900 dark:text-white mb-1">
@@ -148,7 +148,7 @@ export default function ScheduleMessageModal({
           </div>
 
           {/* Preview time */}
-          <div className="mb-5 p-3 bg-gray-50 dark:bg-white/5 rounded-lg text-center">
+          <div id="schedule-modal-time-preview" className="mb-5 p-3 bg-gray-50 dark:bg-white/5 rounded-lg text-center">
             <p className="text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
               Will send in <strong className="text-gray-900 dark:text-white">{getScheduledLabel()}</strong>
             </p>
@@ -160,6 +160,7 @@ export default function ScheduleMessageModal({
           {/* Actions */}
           <div className="flex items-center justify-end space-x-1">
             <button
+              id="schedule-modal-close-btn"
               onClick={handleClose}
               disabled={loading}
               className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"

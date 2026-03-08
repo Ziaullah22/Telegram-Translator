@@ -5,8 +5,8 @@ interface TourStep {
     title: string;
     description: string;
     targetId: string;
-    requirement?: 'must_open_modal' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder' | 'ar_modal_open' | 'ar_modal_close' | 'account_selected' | 'chat_selected' | 'search_visible' | 'templates_menu_open' | 'templates_modal_open' | 'templates_modal_close' | 'schedule_modal_open' | 'schedule_modal_close';
-    group?: 'main' | 'auto-responder';
+    requirement?: 'must_open_modal' | 'modal_open' | 'modal_close' | 'crm_open' | 'crm_close' | 'is_auto_responder' | 'ar_modal_open' | 'ar_modal_close' | 'account_selected' | 'chat_selected' | 'search_visible' | 'templates_menu_open' | 'templates_modal_open' | 'templates_modal_close' | 'schedule_modal_open' | 'schedule_modal_close' | 'profile_modal_open' | 'profile_modal_close' | 'sessions_modal_open' | 'sessions_modal_close' | 'is_analytics';
+    group?: 'main' | 'auto-responder' | 'analytics';
     // placement: where to put popup relative to the highlighted element
     placement: 'left' | 'right' | 'top' | 'bottom';
     scrollIntoView?: boolean; // auto-scroll el into view
@@ -86,15 +86,90 @@ export const allTourSteps: TourStep[] = [
         group: 'main',
         placement: 'bottom'
     },
-    // ── STEP 7: Edit Account (sidebar) ──────────────────────────────────────
+    // ── STEP 8: Edit Account ────────────────────────────────────────────────
     {
-        title: "Edit Account Profiles",
-        description: "Use the pencil icon to update any account's display name, languages, or credentials at any time.",
+        title: "Edit Account Settings",
+        description: "Click the pencil icon to safely rename your account or change its source and target translation languages.",
         targetId: 'account-edit-btn',
         group: 'main',
         placement: 'right'
     },
-    // ── STEP 8: Online/Offline Toggle (sidebar) ──────────────────────────────
+    // ── STEP 9: Remove Account ──────────────────────────────────────────────
+    {
+        title: "Remove Account",
+        description: "Click the red trash bin to completely disconnect and remove this account from the dashboard.",
+        targetId: 'account-delete-btn',
+        group: 'main',
+        placement: 'right'
+    },
+    // ── STEP 10: Profile Management ───────────────────────────────────────────
+    {
+        title: "Manage Your Profile",
+        description: "ACTION REQUIRED: Click the Blue User icon to open your Telegram Profile settings. You can update your bio, photo, and security from here.",
+        targetId: 'account-profile-btn',
+        requirement: 'profile_modal_open',
+        group: 'main',
+        placement: 'right'
+    },
+    // ── Inside Profile Modal ────────────────────────────────────────────────
+    {
+        title: "Section 1: Profile Info",
+        description: "Update your First Name, Last Name, and public Bio. You can also change your profile photo by clicking the camera icon.",
+        targetId: 'profile-tab-info',
+        group: 'main',
+        placement: 'bottom',
+        scrollIntoView: true
+    },
+    {
+        title: "Section 2: Privacy Settings",
+        description: "Control who can see your phone number. Set it to 'Nobody' for maximum privacy during business operations.",
+        targetId: 'profile-tab-privacy',
+        group: 'main',
+        placement: 'bottom',
+        scrollIntoView: true
+    },
+    {
+        title: "Section 3: 2FA Security",
+        description: "Strengthen your account by setting or updating your Two-Step Verification password here. This protects your account from unauthorized logins.",
+        targetId: 'profile-tab-2fa',
+        group: 'main',
+        placement: 'bottom',
+        scrollIntoView: true
+    },
+    {
+        title: "Close Profile Settings",
+        description: "ACTION REQUIRED: Click the X to close your profile settings and return to the sidebar.",
+        targetId: 'profile-modal-close-btn',
+        requirement: 'profile_modal_close',
+        group: 'main',
+        placement: 'bottom'
+    },
+    // ── STEP 10: Active Sessions ─────────────────────────────────────────────
+    {
+        title: "Active Device Sessions",
+        description: "ACTION REQUIRED: Click the Amber Shield icon to see all devices currently logged into this Telegram account.",
+        targetId: 'account-sessions-btn',
+        requirement: 'sessions_modal_open',
+        group: 'main',
+        placement: 'right'
+    },
+    // ── Inside Sessions Modal ──────────────────────────────────────────────
+    {
+        title: "Security Audit",
+        description: "Review all active devices. If you see a device you don't recognize, you can terminate its session immediately to secure your account.",
+        targetId: 'sessions-modal-container',
+        group: 'main',
+        placement: 'right'
+    },
+    {
+        title: "Close Sessions Audit",
+        description: "ACTION REQUIRED: Click the X to close the sessions window.",
+        targetId: 'sessions-modal-close-btn',
+        requirement: 'sessions_modal_close',
+        group: 'main',
+        placement: 'bottom'
+    },
+    // ── STEP 11: Online/Offline Toggle (sidebar) ──────────────────────────────
     {
         title: "Connection Status Toggle",
         description: "Click the WiFi icon to instantly connect or disconnect an account. Green = Online, Red = Offline.",
@@ -102,7 +177,7 @@ export const allTourSteps: TourStep[] = [
         group: 'main',
         placement: 'right'
     },
-    // ── STEP 9: Search Bar (conversation list) ───────────────────────────────
+    // ── STEP 12: Search Bar (conversation list) ───────────────────────────────
     {
         title: "Global Smart Search",
         description: "Type any username or name to search across all your chats and the wider Telegram user directory simultaneously.",
@@ -191,15 +266,22 @@ export const allTourSteps: TourStep[] = [
     // ── Inside Schedule Modal ──────────────────────────────────────────────
     {
         title: "Schedule Message",
-        description: "Set the number of days to delay the message. If the contact replies before the countdown finishes, this automation is automatically cancelled to prevent out-of-context replies.",
-        targetId: 'schedule-modal-container',
+        description: "Set the number of days, hours, and minutes to delay the message.",
+        targetId: 'schedule-modal-content',
         group: 'main',
-        placement: 'right'
+        placement: 'left'
+    },
+    {
+        title: "Delivery Time",
+        description: "Verify exactly when the message will be delivered here. If the contact replies before the countdown finishes, this automation is automatically cancelled to prevent out-of-context replies.",
+        targetId: 'schedule-modal-time-preview',
+        group: 'main',
+        placement: 'top'
     },
     // ── Close Schedule Modal ──────────────────────────────────────────────
     {
-        title: "Close Scheduler",
-        description: "ACTION REQUIRED: Click the X to close the scheduler.",
+        title: "Cancel / Close Scheduler",
+        description: "ACTION REQUIRED: Click 'Cancel' to close the scheduler.",
         targetId: 'schedule-modal-close-btn',
         requirement: 'schedule_modal_close',
         group: 'main',
@@ -321,11 +403,49 @@ export const allTourSteps: TourStep[] = [
         group: 'auto-responder',
         placement: 'bottom'
     },
+    // ── STEP: Navigate to Performance ─────────────────────────────────────────
+    {
+        title: "Team Performance & Analytics",
+        description: "ACTION REQUIRED: Click 'Performance' in the top navigation to view response times and team analytics.",
+        targetId: 'nav-analytics',
+        requirement: 'is_analytics',
+        group: 'auto-responder',
+        placement: 'bottom'
+    },
+    // ── ANALYTICS PAGE ────────────────────────────────────────────────────────
+    {
+        title: "Performance Dashboard",
+        description: "Welcome to the Analytics layout! This page gives you a bird's-eye view of your team's response times and message volume.",
+        targetId: 'analytics-header',
+        group: 'analytics',
+        placement: 'bottom'
+    },
+    {
+        title: "Select User or Target",
+        description: "Use this filter menu to view statistics for a specific colleague or a particular connected target account.",
+        targetId: 'analytics-filter-btn',
+        group: 'analytics',
+        placement: 'bottom'
+    },
+    {
+        title: "Active Focus",
+        description: "This card shows you exactly whose statistics you are currently viewing.",
+        targetId: 'analytics-active-focus',
+        group: 'analytics',
+        placement: 'bottom'
+    },
+    {
+        title: "Performance Leaderboard",
+        description: "See exactly which team members or connected accounts are responding the fastest. Use this table to instantly identify bottlenecks and reward your top performers.",
+        targetId: 'analytics-stats-table',
+        group: 'analytics',
+        placement: 'top'
+    },
     {
         title: "🎉 Tour Complete!",
         description: "You're now a Telegram Translator expert! All features are at your fingertips. Happy translating!",
         targetId: 'app-logo',
-        group: 'auto-responder',
+        group: 'analytics',
         placement: 'bottom'
     }
 ];
@@ -345,9 +465,12 @@ export default function UserGuideTour({
 
     // ── DOM state checks (re-evaluated every render) ─────────────────────────
     const isAutoResponderPage = window.location.pathname === '/auto-responder';
+    const isAnalyticsPage = window.location.pathname === '/analytics';
     const isModalInDOM = !!document.getElementById('tdata-upload-box');
     const isArModalInDOM = !!document.getElementById('ar-modal-name');
     const isCrmOpen = !!document.getElementById('crm-modal-container');
+    const isProfileModalInDOM = !!document.getElementById('profile-modal-container');
+    const isSessionsModalInDOM = !!document.getElementById('sessions-modal-container');
     const isConvListInDOM = !!document.getElementById('conversation-list');
     const isSearchInDOM = !!document.getElementById('search-container');
     const isTemplatesMenuOpen = !!document.getElementById('templates-menu-state-open');
@@ -357,11 +480,14 @@ export default function UserGuideTour({
     // Filter steps when tour opens based on starting page
     useEffect(() => {
         if (isOpen) {
-            const isAuto = window.location.pathname === '/auto-responder';
-            setFilteredSteps(isAuto
-                ? allTourSteps.filter(s => s.group === 'auto-responder')
-                : allTourSteps
-            );
+            const pathname = window.location.pathname;
+            if (pathname === '/auto-responder') {
+                setFilteredSteps(allTourSteps.filter(s => s.group === 'auto-responder' || s.group === 'analytics'));
+            } else if (pathname === '/analytics') {
+                setFilteredSteps(allTourSteps.filter(s => s.group === 'analytics'));
+            } else {
+                setFilteredSteps(allTourSteps);
+            }
         }
     }, [isOpen]);
 
@@ -390,6 +516,42 @@ export default function UserGuideTour({
     } else if (step.requirement === 'modal_close' && isModalInDOM) {
         isBlocked = true;
         badgeText = "Finish Setup & Close This Window";
+
+    } else if (step.requirement === 'profile_modal_open' && !isProfileModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click User Icon to Open Profile";
+        activeTitle = "Action Required: Open Profile";
+        activeDesc = "Please click the blue User icon for the selected account to open the Profile Settings. The tour will automatically continue.";
+
+    } else if (step.requirement === 'profile_modal_close' && isProfileModalInDOM) {
+        isBlocked = true;
+        badgeText = "Close Profile Modal First";
+
+    } else if (step.requirement === 'sessions_modal_open' && !isSessionsModalInDOM) {
+        isBlocked = true;
+        badgeText = "Click Shield Icon to Open Sessions";
+        activeTitle = "Action Required: Open Sessions";
+        activeDesc = "Please click the amber Shield icon for the selected account to open the Active Sessions list. The tour will automatically continue.";
+
+    } else if (step.requirement === 'sessions_modal_close' && isSessionsModalInDOM) {
+        isBlocked = true;
+        badgeText = "Close Sessions Modal First";
+
+    } else if (step.requirement === 'is_auto_responder' && !isAutoResponderPage) {
+        isBlocked = true;
+        activeTargetId = 'nav-auto-responder';
+        activePlacement = 'bottom';
+        activeTitle = "Action Required: Open Auto-Responder";
+        activeDesc = "Please click the 'Auto-Responder' button in the navigation bar to proceed to the next area.";
+        badgeText = "Click 'Auto-Responder'";
+
+    } else if (step.requirement === 'is_analytics' && !isAnalyticsPage) {
+        isBlocked = true;
+        activeTargetId = 'nav-analytics';
+        activePlacement = 'bottom';
+        activeTitle = "Action Required: Go to Performance";
+        activeDesc = "Please click the 'Performance' button in the navigation bar to proceed to the Dashboard.";
+        badgeText = "Click 'Performance'";
 
     } else if (step.requirement === 'account_selected' && !isConvListInDOM) {
         // Chat list not visible → ask user to click an account card
@@ -578,6 +740,14 @@ export default function UserGuideTour({
         // AR modal closed → advance past close step
         if (!isArModalInDOM && tid === 'ar-modal-close') onStepChange(currentStep + 1);
 
+        // Profile Modal
+        if (isProfileModalInDOM && tid === 'account-profile-btn') onStepChange(currentStep + 1);
+        if (!isProfileModalInDOM && tid === 'profile-modal-close-btn') onStepChange(currentStep + 1);
+
+        // Sessions Modal
+        if (isSessionsModalInDOM && tid === 'account-sessions-btn') onStepChange(currentStep + 1);
+        if (!isSessionsModalInDOM && tid === 'sessions-modal-close-btn') onStepChange(currentStep + 1);
+
         // Advance past quick templates if clicked
         if (isTemplatesMenuOpen && tid === 'chat-templates-btn') onStepChange(currentStep + 1);
 
@@ -591,8 +761,11 @@ export default function UserGuideTour({
         // Navigated to auto-responder page
         if (isAutoResponderPage && tid === 'nav-auto-responder') onStepChange(currentStep + 1);
 
+        // Navigated to analytics page
+        if (isAnalyticsPage && tid === 'nav-analytics') onStepChange(currentStep + 1);
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, isModalInDOM, isArModalInDOM, isCrmOpen, isAutoResponderPage, isTemplatesMenuOpen, isTemplatesModalInDOM, isScheduleModalInDOM]);
+    }, [isOpen, isModalInDOM, isArModalInDOM, isCrmOpen, isProfileModalInDOM, isSessionsModalInDOM, isAutoResponderPage, isAnalyticsPage, isTemplatesMenuOpen, isTemplatesModalInDOM, isScheduleModalInDOM]);
 
     if (!isOpen && !showTourEndedNotice) return null;
 
