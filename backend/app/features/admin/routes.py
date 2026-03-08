@@ -11,13 +11,17 @@ from app.core.admin_security import (
 from app.core.encryption import get_encryption_service, decrypt_message_if_encrypted
 from database import db
 from auth import get_password_hash
-import logging
-
+# --- LOGGING CONFIGURATION ---
+# Sets up the module-level logger for auditing admin actions and system events.
 logger = logging.getLogger(__name__)
 
+# --- API ROUTER INITIALIZATION ---
+# All routes in this module are prefixed with /api/admin and restricted by admin security middleware.
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-# Request/Response Models
+# --- DATA MODELS (REQUEST/RESPONSE SCHEMAS) ---
+# These Pydantic models validate incoming JSON data and structure outgoing responses.
+
 class AdminLoginRequest(BaseModel):
     password: str
 
@@ -50,10 +54,15 @@ class EncryptionSettingsResponse(BaseModel):
     total_messages: int
     encrypted_messages: int
 
-# Authentication Routes
+# --- SECTION 1: AUTHENTICATION ---
+# Handles secure entry into the admin panel using a master password.
+
 @router.post("/auth/login", response_model=AdminLoginResponse)
 async def admin_login(request: AdminLoginRequest):
-    """Admin login with encrypted password"""
+    """
+    Admin login with encrypted password verification.
+    Requires the master admin password to be pre-set in the environment.
+    """
     if not is_admin_password_set():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -71,13 +80,21 @@ async def admin_login(request: AdminLoginRequest):
 
 @router.get("/auth/verify")
 async def verify_admin_token(admin = Depends(get_current_admin)):
-    """Verify admin token is valid"""
+    """
+    Lightweight health check for the admin session token.
+    Used by the frontend to confirm the administrator is still logged in.
+    """
     return {"status": "valid"}
 
-# Colleague Management Routes
+# --- SECTION 2: COLLEAGUE MANAGEMENT (USERS) ---
+# Routes for creating, updating, and auditing colleague accounts.
+
 @router.get("/colleagues")
 async def get_colleagues(admin = Depends(get_current_admin)):
-    """Get all colleagues with their accounts and statistics"""
+    """
+    Retrieves all colleagues along with their Telegram account counts and message traffic stats.
+    Useful for high-level monitoring of worker activity.
+    """
     colleagues = await db.fetch("""
         SELECT 
             u.id, u.username, u.email, u.is_active, u.created_at, u.last_login,
@@ -119,7 +136,7 @@ async def get_colleagues(admin = Depends(get_current_admin)):
 
 @router.get("/colleagues/{colleague_id}")
 async def get_colleague(colleague_id: int, admin = Depends(get_current_admin)):
-    """Get specific colleague details"""
+    """Fetches full details for a single colleague and their connected Telegram accounts."""
     colleague = await db.fetchrow("""
         SELECT id, username, email, is_active, created_at, last_login
         FROM users
@@ -144,7 +161,7 @@ async def get_colleague(colleague_id: int, admin = Depends(get_current_admin)):
 
 @router.post("/colleagues", status_code=status.HTTP_201_CREATED)
 async def create_colleague(data: ColleagueCreate, admin = Depends(get_current_admin)):
-    """Create new colleague account"""
+    """Provision a new colleague account with an initial password and status."""
     # Check if username exists
     existing = await db.fetchrow("SELECT id FROM users WHERE username = $1", data.username)
     if existing:
@@ -166,7 +183,7 @@ async def update_colleague(
     data: ColleagueUpdate,
     admin = Depends(get_current_admin)
 ):
-    """Update colleague information"""
+    """Modifies a colleague's profile or active status. Builds the query dynamically."""
     colleague = await db.fetchrow("SELECT id FROM users WHERE id = $1", colleague_id)
     if not colleague:
         raise HTTPException(status_code=404, detail="Colleague not found")
@@ -202,7 +219,7 @@ async def update_colleague(
 
 @router.delete("/colleagues/{colleague_id}")
 async def delete_colleague(colleague_id: int, admin = Depends(get_current_admin)):
-    """Delete colleague and all associated data"""
+    """Permanently removes a colleague and all their associated data from the database."""
     colleague = await db.fetchrow("SELECT id FROM users WHERE id = $1", colleague_id)
     if not colleague:
         raise HTTPException(status_code=404, detail="Colleague not found")
@@ -216,7 +233,7 @@ async def reset_colleague_password(
     data: PasswordReset,
     admin = Depends(get_current_admin)
 ):
-    """Reset colleague password"""
+    """Allows administrators to force-reset a colleague's password."""
     colleague = await db.fetchrow("SELECT id FROM users WHERE id = $1", colleague_id)
     if not colleague:
         raise HTTPException(status_code=404, detail="Colleague not found")
