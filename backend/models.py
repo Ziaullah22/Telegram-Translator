@@ -3,15 +3,19 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
+# --- User Authentication Models ---
+# Schema for registering a new user
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     email: Optional[str] = None
 
+# Schema for user login requests
 class UserLogin(BaseModel):
     username: str
     password: str
 
+# Schema for returning user profile details
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -27,6 +31,8 @@ class TokenData(BaseModel):
     user_id: Optional[int] = None
     username: Optional[str] = None
 
+# --- Telegram Account Models ---
+# Schema for defining a new Telegram account connection
 class TelegramAccountCreate(BaseModel):
     display_name: str
     source_language: str = "auto"
@@ -51,6 +57,8 @@ class TelegramAccountUpdate(BaseModel):
     target_language: Optional[str] = None
     is_active: Optional[bool] = None
 
+# --- Conversation & Message Models ---
+# Enumeration of supported Telegram conversation types
 class ConversationType(str, Enum):
     private = "private"
     group = "group"
@@ -127,7 +135,8 @@ class TdataUpload(BaseModel):
     source_language: str = "auto"
     target_language: str = "en"
 
-# Message Templates
+# --- Message Templates ---
+# Schema for creating a reusable message template
 class MessageTemplateCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     content: str = Field(..., min_length=1)
@@ -144,7 +153,8 @@ class MessageTemplateResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-# Scheduled Messages
+# --- Scheduled Messages ---
+# Schema for scheduling a future automated message
 class ScheduledMessageCreate(BaseModel):
     conversation_id: int
     message_text: str = Field(..., min_length=1)
@@ -163,7 +173,8 @@ class ScheduledMessageResponse(BaseModel):
     is_sent: bool
     is_cancelled: bool
 
-# Contact CRM Information
+# --- Contact CRM Models ---
+# Schema for generating structured CRM records per conversation
 class ContactInfoCreate(BaseModel):
     conversation_id: int
     name: Optional[str] = None
@@ -199,6 +210,8 @@ class ContactInfoUpdate(BaseModel):
     delivery_method: Optional[str] = None
     note: Optional[str] = None
 
+# --- Auto Responder Models ---
+# Schema for creating a new keyword-based auto-reply rule
 class AutoResponderRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     keywords: List[str] = Field(..., min_items=1)

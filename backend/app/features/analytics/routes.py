@@ -15,6 +15,7 @@ class RankingItem(BaseModel):
     platform: str = "telegram"
     total_responses: int
 
+# Generate a performance ranking of individual private conversations based on their reply latency
 @router.get("/ranking/conversations", response_model=List[RankingItem])
 async def get_conversation_ranking(
     limit: int = 10,
@@ -105,6 +106,7 @@ async def get_conversation_ranking(
         ) for row in rows
     ]
 
+# Aggregate and rank all connected Telegram accounts based on how quickly users reply
 @router.get("/ranking/accounts", response_model=List[RankingItem])
 async def get_account_ranking(
     limit: int = 10,
@@ -165,6 +167,7 @@ async def get_account_ranking(
         ) for row in rows
     ]
 
+# Admin panel route to rank all Telegram accounts across the entire application
 @router.get("/admin/ranking/accounts", response_model=List[RankingItem])
 async def get_admin_account_ranking(
     limit: int = 20
@@ -227,6 +230,7 @@ async def get_admin_account_ranking(
         ) for row in rows
     ]
 
+# Admin panel route to rank colleague users based on their overall aggregated response speed
 @router.get("/admin/ranking/colleagues", response_model=List[RankingItem])
 async def get_admin_colleague_ranking(
     limit: int = 20
@@ -287,6 +291,7 @@ async def get_admin_colleague_ranking(
         ) for row in rows
     ]
 
+# Admin panel route to inspect conversation-level performance rankings for a specific colleague
 @router.get("/admin/users/{user_id}/ranking/conversations", response_model=List[RankingItem])
 async def get_admin_user_conversation_ranking(
     user_id: int,
@@ -371,6 +376,7 @@ async def get_admin_user_conversation_ranking(
         ) for row in rows
     ]
 
+# Admin panel route to inspect account-level performance rankings for a specific colleague
 @router.get("/admin/users/{user_id}/ranking/accounts", response_model=List[RankingItem])
 async def get_admin_user_account_ranking(
     user_id: int,

@@ -10,6 +10,7 @@ from models import ContactInfoCreate, ContactInfoUpdate, ContactInfoResponse, To
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 logger = logging.getLogger(__name__)
 
+# Retrieve the contact profile associated with a specific conversation thread
 @router.get("/conversation/{conversation_id}", response_model=Optional[ContactInfoResponse])
 async def get_contact_info(
     conversation_id: int,
@@ -48,6 +49,7 @@ async def get_contact_info(
         logger.error(f"Failed to get contact info: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get contact info: {str(e)}")
 
+# Create a new detailed contact profile linked to a conversation
 @router.post("", response_model=ContactInfoResponse)
 async def create_contact_info(
     contact_info: ContactInfoCreate,
@@ -114,6 +116,7 @@ async def create_contact_info(
         logger.error(f"Failed to create contact info: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create contact info: {str(e)}")
 
+# Update an existing contact profile with new information
 @router.put("/{contact_id}", response_model=ContactInfoResponse)
 async def update_contact_info(
     contact_id: int,
@@ -175,6 +178,7 @@ async def update_contact_info(
         logger.error(f"Failed to update contact info: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update contact info: {str(e)}")
 
+# Permanently delete the contact profile linked to a conversation
 @router.delete("/{contact_id}")
 async def delete_contact_info(
     contact_id: int,

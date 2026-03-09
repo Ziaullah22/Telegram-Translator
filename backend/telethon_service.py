@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 # Using standard SQLiteSession as WAL mode can sometimes cause issues during intense reloads on Windows
 from telethon.sessions import SQLiteSession
 
+# Core wrapper class managing the connection lifecycle and cached entities for a single Telegram account
 class TelegramSession:
+    # Initialize the session container with API credentials and rate limiting configurations
     def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str):
         self.account_id = account_id
         self.client: Optional[TelegramClient] = None
@@ -33,6 +35,7 @@ class TelegramSession:
         self.telegram_user_id: Optional[int] = None
         self.me: Optional[object] = None
 
+    # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
         try:
             # Standard SQLite session. Telethon handles the file locking.
@@ -135,12 +138,14 @@ class TelegramSession:
             # Re-raise the original or a generic exception
             raise Exception(f"Telegram connection failed: {str(e)}")
 
+    # Gracefully terminate the active Telethon client connection
     async def disconnect(self):
         if self.client:
             await self.client.disconnect()
             self.is_connected = False
             logger.info(f"Disconnected session: {self.account_id}")
 
+    # Fetch a list of recent chats, extracting metadata like peer IDs, unread counts, and generated titles
     async def get_dialogs(self, limit: int = 50):
         if not self.client or not self.is_connected:
             return []
@@ -175,6 +180,7 @@ class TelegramSession:
             logger.error(f"Error fetching dialogs for {self.account_id}: {e}")
             return []
 
+    # Fetch a raw list of recent messages from a specific conversation
     async def get_messages(self, peer_id: int, limit: int = 50):
         if not self.client or not self.is_connected:
             return []
@@ -198,6 +204,7 @@ class TelegramSession:
             logger.error(f"Error fetching messages for {self.account_id}: {e}")
             return []
 
+    # Scan through all dialogs to find and extract details (including media thumbnails) for all unread incoming messages
     async def get_unread_messages(self):
         """Get unread messages from all dialogs"""
         if not self.client or not self.is_connected:

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auto-responder", tags=["auto-responder"])
 
 
+# Retrieve all auto-responder keyword rules configured by the current user
 @router.get("/rules", response_model=List[AutoResponderRuleResponse])
 async def get_rules(current_user = Depends(get_current_user)):
     """Get all auto-responder rules for the current user"""
@@ -33,6 +34,7 @@ async def get_rules(current_user = Depends(get_current_user)):
     return [dict(rule) for rule in rules]
 
 
+# Create a new auto-responder rule with specific keywords, language, and media
 @router.post("/rules", response_model=AutoResponderRuleResponse)
 async def create_rule(
     rule: AutoResponderRuleCreate,
@@ -71,6 +73,7 @@ async def create_rule(
     return dict(created_rule)
 
 
+# Modify an existing auto-responder rule's keywords, priorities, or response texts
 @router.patch("/rules/{rule_id}", response_model=AutoResponderRuleResponse)
 async def update_rule(
     rule_id: int,
@@ -163,6 +166,7 @@ async def update_rule(
     return dict(updated_rule)
 
 
+# Delete an auto-responder rule and automatically clean up any attached media files
 @router.delete("/rules/{rule_id}")
 async def delete_rule(
     rule_id: int,
@@ -198,6 +202,7 @@ async def delete_rule(
     return {"message": "Rule deleted successfully"}
 
 
+# Fetch a paginated history log of all times auto-responder rules were triggered
 @router.get("/logs", response_model=List[AutoResponderLogResponse])
 async def get_logs(
     limit: int = 50,
@@ -222,6 +227,7 @@ async def get_logs(
     return [dict(log) for log in logs]
 
 
+# Upload and attach a new media file (image/video) to be sent by a specific rule
 @router.post("/rules/{rule_id}/upload-media")
 async def upload_media(
     rule_id: int,
@@ -289,6 +295,7 @@ async def upload_media(
     return {"message": "Media uploaded successfully", "media_type": media_type, "file_path": file_path}
 
 
+# Remove the attached media file from an auto-responder rule and delete it from disk
 @router.delete("/rules/{rule_id}/media")
 async def delete_media(
     rule_id: int,

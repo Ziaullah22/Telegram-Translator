@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+# Register a new user account and return a JWT access token
 @router.post("/register", response_model=Token)
 async def register(user: UserCreate):
     if len(user.password) < 6:
@@ -67,6 +68,7 @@ async def register(user: UserCreate):
         )
 
 
+# Authenticate user credentials and return a JWT access token
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin):
     user = await db.fetchrow(
@@ -108,6 +110,7 @@ async def login(credentials: UserLogin):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+# Retrieve the currently authenticated user's profile information
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user = Depends(get_current_user)):
     user = await db.fetchrow(

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
+# Mark all incoming messages in a conversation as read
 @router.post("/conversations/{conversation_id}/read")
 async def mark_as_read(
     conversation_id: int,
@@ -49,6 +50,7 @@ async def mark_as_read(
 
 # --- PHASE 1: INCREMENTAL PAGINATION (BACKEND) ---
 # This slices the message history into small pieces (e.g., 30 at a time) to keep the app fast.
+# Fetch a paginated list of messages for a specific conversation, deciphering if necessary
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: int,
@@ -131,6 +133,7 @@ async def get_messages(
     return result
 
 
+# Translate and send a new text message to a designated conversation
 @router.post("/send", response_model=MessageResponse)
 async def send_message(
     message_data: MessageSend,
@@ -253,6 +256,7 @@ async def send_message(
         )
 
 
+# Manually translate passing text between specified languages
 @router.post("/translate")
 async def translate_message(
     text: str,
@@ -269,6 +273,7 @@ async def translate_message(
     return translation
 
 
+# Upload and send a media file with an optional translated caption
 @router.post("/send-media")
 async def send_media(
     conversation_id: int = Form(...),
@@ -407,6 +412,7 @@ async def send_media(
         )
 
 
+# Retrieve cached media or download it on-demand from a specific message
 @router.get("/download-media/{conversation_id}/{message_id}")
 async def download_media(
     conversation_id: int,
@@ -498,6 +504,7 @@ async def download_media(
         )
 
 
+# Delete specified messages from the local database and optionally revoke them on Telegram
 @router.delete("/delete")
 async def delete_messages_endpoint(
     conversation_id: int,
@@ -580,6 +587,7 @@ async def delete_messages_endpoint(
     return {"message": f"Deleted {len(found_local_ids)} messages", "deleted_ids": found_local_ids}
 
 
+# Forward selected messages natively to another target conversation
 @router.post("/forward")
 async def forward_messages(
     source_conversation_id: int = Form(...),
@@ -712,6 +720,7 @@ async def forward_messages(
     return {"forwarded": len(saved_messages), "messages": saved_messages}
 
 
+# Send an emoji reaction directly to a specific message
 @router.post("/{message_id}/react")
 async def react_to_message(
     message_id: int,

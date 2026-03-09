@@ -9,12 +9,15 @@ from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
+# Service responsible for tracking and executing scheduled messages asynchronously
 class SchedulerService:
+    # Initialize the scheduler, maintaining an in-memory dictionary of pending tasks
     def __init__(self):
         self.scheduled_messages: Dict[int, dict] = {}  # message_id -> message_data
         self.scheduler_task: Optional[asyncio.Task] = None
         self.check_interval = 30  # Check every 30 seconds
         
+    # Start the continuous scheduler background worker task
     async def start(self):
         """Start the scheduler service"""
         logger.info("Starting scheduler service...")
@@ -24,6 +27,7 @@ class SchedulerService:
             self.scheduler_task = asyncio.create_task(self._run_scheduler())
             logger.info("Scheduler service started")
     
+    # Safely stop and cancel the scheduler worker loop
     async def stop(self):
         """Stop the scheduler service"""
         if self.scheduler_task and not self.scheduler_task.done():
@@ -34,6 +38,7 @@ class SchedulerService:
                 pass
             logger.info("Scheduler service stopped")
     
+    # Pull all pending, unsent, uncancelled messages from the DB into memory
     async def load_scheduled_messages(self):
         """Load all pending scheduled messages from database"""
         try:
@@ -55,6 +60,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to load scheduled messages: {e}")
     
+    # Add a specific newly scheduled message to the tracking map
     async def add_scheduled_message(self, message_id: int):
         """Add a new scheduled message to the scheduler"""
         try:
@@ -74,12 +80,14 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to add scheduled message {message_id}: {e}")
     
+    # Delete a specific scheduled message from the tracking map to prevent it from sending
     async def remove_scheduled_message(self, message_id: int):
         """Remove a scheduled message from the scheduler"""
         if message_id in self.scheduled_messages:
             del self.scheduled_messages[message_id]
             logger.info(f"Removed scheduled message {message_id} from scheduler")
     
+    # Automatically cancel pending scheduled sequences if the other party responds manually
     async def cancel_scheduled_messages_for_conversation(self, conversation_id: int):
         """Cancel all scheduled messages for a conversation (when opposite party responds)"""
         try:
@@ -195,6 +203,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to cancel scheduled messages for conversation {conversation_id}: {e}")
     
+    # Main infinite polling loop to execute any tasks whose delay period has expired
     async def _run_scheduler(self):
         """Main scheduler loop"""
         logger.info("Scheduler loop started")
@@ -223,6 +232,7 @@ class SchedulerService:
                 logger.error(f"Error in scheduler loop: {e}")
                 await asyncio.sleep(self.check_interval)
     
+    # Process, translate, and dispatch a single finalized scheduled message to Telegram
     async def _send_scheduled_message(self, message_id: int, message_data: dict):
         """Send a scheduled message"""
         try:

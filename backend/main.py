@@ -34,6 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Application lifespan manager to setup DB connections, migrations, encryption, and background tasks on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application...")
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("AES encryption key not configured - encryption features disabled")
 
+    # Handler for incoming new messages from Telegram, applying translation and DB storage
     async def handle_new_message(message_data: dict):
         try:
             account_id = message_data['account_id']
@@ -267,6 +269,7 @@ async def lifespan(app: FastAPI):
 
     telethon_service.add_message_handler(handle_new_message)
  
+    # Handler for incoming message reactions from Telegram
     async def handle_reaction(reaction_data: dict):
         try:
             account_id = reaction_data['account_id']
@@ -313,6 +316,7 @@ async def lifespan(app: FastAPI):
     telethon_service.add_reaction_handler(handle_reaction)
     
     # Auto-connect accounts from database in the background
+    # Background task to automatically reconnect all active accounts on startup
     async def auto_connect_accounts():
         try:
             accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
@@ -343,6 +347,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Global exception handler to catch all unhandled exceptions and return a 500 response
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Global exception caught: {exc}")
@@ -371,10 +376,12 @@ app.include_router(auto_responder_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
 
+# Health check endpoint for monitoring application status
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "database": "connected"}
 
+# WebSocket endpoint supporting real-time updates for both users and admins
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     try:

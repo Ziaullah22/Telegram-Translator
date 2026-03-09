@@ -8,6 +8,7 @@ from translation_service import translation_service
 router = APIRouter(prefix="/api/translation", tags=["translation"])
 
 
+# Helper route to translate arbitrary text blocks either natively via JSON or Form data
 @router.post("/translate", response_model=TranslationResponse)
 async def translate_text(
     request: Request,

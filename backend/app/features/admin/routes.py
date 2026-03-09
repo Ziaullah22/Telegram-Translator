@@ -51,6 +51,7 @@ class EncryptionSettingsResponse(BaseModel):
     encrypted_messages: int
 
 # Authentication Routes
+# Authenticate an admin user and return a signed JWT access token if the password is valid
 @router.post("/auth/login", response_model=AdminLoginResponse)
 async def admin_login(request: AdminLoginRequest):
     """Admin login with encrypted password"""
@@ -69,12 +70,14 @@ async def admin_login(request: AdminLoginRequest):
     access_token = create_admin_access_token({"admin": True})
     return {"access_token": access_token, "token_type": "bearer"}
 
+# Validate the current admin's JWT token to ensure their session is still active
 @router.get("/auth/verify")
 async def verify_admin_token(admin = Depends(get_current_admin)):
     """Verify admin token is valid"""
     return {"status": "valid"}
 
 # Colleague Management Routes
+# Retrieve a list of all user colleagues along with their aggregated statistics and nested account details
 @router.get("/colleagues")
 async def get_colleagues(admin = Depends(get_current_admin)):
     """Get all colleagues with their accounts and statistics"""
@@ -142,6 +145,7 @@ async def get_colleague(colleague_id: int, admin = Depends(get_current_admin)):
         "accounts": [dict(acc) for acc in accounts]
     }
 
+# Create a new colleague profile in the database with a securely hashed password
 @router.post("/colleagues", status_code=status.HTTP_201_CREATED)
 async def create_colleague(data: ColleagueCreate, admin = Depends(get_current_admin)):
     """Create new colleague account"""

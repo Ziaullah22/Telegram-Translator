@@ -8,10 +8,13 @@ from translation_service import translation_service
 logger = logging.getLogger(__name__)
 
 
+# Central service for matching incoming messages against keywords and dispatching appropriate replies
 class AutoResponderService:
+    # Initialize the auto-responder and enable it by default
     def __init__(self):
         self.enabled = True
     
+    # Evaluate incoming messages against user-defined rules and trigger a translation-aware response if a keyword matches
     async def check_and_respond(self, message_data: Dict[str, Any], user_id: int) -> bool:
         """
         Check if message matches any auto-responder rules and send response if matched.
@@ -128,6 +131,7 @@ class AutoResponderService:
             logger.error(f"Error in auto-responder check: {e}")
             return False
     
+    # Actually dispatch the automated reply to the contact via Telethon, handling media attachments and database saving
     async def _send_response(
         self,
         account_id: int,
@@ -249,6 +253,7 @@ class AutoResponderService:
             logger.error(f"Failed to send auto-response: {e}")
             return False
     
+    # Persist a log record in the database whenever an auto-responder rule successfully fires
     async def _log_trigger(
         self,
         rule_id: int,

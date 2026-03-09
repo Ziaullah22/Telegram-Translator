@@ -12,6 +12,7 @@ from models import (
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
+# Create and persist a new reusable message template for the user
 @router.post("", response_model=MessageTemplateResponse)
 async def create_template(
     template: MessageTemplateCreate,
@@ -39,6 +40,7 @@ async def create_template(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
 
+# Retrieve all saved message templates associated with the current user
 @router.get("", response_model=List[MessageTemplateResponse])
 async def get_templates(
     current_user: TokenData = Depends(get_current_user)
@@ -58,6 +60,7 @@ async def get_templates(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch templates: {str(e)}")
 
+# Fetch a specific message template by its unique identifier
 @router.get("/{template_id}", response_model=MessageTemplateResponse)
 async def get_template(
     template_id: int,
@@ -83,6 +86,7 @@ async def get_template(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch template: {str(e)}")
 
+# Update the contents or name of an existing message template
 @router.put("/{template_id}", response_model=MessageTemplateResponse)
 async def update_template(
     template_id: int,
@@ -140,6 +144,7 @@ async def update_template(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
 
+# Permanently delete a message template from the user's account
 @router.delete("/{template_id}")
 async def delete_template(
     template_id: int,

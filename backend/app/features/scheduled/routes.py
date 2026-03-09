@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/scheduled-messages", tags=["scheduled-messages"])
 
+# Queue a new message to be automatically sent after a specified delay period
 @router.post("", response_model=ScheduledMessageResponse)
 async def create_scheduled_message(
     scheduled_msg: ScheduledMessageCreate,
@@ -99,6 +100,7 @@ async def create_scheduled_message(
         logger.error(f"Failed to create scheduled message: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create scheduled message: {str(e)}")
 
+# Fetch all pending scheduled messages associated with a specific conversation
 @router.get("/conversation/{conversation_id}", response_model=List[ScheduledMessageResponse])
 async def get_scheduled_messages_by_conversation(
     conversation_id: int,
@@ -137,6 +139,7 @@ async def get_scheduled_messages_by_conversation(
         logger.error(f"Failed to fetch scheduled messages: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch scheduled messages: {str(e)}")
 
+# Retrieve all pending scheduled messages across all active accounts for the user
 @router.get("", response_model=List[ScheduledMessageResponse])
 async def get_all_scheduled_messages(
     current_user: TokenData = Depends(get_current_user)
@@ -160,6 +163,7 @@ async def get_all_scheduled_messages(
         logger.error(f"Failed to fetch all scheduled messages: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch scheduled messages: {str(e)}")
 
+# Edit the contents or delivery delay of an existing scheduled message
 @router.put("/{message_id}", response_model=ScheduledMessageResponse)
 async def update_scheduled_message(
     message_id: int,
@@ -225,6 +229,7 @@ async def update_scheduled_message(
         logger.error(f"Failed to update scheduled message: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update scheduled message: {str(e)}")
 
+# Abort and securely cancel an upcoming scheduled message before it fires
 @router.delete("/{message_id}")
 async def cancel_scheduled_message(
     message_id: int,

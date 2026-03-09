@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 
+# Validate a directly uploaded TData archive file and parse its configuration without persisting an account
 @router.post("/accounts/validate-tdata")
 async def validate_tdata(
     tdata: UploadFile = File(...),
@@ -188,6 +189,7 @@ async def validate_tdata(
         )
 
 
+# Fetch a list of active Telegram accounts belonging to the authenticated user along with their connection states
 @router.get("/accounts", response_model=List[TelegramAccountResponse])
 async def get_accounts(current_user = Depends(get_current_user)):
     accounts = await db.fetch(
@@ -228,6 +230,7 @@ async def get_accounts(current_user = Depends(get_current_user)):
     return result
 
 
+# Create a brand new Telegram account record by extracting and validating an uploaded TData session archive
 @router.post("/accounts", response_model=TelegramAccountResponse)
 async def create_account(
     displayName: str = Form(...),
@@ -439,6 +442,7 @@ async def create_account(
     }
 
 
+# Manually initiate a Telethon connection for a specific saved Telegram account
 @router.post("/accounts/{account_id}/connect")
 async def connect_account(
     account_id: int,
@@ -486,6 +490,7 @@ async def connect_account(
         )
 
 
+# Forcibly disconnect the active Telethon session for a specific account
 @router.post("/accounts/{account_id}/disconnect")
 async def disconnect_account(
     account_id: int,
@@ -508,6 +513,7 @@ async def disconnect_account(
     return {"message": "Disconnected successfully", "connected": False}
 
 
+# Modify the settings (such as proxy/language) of an existing Telegram account session
 @router.patch("/accounts/{account_id}", response_model=TelegramAccountResponse)
 async def update_account(
     account_id: int,
@@ -598,6 +604,7 @@ async def update_account(
     return update_result
 
 
+# Completely destroy a Telegram account record from the database and wipe its session file from the disk
 @router.delete("/accounts/{account_id}")
 async def delete_account(
     account_id: int,
@@ -654,6 +661,7 @@ async def delete_account(
     return {"message": "Account deleted successfully"}
 
 
+# Retrieve an aggregated list of all synchronized conversations (peers) for an account
 @router.get("/accounts/{account_id}/conversations", response_model=List[ConversationResponse])
 async def get_conversations(
     account_id: int,
@@ -739,6 +747,7 @@ async def get_conversations(
     return result
 
 
+# Search for new Telegram users globally or locally using a username or phone number
 @router.get("/accounts/{account_id}/search-users", response_model=List[UserSearchResult])
 async def search_users(
     account_id: int,
@@ -783,6 +792,7 @@ async def search_users(
         )
 
 
+# Initiate a new local conversation context with a target Telegram peer ID
 @router.post("/accounts/{account_id}/conversations", response_model=ConversationResponse)
 async def create_conversation(
     account_id: int,
