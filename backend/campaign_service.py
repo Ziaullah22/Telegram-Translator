@@ -55,8 +55,8 @@ class CampaignService:
             campaign_id = campaign['id']
             user_id = campaign['user_id']
             
-            # 2. Pre-Check: Are any accounts available for this campaign TODAY?
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            # 2. Pre-Check: Are any accounts available for this campaign in the last 24 HOURS?
+            window_start = datetime.now(timezone.utc) - timedelta(hours=24)
             available_account_ids = []
             
             # Get all active accounts for this user
@@ -66,8 +66,8 @@ class CampaignService:
             )
             
             for acc in all_accounts:
-                # Check if this specific account has sent an outreach today
-                sent_today = await db.fetchval(
+                # Check if this specific account has sent an outreach in the last 24 hours
+                sent_in_window = await db.fetchval(
                     """
                     SELECT COUNT(*) FROM campaign_logs l
                     JOIN campaign_leads cl ON l.lead_id = cl.id
@@ -75,9 +75,9 @@ class CampaignService:
                     AND l.action = 'initial_outreach'
                     AND l.created_at >= $2
                     """,
-                    acc['id'], today_start
+                    acc['id'], window_start
                 )
-                if sent_today < 1: # Our 1-message-per-day limit
+                if sent_in_window < 1: # Our 1-message-per-24h limit
                     available_account_ids.append(acc['id'])
 
             if not available_account_ids:
@@ -315,8 +315,8 @@ class CampaignService:
         }
 
     async def get_campaign_hibernation_status(self, campaign_id: int, user_id: int):
-        """Check if all accounts for a user/campaign have reached daily limits"""
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        """Check if all accounts for a user/campaign have reached daily limits (24-hour rolling)"""
+        window_start = datetime.now(timezone.utc) - timedelta(hours=24)
         
         # Get all active accounts for this user
         accounts = await db.fetch(
@@ -327,27 +327,31 @@ class CampaignService:
         if not accounts:
             return {"is_hibernating": False, "next_reset_at": None}
             
-        has_available_account = False
+        available_times = []
         for acc in accounts:
-            sent_today = await db.fetchval(
+            last_outreach = await db.fetchrow(
                 """
-                SELECT COUNT(*) FROM campaign_logs l
+                SELECT l.created_at FROM campaign_logs l
                 JOIN campaign_leads cl ON l.lead_id = cl.id
                 WHERE cl.assigned_account_id = $1
                 AND l.action = 'initial_outreach'
-                AND l.created_at >= $2
+                ORDER BY l.created_at DESC
+                LIMIT 1
                 """,
-                acc['id'], today_start
+                acc['id']
             )
-            if sent_today < 1:
-                has_available_account = True
-                break
+            
+            if not last_outreach or last_outreach['created_at'] < window_start:
+                # This account is available NOW
+                return {"is_hibernating": False, "next_reset_at": None}
+            else:
+                # Account will be available 24 hours after this outreach
+                available_times.append(last_outreach['created_at'] + timedelta(hours=24))
         
-        is_hibernating = not has_available_account
-        next_reset_at = None
-        if is_hibernating:
-            # Next reset is tomorrow at 00:00 UTC
-            next_reset_at = today_start + timedelta(days=1)
+        # If we reach here, all accounts are busy.
+        # The campaign will wake up when the SOONEST account becomes available.
+        is_hibernating = True
+        next_reset_at = min(available_times) if available_times else None
             
         return {
             "is_hibernating": is_hibernating,
