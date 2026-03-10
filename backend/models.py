@@ -293,3 +293,69 @@ class ConversationCreate(BaseModel):
     type: str = "private"
     is_hidden: bool = False
     is_muted: bool = False
+# --- Campaign Models ---
+class CampaignStatus(str, Enum):
+    draft = "draft"
+    running = "running"
+    paused = "paused"
+    completed = "completed"
+    archived = "archived"
+
+class CampaignCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    initial_message: str = Field(..., min_length=1)
+
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    initial_message: Optional[str] = None
+    status: Optional[CampaignStatus] = None
+
+class CampaignResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    initial_message: str
+    status: CampaignStatus
+    total_leads: int = 0
+    completed_leads: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+class CampaignStepCreate(BaseModel):
+    step_number: int = Field(..., gt=0)
+    wait_time_hours: float = Field(..., ge=0)
+    keywords: List[str] = Field(..., min_items=1)
+    response_text: str = Field(..., min_length=1)
+
+class CampaignStepUpdate(BaseModel):
+    wait_time_hours: Optional[float] = None
+    keywords: Optional[List[str]] = None
+    response_text: Optional[str] = None
+
+class CampaignStepResponse(BaseModel):
+    id: int
+    campaign_id: int
+    step_number: int
+    wait_time_hours: float
+    keywords: List[str]
+    response_text: str
+    created_at: datetime
+
+class LeadStatus(str, Enum):
+    pending = "pending"
+    contacted = "contacted"
+    replied = "replied"
+    completed = "completed"
+    failed = "failed"
+
+class CampaignLeadResponse(BaseModel):
+    id: int
+    campaign_id: int
+    telegram_identifier: str
+    current_step: int
+    status: LeadStatus
+    last_contact_at: Optional[datetime]
+    assigned_account_id: Optional[int]
+    assigned_account_name: Optional[str] = None
+    assigned_account_display_name: Optional[str] = None
+    created_at: datetime

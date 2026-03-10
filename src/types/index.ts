@@ -176,3 +176,38 @@ export interface AutoResponderLog {
   matched_keyword: string;
   triggered_at: string;
 }
+
+export interface Campaign {
+  id: number;
+  user_id: number;
+  name: string;
+  initial_message: string;
+  status: 'draft' | 'running' | 'paused' | 'completed' | 'archived';
+  total_leads: number;
+  completed_leads: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignStep {
+  id: number;
+  campaign_id: number;
+  step_number: number;
+  wait_time_hours: number;
+  keywords: string[];
+  response_text: string;
+  created_at: string;
+}
+
+export interface CampaignLead {
+  id: number;
+  campaign_id: number;
+  telegram_identifier: string;
+  current_step: number;
+  status: 'pending' | 'contacted' | 'replied' | 'completed' | 'failed';
+  last_contact_at?: string;
+  assigned_account_id?: number;
+  assigned_account_name?: string;
+  assigned_account_display_name?: string;
+  created_at: string;
+}

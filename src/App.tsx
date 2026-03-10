@@ -19,6 +19,7 @@ import AutoResponderPage from './components/AutoResponder/AutoResponderPage';
 import UserGuideTour from './components/Modals/UserGuideTour';
 import ProfileModal from './components/Modals/ProfileModal';
 import ActiveSessionsModal from './components/Modals/ActiveSessionsModal';
+import CampaignPage from './components/Campaigns/CampaignPage';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
@@ -528,6 +529,7 @@ function App() {
         <Routes>
           <Route path="/auto-responder" element={<AutoResponderPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/campaigns" element={<CampaignPage />} />
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden">
               <Sidebar

@@ -7,7 +7,7 @@
  */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead } from '../types';
 
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
@@ -583,4 +583,70 @@ export const analyticsAPI = {
     const response = await api.get('/analytics/admin/ranking/accounts', { params: { limit } });
     return response.data;
   }
+};
+
+// --- CAMPAIGN SERVICES ---
+// Manages automated lead outreach and multi-step campaigns
+export const campaignsAPI = {
+  // Get all campaigns for the current user
+  getCampaigns: async (): Promise<Campaign[]> => {
+    const response = await api.get('/campaigns');
+    return response.data;
+  },
+
+  // Get a single campaign with its basic stats
+  getCampaign: async (campaignId: number): Promise<Campaign> => {
+    const response = await api.get(`/campaigns/${campaignId}`);
+    return response.data;
+  },
+
+  // Create a new campaign with a name and opening message
+  createCampaign: async (data: { name: string; initial_message: string }): Promise<Campaign> => {
+    const response = await api.post('/campaigns', data);
+    return response.data;
+  },
+
+  // Update a campaign's settings or status
+  updateCampaign: async (campaignId: number, data: Partial<Campaign>): Promise<Campaign> => {
+    const response = await api.patch(`/campaigns/${campaignId}`, data);
+    return response.data;
+  },
+
+  // Upload a lead CSV file to a specific campaign
+  uploadLeads: async (campaignId: number, file: File): Promise<{ message: string; total_leads: number }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/campaigns/${campaignId}/upload-leads`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Add an automated sequence step to a campaign
+  addStep: async (campaignId: number, data: {
+    step_number: number;
+    wait_time_hours: number;
+    keywords: string[];
+    response_text: string;
+  }): Promise<CampaignStep> => {
+    const response = await api.post(`/campaigns/${campaignId}/steps`, data);
+    return response.data;
+  },
+
+  // Fetch all configured steps for a campaign
+  getSteps: async (campaignId: number): Promise<CampaignStep[]> => {
+    const response = await api.get(`/campaigns/${campaignId}/steps`);
+    return response.data;
+  },
+
+  // Fetch all leads for a campaign, including their assignment status
+  getLeads: async (campaign_id: number): Promise<CampaignLead[]> => {
+    const response = await api.get(`/campaigns/${campaign_id}/leads`);
+    return response.data;
+  },
+
+  // Delete an entire campaign and all its associations
+  deleteCampaign: async (campaignId: number): Promise<void> => {
+    await api.delete(`/campaigns/${campaignId}`);
+  },
 };

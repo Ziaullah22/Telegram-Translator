@@ -65,6 +65,20 @@ export default function Header({ onStartTour }: HeaderProps) {
             </button>
 
             <button
+              id="nav-campaigns"
+              onClick={() => navigate('/campaigns')}
+              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/campaigns'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                }`}
+            >
+              <div className="flex items-center space-x-2 font-medium">
+                <Zap className="w-4 h-4 text-orange-500" />
+                <span>Campaigns</span>
+              </div>
+            </button>
+
+            <button
               onClick={onStartTour}
               className="px-4 py-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-all duration-300 flex items-center space-x-2 font-medium"
               title="Quick Tour"

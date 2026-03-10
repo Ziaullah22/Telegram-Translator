@@ -97,6 +97,55 @@ async def migrate():
             """)
             print("✓ Check/Create table: system_settings")
             
+            # 9. Create Campaign Tables
+            await conn.execute("""
+                -- Campaign Management Tables
+                CREATE TABLE IF NOT EXISTS campaigns (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    initial_message TEXT NOT NULL,
+                    status VARCHAR(50) DEFAULT 'draft',
+                    total_leads INTEGER DEFAULT 0,
+                    completed_leads INTEGER DEFAULT 0,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS campaign_steps (
+                    id SERIAL PRIMARY KEY,
+                    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                    step_number INTEGER NOT NULL,
+                    wait_time_hours FLOAT DEFAULT 0,
+                    keywords JSONB DEFAULT '[]',
+                    response_text TEXT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(campaign_id, step_number)
+                );
+
+                CREATE TABLE IF NOT EXISTS campaign_leads (
+                    id SERIAL PRIMARY KEY,
+                    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                    telegram_identifier VARCHAR(255) NOT NULL,
+                    current_step INTEGER DEFAULT 0,
+                    status VARCHAR(50) DEFAULT 'pending',
+                    last_contact_at TIMESTAMP WITH TIME ZONE,
+                    assigned_account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(campaign_id, telegram_identifier)
+                );
+
+                CREATE TABLE IF NOT EXISTS campaign_logs (
+                    id SERIAL PRIMARY KEY,
+                    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                    lead_id INTEGER REFERENCES campaign_leads(id) ON DELETE CASCADE,
+                    action VARCHAR(255) NOT NULL,
+                    details TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            print("✓ Check/Create tables: campaigns, campaign_steps, campaign_leads, campaign_logs")
+
             print("\nDatabase synchronization completed successfully.")
             
         except Exception as e:
