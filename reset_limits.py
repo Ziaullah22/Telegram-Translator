@@ -22,20 +22,21 @@ async def reset_limits():
         print("Connected successfully!")
         
         try:
-            # We "reset" the limits by moving the contact timestamps to yesterday.
-            # This preserves the data but makes them not count for "today's" limit.
-            yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+            # We "reset" the limits by moving the contact timestamps to 48 hours ago.
+            # This ensures they are well outside the 24-hour rolling window.
+            reset_time = datetime.now(timezone.utc) - timedelta(hours=48)
+            window_start = datetime.now(timezone.utc) - timedelta(hours=24)
             
             # 1. Update campaign_leads
             leads_updated = await conn.execute(
-                "UPDATE campaign_leads SET last_contact_at = $1 WHERE last_contact_at >= CURRENT_DATE",
-                yesterday
+                "UPDATE campaign_leads SET last_contact_at = $1 WHERE last_contact_at >= $2",
+                reset_time, window_start
             )
             
             # 2. Update campaign_logs
             logs_updated = await conn.execute(
-                "UPDATE campaign_logs SET created_at = $1 WHERE created_at >= CURRENT_DATE",
-                yesterday
+                "UPDATE campaign_logs SET created_at = $1 WHERE created_at >= $2",
+                reset_time, window_start
             )
             
             # 3. Reset Failed Leads to Pending

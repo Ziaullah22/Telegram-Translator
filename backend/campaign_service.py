@@ -67,21 +67,28 @@ class CampaignService:
             
             for acc in all_accounts:
                 # Check if this specific account has sent an outreach in the last 24 hours
-                sent_in_window = await db.fetchval(
+                last_outreach_time = await db.fetchval(
                     """
-                    SELECT COUNT(*) FROM campaign_logs l
-                    JOIN campaign_leads cl ON l.lead_id = cl.id
-                    WHERE cl.assigned_account_id = $1
-                    AND l.action = 'initial_outreach'
-                    AND l.created_at >= $2
+                    SELECT MAX(created_at) FROM campaign_logs 
+                    WHERE account_id = $1
+                    AND action = 'initial_outreach'
                     """,
-                    acc['id'], window_start
+                    acc['id']
                 )
-                if sent_in_window < 1: # Our 1-message-per-24h limit
+                
+                is_available = True
+                if last_outreach_time:
+                    # Explicitly check the window
+                    if last_outreach_time >= window_start:
+                        is_available = False
+                        reset_time = last_outreach_time + timedelta(hours=24)
+                        logger.info(f"Account {acc['id']} is at limit. Available after: {reset_time}")
+                
+                if is_available:
                     available_account_ids.append(acc['id'])
 
             if not available_account_ids:
-                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): All accounts reached daily limits. Hibernating...")
+                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): HIBERNATING. (All {len(all_accounts)} accounts at limit)")
                 continue
 
             # 3. Find pending leads at step 0 assigned to our AVAILABLE accounts
@@ -256,10 +263,10 @@ class CampaignService:
                     # F. Log the Action
                     await db.execute(
                         """
-                        INSERT INTO campaign_logs (campaign_id, lead_id, action, details)
-                        VALUES ($1, $2, 'initial_outreach', $3)
+                        INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details)
+                        VALUES ($1, $2, $3, 'initial_outreach', $4)
                         """,
-                        campaign_id, lead['id'], f"Initial message sent via account {account_id}"
+                        campaign_id, lead['id'], account_id, f"Initial message sent via account {account_id}"
                     )
 
                     logger.info(f"Successfully contacted lead {lead['telegram_identifier']}")
@@ -290,10 +297,10 @@ class CampaignService:
                     )
                     await db.execute(
                         """
-                        INSERT INTO campaign_logs (campaign_id, lead_id, action, details)
-                        VALUES ($1, $2, 'error', $3)
+                        INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details)
+                        VALUES ($1, $2, $3, 'error', $4)
                         """,
-                        campaign_id, lead['id'], error_str
+                        campaign_id, lead['id'], account_id, error_str
                     )
 
     async def get_account_outreach_stats(self, account_id: int):
@@ -331,11 +338,10 @@ class CampaignService:
         for acc in accounts:
             last_outreach = await db.fetchrow(
                 """
-                SELECT l.created_at FROM campaign_logs l
-                JOIN campaign_leads cl ON l.lead_id = cl.id
-                WHERE cl.assigned_account_id = $1
-                AND l.action = 'initial_outreach'
-                ORDER BY l.created_at DESC
+                SELECT created_at FROM campaign_logs
+                WHERE account_id = $1
+                AND action = 'initial_outreach'
+                ORDER BY created_at DESC
                 LIMIT 1
                 """,
                 acc['id']

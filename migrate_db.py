@@ -260,8 +260,9 @@ async def migrate():
 
                 CREATE TABLE IF NOT EXISTS campaign_logs (
                     id SERIAL PRIMARY KEY,
-                    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
-                    lead_id INTEGER REFERENCES campaign_leads(id) ON DELETE CASCADE,
+                    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
+                    lead_id INTEGER REFERENCES campaign_leads(id) ON DELETE SET NULL,
+                    account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
                     action VARCHAR(255) NOT NULL,
                     details TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -287,6 +288,29 @@ async def migrate():
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(100);
                 
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+
+                -- Bulletproof Safety: Add account_id to logs and remove strict cascade dependencies
+                ALTER TABLE campaign_logs ADD COLUMN IF NOT EXISTS account_id INTEGER;
+                ALTER TABLE campaign_logs ALTER COLUMN campaign_id DROP NOT NULL;
+                ALTER TABLE campaign_logs ALTER COLUMN lead_id DROP NOT NULL;
+
+                -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
+                DO $$
+                BEGIN
+                    -- Campaign ID constraint
+                    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'campaign_logs_campaign_id_fkey') THEN
+                        ALTER TABLE campaign_logs DROP CONSTRAINT campaign_logs_campaign_id_fkey;
+                    END IF;
+                    ALTER TABLE campaign_logs ADD CONSTRAINT campaign_logs_campaign_id_fkey 
+                        FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL;
+
+                    -- Lead ID constraint
+                    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'campaign_logs_lead_id_fkey') THEN
+                        ALTER TABLE campaign_logs DROP CONSTRAINT campaign_logs_lead_id_fkey;
+                    END IF;
+                    ALTER TABLE campaign_logs ADD CONSTRAINT campaign_logs_lead_id_fkey 
+                        FOREIGN KEY (lead_id) REFERENCES campaign_leads(id) ON DELETE SET NULL;
+                END $$;
             """)
             print("✓ Incremental updates applied.")
 
