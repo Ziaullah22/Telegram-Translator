@@ -649,4 +649,20 @@ export const campaignsAPI = {
   deleteCampaign: async (campaignId: number): Promise<void> => {
     await api.delete(`/campaigns/${campaignId}`);
   },
+
+  // Pause a campaign
+  pauseCampaign: async (campaignId: number): Promise<void> => {
+    await api.post(`/campaigns/${campaignId}/pause`);
+  },
+
+  // Resume a campaign
+  resumeCampaign: async (campaignId: number): Promise<void> => {
+    await api.post(`/campaigns/${campaignId}/resume`);
+  },
+
+  // Get daily outreach safety stats for an account
+  getSafetyStats: async (accountId: number): Promise<{ new_conversations_today: number; limit: number; remaining: number }> => {
+    const response = await api.get(`/campaigns/safety-stats/${accountId}`);
+    return response.data;
+  },
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Rocket, Users, BarChart2, Play, Pause, Trash2, Upload, FileText } from 'lucide-react';
+import { Plus, Rocket, Users, BarChart2, Play, Pause, Trash2, Upload, FileText, Clock } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 import type { Campaign } from '../../types';
 import CreateCampaignModal from './CreateCampaignModal';
@@ -11,15 +11,15 @@ const CampaignPage: React.FC = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedCampaignForLeads, setSelectedCampaignForLeads] = useState<Campaign | null>(null);
 
-    const fetchCampaigns = async () => {
+    const fetchCampaigns = async (silent = false) => {
         try {
-            setIsLoading(true);
+            if (!silent) setIsLoading(true);
             const data = await campaignsAPI.getCampaigns();
             setCampaigns(data);
         } catch (error) {
             console.error('Failed to fetch campaigns:', error);
         } finally {
-            setIsLoading(false);
+            if (!silent) setIsLoading(false);
         }
     };
 
@@ -28,7 +28,6 @@ const CampaignPage: React.FC = () => {
         if (window.confirm(`Are you sure you want to completely delete the campaign "${name}"?\n\nThis will permanently remove all associated leads and follow-up steps. This action cannot be undone.`)) {
             try {
                 await campaignsAPI.deleteCampaign(id);
-                // Immediately refresh the list
                 fetchCampaigns();
             } catch (error) {
                 console.error('Failed to delete campaign:', error);
@@ -37,11 +36,53 @@ const CampaignPage: React.FC = () => {
         }
     };
 
+    const handleUpdateStatus = async (e: React.MouseEvent, id: number, currentStatus: string) => {
+        e.stopPropagation();
+        try {
+            if (currentStatus === 'running') {
+                await campaignsAPI.pauseCampaign(id);
+            } else {
+                await campaignsAPI.resumeCampaign(id);
+            }
+            fetchCampaigns();
+        } catch (error) {
+            console.error('Failed to update campaign status:', error);
+            alert("Failed to update campaign status. Please try again.");
+        }
+    };
+
     useEffect(() => {
         fetchCampaigns();
+        // Refresh silently every second so the countdown timer feels alive
+        const interval = setInterval(() => fetchCampaigns(true), 1000);
+        return () => clearInterval(interval);
     }, []);
 
-    const getStatusBadge = (status: string) => {
+    const getTimeUntilReset = (resetDateStr?: string) => {
+        if (!resetDateStr) return '';
+        const now = new Date();
+        const resetDate = new Date(resetDateStr);
+        const diffMs = resetDate.getTime() - now.getTime();
+
+        if (diffMs <= 0) return 'Resetting...';
+
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+        return `${hours}h ${mins}m ${secs}s`;
+    };
+
+    const getStatusBadge = (status: string, isHibernating?: boolean) => {
+        if (isHibernating && status === 'running') {
+            return (
+                <span className="flex items-center bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    <Clock className="w-3 h-3 mr-1" />
+                    Hibernating
+                </span>
+            );
+        }
+
         const styles = {
             draft: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
             running: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 animate-pulse-subtle',
@@ -151,7 +192,12 @@ const CampaignPage: React.FC = () => {
                                                 <h3 className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none">
                                                     {camp.name}
                                                 </h3>
-                                                {getStatusBadge(camp.status)}
+                                                {getStatusBadge(camp.status, camp.is_hibernating)}
+                                                {camp.is_hibernating && camp.status === 'running' && (
+                                                    <span className="text-[10px] font-bold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-lg flex items-center">
+                                                        Next Batch In: {getTimeUntilReset(camp.next_reset_at)}
+                                                    </span>
+                                                )}
                                             </div>
                                             <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
                                                 Initial Message: "{camp.initial_message.substring(0, 50)}..."
@@ -180,7 +226,7 @@ const CampaignPage: React.FC = () => {
                                         </button>
                                         {camp.status === 'paused' || camp.status === 'draft' ? (
                                             <button
-                                                onClick={(e) => e.stopPropagation()}
+                                                onClick={(e) => handleUpdateStatus(e, camp.id, camp.status)}
                                                 className="flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl transition-all shadow-md shadow-green-500/20 font-bold text-sm"
                                             >
                                                 <Play className="w-4 h-4" />
@@ -188,7 +234,7 @@ const CampaignPage: React.FC = () => {
                                             </button>
                                         ) : (
                                             <button
-                                                onClick={(e) => e.stopPropagation()}
+                                                onClick={(e) => handleUpdateStatus(e, camp.id, camp.status)}
                                                 className="flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2.5 rounded-xl transition-all shadow-md shadow-yellow-500/20 font-bold text-sm"
                                             >
                                                 <Pause className="w-4 h-4" />

@@ -34,109 +34,120 @@ class TelegramSession:
         self.entity_cache: Dict[int, object] = {}
         self.telegram_user_id: Optional[int] = None
         self.me: Optional[object] = None
+        self.connection_lock = asyncio.Lock()
+        self.is_connecting = False
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
-        try:
-            # Standard SQLite session. Telethon handles the file locking.
-            # We strip .session from filepath because Telethon appends it automatically.
-            session_id = self.session_filepath
-            if session_id.endswith('.session'):
-                session_id = session_id[:-8]
-
-            self.client = TelegramClient(
-                session_id,
-                self.telegram_api_id,
-                self.telegram_api_hash,
-                device_model="Desktop",
-                system_version="Windows 10",
-                app_version="1.0.0"
-            )
-
-            # Max retries for "database is locked" errors on Windows
-            max_retries = 5
-            for attempt in range(max_retries):
-                try:
-                    await self.client.connect()
-                    break
-                except Exception as e:
-                    if "database is locked" in str(e).lower() and attempt < max_retries - 1:
-                        logger.warning(f"Database locked for account {self.account_id}, retrying in 1s... (attempt {attempt+1}/{max_retries})")
-                        await asyncio.sleep(1)
-                    else:
-                        raise e
-            
-            # Check if user is authorized
-            if not await self.client.is_user_authorized():
-                logger.error(f"Session {self.account_id} is not authorized. Please re-authenticate.")
-                await self.client.disconnect()
-                self.is_connected = False
-                return False
-
-            self.is_connected = True
-            logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
-
-            # Cache the account's own telegram ID and username for faster operations
-            try:
-                # Use a timeout for get_me
-                me = await asyncio.wait_for(self.client.get_me(), timeout=10.0)
-                if me:
-                    self.telegram_user_id = me.id
-                    self.me = me
-                    
-                    # Store username in database for cross-account search
-                    if getattr(me, 'username', None):
-                        from database import db
-                        await db.execute(
-                            "UPDATE telegram_accounts SET username = $1 WHERE id = $2",
-                            me.username, self.account_id
-                        )
-                        logger.info(f"Updated record for account {self.account_id} with username @{me.username}")
-            except Exception as e:
-                logger.warning(f"Could not get 'me' for account {self.account_id} during connect: {e}")
-                self.me = None
-
-            # Pre-warm entity cache using SAME ID format as our DB (_get_peer_id)
-            try:
-                # Increase limit to 400 to ensure most active chats are cached correctly
-                async for dialog in self.client.iter_dialogs(limit=400):
-                    if dialog.entity:
-                        db_peer_id = self._get_peer_id(dialog.entity)
-                        if db_peer_id:
-                            self.entity_cache[db_peer_id] = dialog.entity
-                        # Also index by raw entity.id as fallback
-                        raw_id = getattr(dialog.entity, 'id', None)
-                        if raw_id and raw_id != db_peer_id:
-                            self.entity_cache[raw_id] = dialog.entity
-                logger.info(f"Entity cache warmed: {len(self.entity_cache)} entries for account {self.account_id}")
-            except Exception as e:
-                logger.warning(f"Could not warm entity cache: {e}")
-
+        if self.is_connected and self.client and self.client.is_connected():
             return True
+            
+        async with self.connection_lock:
+            # Inner check after acquiring lock
+            if self.is_connected and self.client and self.client.is_connected():
+                return True
+                
+            self.is_connecting = True
+            try:
+                # Standard SQLite session. Telethon handles the file locking.
+                # We strip .session from filepath because Telethon appends it automatically.
+                session_id = self.session_filepath
+                if session_id.endswith('.session'):
+                    session_id = session_id[:-8]
 
-        except UserDeactivatedError:
-            self.is_connected = False
-            logger.error(f"Account {self.account_id} is banned/deactivated.")
-            raise Exception("This Telegram account has been banned or deactivated by Telegram.")
-        except AuthKeyUnregisteredError:
-            self.is_connected = False
-            logger.error(f"Session for account {self.account_id} is expired.")
-            raise Exception("The session is invalid or has expired. Please export a new TData zip.")
-        except SessionPasswordNeededError:
-            self.is_connected = False
-            logger.error(f"Account {self.account_id} requires 2FA password which is not supported in TData direct login yet.")
-            raise Exception("This account has 2-Step Verification enabled. Please disable it or use a TData without it.")
-        except Exception as e:
-            error_msg = str(e).lower()
-            logger.error(f"Failed to connect session {self.account_id}: {e}")
-            self.is_connected = False
+                self.client = TelegramClient(
+                    session_id,
+                    self.telegram_api_id,
+                    self.telegram_api_hash,
+                    device_model="Desktop",
+                    system_version="Windows 10",
+                    app_version="1.0.0"
+                )
+
+                # Max retries for "database is locked" errors on Windows
+                max_retries = 5
+                connected = False
+                for attempt in range(max_retries):
+                    try:
+                        await self.client.connect()
+                        connected = True
+                        break
+                    except Exception as e:
+                        if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                            logger.warning(f"Database locked for account {self.account_id}, retrying in 1s... (attempt {attempt+1}/{max_retries})")
+                            await asyncio.sleep(1)
+                        else:
+                            raise e
+                
+                if not connected:
+                    return False
             
-            # Identify other specific Telegram errors if any
-            if "deactivated" in error_msg or "banned" in error_msg:
+                # Check if user is authorized
+                if not await self.client.is_user_authorized():
+                    logger.error(f"Session {self.account_id} is not authorized. Please re-authenticate.")
+                    await self.client.disconnect()
+                    self.is_connected = False
+                    return False
+
+                self.is_connected = True
+                logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
+
+                # Cache the account's own telegram ID and username for faster operations
+                try:
+                    # Use a timeout for get_me
+                    me = await asyncio.wait_for(self.client.get_me(), timeout=10.0)
+                    if me:
+                        self.telegram_user_id = me.id
+                        self.me = me
+                        
+                        # Store username in database for cross-account search
+                        if getattr(me, 'username', None):
+                            from database import db
+                            await db.execute(
+                                "UPDATE telegram_accounts SET username = $1 WHERE id = $2",
+                                me.username, self.account_id
+                            )
+                            logger.info(f"Updated record for account {self.account_id} with username @{me.username}")
+                except Exception as e:
+                    logger.warning(f"Could not get 'me' for account {self.account_id} during connect: {e}")
+                    self.me = None
+
+                # Pre-warm entity cache using SAME ID format as our DB (_get_peer_id)
+                try:
+                    # Increase limit to 400 to ensure most active chats are cached correctly
+                    async for dialog in self.client.iter_dialogs(limit=400):
+                        if dialog.entity:
+                            db_peer_id = self._get_peer_id(dialog.entity)
+                            if db_peer_id:
+                                self.entity_cache[db_peer_id] = dialog.entity
+                            # Also index by raw entity.id as fallback
+                            raw_id = getattr(dialog.entity, 'id', None)
+                            if raw_id and raw_id != db_peer_id:
+                                self.entity_cache[raw_id] = dialog.entity
+                    logger.info(f"Entity cache warmed: {len(self.entity_cache)} entries for account {self.account_id}")
+                except Exception as e:
+                    logger.warning(f"Could not warm entity cache: {e}")
+
+                return True
+
+            except UserDeactivatedError:
+                self.is_connected = False
+                logger.error(f"Account {self.account_id} is banned/deactivated.")
                 raise Exception("This Telegram account has been banned or deactivated by Telegram.")
-            
-            # Re-raise the original or a generic exception
-            raise Exception(f"Telegram connection failed: {str(e)}")
+            except AuthKeyUnregisteredError:
+                self.is_connected = False
+                logger.error(f"Session for account {self.account_id} is expired.")
+                raise Exception("The session is invalid or has expired. Please export a new TData zip.")
+            except SessionPasswordNeededError:
+                self.is_connected = False
+                logger.error(f"Account {self.account_id} requires 2FA password which is not supported in TData direct login yet.")
+                raise Exception("This account has 2-Step Verification enabled. Please disable it or use a TData without it.")
+            except Exception as e:
+                logger.error(f"Failed to connect session {self.account_id}: {e}")
+                self.is_connected = False
+                raise Exception(f"Telegram connection failed: {str(e)}")
+            finally:
+                self.is_connecting = False
 
     # Gracefully terminate the active Telethon client connection
     async def disconnect(self):
@@ -364,12 +375,14 @@ class TelegramSession:
                 # Get current user information
                 me = await self.client.get_me()
                 
+                from telethon.utils import get_peer_id
                 return {
                     "message_id": message.id,
                     "text": message.text,
                     "date": message.date,
                     "is_outgoing": True,
                     "sender_user_id": me.id,
+                    "peer_id": get_peer_id(message.peer_id),
                     "sender_name": f"{me.first_name or ''} {me.last_name or ''}".strip() or me.username or "Unknown",
                     "sender_username": me.username
                 }
@@ -385,6 +398,22 @@ class TelegramSession:
             except Exception as e:
                 logger.error(f"Error sending message for {self.account_id}: {e}")
                 raise
+
+    async def send_typing(self, peer_id: int, duration: float = 5.0):
+        """Simulate typing status for a specified duration"""
+        if not self.client or not self.is_connected:
+            raise Exception("Client not connected")
+        
+        try:
+            # Resolve peer safely
+            peer = await self.client.get_input_entity(peer_id)
+            
+            # Start typing
+            async with self.client.action(peer, 'typing'):
+                await asyncio.sleep(duration)
+        except Exception as e:
+            logger.error(f"Error sending typing status for account {self.account_id}: {e}")
+            # Don't raise, we can still try to send the message if typing fails
 
     async def send_reaction(self, peer_id: int, message_id: int, emoji: str):
         """Send a reaction to a message"""
@@ -928,28 +957,32 @@ class TelethonService:
             self.reaction_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
-        if account_id in self.sessions and self.sessions[account_id].is_connected:
-            return True
+        # 1. Reuse existing session if it exists
+        session = self.sessions.get(account_id)
+        
+        if not session:
+            # 2. Fetch account details to create session
+            row = await db.fetchrow(
+                "SELECT app_id, app_hash, user_id, account_name FROM telegram_accounts WHERE id = $1",
+                account_id
+            )
 
-        row = await db.fetchrow(
-            "SELECT app_id, app_hash, user_id, account_name FROM telegram_accounts WHERE id = $1",
-            account_id
-        )
+            if not row:
+                return False
 
-        if not row:
-            return False
+            app_id = row['app_id']
+            app_hash = row['app_hash']
+            user_id = row['user_id']
+            account_name = row['account_name']
 
-        app_id = row['app_id']
-        app_hash = row['app_hash']
-        user_id = row['user_id']
-        account_name = row['account_name']
+            session_file = f"sessions/{user_id}_{account_name}.session"
+            session = TelegramSession(account_id, app_id, app_hash, session_file)
+            self.sessions[account_id] = session
 
-        session_file = f"sessions/{user_id}_{account_name}.session"
-        session = TelegramSession(account_id, app_id, app_hash, session_file)
+        # 3. Connect (TelegramSession handles locking and idempotency internally now)
         connected = await session.connect()
 
         if connected:
-            self.sessions[account_id] = session
             await self._setup_event_handlers(session)
             await db.execute(
                 "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
@@ -1679,6 +1712,13 @@ class TelethonService:
         if not session:
             raise Exception("Account not connected")
         return await session.send_reaction(peer_id, message_id, emoji)
+
+    async def send_typing(self, account_id: int, peer_id: int, duration: float = 5.0):
+        """Send typing status for an account"""
+        session = self.sessions.get(account_id)
+        if not session:
+            raise Exception("Account not connected")
+        return await session.send_typing(peer_id, duration)
 
 
 telethon_service = TelethonService()

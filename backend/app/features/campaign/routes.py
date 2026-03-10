@@ -51,7 +51,15 @@ async def get_campaigns(
         "SELECT * FROM campaigns WHERE user_id = $1 ORDER BY created_at DESC",
         current_user.user_id
     )
-    return [dict(row) for row in rows]
+    
+    result = []
+    for row in rows:
+        camp_dict = dict(row)
+        hibernation = await campaign_service.get_campaign_hibernation_status(camp_dict['id'], current_user.user_id)
+        camp_dict.update(hibernation)
+        result.append(camp_dict)
+        
+    return result
 
 # Fetch details of a single campaign
 @router.get("/{campaign_id}", response_model=CampaignResponse)
@@ -66,7 +74,12 @@ async def get_campaign(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    return dict(row)
+        
+    camp_dict = dict(row)
+    hibernation = await campaign_service.get_campaign_hibernation_status(campaign_id, current_user.user_id)
+    camp_dict.update(hibernation)
+    
+    return camp_dict
 
 # Upload a CSV file containing Telegram usernames or phone numbers to populate the campaign queue
 @router.post("/{campaign_id}/upload-leads")
@@ -95,9 +108,20 @@ async def upload_leads(
             # Assume first column is the username/phone
             identifier = row[0].strip()
             if identifier:
+                # Strip out common URL formats
+                if identifier.startswith('https://t.me/'):
+                    identifier = identifier[13:]
+                elif identifier.startswith('http://t.me/'):
+                    identifier = identifier[12:]
+                elif identifier.startswith('t.me/'):
+                    identifier = identifier[5:]
+                    
                 if identifier.startswith('@'):
                     identifier = identifier[1:]
-                identifiers.append(identifier)
+                
+                # Only add if we still have a valid identifier after cleanup
+                if identifier:
+                    identifiers.append(identifier)
         
         if not identifiers:
             return {"message": "No valid leads found in CSV", "count": 0}
@@ -231,6 +255,40 @@ async def get_campaign_leads(
         campaign_id
     )
     return [dict(row) for row in rows]
+
+from campaign_service import campaign_service
+
+@router.post("/{campaign_id}/pause")
+async def pause_campaign(
+    campaign_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    await db.execute(
+        "UPDATE campaigns SET status = 'paused' WHERE id = $1 AND user_id = $2",
+        campaign_id,
+        current_user.user_id
+    )
+    return {"success": True}
+
+@router.post("/{campaign_id}/resume")
+async def resume_campaign(
+    campaign_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    await db.execute(
+        "UPDATE campaigns SET status = 'running' WHERE id = $1 AND user_id = $2",
+        campaign_id,
+        current_user.user_id
+    )
+    return {"success": True}
+
+@router.get("/safety-stats/{account_id}")
+async def get_safety_stats(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    stats = await campaign_service.get_account_outreach_stats(account_id)
+    return stats
 
 # Delete a specified campaign (this will cascade delete leads and steps)
 @router.delete("/{campaign_id}")

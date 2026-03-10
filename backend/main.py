@@ -13,6 +13,7 @@ from telethon_service import telethon_service
 from websocket_manager import manager
 from translation_service import translation_service
 from scheduler_service import scheduler_service
+from campaign_service import campaign_service
 from app.features.auth.routes import router as auth_router
 from app.features.telegram.routes import router as telegram_router
 from app.features.messages.routes import router as messages_router
@@ -383,11 +384,16 @@ async def lifespan(app: FastAPI):
     await scheduler_service.start()
     logger.info("Scheduler started")
 
+    # Start campaign outreach service
+    await campaign_service.start()
+    logger.info("Campaign outreach service started")
+
     yield
 
     # Shutdown
     await telethon_service.disconnect_all()
     await scheduler_service.stop()
+    await campaign_service.stop()
     await db.disconnect()
     logger.info("Application shutdown complete")
 

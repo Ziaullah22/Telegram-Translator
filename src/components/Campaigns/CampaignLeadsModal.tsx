@@ -140,9 +140,16 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center space-x-2">
-                                                {getStatusIcon(lead.status)}
-                                                <span className="text-xs font-bold capitalize text-gray-600 dark:text-gray-400">{lead.status}</span>
+                                            <div className="flex flex-col">
+                                                <div className="flex items-center space-x-2">
+                                                    {getStatusIcon(lead.status)}
+                                                    <span className="text-xs font-bold capitalize text-gray-600 dark:text-gray-400">{lead.status}</span>
+                                                </div>
+                                                {lead.status === 'failed' && lead.failure_reason && (
+                                                    <span className="text-[10px] text-red-400 font-medium mt-1 leading-tight max-w-[150px] truncate hover:whitespace-normal hover:overflow-visible hover:bg-white dark:hover:bg-gray-800 hover:z-50 hover:relative hover:p-1 hover:border hover:rounded hover:shadow-lg transition-all cursor-help" title={lead.failure_reason}>
+                                                        {lead.failure_reason}
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

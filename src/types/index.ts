@@ -183,6 +183,8 @@ export interface Campaign {
   name: string;
   initial_message: string;
   status: 'draft' | 'running' | 'paused' | 'completed' | 'archived';
+  is_hibernating?: boolean;
+  next_reset_at?: string;
   total_leads: number;
   completed_leads: number;
   created_at: string;
@@ -205,6 +207,7 @@ export interface CampaignLead {
   telegram_identifier: string;
   current_step: number;
   status: 'pending' | 'contacted' | 'replied' | 'completed' | 'failed';
+  failure_reason?: string;
   last_contact_at?: string;
   assigned_account_id?: number;
   assigned_account_name?: string;

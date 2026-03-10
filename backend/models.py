@@ -318,6 +318,8 @@ class CampaignResponse(BaseModel):
     status: CampaignStatus
     total_leads: int = 0
     completed_leads: int = 0
+    is_hibernating: bool = False
+    next_reset_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -354,6 +356,7 @@ class CampaignLeadResponse(BaseModel):
     telegram_identifier: str
     current_step: int
     status: LeadStatus
+    failure_reason: Optional[str] = None
     last_contact_at: Optional[datetime]
     assigned_account_id: Optional[int]
     assigned_account_name: Optional[str] = None
