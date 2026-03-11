@@ -48,7 +48,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 await campaignsAPI.createStep(campaign.id, {
                     step_number: s.step_number,
                     wait_time_hours: toTotalHours(s.wait_days || 0, s.wait_hours || 0, s.wait_minutes || 0),
-                    keywords: s.keywords,
+                    keywords: typeof s.keywords === 'string' ? s.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k) : s.keywords,
                     response_text: s.response_text
                 });
             }
@@ -204,7 +204,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             <div className="flex justify-between items-center mb-4">
                                 <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">AI & Keyword Responses</label>
                                 <button
-                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 1, wait_hours: 0, wait_minutes: 0, keywords: [], response_text: '' }])}
+                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 1, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '' }])}
                                     className="text-[10px] font-black uppercase text-blue-500 hover:text-blue-600"
                                 >
                                     + Add Follow-up Step
@@ -277,10 +277,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                 <input
                                                     type="text"
                                                     placeholder="price, cost, info, details"
-                                                    value={s.keywords.join(', ')}
+                                                    value={Array.isArray(s.keywords) ? s.keywords.join(', ') : s.keywords}
                                                     onChange={(e) => {
                                                         const newSteps = [...steps];
-                                                        newSteps[idx].keywords = e.target.value.split(',').map(k => k.trim()).filter(k => k);
+                                                        newSteps[idx].keywords = e.target.value;
                                                         setSteps(newSteps);
                                                     }}
                                                     className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none"
