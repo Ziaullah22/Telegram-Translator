@@ -17,6 +17,28 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
     useEffect(() => {
         if (isOpen && campaign) {
             fetchLeads();
+
+            // Listen for updates via WebSocket
+            const handleWebSocketMessage = (event: MessageEvent) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Refresh if a message arrives or stats change (with a 500ms safety buffer)
+                    if (data.type === 'new_message' || data.type === 'campaign_stats_update') {
+                        setTimeout(() => fetchLeads(), 500);
+                    }
+                } catch (err) { }
+            };
+
+            const socket = (window as any).socket;
+            if (socket) {
+                socket.addEventListener('message', handleWebSocketMessage);
+            }
+
+            return () => {
+                if (socket) {
+                    socket.removeEventListener('message', handleWebSocketMessage);
+                }
+            };
         }
     }, [isOpen, campaign]);
 
@@ -142,9 +164,37 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col">
                                                 <div className="flex items-center space-x-2">
-                                                    {getStatusIcon(lead.status)}
-                                                    <span className="text-xs font-bold capitalize text-gray-600 dark:text-gray-400">{lead.status}</span>
+                                                    {lead.status === 'contacted' && lead.current_step > 0 ? (
+                                                        <>
+                                                            <Clock className="w-4 h-4 text-orange-400" />
+                                                            <span className="text-xs font-bold capitalize text-orange-500">Waiting</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            {getStatusIcon(lead.status)}
+                                                            <span className={`text-xs font-bold capitalize ${lead.status === 'replied' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>{lead.status}</span>
+                                                        </>
+                                                    )}
                                                 </div>
+                                                {lead.status === 'replied' && (
+                                                    <button
+                                                        onClick={() => {
+                                                            onClose();
+                                                            window.dispatchEvent(new CustomEvent('nav-to-chat', {
+                                                                detail: { accountId: lead.assigned_account_id, peerId: lead.telegram_id || lead.telegram_identifier }
+                                                            }));
+                                                        }}
+                                                        className="mt-2 text-[10px] font-black uppercase text-blue-500 hover:text-blue-600 flex items-center"
+                                                    >
+                                                        <Search className="w-3 h-3 mr-1" /> Open Chat
+                                                    </button>
+                                                )}
+                                                <span className="text-[10px] text-gray-400 font-medium mt-1">
+                                                    {lead.status === 'replied' ? 'Lead responded' :
+                                                        lead.status === 'contacted' ? `Contacted (Step ${lead.current_step})` :
+                                                            lead.status === 'completed' ? 'All steps finished' :
+                                                                lead.status === 'pending' ? 'Ready to send' : ''}
+                                                </span>
                                                 {lead.status === 'failed' && lead.failure_reason && (
                                                     <span className="text-[10px] text-red-400 font-medium mt-1 leading-tight max-w-[150px] truncate hover:whitespace-normal hover:overflow-visible hover:bg-white dark:hover:bg-gray-800 hover:z-50 hover:relative hover:p-1 hover:border hover:rounded hover:shadow-lg transition-all cursor-help" title={lead.failure_reason}>
                                                         {lead.failure_reason}

@@ -44,9 +44,7 @@ class AutoResponderService:
                 """,
                 user_id,
             )
-            
-            if not rules:
-                return False
+            rules = rules or []
             
             # Get account's source and target languages
             account = await db.fetchrow(
@@ -56,7 +54,78 @@ class AutoResponderService:
             source_language = account['source_language'] if account else 'auto'
             target_language = account['target_language'] if account else 'en'
             
-            # Check each rule for a match
+            # 1. NEW: Check for Campaign-Specific Keywords first
+            peer_id = message_data.get('peer_id')
+            peer_username = message_data.get('sender_username') or str(peer_id)
+            
+            campaign_lead = await db.fetchrow(
+                """
+                SELECT l.id, l.campaign_id, l.current_step, s.keywords, s.response_text as step_response,
+                       s.wait_time_hours, s.id as step_id
+                FROM campaign_leads l
+                JOIN campaign_steps s ON l.campaign_id = s.campaign_id AND s.step_number = l.current_step
+                WHERE (l.telegram_id = $1 OR l.telegram_identifier = $2) 
+                AND l.assigned_account_id = $3
+                AND l.status IN ('contacted', 'replied')
+                """,
+                peer_id, peer_username, account_id
+            )
+
+            if campaign_lead and campaign_lead['keywords']:
+                import json
+                try:
+                    keywords_list = json.loads(campaign_lead['keywords']) if isinstance(campaign_lead['keywords'], str) else campaign_lead['keywords']
+                except Exception:
+                    keywords_list = []
+                    
+                message_lower = message_text.lower()
+                matched_camp_keyword = None
+                for kw in keywords_list:
+                    if kw.lower() in message_lower:
+                        matched_camp_keyword = kw
+                        break
+                
+                if matched_camp_keyword:
+                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead['id']} said '{matched_camp_keyword}'. Sending step {campaign_lead['current_step']} response.")
+                    
+                    target_msg_text = campaign_lead['step_response']
+                    if source_language != target_language:
+                        try:
+                            translation = await translation_service.translate_text(
+                                campaign_lead['step_response'],
+                                target_language,
+                                source_language
+                            )
+                            target_msg_text = translation['translated_text']
+                            logger.debug(f"Translated campaign auto-response to {target_language}: {target_msg_text}")
+                        except Exception as e:
+                            logger.error(f"Failed to translate campaign auto-response to target language: {e}")
+                            
+                    # Send Campaign Response
+                    success = await self._send_response(
+                        account_id,
+                        peer_id,
+                        target_msg_text,
+                        campaign_lead['step_response'],
+                        source_language, 
+                        None, None
+                    )
+                    
+                    if success:
+                        # Move lead to NEXT step and mark as contacted since we just responded programmatically
+                        next_step = campaign_lead['current_step'] + 1
+                        await db.execute(
+                            "UPDATE campaign_leads SET current_step = $2, status = 'contacted', last_contact_at = NOW() WHERE id = $1",
+                            campaign_lead['id'], next_step
+                        )
+                        # Log it
+                        await db.execute(
+                            "INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details) VALUES ($1, $2, $3, 'keyword_reply', $4)",
+                            campaign_lead['campaign_id'], campaign_lead['id'], account_id, f"Auto-replied to keyword: {matched_camp_keyword}"
+                        )
+                        return True
+
+            # 2. Check each global rule for a match
             for rule in rules:
                 matched_keyword = None
                 rule_language = rule['language']

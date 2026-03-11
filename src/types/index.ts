@@ -187,6 +187,7 @@ export interface Campaign {
   next_reset_at?: string;
   total_leads: number;
   completed_leads: number;
+  replied_leads?: number;
   created_at: string;
   updated_at: string;
 }
@@ -210,6 +211,7 @@ export interface CampaignLead {
   failure_reason?: string;
   last_contact_at?: string;
   assigned_account_id?: number;
+  telegram_id?: number;
   assigned_account_name?: string;
   assigned_account_display_name?: string;
   created_at: string;

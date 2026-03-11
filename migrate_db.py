@@ -230,6 +230,7 @@ async def migrate():
                     status VARCHAR(50) DEFAULT 'draft',
                     total_leads INTEGER DEFAULT 0,
                     completed_leads INTEGER DEFAULT 0,
+                    replied_leads INTEGER DEFAULT 0,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
@@ -293,6 +294,12 @@ async def migrate():
                 ALTER TABLE campaign_logs ADD COLUMN IF NOT EXISTS account_id INTEGER;
                 ALTER TABLE campaign_logs ALTER COLUMN campaign_id DROP NOT NULL;
                 ALTER TABLE campaign_logs ALTER COLUMN lead_id DROP NOT NULL;
+                
+                -- Replied leads stat column
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS replied_leads INTEGER DEFAULT 0;
+
+                -- ID tracking for bulletproof reply detection
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
 
                 -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
                 DO $$

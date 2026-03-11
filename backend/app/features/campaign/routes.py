@@ -15,6 +15,7 @@ from models import (
     CampaignStatus
 )
 import logging
+from campaign_service import campaign_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
@@ -202,7 +203,11 @@ async def add_campaign_step(
             json.dumps(step.keywords),
             step.response_text
         )
-        return dict(row)
+        row_dict = dict(row)
+        if isinstance(row_dict.get('keywords'), str):
+            row_dict['keywords'] = json.loads(row_dict['keywords'])
+            
+        return row_dict
     except Exception as e:
         logger.error(f"Failed to add step: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -256,7 +261,7 @@ async def get_campaign_leads(
     )
     return [dict(row) for row in rows]
 
-from campaign_service import campaign_service
+
 
 @router.post("/{campaign_id}/pause")
 async def pause_campaign(

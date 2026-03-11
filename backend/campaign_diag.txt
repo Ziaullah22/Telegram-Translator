@@ -1,0 +1,23 @@
+=== LATEST CAMPAIGNS ===
+{'id': 21, 'name': 'Testing', 'status': 'running', 'total_leads': 2, 'completed_leads': 0}
+
+=== LATEST LEADS ===
+{'id': 12784, 'campaign_id': 21, 'telegram_identifier': 'Ziaullah4127', 'assigned_account_id': 37, 'current_step': 0, 'status': 'pending', 'last_contact_at': None}
+{'id': 12783, 'campaign_id': 21, 'telegram_identifier': 'princ804', 'assigned_account_id': 31, 'current_step': 0, 'status': 'pending', 'last_contact_at': None}
+
+=== ACCOUNT AVAILABILITY ===
+Account 31 (19209413356): BLOCKED until 2026-03-12 01:49:00.936848+00:00
+Account 37 (12249936710): BLOCKED until 2026-03-12 01:50:21.787092+00:00
+Account 38 (15855085983): AVAILABLE
+
+=== LATEST CAMPAIGN LOGS ===
+{'id': 1675, 'campaign_id': None, 'lead_id': None, 'action': 'follow_up_step_1', 'details': 'Message sent (Step 1) via account 37', 'created_at': datetime.datetime(2026, 3, 11, 1, 51, 31, 551460, tzinfo=datetime.timezone.utc), 'account_id': 37}
+{'id': 1674, 'campaign_id': None, 'lead_id': None, 'action': 'initial_outreach', 'details': 'Message sent (Step 0) via account 37', 'created_at': datetime.datetime(2026, 3, 11, 1, 50, 21, 787092, tzinfo=datetime.timezone.utc), 'account_id': 37}
+{'id': 1673, 'campaign_id': None, 'lead_id': None, 'action': 'follow_up_step_1', 'details': 'Message sent (Step 1) via account 31', 'created_at': datetime.datetime(2026, 3, 11, 1, 50, 11, 341896, tzinfo=datetime.timezone.utc), 'account_id': 31}
+{'id': 1672, 'campaign_id': None, 'lead_id': None, 'action': 'initial_outreach', 'details': 'Message sent (Step 0) via account 31', 'created_at': datetime.datetime(2026, 3, 11, 1, 49, 0, 936848, tzinfo=datetime.timezone.utc), 'account_id': 31}
+{'id': 1671, 'campaign_id': None, 'lead_id': None, 'action': 'error', 'details': 'Too many requests (caused by SendMessageRequest)', 'created_at': datetime.datetime(2026, 3, 9, 1, 48, 0, 260443, tzinfo=datetime.timezone.utc), 'account_id': 38}
+{'id': 1670, 'campaign_id': None, 'lead_id': None, 'action': 'initial_outreach', 'details': 'Message sent (Step 0) via account 37', 'created_at': datetime.datetime(2026, 3, 9, 1, 48, 0, 260443, tzinfo=datetime.timezone.utc), 'account_id': 37}
+{'id': 1669, 'campaign_id': None, 'lead_id': None, 'action': 'error', 'details': 'Client not connected', 'created_at': datetime.datetime(2026, 3, 9, 1, 38, 20, 672000, tzinfo=datetime.timezone.utc), 'account_id': 37}
+{'id': 1668, 'campaign_id': None, 'lead_id': None, 'action': 'error', 'details': 'Too many requests (caused by SendMessageRequest)', 'created_at': datetime.datetime(2026, 3, 9, 1, 38, 20, 672000, tzinfo=datetime.timezone.utc), 'account_id': 38}
+{'id': 1667, 'campaign_id': None, 'lead_id': None, 'action': 'initial_outreach', 'details': 'Message sent (Step 0) via account 37', 'created_at': datetime.datetime(2026, 3, 9, 1, 38, 20, 672000, tzinfo=datetime.timezone.utc), 'account_id': 37}
+{'id': 1666, 'campaign_id': None, 'lead_id': None, 'action': 'error', 'details': 'Account not connected', 'created_at': datetime.datetime(2026, 3, 9, 1, 38, 20, 672000, tzinfo=datetime.timezone.utc), 'account_id': 38}

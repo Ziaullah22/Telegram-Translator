@@ -633,6 +633,17 @@ export const campaignsAPI = {
     return response.data;
   },
 
+  // Alias for addStep used in CreateCampaignModal
+  createStep: async (campaignId: number, data: {
+    step_number: number;
+    wait_time_hours: number;
+    keywords: string[];
+    response_text: string;
+  }): Promise<CampaignStep> => {
+    const response = await api.post(`/campaigns/${campaignId}/steps`, data);
+    return response.data;
+  },
+
   // Fetch all configured steps for a campaign
   getSteps: async (campaignId: number): Promise<CampaignStep[]> => {
     const response = await api.get(`/campaigns/${campaignId}/steps`);

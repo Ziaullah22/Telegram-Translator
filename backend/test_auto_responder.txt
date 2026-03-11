@@ -1,0 +1,1 @@
+Lead Query Result: {'id': 12775, 'campaign_id': 17, 'current_step': 1, 'keywords': '["Price"]', 'step_response': 'Thanks its working', 'wait_time_hours': 24.0, 'step_id': 4, 'status': 'replied'}

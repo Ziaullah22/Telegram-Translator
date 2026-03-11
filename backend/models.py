@@ -318,6 +318,7 @@ class CampaignResponse(BaseModel):
     status: CampaignStatus
     total_leads: int = 0
     completed_leads: int = 0
+    replied_leads: int = 0
     is_hibernating: bool = False
     next_reset_at: Optional[datetime] = None
     created_at: datetime

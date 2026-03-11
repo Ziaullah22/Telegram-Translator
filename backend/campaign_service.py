@@ -44,6 +44,61 @@ class CampaignService:
             
             await asyncio.sleep(self.check_interval)
 
+    async def get_campaign_hibernation_status(self, campaign_id: int, user_id: int) -> dict:
+        """Check if a campaign is hibernating (all accounts assigned to THIS campaign's leads are at limit).
+        Returns is_hibernating (bool) and next_reset_at (datetime or None)."""
+        try:
+            window_start = datetime.now(timezone.utc) - timedelta(hours=24)
+            
+            # Get only accounts that have PENDING leads in THIS specific campaign
+            # (Only these accounts matter for hibernation - others are irrelevant)
+            assigned_accounts = await db.fetch(
+                """
+                SELECT DISTINCT assigned_account_id as id 
+                FROM campaign_leads 
+                WHERE campaign_id = $1 
+                AND status = 'pending' 
+                AND current_step = 0
+                AND assigned_account_id IS NOT NULL
+                """,
+                campaign_id
+            )
+            
+            if not assigned_accounts:
+                # No pending leads at all - not hibernating, just done
+                return {"is_hibernating": False, "next_reset_at": None}
+
+            earliest_reset = None
+            all_blocked = True
+
+            for acc in assigned_accounts:
+                last_cold_outreach = await db.fetchval(
+                    """
+                    SELECT MAX(created_at) FROM campaign_logs 
+                    WHERE account_id = $1 AND action = 'initial_outreach'
+                    """,
+                    acc['id']
+                )
+                if not last_cold_outreach or last_cold_outreach < window_start:
+                    # This account is available - campaign is NOT hibernating
+                    all_blocked = False
+                    break
+                else:
+                    reset_time = last_cold_outreach + timedelta(hours=24)
+                    if earliest_reset is None or reset_time < earliest_reset:
+                        earliest_reset = reset_time
+
+            if all_blocked:
+                return {
+                    "is_hibernating": True,
+                    "next_reset_at": earliest_reset.isoformat() if earliest_reset else None
+                }
+
+            return {"is_hibernating": False, "next_reset_at": None}
+        except Exception as e:
+            logger.error(f"Error checking hibernation status for campaign {campaign_id}: {e}")
+            return {"is_hibernating": False, "next_reset_at": None}
+
     async def _process_outreach(self):
         """Find leads and send initial messages"""
         # 1. Fetch all running campaigns
@@ -55,19 +110,39 @@ class CampaignService:
             campaign_id = campaign['id']
             user_id = campaign['user_id']
             
-            # 2. Pre-Check: Are any accounts available for this campaign in the last 24 HOURS?
-            window_start = datetime.now(timezone.utc) - timedelta(hours=24)
-            available_account_ids = []
+            # Check if campaign has actually finished
+            has_active_leads = await db.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM campaign_leads 
+                    WHERE campaign_id = $1 AND status IN ('pending', 'contacted')
+                )
+                """,
+                campaign_id
+            )
             
+            if not has_active_leads:
+                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}) has zero active leads left. Marking as COMPLETED.")
+                await db.execute("UPDATE campaigns SET status = 'completed' WHERE id = $1", campaign_id)
+                continue
+
             # Get all active accounts for this user
             all_accounts = await db.fetch(
                 "SELECT id FROM telegram_accounts WHERE user_id = $1 AND is_active = true",
                 user_id
             )
+            all_account_ids = [acc['id'] for acc in all_accounts]
+            
+            if not all_account_ids:
+                continue
+
+            # 2A. COLD OUTREACH CHECK - Only 1 new stranger per account per 24 hours
+            # This is the strict anti-ban protection for Step 0 (first messages)
+            window_start = datetime.now(timezone.utc) - timedelta(hours=24)
+            cold_available_ids = []
             
             for acc in all_accounts:
-                # Check if this specific account has sent an outreach in the last 24 hours
-                last_outreach_time = await db.fetchval(
+                last_cold_outreach = await db.fetchval(
                     """
                     SELECT MAX(created_at) FROM campaign_logs 
                     WHERE account_id = $1
@@ -75,112 +150,119 @@ class CampaignService:
                     """,
                     acc['id']
                 )
-                
-                is_available = True
-                if last_outreach_time:
-                    # Explicitly check the window
-                    if last_outreach_time >= window_start:
-                        is_available = False
-                        reset_time = last_outreach_time + timedelta(hours=24)
-                        logger.info(f"Account {acc['id']} is at limit. Available after: {reset_time}")
-                
-                if is_available:
-                    available_account_ids.append(acc['id'])
+                if not last_cold_outreach or last_cold_outreach < window_start:
+                    cold_available_ids.append(acc['id'])
+                else:
+                    reset_time = last_cold_outreach + timedelta(hours=24)
+                    logger.info(f"Account {acc['id']} cold limit reached. Resets at: {reset_time}")
 
-            if not available_account_ids:
-                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): HIBERNATING. (All {len(all_accounts)} accounts at limit)")
-                continue
+            # 2B. WARM FOLLOW-UP CHECK - All accounts are always available for follow-ups!
+            # These are NOT new strangers, we already spoke to them. No cold limit applies.
+            warm_available_ids = all_account_ids  # All accounts can send follow-ups anytime
 
-            # 3. Find pending leads at step 0 assigned to our AVAILABLE accounts
-            pending_leads = await db.fetch(
+            # 3A. Find COLD OUTREACH leads (Step 0, 'pending' - brand new outreach)
+            cold_leads = []
+            if cold_available_ids:
+                cold_leads = await db.fetch(
+                    """
+                    SELECT l.id, l.telegram_identifier, l.assigned_account_id, l.current_step, l.last_contact_at,
+                           c.initial_message, NULL::text as step_message, NULL::float as wait_time_hours
+                    FROM campaign_leads l
+                    JOIN campaigns c ON l.campaign_id = c.id
+                    WHERE l.campaign_id = $1 
+                    AND l.assigned_account_id = ANY($2)
+                    AND l.current_step = 0 AND l.status = 'pending'
+                    ORDER BY l.created_at ASC
+                    LIMIT 1
+                    """,
+                    campaign_id, cold_available_ids
+                )
+
+            # 3B. Find WARM FOLLOW-UP leads (Step > 0, 'contacted', timer expired)
+            warm_leads = await db.fetch(
                 """
-                SELECT id, telegram_identifier, assigned_account_id 
-                FROM campaign_leads 
-                WHERE campaign_id = $1 AND status = 'pending' AND current_step = 0
-                AND assigned_account_id = ANY($2)
-                ORDER BY created_at ASC
-                LIMIT 5
+                SELECT l.id, l.telegram_identifier, l.assigned_account_id, l.current_step, l.last_contact_at,
+                       c.initial_message, s.response_text as step_message, s.wait_time_hours
+                FROM campaign_leads l
+                JOIN campaigns c ON l.campaign_id = c.id
+                JOIN campaign_steps s ON l.campaign_id = s.campaign_id AND s.step_number = l.current_step
+                WHERE l.campaign_id = $1 
+                AND l.assigned_account_id = ANY($2)
+                AND l.current_step > 0 AND l.status = 'contacted' 
+                AND l.last_contact_at + (s.wait_time_hours * interval '1 hour') <= NOW()
+                ORDER BY l.last_contact_at ASC
+                LIMIT 1
                 """,
-                campaign_id, available_account_ids
+                campaign_id, warm_available_ids
             )
 
-            if not pending_leads:
+            # Combine: prioritize warm follow-ups first (they've been waiting!), then cold
+            pending_leads = list(warm_leads) + list(cold_leads)
+
+            if not pending_leads and not cold_available_ids:
+                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): HIBERNATING. (All accounts at cold limit)")
                 continue
 
             for lead in pending_leads:
                 account_id = lead['assigned_account_id']
-                if not account_id:
+                current_step = lead['current_step']
+                
+                # Determine the message to send
+                message_to_send = lead['initial_message'] if current_step == 0 else lead['step_message']
+                
+                if not message_to_send:
+                    logger.warning(f"No message found for lead {lead['id']} at step {current_step}. Completing lead.")
+                    await db.execute("UPDATE campaign_leads SET status = 'completed' WHERE id = $1", lead['id'])
                     continue
 
-                # 3. Global Safety: Check if this user has ALREADY been contacted by ANY account
-                # This prevents double-outreach even across different campaigns/accounts
-                already_contacted = await db.fetchval(
-                    """
-                    SELECT EXISTS(
-                        SELECT 1 FROM campaign_leads 
-                        WHERE telegram_identifier = $1 
-                        AND status IN ('contacted', 'replied', 'completed')
-                        AND id != $2
+                # 4. Global Safety Check (for Step 0 only)
+                if current_step == 0:
+                    already_contacted = await db.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM campaign_leads WHERE telegram_identifier = $1 AND status IN ('contacted', 'replied', 'completed') AND id != $2)",
+                        lead['telegram_identifier'], lead['id']
                     )
-                    """,
-                    lead['telegram_identifier'], lead['id']
-                )
+                    if already_contacted:
+                        await db.execute("UPDATE campaign_leads SET status = 'completed', failure_reason = 'Already contacted globally' WHERE id = $1", lead['id'])
+                        continue
 
-                if already_contacted:
-                    logger.info(f"Lead {lead['telegram_identifier']} already contacted globally. Skipping.")
-                    await db.execute(
-                        "UPDATE campaign_leads SET status = 'completed', failure_reason = 'Already contacted globally' WHERE id = $1",
-                        lead['id']
-                    )
-                    continue
-
-                # 4. Process the Outreach
+                # 5. Process the Message
                 try:
-                    logger.info(f"Starting outreach for lead {lead['telegram_identifier']} via account {account_id}")
+                    action_type = "initial_outreach" if current_step == 0 else f"follow_up_step_{current_step}"
+                    logger.info(f"Processing {action_type} for lead {lead['telegram_identifier']} via account {account_id}")
                     
-                    # A. Human-Pace Simulation: "is typing..." for 5-10 seconds
+                    # 1. Prepare translation (translate source to target)
+                    account = await db.fetchrow(
+                        "SELECT user_id, source_language, target_language FROM telegram_accounts WHERE id = $1",
+                        account_id
+                    )
+                    
+                    target_msg_text = message_to_send
+                    if account and account['source_language'] != account['target_language']:
+                        try:
+                            translation = await translation_service.translate_text(
+                                message_to_send,
+                                account['target_language'],
+                                account['source_language']
+                            )
+                            target_msg_text = translation['translated_text']
+                        except Exception as e:
+                            logger.error(f"Failed to translate campaign message to target language: {e}")
+                            
+                    # Human-Pace Simulation
                     typing_duration = random.uniform(5.0, 10.0)
-                    logger.info(f"Simulating typing for {typing_duration:.1f}s...")
-                    
-                    await telethon_service.send_typing(
-                        account_id,
-                        lead['telegram_identifier'],
-                        duration=typing_duration
-                    )
+                    await telethon_service.send_typing(account_id, lead['telegram_identifier'], duration=typing_duration)
 
-                    # B. Send the Initial Message
-                    sent_msg = await telethon_service.send_message(
-                        account_id,
-                        lead['telegram_identifier'],
-                        campaign['initial_message']
-                    )
+                    # Send Message (in target language)
+                    sent_msg = await telethon_service.send_message(account_id, lead['telegram_identifier'], target_msg_text)
 
                     # C. Sync to Local Chat History & Dashboard
                     try:
-                        # Find/Create Local Conversation
-                        account = await db.fetchrow(
-                            "SELECT user_id, source_language, target_language FROM telegram_accounts WHERE id = $1",
-                            account_id
-                        )
-                        
                         peer_id = sent_msg['peer_id']
                         
-                        # Translate campaign message for the dashboard view
-                        # original_text is what went to Telegram (usually target language)
-                        # translated_text is what should show in the translator's native language (source_language)
-                        original_text = sent_msg['text']
-                        translated_text = original_text
-                        
-                        try:
-                            # If the message is already in target_lang, it might need translation to source_lang for the user
-                            translation = await translation_service.translate_text(
-                                original_text,
-                                account['source_language'],
-                                'auto'
-                            )
-                            translated_text = translation['translated_text']
-                        except Exception as transl_err:
-                            logger.error(f"Failed to translate campaign message for dashboard: {transl_err}")
+                        # original_text = what the operator wrote (their own language)
+                        # translated_text = what was actually sent to the Telegram user (target language)
+                        original_text = message_to_send
+                        translated_text = target_msg_text
 
                         conversation = await db.fetchrow(
                             "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
@@ -243,15 +325,27 @@ class CampaignService:
                         logger.error(f"Failed to sync campaign message to history: {sync_err}")
 
                     # D. Update Database: Lead Status & Step
+                    # Increment step, status remains 'contacted' (waiting for reply)
+                    next_step = current_step + 1
+                    
+                    # Check if this was the LAST step for the campaign
+                    total_steps = await db.fetchval("SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = $1", campaign_id) or 0
+                    
+                    final_status = 'contacted'
+                    if current_step > 0 and current_step >= total_steps:
+                        final_status = 'completed' # No more steps left
+                        logger.info(f"Lead {lead['id']} has finished all {total_steps} steps. Marking as completed.")
+
                     await db.execute(
                         """
                         UPDATE campaign_leads 
-                        SET status = 'contacted', 
-                            current_step = 1, 
-                            last_contact_at = NOW() 
+                        SET status = $2, 
+                            current_step = $3, 
+                            last_contact_at = NOW(),
+                            telegram_id = $4
                         WHERE id = $1
                         """,
-                        lead['id']
+                        lead['id'], final_status, next_step, peer_id
                     )
 
                     # E. Update Campaign Stats
@@ -264,9 +358,9 @@ class CampaignService:
                     await db.execute(
                         """
                         INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details)
-                        VALUES ($1, $2, $3, 'initial_outreach', $4)
+                        VALUES ($1, $2, $3, $4, $5)
                         """,
-                        campaign_id, lead['id'], account_id, f"Initial message sent via account {account_id}"
+                        campaign_id, lead['id'], account_id, action_type, f"Message sent (Step {current_step}) via account {account_id}"
                     )
 
                     logger.info(f"Successfully contacted lead {lead['telegram_identifier']}")
@@ -302,6 +396,21 @@ class CampaignService:
                         """,
                         campaign_id, lead['id'], account_id, error_str
                     )
+
+            # 6. Check if campaign is now FULLY COMPLETED (no pending, no contacted leads left)
+            has_active_leads = await db.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM campaign_leads 
+                    WHERE campaign_id = $1 AND status IN ('pending', 'contacted')
+                )
+                """,
+                campaign_id
+            )
+            
+            if not has_active_leads:
+                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}) has finished all leads. Marking as COMPLETED.")
+                await db.execute("UPDATE campaigns SET status = 'completed' WHERE id = $1", campaign_id)
 
     async def get_account_outreach_stats(self, account_id: int):
         """Get outreach stats for a specific account for today"""

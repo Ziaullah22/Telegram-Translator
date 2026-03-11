@@ -210,8 +210,16 @@ const CampaignPage: React.FC = () => {
                                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Leads</p>
                                             <p className="text-xl font-black text-gray-900 dark:text-white leading-none">{camp.total_leads}</p>
                                         </div>
-                                        <div className="text-center text-blue-500">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">View Details</p>
+                                        <div className="text-center">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Reached</p>
+                                            <p className="text-xl font-black text-blue-600 dark:text-blue-400 leading-none">{camp.completed_leads}</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Replies</p>
+                                            <p className="text-xl font-black text-green-500 leading-none">{(camp as any).replied_leads || 0}</p>
+                                        </div>
+                                        <div className="text-center text-blue-500 opacity-40 group-hover:opacity-100 transition-opacity">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Details</p>
                                             <Users className="w-5 h-5 mx-auto" />
                                         </div>
                                     </div>

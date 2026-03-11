@@ -15,6 +15,11 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [csvFile, setCsvFile] = useState<File | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [steps, setSteps] = useState<any[]>([]); // AI Intelligence Steps
+
+    // Helper to convert days/hours/minutes to total hours (float)
+    const toTotalHours = (days: number, hours: number, minutes: number) =>
+        days * 24 + hours + minutes / 60;
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     if (!isOpen) return null;
@@ -38,12 +43,23 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             // 2. Upload the leads
             await campaignsAPI.uploadLeads(campaign.id, csvFile);
 
+            // 3. Create AI Steps (Keywords & Responses)
+            for (const s of steps) {
+                await campaignsAPI.createStep(campaign.id, {
+                    step_number: s.step_number,
+                    wait_time_hours: toTotalHours(s.wait_days || 0, s.wait_hours || 0, s.wait_minutes || 0),
+                    keywords: s.keywords,
+                    response_text: s.response_text
+                });
+            }
+
             onSuccess();
             onClose();
             // Reset
             setName('');
             setInitialMessage('');
             setCsvFile(null);
+            setSteps([]);
             setStep(1);
         } catch (err: any) {
             setError(err.response?.data?.detail || "An unexpected error occurred during campaign initialization.");
@@ -85,7 +101,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 <div className="p-8">
                     {/* Progress Indicator */}
                     <div className="flex items-center space-x-2 mb-8">
-                        {[1, 2, 3].map((s) => (
+                        {[1, 2, 3, 4].map((s) => (
                             <div key={s} className="flex-1 flex items-center space-x-2">
                                 <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= s ? 'bg-blue-600' : 'bg-gray-100 dark:bg-gray-800'}`} />
                             </div>
@@ -176,14 +192,139 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     onClick={() => setStep(3)}
                                     className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-600/20"
                                 >
+                                    Define AI Intelligence
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* STEP 3: AI Intelligence & Keywords */}
+                    {step === 3 && (
+                        <div className="space-y-6 animate-slide-right max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="flex justify-between items-center mb-4">
+                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">AI & Keyword Responses</label>
+                                <button
+                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 1, wait_hours: 0, wait_minutes: 0, keywords: [], response_text: '' }])}
+                                    className="text-[10px] font-black uppercase text-blue-500 hover:text-blue-600"
+                                >
+                                    + Add Follow-up Step
+                                </button>
+                            </div>
+
+                            {steps.length === 0 ? (
+                                <div className="p-8 text-center bg-gray-50 dark:bg-white/5 rounded-3xl border-2 border-dashed border-gray-100 dark:border-white/5">
+                                    <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                                    <p className="text-xs font-bold text-gray-500">No Intelligence steps added.<br />Only the initial message will be sent.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {steps.map((s, idx) => (
+                                        <div key={idx} className="p-5 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5 relative group">
+                                            <button
+                                                onClick={() => setSteps(steps.filter((_, i) => i !== idx))}
+                                                className="absolute top-4 right-4 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+
+                                            <div className="mb-3">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Step {s.step_number} — Wait Time Before Follow-up</label>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Days</label>
+                                                        <input
+                                                            type="number" min="0"
+                                                            value={s.wait_days ?? 1}
+                                                            onChange={(e) => {
+                                                                const newSteps = [...steps];
+                                                                newSteps[idx].wait_days = parseInt(e.target.value) || 0;
+                                                                setSteps(newSteps);
+                                                            }}
+                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Hours</label>
+                                                        <input
+                                                            type="number" min="0" max="23"
+                                                            value={s.wait_hours ?? 0}
+                                                            onChange={(e) => {
+                                                                const newSteps = [...steps];
+                                                                newSteps[idx].wait_hours = parseInt(e.target.value) || 0;
+                                                                setSteps(newSteps);
+                                                            }}
+                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Minutes</label>
+                                                        <input
+                                                            type="number" min="0" max="59"
+                                                            value={s.wait_minutes ?? 0}
+                                                            onChange={(e) => {
+                                                                const newSteps = [...steps];
+                                                                newSteps[idx].wait_minutes = parseInt(e.target.value) || 0;
+                                                                setSteps(newSteps);
+                                                            }}
+                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Trigger Keywords (comma separated)</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="price, cost, info, details"
+                                                    value={s.keywords.join(', ')}
+                                                    onChange={(e) => {
+                                                        const newSteps = [...steps];
+                                                        newSteps[idx].keywords = e.target.value.split(',').map(k => k.trim()).filter(k => k);
+                                                        setSteps(newSteps);
+                                                    }}
+                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">AI Automatic Response</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={s.response_text}
+                                                    onChange={(e) => {
+                                                        const newSteps = [...steps];
+                                                        newSteps[idx].response_text = e.target.value;
+                                                        setSteps(newSteps);
+                                                    }}
+                                                    placeholder="Sure! Here is our information..."
+                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none resize-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="flex space-x-3 mt-8">
+                                <button
+                                    onClick={() => setStep(2)}
+                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-sm transition-all"
+                                >
+                                    Back
+                                </button>
+                                <button
+                                    onClick={() => setStep(4)}
+                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
+                                >
                                     Review Engine Setup
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* STEP 3: Final Review & Deploy */}
-                    {step === 3 && (
+                    {/* STEP 4: Final Review & Deploy */}
+                    {step === 4 && (
                         <div className="space-y-6 animate-slide-right">
                             <div className="bg-gray-50 dark:bg-white/5 rounded-3xl p-6 space-y-4">
                                 <div className="flex justify-between items-center border-b border-gray-200 dark:border-white/5 pb-4">
@@ -204,7 +345,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
 
                             <div className="flex space-x-3">
                                 <button
-                                    onClick={() => setStep(2)}
+                                    onClick={() => setStep(3)}
                                     className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-sm transition-all"
                                 >
                                     Edit

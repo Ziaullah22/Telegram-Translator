@@ -304,7 +304,63 @@ async def lifespan(app: FastAPI):
                 account['user_id']
             )
 
-            # Check for auto-responder matches
+            # 1. Update Lead Status if this is a reply to a campaign
+            if not message_data.get('is_outgoing', False):
+                # A. Try matching by EXACT ID (Reliable)
+                lead = await db.fetchrow(
+                    """
+                    SELECT id, campaign_id, status FROM campaign_leads 
+                    WHERE telegram_id = $1 
+                    AND assigned_account_id = $2
+                    AND status = 'contacted'
+                    """,
+                    peer_id, account_id
+                )
+                
+                # B. Fallback: Try matching by Username/Identifier (for old leads)
+                if not lead:
+                    peer_identifier = message_data.get('sender_username') or str(peer_id)
+                    lead = await db.fetchrow(
+                        """
+                        SELECT id, campaign_id, status FROM campaign_leads 
+                        WHERE telegram_identifier = $1 
+                        AND assigned_account_id = $2
+                        AND status = 'contacted'
+                        """,
+                        peer_identifier, account_id
+                    )
+                
+                if lead:
+                    logger.info(f"Lead {peer_id} replied! Updating status for lead {lead['id']}.")
+                    
+                    # 1. Update Lead Status FIRST
+                    await db.execute(
+                        "UPDATE campaign_leads SET status = 'replied' WHERE id = $1",
+                        lead['id']
+                    )
+
+                    # 2. Increment statistics if they haven't replied before
+                    if lead['status'] != 'replied':
+                        await db.execute(
+                            "UPDATE campaigns SET replied_leads = replied_leads + 1 WHERE id = $1",
+                            lead['campaign_id']
+                        )
+                        
+                        # 3. Notify frontend to refresh (Now safe because DB is updated)
+                        await manager.send_personal_message({
+                            "type": "campaign_stats_update",
+                            "campaign_id": lead['campaign_id']
+                        }, account['user_id'])
+                    # Log the reply event
+                    await db.execute(
+                        """
+                        INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details)
+                        VALUES ($1, $2, $3, 'reply_received', $4)
+                        """,
+                        lead['campaign_id'], lead['id'], account_id, f"Customer replied to message"
+                    )
+
+            # 2. Check for auto-responder matches
             await auto_responder_service.check_and_respond(
                 message_data,
                 account['user_id']
