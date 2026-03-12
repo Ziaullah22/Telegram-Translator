@@ -125,10 +125,27 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     // Popup Error State
     const [showErrorPopup, setShowErrorPopup] = useState(false);
     const [popupMessage, setPopupMessage] = useState('');
+    const [failedStepIdx, setFailedStepIdx] = useState<number | null>(null);
 
     // Helper to convert days/hours/minutes to total hours (float)
     const toTotalHours = (days: number, hours: number, minutes: number) =>
-        days * 24 + hours + minutes / 60;
+        (days * 24) + hours + (minutes / 60);
+
+    const handleCloseErrorPopup = () => {
+        setShowErrorPopup(false);
+        if (failedStepIdx !== null) {
+            // Give a tiny timeout for modal to fade out
+            setTimeout(() => {
+                const el = document.getElementById(`step-card-${failedStepIdx}`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Highlight effect
+                    el.classList.add('ring-4', 'ring-blue-500/30');
+                    setTimeout(() => el.classList.remove('ring-4', 'ring-blue-500/30'), 2000);
+                }
+            }, 100);
+        }
+    };
         
     const fileInputRef = useRef<HTMLInputElement>(null);
     const newCardRef = useRef<HTMLDivElement>(null);
@@ -387,7 +404,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     {steps.map((s, idx) => (
                                         <AnimatedCard key={idx}>
                                             <div ref={idx === steps.length - 1 ? newCardRef : null} />
-                                            <div className="bg-white dark:bg-black/20 rounded-2xl border-2 border-gray-100 dark:border-white/5 overflow-hidden shadow-sm">
+                                            <div id={`step-card-${idx}`} className="bg-white dark:bg-black/20 rounded-2xl border-2 border-gray-100 dark:border-white/5 overflow-hidden shadow-sm transition-all duration-500">
                                                 <div className="flex items-center justify-between gap-4 bg-gray-50 dark:bg-white/5 px-6 py-4 border-b-2 border-gray-100 dark:border-white/5">
                                                     <div className="flex items-center gap-4">
                                                         <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-black shadow-lg shadow-blue-600/30 shrink-0">
@@ -513,10 +530,12 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         const emptyStepIdx = steps.findIndex(s => !s.response_text?.trim() && !s.keyword_response_text?.trim());
                                         if (emptyStepIdx !== -1) {
                                             setPopupMessage(`Follow-up Step ${emptyStepIdx + 1} is empty! Please write a message or remove the step before continuing.`);
+                                            setFailedStepIdx(emptyStepIdx);
                                             setShowErrorPopup(true);
                                             return;
                                         }
                                         setError(null);
+                                        setFailedStepIdx(null);
                                         setStep(4);
                                     }}
                                     className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
@@ -577,17 +596,19 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 {/* Right Side: Message Timeline */}
                                 <div className="lg:col-span-2 flex flex-col gap-6">
                                     
-                                    {/* Step 0: The Hook */}
+                                    {/* The Hook (Instant Message) */}
                                     <div className="flex gap-6">
                                         <div className="flex flex-col items-center shrink-0">
-                                            <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-black z-10 shadow-lg">0</div>
+                                            <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-black z-10 shadow-lg">
+                                                <Rocket className="w-5 h-5" />
+                                            </div>
                                             <div className="w-1 flex-1 bg-gray-100 dark:bg-white/5 my-2" />
                                         </div>
                                         <div className="flex-1 pb-10">
                                             <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
                                                 <div className="flex items-center justify-between mb-4">
                                                     <span className="text-xs font-black text-gray-400 uppercase tracking-widest">The Intro Message</span>
-                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Sent Instantly</span>
+                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Send Instantly</span>
                                                 </div>
                                                 <p className="text-gray-600 dark:text-gray-300 italic font-medium">"{initialMessage}"</p>
                                             </div>
@@ -631,7 +652,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     onClick={() => setStep(3)}
                                     className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
                                 >
-                                    ← Edit Brain
+                                    ← Edit Campaign
                                 </button>
                                 <button
                                     disabled={isSubmitting}
@@ -659,8 +680,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             {/* Error Popup Modal */}
             <ConfirmModal
                 isOpen={showErrorPopup}
-                onClose={() => setShowErrorPopup(false)}
-                onConfirm={() => setShowErrorPopup(false)}
+                onClose={handleCloseErrorPopup}
+                onConfirm={handleCloseErrorPopup}
                 title="Wait a second!"
                 description={popupMessage}
                 confirmText="I'll fix it"
