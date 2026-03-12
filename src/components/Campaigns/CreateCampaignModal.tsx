@@ -494,7 +494,17 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     <span>Add Follow-up</span>
                                 </button>
                                 <button
-                                    onClick={() => setStep(4)}
+                                    onClick={() => {
+                                        const emptyStepIdx = steps.findIndex(s => !s.response_text?.trim() && !s.keyword_response_text?.trim());
+                                        if (emptyStepIdx !== -1) {
+                                            setError(`Follow-up Step ${emptyStepIdx + 1} is empty! Please write a message or remove the step.`);
+                                            // Scroll to top to see error
+                                            document.querySelector('.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+                                            return;
+                                        }
+                                        setError(null);
+                                        setStep(4);
+                                    }}
                                     className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
                                 >
                                     Next: Check everything & save →
