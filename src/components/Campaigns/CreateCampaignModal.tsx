@@ -245,19 +245,19 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <div className="flex flex-col gap-8 animate-slide-right">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">1. What do you want to call your bot?</label>
+                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">1. What do you want to call your campaign?</label>
                                     <input
                                         type="text"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        placeholder="e.g., My Spring Sales Bot"
+                                        placeholder="e.g., My Spring Sales Campaign"
                                         className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none"
                                     />
                                     <p className="text-sm text-gray-400 italic">Pick any name — just so you can find it later.</p>
                                 </div>
 
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">3. Stop words — if someone says these, the bot goes quiet</label>
+                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">3. Stop words — if someone says these, the campaign goes quiet</label>
                                     <input
                                         type="text"
                                         value={negativeKeywords}
@@ -267,7 +267,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         className={`w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none ${!killSwitchEnabled ? 'opacity-50 grayscale' : ''}`}
                                     />
                                     <div className="flex items-center justify-between gap-4">
-                                        <p className="text-sm text-gray-400 italic">Bot stops if they say any of these words.</p>
+                                        <p className="text-sm text-gray-400 italic">Campaign stops if they say any of these words.</p>
                                         <label className="flex items-center gap-3 cursor-pointer group shrink-0">
                                             <span className="text-sm font-black uppercase text-gray-400 group-hover:text-blue-500 transition-colors">Enabled</span>
                                             <div className="relative">
@@ -286,7 +286,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             </div>
 
                             <div className="flex flex-col gap-2">
-                                <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">2. What's the very first thing your bot should say?</label>
+                                <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">2. What's the very first thing your campaign should say?</label>
                                 <textarea
                                     rows={6}
                                     value={initialMessage}
@@ -299,10 +299,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
 
                             <div className="flex justify-end mt-4">
                                 <button
-                                    onClick={() => (name && initialMessage) ? setStep(2) : setError("Please give your bot a name and write a first message!")}
+                                    onClick={() => (name && initialMessage) ? setStep(2) : setError("Please give your campaign a name and write a first message!")}
                                     className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20"
                                 >
-                                    Next: Who should the bot talk to? →
+                                    Next: Who should the campaign talk to? →
                                 </button>
                             </div>
                         </div>
@@ -313,7 +313,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <div className="flex flex-col gap-8 animate-slide-right">
                             <div className="flex flex-col gap-3">
                                 <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">4. Upload your list of people to message</label>
-                                <p className="text-base text-gray-400 italic">This is a CSV file with all the Telegram usernames you want your bot to reach out to.</p>
+                                <p className="text-base text-gray-400 italic">This is a CSV file with all the Telegram usernames you want your campaign to reach out to.</p>
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
                                     className={`border-2 border-dashed rounded-2xl py-12 text-center transition-all cursor-pointer ${csvFile ? 'border-green-500/40 bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-blue-500/40 hover:bg-blue-500/5'}`}
@@ -354,7 +354,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     onClick={() => setStep(3)}
                                     className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-600/20"
                                 >
-                                    Next: Teach the bot how to reply →
+                                    Next: Teach the campaign how to reply →
                                 </button>
                             </div>
                         </div>
@@ -364,14 +364,14 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     {step === 3 && (
                         <div className="flex flex-col gap-8 animate-slide-right pb-32">
                             <div className="flex flex-col gap-1">
-                                <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Teach your bot to reply</h2>
+                                <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Teach your campaign to reply</h2>
                                 <p className="text-base font-bold text-gray-400 uppercase tracking-widest">What should it do after the first message?</p>
                             </div>
 
                             {steps.length === 0 ? (
                                 <div className="flex flex-col items-center gap-4 py-20 bg-gray-50 dark:bg-white/5 rounded-3xl border-2 border-dashed border-gray-200 dark:border-white/10">
                                     <AlertCircle className="w-14 h-14 text-gray-300" />
-                                    <p className="text-lg font-bold text-gray-500 text-center">No follow-up rules added yet.<br />That's okay — the bot will still send the first message!</p>
+                                    <p className="text-lg font-bold text-gray-500 text-center">No follow-up rules added yet.<br />That's okay — the campaign will still send the first message!</p>
                                 </div>
                             ) : (
                                 <div className="flex flex-col gap-8">
@@ -398,7 +398,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                     <div className="flex flex-col gap-3">
                                                         <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                                                             <Rocket className="w-4 h-4 shrink-0" />
-                                                            <span className="text-sm font-black uppercase tracking-widest">1. How long should the bot wait before doing this?</span>
+                                                            <span className="text-sm font-black uppercase tracking-widest">1. How long should the campaign wait before doing this?</span>
                                                         </div>
                                                         <div className="flex items-stretch gap-0 bg-gray-50 dark:bg-white/5 rounded-2xl border-2 border-gray-100 dark:border-white/5 overflow-hidden">
                                                             <div className="flex-1 flex flex-col gap-1 px-6 py-5">
@@ -463,7 +463,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                     />
                                                                 </div>
                                                                 <div className="flex flex-col gap-2">
-                                                                    <label className="text-xs font-black text-purple-400 uppercase tracking-widest">After that, what should the bot do next?</label>
+                                                                    <label className="text-xs font-black text-purple-400 uppercase tracking-widest">After that, what should the campaign do next?</label>
                                                                     <JumpSelect
                                                                         value={s.next_step}
                                                                         onChange={(val) => { const n = [...steps]; n[idx].next_step = val; setSteps(n); }}
@@ -523,7 +523,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             
                             <div className="flex flex-col gap-2">
                                 <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Final Check-up</h2>
-                                <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Everything looks good! Review your bot's brain below.</p>
+                                <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Everything looks good! Review your campaign's brain below.</p>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
@@ -532,7 +532,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 <div className="lg:col-span-1 flex flex-col gap-6">
                                     <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-2xl shadow-blue-600/30 flex flex-col gap-6">
                                         <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Bot Identity</span>
+                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Campaign Identity</span>
                                             <p className="text-2xl font-black truncate">{name}</p>
                                         </div>
                                         <div className="h-px bg-white/20" />
@@ -546,8 +546,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center"><Zap className="w-6 h-6 text-white" /></div>
                                             <div className="flex flex-col gap-1">
-                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Total Logic Steps</span>
-                                                <span className="text-lg font-bold">{steps.length + 1} steps configured</span>
+                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Total Message Sequence</span>
+                                                <span className="text-lg font-bold">{steps.length} steps configured</span>
                                             </div>
                                         </div>
                                     </div>
@@ -557,8 +557,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         <span className="text-xs font-black text-red-500 uppercase tracking-widest block mb-3">Safety Mode</span>
                                         <p className="text-sm font-bold text-red-600/80 dark:text-red-400 leading-relaxed italic">
                                             {killSwitchEnabled 
-                                                ? `The bot will stop talking if it hears: "${negativeKeywords || 'No stop words set'}"`
-                                                : "Safety mode is disabled. The bot will keep talking no matter what."
+                                                ? `The campaign will stop talking if it hears: "${negativeKeywords || 'No stop words set'}"`
+                                                : "Safety mode is disabled. The campaign will keep talking no matter what."
                                             }
                                         </p>
                                     </div>
