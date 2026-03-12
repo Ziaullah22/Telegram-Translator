@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Timer, Zap } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
+import ConfirmModal from '../Common/ConfirmModal';
 
 interface CreateCampaignModalProps {
     isOpen: boolean;
@@ -111,6 +112,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [negativeKeywords, setNegativeKeywords] = useState('');
     const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
     const [steps, setSteps] = useState<any[]>([]); // AI Intelligence Steps
+    
+    // Popup Error State
+    const [showErrorPopup, setShowErrorPopup] = useState(false);
+    const [popupMessage, setPopupMessage] = useState('');
 
     // Helper to convert days/hours/minutes to total hours (float)
     const toTotalHours = (days: number, hours: number, minutes: number) =>
@@ -206,7 +211,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             <Rocket className="w-5 h-5" />
                         </div>
                         <div className="flex flex-col">
-                            <h2 className="text-2xl font-black text-white tracking-tight leading-none">Create a Bot</h2>
+                            <h2 className="text-2xl font-black text-white tracking-tight leading-none">Create a Campaign</h2>
                             <p className="text-blue-100 font-bold uppercase text-[10px] tracking-widest leading-none mt-1">Campaign Builder</p>
                         </div>
                     </div>
@@ -497,9 +502,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     onClick={() => {
                                         const emptyStepIdx = steps.findIndex(s => !s.response_text?.trim() && !s.keyword_response_text?.trim());
                                         if (emptyStepIdx !== -1) {
-                                            setError(`Follow-up Step ${emptyStepIdx + 1} is empty! Please write a message or remove the step.`);
-                                            // Scroll to top to see error
-                                            document.querySelector('.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+                                            setPopupMessage(`Follow-up Step ${emptyStepIdx + 1} is empty! Please write a message or remove the step before continuing.`);
+                                            setShowErrorPopup(true);
                                             return;
                                         }
                                         setError(null);
@@ -632,7 +636,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     ) : (
                                         <>
                                             <Rocket className="w-6 h-6 shrink-0" />
-                                            <span>Launch Bot! 🚀</span>
+                                            <span>Launch Campaign! 🚀</span>
                                         </>
                                     )}
                                 </button>
@@ -641,6 +645,18 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     )}
                 </div>
             </div>
+
+            {/* Error Popup Modal */}
+            <ConfirmModal
+                isOpen={showErrorPopup}
+                onClose={() => setShowErrorPopup(false)}
+                onConfirm={() => setShowErrorPopup(false)}
+                title="Wait a second!"
+                description={popupMessage}
+                confirmText="I'll fix it"
+                cancelText="Close"
+                type="info"
+            />
         </div>
     );
 };
