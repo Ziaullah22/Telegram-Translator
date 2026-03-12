@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Timer, Zap } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 
 interface CreateCampaignModalProps {
@@ -8,39 +8,49 @@ interface CreateCampaignModalProps {
     onSuccess: () => void;
 }
 
-// --- Custom Dropdown Component (Defined outside to prevent state reset on parent rerender) ---
+// --- Custom Dropdown Component (Fixed to handle screen positioning) ---
 const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: (val: number | undefined) => void }) => {
     const [showMenu, setShowMenu] = useState(false);
-    
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dropDirection, setDropDirection] = useState<'down' | 'up'>('down');
+
     const jumpOptions = [
-        { label: "Restart Campaign (Send First Message Again)", value: 0 },
-        { label: "Jump to Step 1", value: 1 },
-        { label: "Jump to Step 2", value: 2 },
-        { label: "Jump to Step 3", value: 3 },
-        { label: "Jump to Step 4", value: 4 },
-        { label: "Jump to Step 5", value: 5 },
-        { label: "Jump to Step 6", value: 6 },
+        { label: "🔄 Restart: Start at the very beginning", value: 0 },
+        { label: "➔ Jump to Step 1", value: 1 },
+        { label: "➔ Jump to Step 2", value: 2 },
+        { label: "➔ Jump to Step 3", value: 3 },
+        { label: "➔ Jump to Step 4", value: 4 },
+        { label: "➔ Jump to Step 5", value: 5 },
     ];
 
-    const currentLabel = value === 0 
-        ? "Restart Campaign (Loop to Start)"
-        : value 
-            ? jumpOptions.find(o => o.value === value)?.label || `Jump to Step ${value}`
-            : "Next Sequential Step";
+    useEffect(() => {
+        if (showMenu && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            // If less than 350px below, flip it up to ensure 5 items fit
+            setDropDirection(spaceBelow < 350 ? 'up' : 'down');
+        }
+    }, [showMenu]);
+
+    const currentLabel = value === 0
+        ? "🔄 Restart: Start at the very beginning"
+        : value
+            ? jumpOptions.find(o => o.value === value)?.label || `➔ Jump to Step ${value}`
+            : "➡️ Normal: Just go to the next step";
 
     return (
-        <div className="relative">
+        <div className="relative" ref={containerRef}>
             <div
                 onClick={(e) => {
                     e.stopPropagation();
                     setShowMenu(!showMenu);
                 }}
-                className="w-full flex items-center justify-between bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold focus:border-blue-500 outline-none appearance-none cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-white/5"
+                className="w-full flex items-center justify-between bg-white dark:bg-black/20 border-2 border-gray-200 dark:border-white/10 rounded-2xl px-5 py-4 text-base font-bold focus:border-blue-500 outline-none appearance-none cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-white/5"
             >
-                <span className={value ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"}>
+                <span className={value !== undefined ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"}>
                     {currentLabel}
                 </span>
-                <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${showMenu ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200 ${showMenu ? 'rotate-180' : ''}`} />
             </div>
 
             {showMenu && (
@@ -49,22 +59,22 @@ const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: 
                         e.stopPropagation();
                         setShowMenu(false);
                     }} />
-                    <div 
-                        className="absolute top-full left-0 right-0 mt-2 z-[10002] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                    <div
+                        className={`absolute left-0 right-0 z-[10002] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-${dropDirection === 'down' ? 'top' : 'bottom'}-2 duration-200 ${dropDirection === 'down' ? 'top-full mt-2' : 'bottom-full mb-2'}`}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="max-h-60 overflow-y-auto py-1">
+                        <div className="max-h-80 overflow-y-auto py-1 custom-scrollbar">
                             <div
                                 onClick={() => { onChange(undefined); setShowMenu(false); }}
-                                className={`w-full text-left px-4 py-3 text-xs font-bold cursor-pointer transition-colors ${!value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                                className={`w-full text-left px-5 py-4 text-base font-bold cursor-pointer transition-colors ${value === undefined ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
                             >
-                                Next Sequential Step
+                                ➡️ Normal: Just go to the next step
                             </div>
                             {jumpOptions.map((opt, i) => (
                                 <div
                                     key={i}
                                     onClick={() => { onChange(opt.value); setShowMenu(false); }}
-                                    className={`w-full text-left px-4 py-3 text-xs font-bold cursor-pointer transition-colors ${value === opt.value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                                    className={`w-full text-left px-5 py-4 text-base font-bold cursor-pointer transition-colors ${value === opt.value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
                                 >
                                     {opt.label}
                                 </div>
@@ -75,6 +85,26 @@ const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: 
             )}
         </div>
     );
+};
+
+// --- Animated wrapper: slides + fades in each new follow-up card ---
+const AnimatedCard = ({ children }: { children: React.ReactNode }) => {
+    const cardRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = cardRef.current;
+        if (!el) return;
+        el.style.opacity = "0";
+        el.style.transform = "translateY(-24px) scale(0.97)";
+        el.style.transition = "none";
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                el.style.transition = "opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1), max-height 0.4s cubic-bezier(0.16,1,0.3,1)";
+                el.style.opacity = "1";
+                el.style.transform = "translateY(0) scale(1)";
+            });
+        });
+    }, []);
+    return <div ref={cardRef}>{children}</div>;
 };
 
 const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClose, onSuccess }) => {
@@ -91,7 +121,9 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     // Helper to convert days/hours/minutes to total hours (float)
     const toTotalHours = (days: number, hours: number, minutes: number) =>
         days * 24 + hours + minutes / 60;
+        
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const newCardRef = useRef<HTMLDivElement>(null);
 
     if (!isOpen) return null;
 
@@ -135,7 +167,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 console.error("Failed to resume campaign after creation:", resumeErr);
             }
 
-            // 5. Reset ALL state FIRST while component is still mounted
+            // 5. Reset state
             setName('');
             setInitialMessage('');
             setNegativeKeywords('');
@@ -146,7 +178,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             setIsSubmitting(false);
             setError(null);
 
-            // 6. NOW close the modal and refresh - component state is already clean
             onSuccess();
             onClose();
 
@@ -156,7 +187,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             if (typeof detail === 'string') {
                 setError(detail);
             } else if (Array.isArray(detail)) {
-                // FastAPI 422 returns detail as array of {msg, loc, type} objects
                 setError(detail.map((d: any) => d.msg || JSON.stringify(d)).join(', '));
             } else {
                 setError("An unexpected error occurred. Please check all fields and try again.");
@@ -172,112 +202,122 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-            <div className="bg-white dark:bg-[#1a222c] w-full max-w-xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.5)] overflow-hidden border border-gray-100 dark:border-white/5">
+        <div className="fixed inset-0 z-[10000] flex flex-col bg-white dark:bg-[#1a222c] animate-fade-in">
 
-                {/* Modal Header */}
-                <div className="relative h-32 bg-gradient-to-br from-blue-600 to-indigo-700 p-8">
-                    <button
-                        onClick={onClose}
-                        className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
-                    >
-                        <X className="w-6 h-6" />
-                    </button>
-                    <div className="flex items-center space-x-4">
-                        <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-white border border-white/20 shadow-xl">
-                            <Rocket className="w-8 h-8" />
+            {/* ── HEADER ── */}
+            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-6 lg:px-8 py-5 shrink-0 shadow-lg">
+                <div className="max-w-6xl mx-auto w-full flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 shadow-xl shrink-0">
+                            <Rocket className="w-5 h-5" />
                         </div>
-                        <div>
-                            <h2 className="text-2xl font-black text-white tracking-tight">New Campaign</h2>
-                            <p className="text-blue-100 font-bold uppercase text-[10px] tracking-widest leading-none">Initialize outreach engine</p>
+                        <div className="flex flex-col">
+                            <h2 className="text-2xl font-black text-white tracking-tight leading-none">Create a Bot</h2>
+                            <p className="text-blue-100 font-bold uppercase text-[10px] tracking-widest leading-none mt-1">Campaign Builder</p>
                         </div>
                     </div>
+                    <button onClick={onClose} className="text-white/60 hover:text-white transition-colors shrink-0">
+                        <X className="w-6 h-6" />
+                    </button>
                 </div>
+            </div>
 
-                <div className="p-8">
-                    {/* Progress Indicator */}
-                    <div className="flex items-center space-x-2 mb-8">
+            {/* ── SCROLLABLE BODY ── */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50 dark:bg-[#0f172a]">
+                <div className="max-w-6xl mx-auto w-full px-6 lg:px-8 py-8">
+
+                    {/* Progress Bar — 4 equal segments */}
+                    <div className="flex items-center gap-3 mb-10">
                         {[1, 2, 3, 4].map((s) => (
-                            <div key={s} className="flex-1 flex items-center space-x-2">
-                                <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= s ? 'bg-blue-600' : 'bg-gray-100 dark:bg-gray-800'}`} />
-                            </div>
+                            <div key={s} className={`flex-1 h-3 rounded-full transition-all duration-500 ${step >= s ? 'bg-blue-600' : 'bg-gray-100 dark:bg-gray-800'}`} />
                         ))}
                     </div>
 
+                    {/* Error banner */}
                     {error && (
-                        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start space-x-3 text-red-500 animate-shake">
-                            <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                            <p className="text-sm font-bold">{error}</p>
+                        <div className="mb-8 p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 text-red-500 animate-shake">
+                            <AlertCircle className="w-6 h-6 shrink-0" />
+                            <p className="text-base font-bold">{error}</p>
                         </div>
                     )}
 
-                    {/* STEP 1: Name & Initial Message */}
+                    {/* STEP 1: Name, Message, Stop words */}
                     {step === 1 && (
-                        <div className="space-y-6 animate-slide-right">
-                            <div>
-                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Campaign Identity</label>
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="e.g., Spring 2024 Outreach"
-                                    className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Initial outreach message (Step 2)</label>
-                                <textarea
-                                    rows={4}
-                                    value={initialMessage}
-                                    onChange={(e) => setInitialMessage(e.target.value)}
-                                    placeholder="Hello, I saw your profile and wanted to connect..."
-                                    className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none resize-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Kill Switch: Abort Keywords (comma separated)</label>
-                                <input
-                                    type="text"
-                                    value={negativeKeywords}
-                                    onChange={(e) => setNegativeKeywords(e.target.value)}
-                                    placeholder="not interested, stop, scam, bad, f*** off"
-                                    disabled={!killSwitchEnabled}
-                                    className={`w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none ${!killSwitchEnabled ? 'opacity-50 grayscale' : ''}`}
-                                />
-                                <div className="flex items-center justify-between mt-2">
-                                    <p className="text-[10px] text-gray-400 italic">Sequence will automatically stop if the lead says any of these.</p>
-                                    <label className="flex items-center cursor-pointer group">
-                                        <span className="text-[10px] font-black uppercase text-gray-400 mr-2 group-hover:text-blue-500 transition-colors">Enabled</span>
-                                        <div className="relative">
-                                            <input 
-                                                type="checkbox" 
-                                                className="sr-only" 
-                                                checked={killSwitchEnabled}
-                                                onChange={(e) => setKillSwitchEnabled(e.target.checked)}
-                                            />
-                                            <div className={`block w-8 h-4 rounded-full transition-colors ${killSwitchEnabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}></div>
-                                            <div className={`absolute left-1 top-1 bg-white w-2 h-2 rounded-full transition-transform ${killSwitchEnabled ? 'translate-x-4' : ''}`}></div>
-                                        </div>
-                                    </label>
+                        <div className="flex flex-col gap-8 animate-slide-right">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">1. What do you want to call your bot?</label>
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        placeholder="e.g., My Spring Sales Bot"
+                                        className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none"
+                                    />
+                                    <p className="text-sm text-gray-400 italic">Pick any name — just so you can find it later.</p>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">3. Stop words — if someone says these, the bot goes quiet</label>
+                                    <input
+                                        type="text"
+                                        value={negativeKeywords}
+                                        onChange={(e) => setNegativeKeywords(e.target.value)}
+                                        placeholder="e.g. stop, no, leave me alone, not interested"
+                                        disabled={!killSwitchEnabled}
+                                        className={`w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none ${!killSwitchEnabled ? 'opacity-50 grayscale' : ''}`}
+                                    />
+                                    <div className="flex items-center justify-between gap-4">
+                                        <p className="text-sm text-gray-400 italic">Bot stops if they say any of these words.</p>
+                                        <label className="flex items-center gap-3 cursor-pointer group shrink-0">
+                                            <span className="text-sm font-black uppercase text-gray-400 group-hover:text-blue-500 transition-colors">Enabled</span>
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only"
+                                                    checked={killSwitchEnabled}
+                                                    onChange={(e) => setKillSwitchEnabled(e.target.checked)}
+                                                />
+                                                <div className={`block w-12 h-6 rounded-full transition-colors ${killSwitchEnabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`} />
+                                                <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform ${killSwitchEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                                            </div>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => (name && initialMessage) ? setStep(2) : setError("Identity and message are required.")}
-                                className="w-full py-4 bg-gray-900 dark:bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
-                            >
-                                Continue to Lead Upload
-                            </button>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">2. What's the very first thing your bot should say?</label>
+                                <textarea
+                                    rows={6}
+                                    value={initialMessage}
+                                    onChange={(e) => setInitialMessage(e.target.value)}
+                                    placeholder="e.g. Hey! I came across your profile and thought I'd reach out..."
+                                    className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none resize-none"
+                                />
+                                <p className="text-sm text-gray-400 italic">This message will be sent automatically to every person on your list.</p>
+                            </div>
+
+                            <div className="flex justify-end mt-4">
+                                <button
+                                    onClick={() => (name && initialMessage) ? setStep(2) : setError("Please give your bot a name and write a first message!")}
+                                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20"
+                                >
+                                    Next: Who should the bot talk to? →
+                                </button>
+                            </div>
                         </div>
                     )}
 
-                    {/* STEP 2: CSV Lead Upload */}
+                    {/* STEP 2: CSV Upload */}
                     {step === 2 && (
-                        <div className="space-y-6 animate-slide-right">
-                            <div>
-                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Lead Database (Step 1)</label>
+                        <div className="flex flex-col gap-8 animate-slide-right">
+                            <div className="flex flex-col gap-3">
+                                <label className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">4. Upload your list of people to message</label>
+                                <p className="text-base text-gray-400 italic">This is a CSV file with all the Telegram usernames you want your bot to reach out to.</p>
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
-                                    className={`border-4 border-dashed rounded-3xl p-10 text-center transition-all cursor-pointer ${csvFile ? 'border-green-500/40 bg-green-500/5' : 'border-gray-100 dark:border-white/10 hover:border-blue-500/40 hover:bg-blue-500/5'}`}
+                                    className={`border-2 border-dashed rounded-2xl py-12 text-center transition-all cursor-pointer ${csvFile ? 'border-green-500/40 bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-blue-500/40 hover:bg-blue-500/5'}`}
                                 >
                                     <input
                                         type="file"
@@ -287,244 +327,307 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         className="hidden"
                                     />
                                     {csvFile ? (
-                                        <div className="animate-pop-in">
-                                            <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-4" />
-                                            <p className="text-gray-900 dark:text-white font-black">{csvFile.name}</p>
-                                            <p className="text-gray-500 text-xs mt-1">Ready to import leads</p>
+                                        <div className="flex flex-col items-center gap-4 animate-pop-in">
+                                            <CheckCircle2 className="w-16 h-16 text-green-500" />
+                                            <p className="text-gray-900 dark:text-white font-black text-xl">{csvFile.name}</p>
+                                            <p className="text-gray-500 text-base font-bold uppercase tracking-widest">Your list is loaded and ready!</p>
                                         </div>
                                     ) : (
-                                        <>
-                                            <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                                            <p className="text-gray-900 dark:text-white font-black text-sm">Upload Leads CSV</p>
-                                            <p className="text-gray-500 text-xs mt-1">One Telegram username per line</p>
-                                            <button className="mt-4 px-4 py-2 bg-gray-100 dark:bg-white/5 rounded-lg text-[10px] font-black uppercase text-gray-400 tracking-widest hover:bg-gray-200 dark:hover:bg-white/10 transition-all">Browse Files</button>
-                                        </>
+                                        <div className="flex flex-col items-center gap-4">
+                                            <FileText className="w-16 h-16 text-gray-300 dark:text-gray-600" />
+                                            <p className="text-gray-900 dark:text-white font-black text-xl">Tap here to pick your CSV file</p>
+                                            <p className="text-gray-500 text-base">One Telegram username per line</p>
+                                            <button className="mt-2 px-10 py-4 bg-blue-600 text-white rounded-full text-sm font-black uppercase tracking-widest hover:scale-110 transition-all shadow-lg shadow-blue-600/20">Choose File</button>
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="flex space-x-3">
+                            <div className="flex items-center gap-4">
                                 <button
                                     onClick={() => setStep(1)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-sm transition-all"
+                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
                                 >
-                                    Back
+                                    ← Back
                                 </button>
                                 <button
                                     disabled={!csvFile}
                                     onClick={() => setStep(3)}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-600/20"
+                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-600/20"
                                 >
-                                    Define AI Intelligence
+                                    Next: Teach the bot how to reply →
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* STEP 3: AI Intelligence & Keywords */}
+                    {/* STEP 3: Follow-up Rules */}
                     {step === 3 && (
-                        <div className="space-y-6 animate-slide-right max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                            <div className="flex justify-between items-center mb-4">
-                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">AI & Keyword Responses</label>
-                                <button
-                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 0, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '', keyword_response_text: '' }])}
-                                    className="text-[10px] font-black uppercase text-blue-500 hover:text-blue-600"
-                                >
-                                    + Add Follow-up Step
-                                </button>
+                        <div className="flex flex-col gap-8 animate-slide-right pb-32">
+                            <div className="flex flex-col gap-1">
+                                <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Teach your bot to reply</h2>
+                                <p className="text-base font-bold text-gray-400 uppercase tracking-widest">What should it do after the first message?</p>
                             </div>
 
                             {steps.length === 0 ? (
-                                <div className="p-8 text-center bg-gray-50 dark:bg-white/5 rounded-3xl border-2 border-dashed border-gray-100 dark:border-white/5">
-                                    <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                                    <p className="text-xs font-bold text-gray-500">No Intelligence steps added.<br />Only the initial message will be sent.</p>
+                                <div className="flex flex-col items-center gap-4 py-20 bg-gray-50 dark:bg-white/5 rounded-3xl border-2 border-dashed border-gray-200 dark:border-white/10">
+                                    <AlertCircle className="w-14 h-14 text-gray-300" />
+                                    <p className="text-lg font-bold text-gray-500 text-center">No follow-up rules added yet.<br />That's okay — the bot will still send the first message!</p>
                                 </div>
                             ) : (
-                                <div className="space-y-4">
+                                <div className="flex flex-col gap-8">
                                     {steps.map((s, idx) => (
-                                        <div key={idx} className="p-5 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5 relative group">
-                                            <button
-                                                onClick={() => setSteps(steps.filter((_, i) => i !== idx))}
-                                                className="absolute top-4 right-4 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
+                                        <AnimatedCard key={idx}>
+                                            <div ref={idx === steps.length - 1 ? newCardRef : null} />
+                                            <div className="bg-white dark:bg-black/20 rounded-2xl border-2 border-gray-100 dark:border-white/5 overflow-hidden shadow-sm">
+                                                <div className="flex items-center justify-between gap-4 bg-gray-50 dark:bg-white/5 px-6 py-4 border-b-2 border-gray-100 dark:border-white/5">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-black shadow-lg shadow-blue-600/30 shrink-0">
+                                                            {idx + 1}
+                                                        </div>
+                                                        <span className="text-base font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">Follow-up Rule {idx + 1}</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSteps(steps.filter((_, i) => i !== idx))}
+                                                        className="w-11 h-11 rounded-full bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center justify-center transition-all shrink-0"
+                                                    >
+                                                        <X className="w-5 h-5" />
+                                                    </button>
+                                                </div>
 
-                                            <div className="mb-3">
-                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Step {s.step_number} — Wait Time Before Follow-up</label>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    <div>
-                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Days</label>
-                                                        <input
-                                                            type="number" min="0"
-                                                            value={s.wait_days ?? 1}
-                                                            onChange={(e) => {
-                                                                const newSteps = [...steps];
-                                                                newSteps[idx].wait_days = parseInt(e.target.value) || 0;
-                                                                setSteps(newSteps);
-                                                            }}
-                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
-                                                        />
+                                                <div className="p-6 flex flex-col gap-6">
+                                                    <div className="flex flex-col gap-3">
+                                                        <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                                                            <Rocket className="w-4 h-4 shrink-0" />
+                                                            <span className="text-sm font-black uppercase tracking-widest">1. How long should the bot wait before doing this?</span>
+                                                        </div>
+                                                        <div className="flex items-stretch gap-0 bg-gray-50 dark:bg-white/5 rounded-2xl border-2 border-gray-100 dark:border-white/5 overflow-hidden">
+                                                            <div className="flex-1 flex flex-col gap-1 px-6 py-5">
+                                                                <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Days</label>
+                                                                <input type="number" min="0" value={s.wait_days ?? 0} onChange={(e) => { const n = [...steps]; n[idx].wait_days = parseInt(e.target.value) || 0; setSteps(n); }} className="w-full bg-transparent text-2xl font-black text-gray-900 dark:text-white focus:text-blue-500 outline-none" />
+                                                            </div>
+                                                            <div className="w-px bg-gray-200 dark:bg-white/10 self-stretch" />
+                                                            <div className="flex-1 flex flex-col gap-1 px-6 py-5">
+                                                                <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Hours</label>
+                                                                <input type="number" min="0" max="23" value={s.wait_hours ?? 0} onChange={(e) => { const n = [...steps]; n[idx].wait_hours = parseInt(e.target.value) || 0; setSteps(n); }} className="w-full bg-transparent text-2xl font-black text-gray-900 dark:text-white focus:text-blue-500 outline-none" />
+                                                            </div>
+                                                            <div className="w-px bg-gray-200 dark:bg-white/10 self-stretch" />
+                                                            <div className="flex-1 flex flex-col gap-1 px-6 py-5">
+                                                                <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Minutes</label>
+                                                                <input type="number" min="0" max="59" value={s.wait_minutes ?? 0} onChange={(e) => { const n = [...steps]; n[idx].wait_minutes = parseInt(e.target.value) || 0; setSteps(n); }} className="w-full bg-transparent text-2xl font-black text-gray-900 dark:text-white focus:text-blue-500 outline-none" />
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Hours</label>
-                                                        <input
-                                                            type="number" min="0" max="23"
-                                                            value={s.wait_hours ?? 0}
-                                                            onChange={(e) => {
-                                                                const newSteps = [...steps];
-                                                                newSteps[idx].wait_hours = parseInt(e.target.value) || 0;
-                                                                setSteps(newSteps);
-                                                            }}
-                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Minutes</label>
-                                                        <input
-                                                            type="number" min="0" max="59"
-                                                            value={s.wait_minutes ?? 0}
-                                                            onChange={(e) => {
-                                                                const newSteps = [...steps];
-                                                                newSteps[idx].wait_minutes = parseInt(e.target.value) || 0;
-                                                                setSteps(newSteps);
-                                                            }}
-                                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs font-bold focus:border-blue-500 outline-none text-center"
-                                                        />
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                                                        <div className="flex flex-col gap-4">
+                                                            <div className="flex items-center gap-2 text-gray-400">
+                                                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                                                <span className="text-sm font-black uppercase tracking-widest">😶 If they haven't replied...</span>
+                                                            </div>
+                                                            <div className="relative">
+                                                                <textarea
+                                                                    rows={5}
+                                                                    value={s.response_text}
+                                                                    onChange={(e) => { const n = [...steps]; n[idx].response_text = e.target.value; setSteps(n); }}
+                                                                    placeholder="Send this message to nudge them. e.g. Hey, just following up!"
+                                                                    className="w-full bg-blue-50/30 dark:bg-blue-500/5 border-2 border-blue-200 dark:border-blue-500/20 focus:border-blue-500 rounded-2xl px-5 py-4 text-base font-medium outline-none resize-none transition-all min-h-[150px] text-gray-900 dark:text-white"
+                                                                />
+                                                                <div className="absolute top-4 right-4 opacity-20"><FileText className="w-5 h-5" /></div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex flex-col gap-4">
+                                                            <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                                                                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                                                <span className="text-sm font-black uppercase tracking-widest">💬 If they wrote back...</span>
+                                                            </div>
+                                                            <div className="flex flex-col gap-4 bg-purple-50/30 dark:bg-purple-500/5 p-5 rounded-[28px] border-2 border-transparent hover:border-purple-500/10 transition-all">
+                                                                <div className="flex flex-col gap-2">
+                                                                    <label className="text-xs font-black text-purple-400 uppercase tracking-widest">Watch for these words in their reply</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="e.g. price, info, yes, how much..."
+                                                                        value={Array.isArray(s.keywords) ? s.keywords.join(', ') : s.keywords}
+                                                                        onChange={(e) => { const n = [...steps]; n[idx].keywords = e.target.value; setSteps(n); }}
+                                                                        className="w-full bg-white dark:bg-black/20 border-2 border-purple-200 dark:border-purple-500/20 rounded-xl px-4 py-3 text-base font-bold outline-none focus:border-purple-500 text-gray-900 dark:text-white"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex flex-col gap-2">
+                                                                    <label className="text-xs font-black text-purple-400 uppercase tracking-widest">Then instantly reply with this</label>
+                                                                    <textarea
+                                                                        rows={3}
+                                                                        value={s.keyword_response_text}
+                                                                        onChange={(e) => { const n = [...steps]; n[idx].keyword_response_text = e.target.value; setSteps(n); }}
+                                                                        placeholder="e.g. Great question! Here's the info you asked for..."
+                                                                        className="w-full bg-white dark:bg-black/20 border-2 border-purple-200 dark:border-purple-500/20 rounded-xl px-4 py-3 text-base font-medium outline-none resize-none focus:border-purple-500 text-gray-900 dark:text-white"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex flex-col gap-2">
+                                                                    <label className="text-xs font-black text-purple-400 uppercase tracking-widest">After that, what should the bot do next?</label>
+                                                                    <JumpSelect
+                                                                        value={s.next_step}
+                                                                        onChange={(val) => { const n = [...steps]; n[idx].next_step = val; setSteps(n); }}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
+                                        </AnimatedCard>
+                                    ))}
+                                </div>
+                            )}
 
-                                            <div className="mb-4">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest">Trigger Keywords (comma separated)</label>
-                                                </div>
-                                                <input
-                                                    type="text"
-                                                    placeholder="price, cost, info, details"
-                                                    value={Array.isArray(s.keywords) ? s.keywords.join(', ') : s.keywords}
-                                                    onChange={(e) => {
-                                                        const newSteps = [...steps];
-                                                        newSteps[idx].keywords = e.target.value;
-                                                        setSteps(newSteps);
-                                                    }}
-                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-xs font-medium focus:border-blue-500 outline-none"
-                                                />
-                                            </div>                                            <div className="flex-1 space-y-1">
-                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Intelligent Jump Target</label>
-                                                <JumpSelect 
-                                                    value={s.next_step}
-                                                    onChange={(val) => {
-                                                        const newSteps = [...steps];
-                                                        newSteps[idx].next_step = val;
-                                                        setSteps(newSteps);
-                                                    }}
-                                                />
-                                                <p className="text-[8px] text-gray-400 mt-1 italic">If a lead hits any keywords, they move here instead of the next step.</p>
+                            {/* Sticky bottom bar for Step 3 */}
+                            <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1a222c] border-t-2 border-gray-100 dark:border-white/5 pt-4 pb-6 flex items-center gap-4 z-10">
+                                <button
+                                    onClick={() => setStep(2)}
+                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
+                                >
+                                    ← Back
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setSteps(prev => [...prev, { step_number: prev.length + 1, wait_days: 0, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '', keyword_response_text: '' }]);
+                                        setTimeout(() => newCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                                    }}
+                                    className="shrink-0 flex items-center gap-2 px-6 py-4 bg-white dark:bg-white/5 border-2 border-blue-500 text-blue-600 dark:text-blue-400 rounded-xl font-black uppercase tracking-widest text-sm hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all shadow-lg"
+                                >
+                                    <span className="text-xl leading-none font-black">+</span>
+                                    <span>Add Follow-up</span>
+                                </button>
+                                <button
+                                    onClick={() => setStep(4)}
+                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
+                                >
+                                    Next: Check everything & save →
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* STEP 4: Full Summary & Launch */}
+                    {step === 4 && (
+                        <div className="flex flex-col gap-10 animate-slide-right pb-10">
+                            
+                            <div className="flex flex-col gap-2">
+                                <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Final Check-up</h2>
+                                <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Everything looks good! Review your bot's brain below.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+                                
+                                {/* Left Side: Essential Stats */}
+                                <div className="lg:col-span-1 flex flex-col gap-6">
+                                    <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-2xl shadow-blue-600/30 flex flex-col gap-6">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Bot Identity</span>
+                                            <p className="text-2xl font-black truncate">{name}</p>
+                                        </div>
+                                        <div className="h-px bg-white/20" />
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center"><FileText className="w-6 h-6 text-white" /></div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Target Audience</span>
+                                                <span className="text-lg font-bold truncate">{csvFile?.name}</span>
                                             </div>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center"><Zap className="w-6 h-6 text-white" /></div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Total Logic Steps</span>
+                                                <span className="text-lg font-bold">{steps.length + 1} steps configured</span>
+                                            </div>
+                                        </div>
+                                    </div>
 
+                                    {/* Safety Words Card */}
+                                    <div className="bg-red-50 dark:bg-red-900/10 rounded-[32px] p-6 border-2 border-red-100 dark:border-red-900/20">
+                                        <span className="text-xs font-black text-red-500 uppercase tracking-widest block mb-3">Safety Mode</span>
+                                        <p className="text-sm font-bold text-red-600/80 dark:text-red-400 leading-relaxed italic">
+                                            {killSwitchEnabled 
+                                                ? `The bot will stop talking if it hears: "${negativeKeywords || 'No stop words set'}"`
+                                                : "Safety mode is disabled. The bot will keep talking no matter what."
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
 
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1 flex items-center">
-                                                        <FileText className="w-2.5 h-2.5 mr-1" />
-                                                        Follow-up Message (Sent by Timer)
-                                                    </label>
-                                                    <textarea
-                                                        rows={2}
-                                                        value={s.response_text}
-                                                        onChange={(e) => {
-                                                            const newSteps = [...steps];
-                                                            newSteps[idx].response_text = e.target.value;
-                                                            setSteps(newSteps);
-                                                        }}
-                                                        placeholder="Step Message (Sent if lead is silent)..."
-                                                        className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none resize-none"
-                                                    />
+                                {/* Right Side: Message Timeline */}
+                                <div className="lg:col-span-2 flex flex-col gap-6">
+                                    
+                                    {/* Step 0: The Hook */}
+                                    <div className="flex gap-6">
+                                        <div className="flex flex-col items-center shrink-0">
+                                            <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-black z-10 shadow-lg">0</div>
+                                            <div className="w-1 flex-1 bg-gray-100 dark:bg-white/5 my-2" />
+                                        </div>
+                                        <div className="flex-1 pb-10">
+                                            <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <span className="text-xs font-black text-gray-400 uppercase tracking-widest">The Intro Message</span>
+                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Sent Instantly</span>
                                                 </div>
+                                                <p className="text-gray-600 dark:text-gray-300 italic font-medium">"{initialMessage}"</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                                <div>
-                                                    <label className="block text-[9px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1 flex items-center">
-                                                        <Rocket className="w-2.5 h-2.5 mr-1" />
-                                                        Keyword Match Response (AI Instant Reply)
-                                                    </label>
-                                                    <textarea
-                                                        rows={2}
-                                                        value={s.keyword_response_text}
-                                                        onChange={(e) => {
-                                                            const newSteps = [...steps];
-                                                            newSteps[idx].keyword_response_text = e.target.value;
-                                                            setSteps(newSteps);
-                                                        }}
-                                                        placeholder="AI Reply (Sent only if lead says a keyword)..."
-                                                        className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-purple-500 outline-none resize-none"
-                                                    />
+                                    {/* Intelligence Steps */}
+                                    {steps.map((s, idx) => (
+                                        <div className="flex gap-6" key={idx}>
+                                            <div className="flex flex-col items-center shrink-0">
+                                                <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-black z-10 shadow-lg">{idx + 1}</div>
+                                                {idx < steps.length - 1 && <div className="w-1 flex-1 bg-gray-100 dark:bg-white/5 my-2" />}
+                                            </div>
+                                            <div className="flex-1 pb-10">
+                                                <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
+                                                    <div className="flex items-center gap-3 mb-6">
+                                                        <Timer className="w-4 h-4 text-purple-600" />
+                                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Waits {s.wait_days || 0}d {s.wait_hours || 0}h {s.wait_minutes || 0}m then:</span>
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-2xl flex flex-col gap-1">
+                                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">If Silent...</span>
+                                                            <p className="text-xs font-bold truncate text-gray-600 dark:text-gray-400">"{s.response_text}"</p>
+                                                        </div>
+                                                        <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-2xl flex flex-col gap-1">
+                                                            <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">If Keyword "{Array.isArray(s.keywords) ? s.keywords[0] : s.keywords.split(',')[0]}"...</span>
+                                                            <p className="text-xs font-bold truncate text-purple-600 dark:text-purple-400">"{s.keyword_response_text}"</p>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            )}
-
-                            <div className="flex space-x-3 mt-8">
-                                <button
-                                    onClick={() => setStep(2)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-sm transition-all"
-                                >
-                                    Back
-                                </button>
-                                <button
-                                    onClick={() => setStep(4)}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
-                                >
-                                    Review Engine Setup
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* STEP 4: Final Review & Deploy */}
-                    {step === 4 && (
-                        <div className="space-y-6 animate-slide-right">
-                            <div className="bg-gray-50 dark:bg-white/5 rounded-3xl p-6 space-y-4">
-                                <div className="flex justify-between items-center border-b border-gray-200 dark:border-white/5 pb-4">
-                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Campaign Name</span>
-                                    <span className="text-sm font-bold text-gray-900 dark:text-white">{name}</span>
-                                </div>
-                                <div className="flex justify-between items-center border-b border-gray-200 dark:border-white/5 pb-4">
-                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Leads for Upload</span>
-                                    <span className="text-sm font-bold text-blue-500">{csvFile?.name}</span>
-                                </div>
-                                <div>
-                                    <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Opener Logic</span>
-                                    <div className="bg-white dark:bg-black/40 rounded-xl p-4 text-xs italic text-gray-600 dark:text-gray-400 border border-gray-100 dark:border-white/5">
-                                        "{initialMessage}"
-                                    </div>
-                                </div>
                             </div>
 
-                            <div className="flex space-x-3">
+                            {/* Final Launch Button Fixed at Bottom */}
+                            <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1a222c] border-t-2 border-gray-100 dark:border-white/5 pt-4 pb-6 flex items-center gap-4 z-20">
                                 <button
                                     onClick={() => setStep(3)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-sm transition-all"
+                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
                                 >
-                                    Edit
+                                    ← Edit Brain
                                 </button>
                                 <button
                                     disabled={isSubmitting}
                                     onClick={handleSubmit}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center space-x-2"
+                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-3"
                                 >
                                     {isSubmitting ? (
                                         <>
-                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                            <span>Deploying Engine...</span>
+                                            <Loader2 className="w-6 h-6 animate-spin shrink-0" />
+                                            <span>Building...</span>
                                         </>
                                     ) : (
                                         <>
-                                            <Rocket className="w-5 h-5" />
-                                            <span>Launch Campaign</span>
+                                            <Rocket className="w-6 h-6 shrink-0" />
+                                            <span>Launch Bot! 🚀</span>
                                         </>
                                     )}
                                 </button>
