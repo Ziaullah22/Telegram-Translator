@@ -136,36 +136,45 @@ class AutoResponderService:
                         break
                 
                 if matched_camp_keyword:
-                    # Determine target step
-                    if forced_next_step is not None:
+                    # Determine target step and move logic
+                    is_forced_jump = forced_next_step is not None
+                    
+                    if is_forced_jump:
+                        # Intelligent Branching Jump
                         target_step_num = forced_next_step
                         logger.info(f"Intelligent Branching! Keyword '{matched_camp_keyword}' forced jump to step {target_step_num}")
                     elif campaign_lead.get('step_next_step') is not None:
+                        # Normal progression to established next step
                         target_step_num = campaign_lead['step_next_step']
-                        logger.info(f"Intelligent Branching! Step default jump to step {target_step_num}")
+                        logger.info(f"Intelligent Branching! Step default move to step {target_step_num}")
                     else:
-                        # STANDARD: If no jump specified, we send the message of the step that MATCHED
-                        # which is campaign_lead['current_step']
-                        target_step_num = campaign_lead['current_step']
+                        # Standard fallback: current matching step
+                        target_step_num = max(1, campaign_lead.get('current_step', 1))
                     
-                    # CAP or Loop back to Step 1 logic
-                    if target_step_num > campaign_lead['max_step']:
+                    # CAP logic (cannot exceed max step)
+                    if target_step_num > campaign_lead.get('max_step', 999):
                         target_step_num = campaign_lead['max_step']
 
-                    # FETCH THE ACTUAL MESSAGE FOR THE TARGET STEP
-                    # This ensures we send the "Price" message if jumping to the "Price Step"
+                    # FETCH THE ACTUAL DATA FOR THE TARGET STEP
                     target_step_data = await db.fetchrow(
-                        "SELECT response_text FROM campaign_steps WHERE campaign_id = $1 AND step_number = $2",
+                        "SELECT response_text, next_step FROM campaign_steps WHERE campaign_id = $1 AND step_number = $2",
                         campaign_lead['campaign_id'], target_step_num
                     )
                     
-                    # PRIORITIZE Keyword Response of the MATCHING step
-                    final_response_text = campaign_lead.get('keyword_response_text') or campaign_lead.get('step_response')
+                    # Determine FINAL message content
+                    if is_forced_jump and target_step_data:
+                        # If a jump is forced, they expect the message of the DESTINATION step immediately
+                        final_response_text = target_step_data['response_text']
+                        # Determine where the lead moves to AFTER this message
+                        # Since we just sent target_step_num, we move to the next one
+                        next_followup_step = target_step_data['next_step'] if target_step_data['next_step'] is not None else (target_step_num + 1)
+                    else:
+                        # Normal case: send the matching step's response (using keyword override if available)
+                        final_response_text = campaign_lead.get('keyword_response_text') or campaign_lead.get('step_response')
+                        # For normal matches, target_step_num is where the lead SHOULD be for their NEXT follow-up
+                        next_followup_step = target_step_num
                     
-                    # Optional: If jumping to a step that is NOT himself, we MIGHT want target step message?
-                    # But for "Starting over" context, we want the current step's reply.
-                    
-                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead['id']} said '{matched_camp_keyword}'. Sending step {target_step_num} response.")
+                    logger.info(f"Campaign Keyword Match! Sending response for '{matched_camp_keyword}'. Moving lead {campaign_lead['id']} to step {next_followup_step}.")
                     
                     # 1. Prepare translation
                     target_msg_text = final_response_text
@@ -181,9 +190,8 @@ class AutoResponderService:
                             logger.error(f"Failed to translate campaign auto-response: {e}")
 
                     # 2. UPDATE STATE FIRST (Locking the lead to prevent double-sends)
-                    # We move the lead to 'target_step_num'. 
+                    # We move the lead to 'next_followup_step'. 
                     # This means the NEXT thing the timer will fire is the follow-up for that step.
-                    next_followup_step = target_step_num
                     
                     # If target_step_num is 0, it's a loop back to the very beginning (Initial Message)
                     if target_step_num == 0:
@@ -206,15 +214,15 @@ class AutoResponderService:
                             # If jumping to a non-existent step, it's effectively completing
                             await db.execute(
                                 "UPDATE campaign_leads SET current_step = $2, status = 'completed', last_contact_at = NOW() WHERE id = $1",
-                                campaign_lead['id'], target_step_num
+                                campaign_lead['id'], next_followup_step
                             )
-                            logger.info(f"Lead {campaign_lead['id']} completed (jumped to non-existent step {target_step_num}).")
+                            logger.info(f"Lead {campaign_lead['id']} completed (jumped to non-existent step {next_followup_step}).")
                         else:
                             await db.execute(
                                 "UPDATE campaign_leads SET current_step = $2, status = 'contacted', last_contact_at = NOW() WHERE id = $1",
-                                campaign_lead['id'], target_step_num
+                                campaign_lead['id'], next_followup_step
                             )
-                            logger.info(f"Lead {campaign_lead['id']} moved to Step {target_step_num}.")
+                            logger.info(f"Lead {campaign_lead['id']} moved to Step {next_followup_step}.")
 
 
                     # 3. Send Campaign Response
