@@ -9,34 +9,28 @@ interface CreateCampaignModalProps {
 }
 
 // --- Custom Dropdown Component (Fixed to handle screen positioning) ---
-const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: (val: number | undefined) => void }) => {
+const JumpSelect = ({ value, onChange, totalSteps }: { value: number | undefined, onChange: (val: number | undefined) => void, totalSteps: number }) => {
     const [showMenu, setShowMenu] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const [dropDirection, setDropDirection] = useState<'down' | 'up'>('down');
 
-    const jumpOptions = [
-        { label: "🔄 Restart: Start at the very beginning", value: 0 },
-        { label: "➔ Jump to Step 1", value: 1 },
-        { label: "➔ Jump to Step 2", value: 2 },
-        { label: "➔ Jump to Step 3", value: 3 },
-        { label: "➔ Jump to Step 4", value: 4 },
-        { label: "➔ Jump to Step 5", value: 5 },
-    ];
+    const jumpOptions = Array.from({ length: totalSteps }, (_, i) => ({
+        label: `➔ Jump to Step ${i + 1}`,
+        value: i + 1
+    }));
 
     useEffect(() => {
         if (showMenu && containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect();
             const spaceBelow = window.innerHeight - rect.bottom;
-            // If less than 350px below, flip it up to ensure 5 items fit
+            // If less than 350px below, flip it up to ensure items fit
             setDropDirection(spaceBelow < 350 ? 'up' : 'down');
         }
     }, [showMenu]);
 
-    const currentLabel = value === 0
-        ? "🔄 Restart: Start at the very beginning"
-        : value
-            ? jumpOptions.find(o => o.value === value)?.label || `➔ Jump to Step ${value}`
-            : "➡️ Normal: Just go to the next step";
+    const currentLabel = value
+        ? jumpOptions.find(o => o.value === value)?.label || `➔ Jump to Step ${value}`
+        : "➡️ Normal: Just go to the next step";
 
     return (
         <div className="relative" ref={containerRef}>
@@ -468,6 +462,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                     <JumpSelect
                                                                         value={s.next_step}
                                                                         onChange={(val) => { const n = [...steps]; n[idx].next_step = val; setSteps(n); }}
+                                                                        totalSteps={steps.length}
                                                                     />
                                                                 </div>
                                                             </div>
