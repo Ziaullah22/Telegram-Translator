@@ -1,0 +1,5 @@
+Columns: ['id', 'campaign_id', 'step_number', 'wait_time_hours', 'keywords', 'response_text', 'created_at', 'next_step', 'keyword_response_text']
+
+Leads:
+{'id': 12821, 'current_step': 3, 'status': 'failed'}
+{'id': 12822, 'current_step': 3, 'status': 'contacted'}

@@ -13,23 +13,20 @@ const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: 
     const [showMenu, setShowMenu] = useState(false);
     
     const jumpOptions = [
-        { label: "Loop to Start (Initial Message)", value: 0 },
+        { label: "Restart Campaign (Send First Message Again)", value: 0 },
         { label: "Jump to Step 1", value: 1 },
         { label: "Jump to Step 2", value: 2 },
         { label: "Jump to Step 3", value: 3 },
         { label: "Jump to Step 4", value: 4 },
         { label: "Jump to Step 5", value: 5 },
         { label: "Jump to Step 6", value: 6 },
-        { label: "Loop back to Step 1", value: 1 }
     ];
 
     const currentLabel = value === 0 
-        ? "Loop to Start (Initial Message)"
-        : value === 1 
-            ? "Loop back to Step 1"
-            : value 
-                ? jumpOptions.find(o => o.value === value)?.label || `Jump to Step ${value}`
-                : "Next Sequential Step";
+        ? "Restart Campaign (Loop to Start)"
+        : value 
+            ? jumpOptions.find(o => o.value === value)?.label || `Jump to Step ${value}`
+            : "Next Sequential Step";
 
     return (
         <div className="relative">
