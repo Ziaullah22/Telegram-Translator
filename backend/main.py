@@ -64,7 +64,8 @@ async def lifespan(app: FastAPI):
             total_leads INTEGER DEFAULT 0,
             completed_leads INTEGER DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            negative_keywords JSONB DEFAULT '[]'
         );
 
         CREATE TABLE IF NOT EXISTS campaign_steps (
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
             wait_time_hours FLOAT DEFAULT 0,
             keywords JSONB DEFAULT '[]',
             response_text TEXT NOT NULL,
+            next_step INTEGER,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(campaign_id, step_number)
         );
@@ -98,6 +100,15 @@ async def lifespan(app: FastAPI):
             details TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Milestone 5 Migrations for Existing Tables
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS replied_leads INTEGER DEFAULT 0;
+        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
+        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS keyword_response_text TEXT;
+        ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+        ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
         """)
         logger.info("Database migration (reply support & Campaign tables) completed")
     except Exception as e:
@@ -312,7 +323,7 @@ async def lifespan(app: FastAPI):
                     SELECT id, campaign_id, status FROM campaign_leads 
                     WHERE telegram_id = $1 
                     AND assigned_account_id = $2
-                    AND status = 'contacted'
+                    AND status IN ('contacted', 'pending', 'replied')
                     """,
                     peer_id, account_id
                 )
@@ -325,7 +336,7 @@ async def lifespan(app: FastAPI):
                         SELECT id, campaign_id, status FROM campaign_leads 
                         WHERE telegram_identifier = $1 
                         AND assigned_account_id = $2
-                        AND status = 'contacted'
+                        AND status IN ('contacted', 'pending', 'replied')
                         """,
                         peer_identifier, account_id
                     )
@@ -359,6 +370,43 @@ async def lifespan(app: FastAPI):
                         """,
                         lead['campaign_id'], lead['id'], account_id, f"Customer replied to message"
                     )
+                    
+                    # 4. Kill Switch: Check for negative keywords (Milestone 5)
+                    campaign = await db.fetchrow(
+                        "SELECT negative_keywords, kill_switch_enabled FROM campaigns WHERE id = $1",
+                        lead['campaign_id']
+                    )
+                    
+                    if campaign and campaign.get('kill_switch_enabled') and campaign['negative_keywords']:
+                        import json
+                        try:
+                            neg_keywords = json.loads(campaign['negative_keywords']) if isinstance(campaign['negative_keywords'], str) else campaign['negative_keywords']
+                        except Exception:
+                            neg_keywords = []
+
+                        msg_lower = text.lower()
+                        matched_neg = None
+                        for nkw in neg_keywords:
+                            if nkw.lower() in msg_lower:
+                                matched_neg = nkw
+                                break
+                        
+                        if matched_neg:
+                            logger.info(f"Kill Switch Triggered! Lead {lead['id']} said negative keyword '{matched_neg}'. Aborting sequence.")
+                            await db.execute(
+                                "UPDATE campaign_leads SET status = 'failed', failure_reason = $2 WHERE id = $1",
+                                lead['id'], f"Aborted by Kill Switch (Keyword: {matched_neg})"
+                            )
+                            # Log the kill switch trigger
+                            await db.execute(
+                                """
+                                INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details)
+                                VALUES ($1, $2, $3, 'kill_switch', $4)
+                                """,
+                                lead['campaign_id'], lead['id'], account_id, f"Sequence aborted automatically due to negative keyword: {matched_neg}"
+                            )
+                            # Do not process auto-responder after kill switch
+                            return
 
             # 2. Check for auto-responder matches
             await auto_responder_service.check_and_respond(

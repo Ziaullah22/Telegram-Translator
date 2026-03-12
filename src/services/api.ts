@@ -601,7 +601,12 @@ export const campaignsAPI = {
   },
 
   // Create a new campaign with a name and opening message
-  createCampaign: async (data: { name: string; initial_message: string }): Promise<Campaign> => {
+  createCampaign: async (data: { 
+    name: string; 
+    initial_message: string; 
+    negative_keywords?: string[];
+    kill_switch_enabled?: boolean;
+  }): Promise<Campaign> => {
     const response = await api.post('/campaigns', data);
     return response.data;
   },
@@ -628,6 +633,8 @@ export const campaignsAPI = {
     wait_time_hours: number;
     keywords: string[];
     response_text: string;
+    keyword_response_text?: string;
+    next_step?: number;
   }): Promise<CampaignStep> => {
     const response = await api.post(`/campaigns/${campaignId}/steps`, data);
     return response.data;
@@ -639,6 +646,8 @@ export const campaignsAPI = {
     wait_time_hours: number;
     keywords: string[];
     response_text: string;
+    keyword_response_text?: string;
+    next_step?: number;
   }): Promise<CampaignStep> => {
     const response = await api.post(`/campaigns/${campaignId}/steps`, data);
     return response.data;
@@ -666,9 +675,14 @@ export const campaignsAPI = {
     await api.post(`/campaigns/${campaignId}/pause`);
   },
 
-  // Resume a campaign
+  // Resume a paused campaign (does not reset leads)
   resumeCampaign: async (campaignId: number): Promise<void> => {
     await api.post(`/campaigns/${campaignId}/resume`);
+  },
+
+  // Restart a campaign from scratch (resets ALL leads to pending + step 0)
+  restartCampaign: async (campaignId: number): Promise<void> => {
+    await api.post(`/campaigns/${campaignId}/restart`);
   },
 
   // Get daily outreach safety stats for an account

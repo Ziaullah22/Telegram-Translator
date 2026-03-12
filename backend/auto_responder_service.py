@@ -60,17 +60,62 @@ class AutoResponderService:
             
             campaign_lead = await db.fetchrow(
                 """
-                SELECT l.id, l.campaign_id, l.current_step, s.keywords, s.response_text as step_response,
-                       s.wait_time_hours, s.id as step_id
+                SELECT l.id, l.campaign_id, l.current_step, l.assigned_account_id,
+                       s.keywords, s.response_text as step_response, s.keyword_response_text,
+                       s.wait_time_hours, s.id as step_id, s.next_step as step_next_step,
+                       (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = l.campaign_id) as max_step
                 FROM campaign_leads l
-                JOIN campaign_steps s ON l.campaign_id = s.campaign_id AND s.step_number = l.current_step
+                JOIN campaign_steps s ON l.campaign_id = s.campaign_id 
+                AND s.step_number = (
+                    SELECT MAX(step_number) FROM campaign_steps 
+                    WHERE campaign_id = l.campaign_id 
+                    AND step_number <= CASE WHEN l.current_step = 0 THEN 1 ELSE l.current_step END
+                )
                 WHERE (l.telegram_id = $1 OR l.telegram_identifier = $2) 
                 AND l.assigned_account_id = $3
-                AND l.status IN ('contacted', 'replied')
+                AND l.status IN ('contacted', 'replied', 'completed')
                 """,
                 peer_id, peer_username, account_id
             )
 
+            # Also handle leads at step 0 (received initial message, now replying)
+            # Step 0 has no campaign_steps row, so above query returns nothing.
+            # We need to grab Step 1 keywords for these leads.
+            if not campaign_lead:
+                step0_lead = await db.fetchrow(
+                    """
+                    SELECT l.id, l.campaign_id, l.current_step, l.assigned_account_id,
+                           (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = l.campaign_id) as max_step
+                    FROM campaign_leads l
+                    WHERE (l.telegram_id = $1 OR l.telegram_identifier = $2)
+                    AND l.assigned_account_id = $3
+                    AND l.status IN ('contacted', 'replied')
+                    AND l.current_step = 0
+                    """,
+                    peer_id, peer_username, account_id
+                )
+                if step0_lead:
+                    # Fetch Step 1 definition for this campaign
+                    step1 = await db.fetchrow(
+                        "SELECT keywords, response_text, keyword_response_text, next_step FROM campaign_steps WHERE campaign_id = $1 AND step_number = 1",
+                        step0_lead['campaign_id']
+                    )
+                    if step1:
+                        # Build a synthetic campaign_lead object for keyword processing
+                        campaign_lead = {
+                            'id': step0_lead['id'],
+                            'campaign_id': step0_lead['campaign_id'],
+                            'current_step': 0,
+                            'max_step': step0_lead['max_step'],
+                            'keywords': step1['keywords'],
+                            'step_response': step1['response_text'],
+                            'keyword_response_text': step1['keyword_response_text'],
+                            'step_next_step': step1['next_step'],
+                        }
+
+            if campaign_lead:
+                campaign_lead = dict(campaign_lead)
+            
             if campaign_lead and campaign_lead['keywords']:
                 import json
                 try:
@@ -80,48 +125,113 @@ class AutoResponderService:
                     
                 message_lower = message_text.lower()
                 matched_camp_keyword = None
-                for kw in keywords_list:
-                    if kw.lower() in message_lower:
-                        matched_camp_keyword = kw
+                forced_next_step = None
+
+                for kw_item in keywords_list:
+                    # kw_item can be a string or a dict {"text": "hi", "next_step": 2}
+                    kw_text = kw_item["text"] if isinstance(kw_item, dict) else kw_item
+                    if kw_text.lower() in message_lower:
+                        matched_camp_keyword = kw_text
+                        forced_next_step = kw_item.get("next_step") if isinstance(kw_item, dict) else None
                         break
                 
                 if matched_camp_keyword:
-                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead['id']} said '{matched_camp_keyword}'. Sending step {campaign_lead['current_step']} response.")
+                    # Determine target step
+                    if forced_next_step is not None:
+                        target_step_num = forced_next_step
+                        logger.info(f"Intelligent Branching! Keyword '{matched_camp_keyword}' forced jump to step {target_step_num}")
+                    elif campaign_lead.get('step_next_step') is not None:
+                        target_step_num = campaign_lead['step_next_step']
+                        logger.info(f"Intelligent Branching! Step default jump to step {target_step_num}")
+                    else:
+                        # STANDARD: If no jump specified, we send the message of the step that MATCHED
+                        # which is campaign_lead['current_step']
+                        target_step_num = campaign_lead['current_step']
                     
-                    target_msg_text = campaign_lead['step_response']
+                    # CAP or Loop back to Step 1 logic
+                    if target_step_num > campaign_lead['max_step']:
+                        target_step_num = campaign_lead['max_step']
+
+                    # FETCH THE ACTUAL MESSAGE FOR THE TARGET STEP
+                    # This ensures we send the "Price" message if jumping to the "Price Step"
+                    target_step_data = await db.fetchrow(
+                        "SELECT response_text FROM campaign_steps WHERE campaign_id = $1 AND step_number = $2",
+                        campaign_lead['campaign_id'], target_step_num
+                    )
+                    
+                    # PRIORITIZE Keyword Response of the MATCHING step
+                    final_response_text = campaign_lead.get('keyword_response_text') or campaign_lead.get('step_response')
+                    
+                    # Optional: If jumping to a step that is NOT himself, we MIGHT want target step message?
+                    # But for "Starting over" context, we want the current step's reply.
+                    
+                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead['id']} said '{matched_camp_keyword}'. Sending step {target_step_num} response.")
+                    
+                    # 1. Prepare translation
+                    target_msg_text = final_response_text
                     if source_language != target_language:
                         try:
                             translation = await translation_service.translate_text(
-                                campaign_lead['step_response'],
+                                final_response_text,
                                 target_language,
                                 source_language
                             )
                             target_msg_text = translation['translated_text']
-                            logger.debug(f"Translated campaign auto-response to {target_language}: {target_msg_text}")
                         except Exception as e:
-                            logger.error(f"Failed to translate campaign auto-response to target language: {e}")
-                            
-                    # Send Campaign Response
+                            logger.error(f"Failed to translate campaign auto-response: {e}")
+
+                    # 2. UPDATE STATE FIRST (Locking the lead to prevent double-sends)
+                    # We move the lead to 'target_step_num'. 
+                    # This means the NEXT thing the timer will fire is the follow-up for that step.
+                    next_followup_step = target_step_num
+                    
+                    # If target_step_num is 0, it's a loop back to the very beginning (Initial Message)
+                    if target_step_num == 0:
+                        # SET last_contact_at TO 1 HOUR AGO to ensure the worker fires IMMEDIATELY
+                        await db.execute(
+                            "UPDATE campaign_leads SET current_step = 0, status = 'pending', last_contact_at = NOW() - interval '1 hour' WHERE id = $1",
+                            campaign_lead['id']
+                        )
+                        # Ensure the campaign is marked as 'running' again if it was 'completed'
+                        await db.execute("UPDATE campaigns SET status = 'running' WHERE id = $1", campaign_lead['campaign_id'])
+                        logger.info(f"Lead {campaign_lead['id']} looped back to Initial Message (Step 0). Campaign Reactivated.")
+                    else:
+                        # Check if this target step actually exists
+                        exists = await db.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM campaign_steps WHERE campaign_id = $1 AND step_number = $2)",
+                            campaign_lead['campaign_id'], target_step_num
+                        )
+                        
+                        if not exists:
+                            # If jumping to a non-existent step, it's effectively completing
+                            await db.execute(
+                                "UPDATE campaign_leads SET current_step = $2, status = 'completed', last_contact_at = NOW() WHERE id = $1",
+                                campaign_lead['id'], target_step_num
+                            )
+                            logger.info(f"Lead {campaign_lead['id']} completed (jumped to non-existent step {target_step_num}).")
+                        else:
+                            await db.execute(
+                                "UPDATE campaign_leads SET current_step = $2, status = 'contacted', last_contact_at = NOW() WHERE id = $1",
+                                campaign_lead['id'], target_step_num
+                            )
+                            logger.info(f"Lead {campaign_lead['id']} moved to Step {target_step_num}.")
+
+
+                    # 3. Send Campaign Response
                     success = await self._send_response(
                         account_id,
                         peer_id,
                         target_msg_text,
-                        campaign_lead['step_response'],
+                        final_response_text,
                         source_language, 
                         None, None
                     )
                     
                     if success:
-                        # Move lead to NEXT step and mark as contacted since we just responded programmatically
-                        next_step = campaign_lead['current_step'] + 1
-                        await db.execute(
-                            "UPDATE campaign_leads SET current_step = $2, status = 'contacted', last_contact_at = NOW() WHERE id = $1",
-                            campaign_lead['id'], next_step
-                        )
                         # Log it
                         await db.execute(
                             "INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details) VALUES ($1, $2, $3, 'keyword_reply', $4)",
-                            campaign_lead['campaign_id'], campaign_lead['id'], account_id, f"Auto-replied to keyword: {matched_camp_keyword}"
+                            campaign_lead['campaign_id'], campaign_lead['id'], account_id, f"Auto-replied to keyword: {matched_camp_keyword}. Moved to Step {next_followup_step}"
                         )
                         return True
 

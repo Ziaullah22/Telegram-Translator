@@ -26,19 +26,25 @@ async def create_campaign(
     campaign: CampaignCreate,
     current_user: TokenData = Depends(get_current_user)
 ):
+    import json
     try:
         row = await db.fetchrow(
             """
-            INSERT INTO campaigns (user_id, name, initial_message, status)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO campaigns (user_id, name, initial_message, status, negative_keywords, kill_switch_enabled)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING *
             """,
             current_user.user_id,
             campaign.name,
             campaign.initial_message,
-            CampaignStatus.draft
+            CampaignStatus.draft,
+            json.dumps(campaign.negative_keywords),
+            campaign.kill_switch_enabled
         )
-        return dict(row)
+        row_dict = dict(row)
+        if isinstance(row_dict.get('negative_keywords'), str):
+            row_dict['negative_keywords'] = json.loads(row_dict['negative_keywords'])
+        return row_dict
     except Exception as e:
         logger.error(f"Failed to create campaign: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -48,6 +54,7 @@ async def create_campaign(
 async def get_campaigns(
     current_user: TokenData = Depends(get_current_user)
 ):
+    import json
     rows = await db.fetch(
         "SELECT * FROM campaigns WHERE user_id = $1 ORDER BY created_at DESC",
         current_user.user_id
@@ -56,6 +63,8 @@ async def get_campaigns(
     result = []
     for row in rows:
         camp_dict = dict(row)
+        if isinstance(camp_dict.get('negative_keywords'), str):
+            camp_dict['negative_keywords'] = json.loads(camp_dict['negative_keywords'])
         hibernation = await campaign_service.get_campaign_hibernation_status(camp_dict['id'], current_user.user_id)
         camp_dict.update(hibernation)
         result.append(camp_dict)
@@ -68,6 +77,7 @@ async def get_campaign(
     campaign_id: int,
     current_user: TokenData = Depends(get_current_user)
 ):
+    import json
     row = await db.fetchrow(
         "SELECT * FROM campaigns WHERE id = $1 AND user_id = $2",
         campaign_id,
@@ -75,11 +85,12 @@ async def get_campaign(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Campaign not found")
-        
+    
     camp_dict = dict(row)
+    if isinstance(camp_dict.get('negative_keywords'), str):
+        camp_dict['negative_keywords'] = json.loads(camp_dict['negative_keywords'])
     hibernation = await campaign_service.get_campaign_hibernation_status(campaign_id, current_user.user_id)
     camp_dict.update(hibernation)
-    
     return camp_dict
 
 # Upload a CSV file containing Telegram usernames or phone numbers to populate the campaign queue
@@ -193,15 +204,17 @@ async def add_campaign_step(
     try:
         row = await db.fetchrow(
             """
-            INSERT INTO campaign_steps (campaign_id, step_number, wait_time_hours, keywords, response_text)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO campaign_steps (campaign_id, step_number, wait_time_hours, keywords, response_text, keyword_response_text, next_step)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
             """,
             campaign_id,
             step.step_number,
             step.wait_time_hours,
             json.dumps(step.keywords),
-            step.response_text
+            step.response_text,
+            step.keyword_response_text,
+            step.next_step
         )
         row_dict = dict(row)
         if isinstance(row_dict.get('keywords'), str):
@@ -280,12 +293,65 @@ async def resume_campaign(
     campaign_id: int,
     current_user: TokenData = Depends(get_current_user)
 ):
+    # Only update the campaign status — do NOT touch lead statuses.
+    # Leads already have their real statuses (contacted, completed, failed, etc.)
+    # and the campaign engine will correctly skip them.
     await db.execute(
         "UPDATE campaigns SET status = 'running' WHERE id = $1 AND user_id = $2",
         campaign_id,
         current_user.user_id
     )
     return {"success": True}
+
+@router.post("/{campaign_id}/restart")
+async def restart_campaign(
+    campaign_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """
+    Restart a campaign from scratch:
+    - Resets ALL leads back to step 0 and status 'pending'
+    - Clears failure reasons
+    - Resets campaign counters (completed, replied)
+    - Sets campaign status back to 'running'
+    """
+    campaign = await db.fetchrow(
+        "SELECT id FROM campaigns WHERE id = $1 AND user_id = $2",
+        campaign_id, current_user.user_id
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    try:
+        # 1. Reset all leads to initial state
+        await db.execute(
+            """
+            UPDATE campaign_leads
+            SET current_step = 0,
+                status = 'pending',
+                last_contact_at = NULL,
+                failure_reason = NULL
+            WHERE campaign_id = $1
+            """,
+            campaign_id
+        )
+
+        # 2. Reset campaign counters and status
+        await db.execute(
+            """
+            UPDATE campaigns
+            SET status = 'running',
+                completed_leads = 0,
+                replied_leads = 0
+            WHERE id = $1 AND user_id = $2
+            """,
+            campaign_id, current_user.user_id
+        )
+
+        return {"success": True, "message": "Campaign restarted from scratch"}
+    except Exception as e:
+        logger.error(f"Failed to restart campaign {campaign_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to restart campaign")
 
 @router.get("/safety-stats/{account_id}")
 async def get_safety_stats(

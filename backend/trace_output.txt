@@ -1,0 +1,12 @@
+--- Affected Leads ---
+ID: 12822, Identifier: Ziaullah4127, Step: 0, Status: pending, Fail: None
+  Last Contact: None
+  Logs:
+ID: 12821, Identifier: princ804, Step: 1, Status: contacted, Fail: None
+  Last Contact: 2026-03-12 02:50:23.627500+00:00
+  Logs:
+    [2026-03-12 02:50:23.636930+00:00] initial_outreach: Message sent (Step 0) via account 38
+
+--- Global Lead Stats ---
+pending: 1
+contacted: 1

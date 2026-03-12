@@ -304,11 +304,15 @@ class CampaignStatus(str, Enum):
 class CampaignCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     initial_message: str = Field(..., min_length=1)
+    negative_keywords: List[str] = Field(default_factory=list)
+    kill_switch_enabled: bool = Field(default=True)
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
     initial_message: Optional[str] = None
     status: Optional[CampaignStatus] = None
+    negative_keywords: Optional[List[str]] = None
+    kill_switch_enabled: Optional[bool] = None
 
 class CampaignResponse(BaseModel):
     id: int
@@ -321,19 +325,25 @@ class CampaignResponse(BaseModel):
     replied_leads: int = 0
     is_hibernating: bool = False
     next_reset_at: Optional[datetime] = None
+    negative_keywords: List[str] = []
+    kill_switch_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 
 class CampaignStepCreate(BaseModel):
     step_number: int = Field(..., gt=0)
     wait_time_hours: float = Field(..., ge=0)
-    keywords: List[str] = Field(..., min_items=1)
+    keywords: List[str] = Field(default_factory=list)
     response_text: str = Field(..., min_length=1)
+    keyword_response_text: Optional[str] = None
+    next_step: Optional[int] = None
 
 class CampaignStepUpdate(BaseModel):
     wait_time_hours: Optional[float] = None
     keywords: Optional[List[str]] = None
     response_text: Optional[str] = None
+    keyword_response_text: Optional[str] = None
+    next_step: Optional[int] = None
 
 class CampaignStepResponse(BaseModel):
     id: int
@@ -342,6 +352,8 @@ class CampaignStepResponse(BaseModel):
     wait_time_hours: float
     keywords: List[str]
     response_text: str
+    keyword_response_text: Optional[str] = None
+    next_step: Optional[int] = None
     created_at: datetime
 
 class LeadStatus(str, Enum):

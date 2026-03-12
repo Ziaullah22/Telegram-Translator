@@ -1,0 +1,35 @@
+--- Recent Logs ---
+[2026-03-12 02:50:50.548012+00:00] Lead: 12822, Action: error, Details: Account not connected
+[2026-03-12 02:50:23.636930+00:00] Lead: 12821, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: reply_received, Details: Customer replied to message
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: keyword_reply, Details: Auto-replied to keyword: restart. Moved to Step 1
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: keyword_reply, Details: Auto-replied to keyword: restart. Moved to Step 1
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 37
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 38
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 37
+[2026-03-10 02:47:39.702473+00:00] Lead: None, Action: keyword_reply, Details: Auto-replied to keyword: restart. Moved to Step 1
+[2026-03-10 02:36:54.745273+00:00] Lead: None, Action: error, Details: Account not connected
+[2026-03-10 02:36:54.745273+00:00] Lead: None, Action: error, Details: Client not connected
+[2026-03-10 02:35:18.835407+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:35:18.835407+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-10 02:35:18.835407+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 37
+[2026-03-10 02:35:18.835407+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 38
+[2026-03-10 02:30:16.169873+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:30:16.169873+00:00] Lead: None, Action: reply_received, Details: Customer replied to message
+[2026-03-10 02:30:16.169873+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-10 02:30:16.169873+00:00] Lead: None, Action: keyword_reply, Details: Auto-replied to keyword: restart. Moved to Step 2
+[2026-03-10 02:18:58.604681+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-10 02:18:58.604681+00:00] Lead: None, Action: follow_up_step_2, Details: Message sent (Step 2) via account 38
+[2026-03-10 02:18:58.604681+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:18:58.604681+00:00] Lead: None, Action: reply_received, Details: Customer replied to message
+[2026-03-10 02:18:58.604681+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 38
+[2026-03-10 02:10:08.133370+00:00] Lead: None, Action: reply_received, Details: Customer replied to message
+[2026-03-10 02:10:08.133370+00:00] Lead: None, Action: follow_up_step_4, Details: Message sent (Step 4) via account 38
+[2026-03-10 02:10:08.133370+00:00] Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:10:08.133370+00:00] Lead: None, Action: follow_up_step_1, Details: Message sent (Step 1) via account 38
+
+--- Lead Status ---
+ID: 12821, Identifier: princ804, Step: 1, Status: contacted
+ID: 12822, Identifier: Ziaullah4127, Step: 0, Status: failed

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 
 interface CreateCampaignModalProps {
@@ -8,6 +8,78 @@ interface CreateCampaignModalProps {
     onSuccess: () => void;
 }
 
+// --- Custom Dropdown Component (Defined outside to prevent state reset on parent rerender) ---
+const JumpSelect = ({ value, onChange }: { value: number | undefined, onChange: (val: number | undefined) => void }) => {
+    const [showMenu, setShowMenu] = useState(false);
+    
+    const jumpOptions = [
+        { label: "Loop to Start (Initial Message)", value: 0 },
+        { label: "Jump to Step 1", value: 1 },
+        { label: "Jump to Step 2", value: 2 },
+        { label: "Jump to Step 3", value: 3 },
+        { label: "Jump to Step 4", value: 4 },
+        { label: "Jump to Step 5", value: 5 },
+        { label: "Jump to Step 6", value: 6 },
+        { label: "Loop back to Step 1", value: 1 }
+    ];
+
+    const currentLabel = value === 0 
+        ? "Loop to Start (Initial Message)"
+        : value === 1 
+            ? "Loop back to Step 1"
+            : value 
+                ? jumpOptions.find(o => o.value === value)?.label || `Jump to Step ${value}`
+                : "Next Sequential Step";
+
+    return (
+        <div className="relative">
+            <div
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(!showMenu);
+                }}
+                className="w-full flex items-center justify-between bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold focus:border-blue-500 outline-none appearance-none cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-white/5"
+            >
+                <span className={value ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"}>
+                    {currentLabel}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${showMenu ? 'rotate-180' : ''}`} />
+            </div>
+
+            {showMenu && (
+                <>
+                    <div className="fixed inset-0 z-[10001] bg-transparent" onClick={(e) => {
+                        e.stopPropagation();
+                        setShowMenu(false);
+                    }} />
+                    <div 
+                        className="absolute top-full left-0 right-0 mt-2 z-[10002] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="max-h-60 overflow-y-auto py-1">
+                            <div
+                                onClick={() => { onChange(undefined); setShowMenu(false); }}
+                                className={`w-full text-left px-4 py-3 text-xs font-bold cursor-pointer transition-colors ${!value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                            >
+                                Next Sequential Step
+                            </div>
+                            {jumpOptions.map((opt, i) => (
+                                <div
+                                    key={i}
+                                    onClick={() => { onChange(opt.value); setShowMenu(false); }}
+                                    className={`w-full text-left px-4 py-3 text-xs font-bold cursor-pointer transition-colors ${value === opt.value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                                >
+                                    {opt.label}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClose, onSuccess }) => {
     const [step, setStep] = useState(1);
     const [name, setName] = useState('');
@@ -15,6 +87,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [csvFile, setCsvFile] = useState<File | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [negativeKeywords, setNegativeKeywords] = useState('');
+    const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
     const [steps, setSteps] = useState<any[]>([]); // AI Intelligence Steps
 
     // Helper to convert days/hours/minutes to total hours (float)
@@ -37,7 +111,9 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             // 1. Create the campaign
             const campaign = await campaignsAPI.createCampaign({
                 name,
-                initial_message: initialMessage
+                initial_message: initialMessage,
+                negative_keywords: negativeKeywords.split(',').map(k => k.trim()).filter(k => k),
+                kill_switch_enabled: killSwitchEnabled
             });
 
             // 2. Upload the leads
@@ -49,22 +125,45 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     step_number: s.step_number,
                     wait_time_hours: toTotalHours(s.wait_days || 0, s.wait_hours || 0, s.wait_minutes || 0),
                     keywords: typeof s.keywords === 'string' ? s.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k) : s.keywords,
-                    response_text: s.response_text
+                    response_text: s.response_text,
+                    keyword_response_text: s.keyword_response_text,
+                    next_step: s.next_step
                 });
             }
 
-            onSuccess();
-            onClose();
-            // Reset
+            // 4. Launch the campaign
+            try {
+                await campaignsAPI.resumeCampaign(campaign.id);
+            } catch (resumeErr: any) {
+                console.error("Failed to resume campaign after creation:", resumeErr);
+            }
+
+            // 5. Reset ALL state FIRST while component is still mounted
             setName('');
             setInitialMessage('');
+            setNegativeKeywords('');
+            setKillSwitchEnabled(true);
             setCsvFile(null);
             setSteps([]);
             setStep(1);
-        } catch (err: any) {
-            setError(err.response?.data?.detail || "An unexpected error occurred during campaign initialization.");
-        } finally {
             setIsSubmitting(false);
+            setError(null);
+
+            // 6. NOW close the modal and refresh - component state is already clean
+            onSuccess();
+            onClose();
+
+        } catch (err: any) {
+            setIsSubmitting(false);
+            const detail = err.response?.data?.detail;
+            if (typeof detail === 'string') {
+                setError(detail);
+            } else if (Array.isArray(detail)) {
+                // FastAPI 422 returns detail as array of {msg, loc, type} objects
+                setError(detail.map((d: any) => d.msg || JSON.stringify(d)).join(', '));
+            } else {
+                setError("An unexpected error occurred. Please check all fields and try again.");
+            }
         }
     };
 
@@ -138,6 +237,33 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none resize-none"
                                 />
                             </div>
+                            <div>
+                                <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Kill Switch: Abort Keywords (comma separated)</label>
+                                <input
+                                    type="text"
+                                    value={negativeKeywords}
+                                    onChange={(e) => setNegativeKeywords(e.target.value)}
+                                    placeholder="not interested, stop, scam, bad, f*** off"
+                                    disabled={!killSwitchEnabled}
+                                    className={`w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none ${!killSwitchEnabled ? 'opacity-50 grayscale' : ''}`}
+                                />
+                                <div className="flex items-center justify-between mt-2">
+                                    <p className="text-[10px] text-gray-400 italic">Sequence will automatically stop if the lead says any of these.</p>
+                                    <label className="flex items-center cursor-pointer group">
+                                        <span className="text-[10px] font-black uppercase text-gray-400 mr-2 group-hover:text-blue-500 transition-colors">Enabled</span>
+                                        <div className="relative">
+                                            <input 
+                                                type="checkbox" 
+                                                className="sr-only" 
+                                                checked={killSwitchEnabled}
+                                                onChange={(e) => setKillSwitchEnabled(e.target.checked)}
+                                            />
+                                            <div className={`block w-8 h-4 rounded-full transition-colors ${killSwitchEnabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'}`}></div>
+                                            <div className={`absolute left-1 top-1 bg-white w-2 h-2 rounded-full transition-transform ${killSwitchEnabled ? 'translate-x-4' : ''}`}></div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
                             <button
                                 onClick={() => (name && initialMessage) ? setStep(2) : setError("Identity and message are required.")}
                                 className="w-full py-4 bg-gray-900 dark:bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
@@ -204,7 +330,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             <div className="flex justify-between items-center mb-4">
                                 <label className="block text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">AI & Keyword Responses</label>
                                 <button
-                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 1, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '' }])}
+                                    onClick={() => setSteps([...steps, { step_number: steps.length + 1, wait_days: 0, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '', keyword_response_text: '' }])}
                                     className="text-[10px] font-black uppercase text-blue-500 hover:text-blue-600"
                                 >
                                     + Add Follow-up Step
@@ -273,7 +399,9 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                             </div>
 
                                             <div className="mb-4">
-                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Trigger Keywords (comma separated)</label>
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest">Trigger Keywords (comma separated)</label>
+                                                </div>
                                                 <input
                                                     type="text"
                                                     placeholder="price, cost, info, details"
@@ -283,23 +411,59 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                         newSteps[idx].keywords = e.target.value;
                                                         setSteps(newSteps);
                                                     }}
-                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none"
+                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-xs font-medium focus:border-blue-500 outline-none"
                                                 />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">AI Automatic Response</label>
-                                                <textarea
-                                                    rows={2}
-                                                    value={s.response_text}
-                                                    onChange={(e) => {
+                                            </div>                                            <div className="flex-1 space-y-1">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Intelligent Jump Target</label>
+                                                <JumpSelect 
+                                                    value={s.next_step}
+                                                    onChange={(val) => {
                                                         const newSteps = [...steps];
-                                                        newSteps[idx].response_text = e.target.value;
+                                                        newSteps[idx].next_step = val;
                                                         setSteps(newSteps);
                                                     }}
-                                                    placeholder="Sure! Here is our information..."
-                                                    className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none resize-none"
                                                 />
+                                                <p className="text-[8px] text-gray-400 mt-1 italic">If a lead hits any keywords, they move here instead of the next step.</p>
+                                            </div>
+
+
+
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1 flex items-center">
+                                                        <FileText className="w-2.5 h-2.5 mr-1" />
+                                                        Follow-up Message (Sent by Timer)
+                                                    </label>
+                                                    <textarea
+                                                        rows={2}
+                                                        value={s.response_text}
+                                                        onChange={(e) => {
+                                                            const newSteps = [...steps];
+                                                            newSteps[idx].response_text = e.target.value;
+                                                            setSteps(newSteps);
+                                                        }}
+                                                        placeholder="Step Message (Sent if lead is silent)..."
+                                                        className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-blue-500 outline-none resize-none"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-[9px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1 flex items-center">
+                                                        <Rocket className="w-2.5 h-2.5 mr-1" />
+                                                        Keyword Match Response (AI Instant Reply)
+                                                    </label>
+                                                    <textarea
+                                                        rows={2}
+                                                        value={s.keyword_response_text}
+                                                        onChange={(e) => {
+                                                            const newSteps = [...steps];
+                                                            newSteps[idx].keyword_response_text = e.target.value;
+                                                            setSteps(newSteps);
+                                                        }}
+                                                        placeholder="AI Reply (Sent only if lead says a keyword)..."
+                                                        className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-xs font-medium focus:border-purple-500 outline-none resize-none"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     ))}

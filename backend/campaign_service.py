@@ -160,8 +160,28 @@ class CampaignService:
             # These are NOT new strangers, we already spoke to them. No cold limit applies.
             warm_available_ids = all_account_ids  # All accounts can send follow-ups anytime
 
-            # 3A. Find COLD OUTREACH leads (Step 0, 'pending' - brand new outreach)
+            # 3A. Find OUTREACH leads (Step 0, 'pending')
+            # Split into COLD (new stranger) vs WARM (looped back/existing contact)
             cold_leads = []
+            
+            # 1. Loopers/Re-activations (Already have a telegram_id -> NOT COLD anymore)
+            loop_leads = await db.fetch(
+                """
+                SELECT l.id, l.telegram_identifier, l.telegram_id, l.assigned_account_id, l.current_step, l.last_contact_at,
+                       c.initial_message, NULL::text as step_message, NULL::float as wait_time_hours
+                FROM campaign_leads l
+                JOIN campaigns c ON l.campaign_id = c.id
+                WHERE l.campaign_id = $1 
+                AND l.assigned_account_id = ANY($2)
+                AND l.current_step = 0 AND l.status = 'pending'
+                AND l.telegram_id IS NOT NULL
+                ORDER BY l.created_at ASC
+                LIMIT 5
+                """,
+                campaign_id, all_account_ids
+            )
+
+            # 2. Pure Cold Strangers (Needs cold limit check)
             if cold_available_ids:
                 cold_leads = await db.fetch(
                     """
@@ -172,6 +192,7 @@ class CampaignService:
                     WHERE l.campaign_id = $1 
                     AND l.assigned_account_id = ANY($2)
                     AND l.current_step = 0 AND l.status = 'pending'
+                    AND l.telegram_id IS NULL
                     ORDER BY l.created_at ASC
                     LIMIT 1
                     """,
@@ -182,7 +203,7 @@ class CampaignService:
             warm_leads = await db.fetch(
                 """
                 SELECT l.id, l.telegram_identifier, l.assigned_account_id, l.current_step, l.last_contact_at,
-                       c.initial_message, s.response_text as step_message, s.wait_time_hours
+                       c.initial_message, s.response_text as step_message, s.wait_time_hours, s.next_step
                 FROM campaign_leads l
                 JOIN campaigns c ON l.campaign_id = c.id
                 JOIN campaign_steps s ON l.campaign_id = s.campaign_id AND s.step_number = l.current_step
@@ -196,11 +217,23 @@ class CampaignService:
                 campaign_id, warm_available_ids
             )
 
-            # Combine: prioritize warm follow-ups first (they've been waiting!), then cold
-            pending_leads = list(warm_leads) + list(cold_leads)
+            # Combine: prioritize warm follow-ups and loopers first, then new cold leads
+            pending_leads = list(warm_leads) + list(loop_leads) + list(cold_leads)
 
-            if not pending_leads and not cold_available_ids:
-                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): HIBERNATING. (All accounts at cold limit)")
+            if not pending_leads:
+                if not cold_available_ids:
+                    # Only log hibernation if we actually HAVE pending Strangers (Step 0) but no accounts available
+                    has_step0_pending = await db.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM campaign_leads WHERE campaign_id = $1 AND current_step = 0 AND status = 'pending')",
+                        campaign_id
+                    )
+                    if has_step0_pending:
+                        logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}): HIBERNATING. (All accounts at cold limit)")
+                    else:
+                        # If no Step 0, then we are just waiting for follow-up timers
+                        logger.debug(f"Campaign '{campaign['name']}' (ID: {campaign_id}): Waiting for follow-up timers.")
+                else:
+                    logger.debug(f"Campaign '{campaign['name']}' (ID: {campaign_id}): No leads ready for outreach at this moment.")
                 continue
 
             for lead in pending_leads:
@@ -215,8 +248,20 @@ class CampaignService:
                     await db.execute("UPDATE campaign_leads SET status = 'completed' WHERE id = $1", lead['id'])
                     continue
 
-                # 4. Global Safety Check (for Step 0 only)
-                if current_step == 0:
+                # NEW: Ensure the account is CONNECTED before sending
+                # Transient disconnects often stall campaigns.
+                try:
+                    await telethon_service.reconnect_if_needed(account_id)
+                except Exception as e:
+                    logger.error(f"Failed to reconnect account {account_id} for lead {lead['id']}: {e}")
+                    await db.execute(
+                        "UPDATE campaign_leads SET status = 'failed', failure_reason = 'Account disconnected' WHERE id = $1",
+                        lead['id']
+                    )
+                    continue
+
+                # 4. Global Safety Check (for Step 0 only, and ONLY for brand new strangers)
+                if current_step == 0 and lead.get('telegram_id') is None:
                     already_contacted = await db.fetchval(
                         "SELECT EXISTS(SELECT 1 FROM campaign_leads WHERE telegram_identifier = $1 AND status IN ('contacted', 'replied', 'completed') AND id != $2)",
                         lead['telegram_identifier'], lead['id']
@@ -252,8 +297,9 @@ class CampaignService:
                     typing_duration = random.uniform(5.0, 10.0)
                     await telethon_service.send_typing(account_id, lead['telegram_identifier'], duration=typing_duration)
 
-                    # Send Message (in target language)
-                    sent_msg = await telethon_service.send_message(account_id, lead['telegram_identifier'], target_msg_text)
+                    # Prefer numeric ID if available for faster resolution and better reliability
+                    peer_identifier = lead.get('telegram_id') or lead['telegram_identifier']
+                    sent_msg = await telethon_service.send_message(account_id, peer_identifier, target_msg_text)
 
                     # C. Sync to Local Chat History & Dashboard
                     try:
@@ -324,8 +370,9 @@ class CampaignService:
                     except Exception as sync_err:
                         logger.error(f"Failed to sync campaign message to history: {sync_err}")
 
-                    # D. Update Database: Lead Status & Step
-                    # Increment step, status remains 'contacted' (waiting for reply)
+                    # D. Update Database: Lead Status & Step (Milestone 5: Intelligent Branching)
+                    # Timer-based follow-ups ALWAYS go to the next sequential step.
+                    # Keyword-based jumps are handled separately in auto_responder_service.py.
                     next_step = current_step + 1
                     
                     # Check if this was the LAST step for the campaign
@@ -428,49 +475,6 @@ class CampaignService:
             "new_conversations_today": count,
             "limit": 1,
             "remaining": max(0, 1 - count)
-        }
-
-    async def get_campaign_hibernation_status(self, campaign_id: int, user_id: int):
-        """Check if all accounts for a user/campaign have reached daily limits (24-hour rolling)"""
-        window_start = datetime.now(timezone.utc) - timedelta(hours=24)
-        
-        # Get all active accounts for this user
-        accounts = await db.fetch(
-            "SELECT id FROM telegram_accounts WHERE user_id = $1 AND is_active = true",
-            user_id
-        )
-        
-        if not accounts:
-            return {"is_hibernating": False, "next_reset_at": None}
-            
-        available_times = []
-        for acc in accounts:
-            last_outreach = await db.fetchrow(
-                """
-                SELECT created_at FROM campaign_logs
-                WHERE account_id = $1
-                AND action = 'initial_outreach'
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                acc['id']
-            )
-            
-            if not last_outreach or last_outreach['created_at'] < window_start:
-                # This account is available NOW
-                return {"is_hibernating": False, "next_reset_at": None}
-            else:
-                # Account will be available 24 hours after this outreach
-                available_times.append(last_outreach['created_at'] + timedelta(hours=24))
-        
-        # If we reach here, all accounts are busy.
-        # The campaign will wake up when the SOONEST account becomes available.
-        is_hibernating = True
-        next_reset_at = min(available_times) if available_times else None
-            
-        return {
-            "is_hibernating": is_hibernating,
-            "next_reset_at": next_reset_at
         }
 
 campaign_service = CampaignService()

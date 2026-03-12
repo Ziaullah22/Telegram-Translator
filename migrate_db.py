@@ -232,7 +232,8 @@ async def migrate():
                     completed_leads INTEGER DEFAULT 0,
                     replied_leads INTEGER DEFAULT 0,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    negative_keywords JSONB DEFAULT '[]'
                 );
 
                 CREATE TABLE IF NOT EXISTS campaign_steps (
@@ -242,6 +243,7 @@ async def migrate():
                     wait_time_hours FLOAT DEFAULT 0,
                     keywords JSONB DEFAULT '[]',
                     response_text TEXT NOT NULL,
+                    next_step INTEGER,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(campaign_id, step_number)
                 );
@@ -317,6 +319,11 @@ async def migrate():
                     END IF;
                     ALTER TABLE campaign_logs ADD CONSTRAINT campaign_logs_lead_id_fkey 
                         FOREIGN KEY (lead_id) REFERENCES campaign_leads(id) ON DELETE SET NULL;
+
+                    -- Milestone 5: Sequence Builder & Kill Switch
+                    ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
+                    ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
+
                 END $$;
             """)
             print("✓ Incremental updates applied.")

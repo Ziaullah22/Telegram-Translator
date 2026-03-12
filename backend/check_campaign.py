@@ -22,7 +22,7 @@ async def check():
                 "SELECT MAX(created_at) FROM campaign_logs WHERE account_id = $1 AND action = 'initial_outreach'",
                 acc_id
             )
-            blocked = last is not None and last >= window_start
+            blocked = last is not None and last >= window_start  # type: ignore[operator]
             f.write(f"Account {acc_id}: last_cold={last}, blocked={blocked}\n")
 
         f.write("\n=== ALL CAMPAIGN_LOGS FOR ACCOUNTS 31, 37 ===\n")

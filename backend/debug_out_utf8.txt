@@ -1,0 +1,7 @@
+﻿=== CAMPAIGN STEPS ===
+Step: 2 | next_step: 3 | keywords: ["link", "yes", "offcource"] | msg: you want to be or not?
+Step: 1 | next_step: 3 | keywords: ["vip", "boss"] | msg: hey i am waiting for you reponce
+
+=== LEADS ===
+{'id': 12796, 'campaign_id': 27, 'current_step': 1, 'status': 'failed', 'telegram_identifier': 'Ziaullah4127'}
+{'id': 12795, 'campaign_id': 27, 'current_step': 3, 'status': 'completed', 'telegram_identifier': 'princ804'}

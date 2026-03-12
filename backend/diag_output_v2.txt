@@ -1,0 +1,18 @@
+--- Campaigns ---
+ID: 39, Name: Final Loop Test, Status: completed
+
+--- Campaign Steps ---
+CampID: 39, Step#: 1, Wait: 0.016666666666666666h, Keywords: ["restart"]
+  Response: I haven't heard from you. This is the Step 1 follo...
+  AI Reply: No problem! Let's start from the very beginning......
+
+--- Leads ---
+ID: 12819, CampID: 39, Target: princ804, Step: 2, Status: completed, Last: 2026-03-12 02:32:22.971395+00:00
+ID: 12820, CampID: 39, Target: Ziaullah4127, Step: 2, Status: completed, Last: 2026-03-12 02:33:41.194246+00:00
+
+--- Recent Logs ---
+[2026-03-12 02:33:41.198428+00:00] Camp: 39, Lead: 12820, Action: follow_up_step_1, Details: Message sent (Step 1) via account 38
+[2026-03-12 02:32:32.704766+00:00] Camp: 39, Lead: 12820, Action: initial_outreach, Details: Message sent (Step 0) via account 38
+[2026-03-12 02:32:22.973830+00:00] Camp: 39, Lead: 12819, Action: follow_up_step_1, Details: Message sent (Step 1) via account 37
+[2026-03-12 02:31:14.903439+00:00] Camp: 39, Lead: 12819, Action: initial_outreach, Details: Message sent (Step 0) via account 37
+[2026-03-10 02:30:16.169873+00:00] Camp: None, Lead: None, Action: initial_outreach, Details: Message sent (Step 0) via account 38

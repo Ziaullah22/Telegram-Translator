@@ -188,6 +188,8 @@ export interface Campaign {
   total_leads: number;
   completed_leads: number;
   replied_leads?: number;
+  negative_keywords?: string[];
+  kill_switch_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -199,6 +201,8 @@ export interface CampaignStep {
   wait_time_hours: number;
   keywords: string[];
   response_text: string;
+  keyword_response_text?: string;
+  next_step?: number;
   created_at: string;
 }
 

@@ -1413,6 +1413,30 @@ class TelethonService:
         for account_id in list(self.sessions.keys()):
             await self.disconnect_session(account_id)
 
+    async def reconnect_if_needed(self, account_id: int):
+        """Checks if a session is connected, and attempts to reconnect if not"""
+        session = self.sessions.get(account_id)
+        if not session:
+            # Try to load session from DB if it exists but not in memory
+            from database import db
+            acc = await db.fetchrow("SELECT telegram_api_id, telegram_api_hash, session_filepath FROM telegram_accounts WHERE id = $1", account_id)
+            if acc:
+                await self.connect_session(
+                    account_id,
+                    acc['telegram_api_id'],
+                    acc['telegram_api_hash'],
+                    acc['session_filepath']
+                )
+                session = self.sessions.get(account_id)
+            
+        if not session:
+            raise Exception("Account not connected and could not be found")
+            
+        if not session.is_connected or not session.client or not session.client.is_connected():
+            logger.info(f"Reconnecting account {account_id}...")
+            await session.connect()
+        return session
+
     async def leave_chat(self, account_id: int, peer_id: int):
         """Leave a group or channel"""
         session = self.sessions.get(account_id)
