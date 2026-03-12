@@ -10,7 +10,7 @@ interface CreateCampaignModalProps {
 }
 
 // --- Custom Dropdown Component (Fixed to handle screen positioning) ---
-const JumpSelect = ({ value, onChange, totalSteps }: { value: number | undefined, onChange: (val: number | undefined) => void, totalSteps: number }) => {
+const JumpSelect = ({ value, onChange, totalSteps, currentStep }: { value: number | undefined, onChange: (val: number | undefined) => void, totalSteps: number, currentStep: number }) => {
     const [showMenu, setShowMenu] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const [dropDirection, setDropDirection] = useState<'down' | 'up'>('down');
@@ -18,7 +18,7 @@ const JumpSelect = ({ value, onChange, totalSteps }: { value: number | undefined
     const jumpOptions = Array.from({ length: totalSteps }, (_, i) => ({
         label: `➔ Jump to Step ${i + 1}`,
         value: i + 1
-    }));
+    })).filter(o => o.value !== currentStep);
 
     useEffect(() => {
         if (showMenu && containerRef.current) {
@@ -32,6 +32,15 @@ const JumpSelect = ({ value, onChange, totalSteps }: { value: number | undefined
     const currentLabel = value
         ? jumpOptions.find(o => o.value === value)?.label || `➔ Jump to Step ${value}`
         : "➡️ Normal: Just go to the next step";
+
+    // If no other steps exist to jump to, just show a static "Normal" display
+    if (jumpOptions.length === 0) {
+        return (
+            <div className="w-full bg-gray-50 dark:bg-black/10 border-2 border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-base font-bold text-gray-400/60 flex items-center gap-2 select-none">
+                <span>{currentLabel}</span>
+            </div>
+        );
+    }
 
     return (
         <div className="relative" ref={containerRef}>
@@ -468,6 +477,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                         value={s.next_step}
                                                                         onChange={(val) => { const n = [...steps]; n[idx].next_step = val; setSteps(n); }}
                                                                         totalSteps={steps.length}
+                                                                        currentStep={idx + 1}
                                                                     />
                                                                 </div>
                                                             </div>
