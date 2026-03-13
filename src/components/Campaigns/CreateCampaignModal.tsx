@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Timer, Zap } from 'lucide-react';
+import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Timer, Zap, ShieldOff } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 import ConfirmModal from '../Common/ConfirmModal';
 
@@ -120,12 +120,13 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [error, setError] = useState<string | null>(null);
     const [negativeKeywords, setNegativeKeywords] = useState('');
     const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
-    const [steps, setSteps] = useState<any[]>([]); // AI Intelligence Steps
+    const [steps, setSteps] = useState<any[]>([]); // Strategic Sequence Steps
     
     // Popup Error State
     const [showErrorPopup, setShowErrorPopup] = useState(false);
     const [popupMessage, setPopupMessage] = useState('');
     const [failedStepIdx, setFailedStepIdx] = useState<number | null>(null);
+    const [viewingStepDetail, setViewingStepDetail] = useState<{idx: number, step: any} | null>(null);
 
     // Helper to convert days/hours/minutes to total hours (float)
     const toTotalHours = (days: number, hours: number, minutes: number) =>
@@ -165,6 +166,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             setShowErrorPopup(false);
             setPopupMessage('');
             setFailedStepIdx(null);
+            setViewingStepDetail(null);
         }
     }, [isOpen]);
 
@@ -569,8 +571,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <div className="flex flex-col gap-10 animate-slide-right pb-10">
                             
                             <div className="flex flex-col gap-2">
-                                <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Final Check-up</h2>
-                                <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Everything looks good! Review your campaign's brain below.</p>
+                                <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Campaign Overview</h2>
+                                <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Everything is ready. Please review your campaign strategy below.</p>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
@@ -579,7 +581,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 <div className="lg:col-span-1 flex flex-col gap-6">
                                     <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-2xl shadow-blue-600/30 flex flex-col gap-6">
                                         <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Campaign Identity</span>
+                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Campaign Name</span>
                                             <p className="text-2xl font-black truncate">{name}</p>
                                         </div>
                                         <div className="h-px bg-white/20" />
@@ -600,14 +602,19 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     </div>
 
                                     {/* Safety Words Card */}
-                                    <div className="bg-red-50 dark:bg-red-900/10 rounded-[32px] p-6 border-2 border-red-100 dark:border-red-900/20">
-                                        <span className="text-xs font-black text-red-500 uppercase tracking-widest block mb-3">Safety Mode</span>
-                                        <p className="text-sm font-bold text-red-600/80 dark:text-red-400 leading-relaxed italic">
-                                            {killSwitchEnabled 
-                                                ? `The campaign will stop talking if it hears: "${negativeKeywords || 'No stop words set'}"`
-                                                : "Safety mode is disabled. The campaign will keep talking no matter what."
-                                            }
-                                        </p>
+                                    <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <ShieldOff className="w-4 h-4 text-red-500" />
+                                            <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Safety Protocols</span>
+                                        </div>
+                                        <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
+                                            <p className="text-sm font-bold text-red-600 dark:text-red-400 leading-relaxed italic">
+                                                {killSwitchEnabled 
+                                                    ? `The campaign will automatically terminate if it detects: "${negativeKeywords || 'No safety keywords set'}"`
+                                                    : "Safety mode is currently disabled. The campaign will continue the sequence irrespective of lead responses."
+                                                }
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -625,37 +632,87 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         <div className="flex-1 pb-10">
                                             <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
                                                 <div className="flex items-center justify-between mb-4">
-                                                    <span className="text-xs font-black text-gray-400 uppercase tracking-widest">The Intro Message</span>
-                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Send Instantly</span>
+                                                    <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Initial Greeting</span>
+                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Instant Delivery</span>
                                                 </div>
-                                                <p className="text-gray-600 dark:text-gray-300 italic font-medium">"{initialMessage}"</p>
+                                                <p className="text-sm font-bold text-gray-600 dark:text-gray-300 italic break-words">"{initialMessage}"</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Intelligence Steps */}
+                                    {/* Strategic Sequence Steps */}
                                     {steps.map((s, idx) => (
                                         <div className="flex gap-6" key={idx}>
-                                            <div className="flex flex-col items-center shrink-0">
-                                                <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-black z-10 shadow-lg">{idx + 1}</div>
-                                                {idx < steps.length - 1 && <div className="w-1 flex-1 bg-gray-100 dark:bg-white/5 my-2" />}
+                                            <div className="flex flex-col items-center shrink-0 w-12">
+                                                <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-black z-10 shadow-lg ring-4 ring-white dark:ring-[#1e293b] shrink-0">
+                                                    {idx + 1}
+                                                </div>
+                                                {idx < steps.length - 1 && (
+                                                    <div className="w-1 flex-1 bg-gradient-to-b from-blue-600/50 to-transparent -mt-2 mb-2 rounded-full z-0" />
+                                                )}
                                             </div>
                                             <div className="flex-1 pb-10">
-                                                <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
-                                                    <div className="flex items-center gap-3 mb-6">
-                                                        <Timer className="w-4 h-4 text-purple-600" />
-                                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Waits {s.wait_days || 0}d {s.wait_hours || 0}h {s.wait_minutes || 0}m then:</span>
+                                                <div className="flex flex-col gap-4">
+                                                    {/* Delay Indicator */}
+                                                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/5 rounded-full self-start border border-gray-200 dark:border-white/10">
+                                                        <Timer className="w-3.5 h-3.5 text-gray-400" />
+                                                        <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                                            Wait Period: {s.wait_days || 0}d {s.wait_hours || 0}h {s.wait_minutes || 0}m
+                                                        </span>
                                                     </div>
-                                                    
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-2xl flex flex-col gap-1">
-                                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">If Silent...</span>
-                                                            <p className="text-xs font-bold truncate text-gray-600 dark:text-gray-400">"{s.response_text}"</p>
+
+                                                    <div className="bg-white dark:bg-black/20 rounded-3xl border-2 border-gray-100 dark:border-white/5 shadow-sm overflow-hidden flex flex-col group">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-px items-stretch flex-1 bg-gray-100 dark:bg-white/5">
+                                                            {/* Path A: Default Sequence */}
+                                                            <div className="p-8 bg-white dark:bg-black/20 flex flex-col gap-4 h-full">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-6 h-6 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center border border-blue-100 dark:border-blue-800/50">
+                                                                        <AlertCircle className="w-3 h-3 text-blue-600" />
+                                                                    </div>
+                                                                    <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">Fallback & Reminder</span>
+                                                                </div>
+                                                                <div className="flex flex-col gap-3 p-4 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5 flex-1">
+                                                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] leading-none">Scenario: No Keyword Detection</span>
+                                                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200 break-words leading-relaxed line-clamp-2">
+                                                                        "{s.response_text}"
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Path B: Strategic Response */}
+                                                            <div className="p-8 bg-white dark:bg-black/20 flex flex-col gap-4 h-full">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-6 h-6 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center border border-purple-100 dark:border-purple-800/50">
+                                                                        <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                                                                    </div>
+                                                                    <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest">Precision Response</span>
+                                                                </div>
+                                                                <div className="flex flex-col gap-3 p-4 bg-purple-50/30 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-900/20 flex-1">
+                                                                    <div className="flex flex-col gap-2">
+                                                                        <span className="text-[9px] font-black text-purple-400 uppercase tracking-[0.2em] leading-none">Scenario: Keyword Engagement</span>
+                                                                        <div className="flex flex-wrap gap-1.5">
+                                                                            {(s.keywords || 'Any reply').split(',').map((kw: string, i: number) => (
+                                                                                <span key={i} className="px-2 py-0.5 bg-purple-600/10 text-purple-600 rounded text-[9px] font-black uppercase tracking-tight border border-purple-600/20 truncate max-w-[80px]">
+                                                                                    {kw.trim()}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="h-px bg-purple-200/50 dark:bg-purple-800/30 my-0.5" />
+                                                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200 break-words leading-relaxed line-clamp-2">
+                                                                        "{s.keyword_response_text}"
+                                                                    </p>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-2xl flex flex-col gap-1">
-                                                            <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">If Keyword "{Array.isArray(s.keywords) ? s.keywords[0] : s.keywords.split(',')[0]}"...</span>
-                                                            <p className="text-xs font-bold truncate text-purple-600 dark:text-purple-400">"{s.keyword_response_text}"</p>
-                                                        </div>
+                                                        
+                                                        {/* Integrated Action Button */}
+                                                        <button 
+                                                            onClick={() => setViewingStepDetail({ idx, step: s })}
+                                                            className="w-full py-4 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-[10px] hover:bg-black transition-all flex items-center justify-center gap-3 border-t border-white/10"
+                                                        >
+                                                            <span>🔎 View Strategic Detail Map</span>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -667,7 +724,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             {/* Final Launch Button Fixed at Bottom */}
                             <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1a222c] border-t-2 border-gray-100 dark:border-white/5 pt-4 pb-6 flex items-center gap-4 z-20">
                                 <button
-                                    onClick={() => setStep(3)}
+                                    onClick={() => setStep(1)}
                                     className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
                                 >
                                     ← Edit Campaign
@@ -706,6 +763,89 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 cancelText="Close"
                 type="info"
             />
+
+            {/* Step Detail Focus Popup */}
+            {viewingStepDetail && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in" onClick={() => setViewingStepDetail(null)} />
+                    <div className="bg-white dark:bg-[#1e293b] w-full max-w-5xl rounded-[40px] shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10">
+                        <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-black text-xl shadow-lg ring-4 ring-purple-500/20">
+                                    {viewingStepDetail.idx + 1}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-gray-900 dark:text-white">Step Strategy Details</h3>
+                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Full Logic Configuration</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setViewingStepDetail(null)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center text-gray-500 hover:rotate-90 transition-all">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-8 max-h-[70vh] overflow-y-auto custom-scrollbar flex flex-col gap-6">
+                            {/* Detailed Path A */}
+                            <div className="p-6 bg-blue-50/50 dark:bg-blue-500/5 rounded-[32px] border-2 border-blue-100 dark:border-blue-900/20">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <AlertCircle className="w-5 h-5 text-blue-600" />
+                                    <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Scenario: Silent Lead</span>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="p-5 bg-white dark:bg-black/40 rounded-2xl border border-blue-200 dark:border-white/5">
+                                        <p className="text-gray-700 dark:text-gray-300 font-bold leading-relaxed">"{viewingStepDetail.step.response_text}"</p>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                                            Trigger A: Silence
+                                        </p>
+                                        <p className="text-[10px] font-bold text-gray-400 italic">Sent if no response is detected within the {viewingStepDetail.step.wait_days || 0}d {viewingStepDetail.step.wait_hours || 0}h period.</p>
+                                    </div>
+                                    <div className="flex flex-col gap-2 pt-4 border-t border-blue-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
+                                            <ShieldOff className="w-3.5 h-3.5" />
+                                            Secondary Trigger: Fallback Protocol
+                                        </p>
+                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed italic">
+                                            Should the recipient respond without mentioning any designated keywords, the system will deploy this response as an automated fallback to maintain engagement.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Detailed Path B */}
+                            <div className="p-6 bg-purple-50/50 dark:bg-purple-500/5 rounded-[32px] border-2 border-purple-100 dark:border-purple-900/20">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <CheckCircle2 className="w-5 h-5 text-purple-600" />
+                                    <span className="text-xs font-black text-purple-600 uppercase tracking-widest">Scenario: Keyword Received</span>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex flex-wrap gap-2">
+                                        {(viewingStepDetail.step.keywords || 'any reply').split(',').map((kw: string, i: number) => (
+                                            <span key={i} className="px-3 py-1 bg-purple-600/10 text-purple-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-purple-600/20 shadow-sm">
+                                                {kw.trim()}
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="p-5 bg-white dark:bg-black/40 rounded-2xl border border-purple-200 dark:border-white/5">
+                                        <p className="text-gray-700 dark:text-gray-300 font-bold leading-relaxed">"{viewingStepDetail.step.keyword_response_text}"</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-gray-50/50 dark:bg-white/5 flex items-center justify-center">
+                            <button 
+                                onClick={() => setViewingStepDetail(null)}
+                                className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] transition-all shadow-xl"
+                            >
+                                Back to Strategy Map
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
