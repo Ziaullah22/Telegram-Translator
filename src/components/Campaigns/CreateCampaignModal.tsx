@@ -709,7 +709,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                         {/* Integrated Action Button */}
                                                         <button 
                                                             onClick={() => setViewingStepDetail({ idx, step: s })}
-                                                            className="w-full py-4 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-[10px] hover:bg-black transition-all flex items-center justify-center gap-3 border-t border-white/10"
+                                                            className="w-full py-4 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-[10px] hover:bg-blue-700 transition-all flex items-center justify-center gap-3 border-t border-white/10"
                                                         >
                                                             <span>🔎 View Strategic Detail Map</span>
                                                         </button>
@@ -787,38 +787,32 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <div className="p-8 max-h-[70vh] overflow-y-auto custom-scrollbar flex flex-col gap-6">
                             {/* Detailed Path A */}
                             <div className="p-6 bg-blue-50/50 dark:bg-blue-500/5 rounded-[32px] border-2 border-blue-100 dark:border-blue-900/20">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <AlertCircle className="w-5 h-5 text-blue-600" />
-                                    <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Scenario: Silent Lead</span>
+                                <div className="flex flex-col gap-1 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <AlertCircle className="w-5 h-5 text-blue-600" />
+                                        <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Scenario A: Silent Lead</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed pl-8">
+                                        This is your safety net. The system sends this message if the lead completely ignores you.
+                                    </p>
                                 </div>
                                 <div className="space-y-4">
                                     <div className="p-5 bg-white dark:bg-black/40 rounded-2xl border border-blue-200 dark:border-white/5">
                                         <p className="text-gray-700 dark:text-gray-300 font-bold leading-relaxed">"{viewingStepDetail.step.response_text}"</p>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                                            Trigger A: Silence
-                                        </p>
-                                        <p className="text-[10px] font-bold text-gray-400 italic">Sent if no response is detected within the {viewingStepDetail.step.wait_days || 0}d {viewingStepDetail.step.wait_hours || 0}h period.</p>
-                                    </div>
-                                    <div className="flex flex-col gap-2 pt-4 border-t border-blue-100 dark:border-white/5">
-                                        <p className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
-                                            <ShieldOff className="w-3.5 h-3.5" />
-                                            Secondary Trigger: Fallback Protocol
-                                        </p>
-                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed italic">
-                                            Should the recipient respond without mentioning any designated keywords, the system will deploy this response as an automated fallback to maintain engagement.
-                                        </p>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Detailed Path B */}
                             <div className="p-6 bg-purple-50/50 dark:bg-purple-500/5 rounded-[32px] border-2 border-purple-100 dark:border-purple-900/20">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <CheckCircle2 className="w-5 h-5 text-purple-600" />
-                                    <span className="text-xs font-black text-purple-600 uppercase tracking-widest">Scenario: Keyword Received</span>
+                                <div className="flex flex-col gap-1 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <CheckCircle2 className="w-5 h-5 text-purple-600" />
+                                        <span className="text-xs font-black text-purple-600 uppercase tracking-widest">Scenario B: Keyword Target Hit</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed pl-8">
+                                        This is your bullseye. The system instantly stops waiting and sends this exact reply the moment a lead mentions any of the specific words you defined.
+                                    </p>
                                 </div>
                                 <div className="space-y-4">
                                     <div className="flex flex-wrap gap-2">
@@ -838,7 +832,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <div className="p-6 bg-gray-50/50 dark:bg-white/5 flex items-center justify-center">
                             <button 
                                 onClick={() => setViewingStepDetail(null)}
-                                className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] transition-all shadow-xl"
+                                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 hover:scale-[1.02] transition-all shadow-xl"
                             >
                                 Back to Strategy Map
                             </button>
