@@ -150,6 +150,24 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const fileInputRef = useRef<HTMLInputElement>(null);
     const newCardRef = useRef<HTMLDivElement>(null);
 
+    // Reset state when opening
+    useEffect(() => {
+        if (isOpen) {
+            setStep(1);
+            setName('');
+            setInitialMessage('');
+            setCsvFile(null);
+            setIsSubmitting(false);
+            setError(null);
+            setNegativeKeywords('');
+            setKillSwitchEnabled(true);
+            setSteps([]);
+            setShowErrorPopup(false);
+            setPopupMessage('');
+            setFailedStepIdx(null);
+        }
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const handleSubmit = async () => {
