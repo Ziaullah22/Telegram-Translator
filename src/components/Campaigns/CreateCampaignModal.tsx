@@ -582,21 +582,21 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-2xl shadow-blue-600/30 flex flex-col gap-6">
                                         <div className="flex flex-col gap-1">
                                             <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Campaign Name</span>
-                                            <p className="text-2xl font-black truncate">{name}</p>
+                                            <p className="text-2xl font-black break-all leading-tight">{name}</p>
                                         </div>
                                         <div className="h-px bg-white/20" />
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center"><FileText className="w-6 h-6 text-white" /></div>
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Target Audience</span>
-                                                <span className="text-lg font-bold truncate">{csvFile?.name}</span>
+                                        <div className="flex items-start gap-4">
+                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileText className="w-6 h-6 text-white" /></div>
+                                            <div className="flex flex-col gap-1 min-w-0 flex-1 pt-1">
+                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none truncate block">Target Audience</span>
+                                                <span className="text-lg font-bold break-all leading-tight block">{csvFile?.name}</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center"><Zap className="w-6 h-6 text-white" /></div>
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none">Total Message Sequence</span>
-                                                <span className="text-lg font-bold">{steps.length} steps configured</span>
+                                        <div className="flex items-center gap-4 mt-2">
+                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><Zap className="w-6 h-6 text-white" /></div>
+                                            <div className="flex flex-col gap-1 min-w-0 flex-1">
+                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none truncate block">Total Message Sequence</span>
+                                                <span className="text-lg font-bold block">{steps.length} steps configured</span>
                                             </div>
                                         </div>
                                     </div>
