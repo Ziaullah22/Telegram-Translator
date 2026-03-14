@@ -129,6 +129,8 @@ const CampaignPage: React.FC = () => {
     const [selectedCampaignForLeads, setSelectedCampaignForLeads] = useState<Campaign | null>(null);
     const [showGuide, setShowGuide] = useState(false);
     const [expandedScenario, setExpandedScenario] = useState<number | null>(null);
+    const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
+    const [updatingCampaigns, setUpdatingCampaigns] = useState<Set<number>>(new Set());
 
     const [confirmConfig, setConfirmConfig] = useState<{
         isOpen: boolean;
@@ -150,10 +152,25 @@ const CampaignPage: React.FC = () => {
         try {
             if (!silent) setIsLoading(true);
             const data = await campaignsAPI.getCampaigns();
-            setCampaigns(Array.isArray(data) ? data.filter(Boolean) : []);
+            const newCampaigns = Array.isArray(data) ? data.filter(Boolean) : [];
+            
+            // Merge logic: Respect campaigns that are currently "waiting" for an API response
+            setCampaigns(prev => {
+                if (!prev.length) return newCampaigns;
+                
+                return newCampaigns.map(newCamp => {
+                    const isUpdating = updatingCampaigns.has(newCamp.id);
+                    if (isUpdating) {
+                        // Find the current local version which has the "optimistic" status
+                        const localCamp = prev.find(p => p.id === newCamp.id);
+                        return localCamp ? { ...newCamp, status: localCamp.status } : newCamp;
+                    }
+                    return newCamp;
+                });
+            });
         } catch (error) {
             console.error('Failed to fetch campaigns:', error);
-            setCampaigns([]);
+            if (!silent) setCampaigns([]);
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -201,21 +218,50 @@ const CampaignPage: React.FC = () => {
 
     const handleUpdateStatus = async (e: React.MouseEvent, id: number, currentStatus: string) => {
         e.stopPropagation();
+        
+        // Prevent spam clicking if already updating
+        if (updatingCampaigns.has(id)) return;
+
         try {
+            // 1. Mark as updating
+            setUpdatingCampaigns(prev => new Set(prev).add(id));
+
+            // 2. Optimistically update UI
+            const targetStatus = currentStatus === 'running' ? 'paused' : 'running';
+            setCampaigns(prev => prev.map(c => 
+                c.id === id ? { ...c, status: targetStatus } : c
+            ));
+            
+            // 3. Call API
             if (currentStatus === 'running') {
                 await campaignsAPI.pauseCampaign(id);
             } else {
                 await campaignsAPI.resumeCampaign(id);
             }
-            fetchCampaigns();
+
+            // 4. Release lock immediately after API returns success
+            setUpdatingCampaigns(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+            fetchCampaigns(true);
+
         } catch {
             alert('Failed to update campaign status. Please try again.');
+            setUpdatingCampaigns(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+            fetchCampaigns(true);
         }
     };
 
     useEffect(() => {
         fetchCampaigns();
-        const interval = setInterval(() => fetchCampaigns(true), 1000);
+        // Slowing down refresh to 5 seconds to prevent performance issues and accidental overrides
+        const interval = setInterval(() => fetchCampaigns(true), 5000);
         return () => clearInterval(interval);
     }, []);
 
@@ -472,6 +518,25 @@ const CampaignPage: React.FC = () => {
                                                 <Users className="w-4 h-4" />
                                             </button>
                                             <button
+                                                title={camp.status !== 'paused' && camp.status !== 'draft' ? "Pause campaign to edit" : "Edit Campaign"}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (camp.status !== 'paused' && camp.status !== 'draft') {
+                                                        alert("Please pause the campaign first before editing.");
+                                                        return;
+                                                    }
+                                                    setEditCampaignId(camp.id);
+                                                    setShowCreateModal(true);
+                                                }}
+                                                className={`p-2.5 rounded-xl transition-all ${
+                                                    camp.status !== 'paused' && camp.status !== 'draft'
+                                                    ? 'bg-gray-50/50 dark:bg-gray-800/50 text-gray-300 dark:text-gray-600 cursor-not-allowed' 
+                                                    : 'bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
+                                                }`}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                                            </button>
+                                            <button
                                                 title="Restart Campaign"
                                                 onClick={(e) => handleRestartCampaign(e, camp.id, camp.name)}
                                                 className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all"
@@ -511,8 +576,12 @@ const CampaignPage: React.FC = () => {
 
             <CreateCampaignModal
                 isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
+                onClose={() => {
+                    setShowCreateModal(false);
+                    setEditCampaignId(null);
+                }}
                 onSuccess={fetchCampaigns}
+                editCampaignId={editCampaignId}
             />
 
             <CampaignLeadsModal

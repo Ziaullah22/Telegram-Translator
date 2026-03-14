@@ -301,11 +301,17 @@ class CampaignStatus(str, Enum):
     completed = "completed"
     archived = "archived"
 
+class AutoReplyPair(BaseModel):
+    keywords: List[str]
+    reply: str
+    next_step: Optional[int] = None
+
 class CampaignCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     initial_message: str = Field(..., min_length=1)
     negative_keywords: List[str] = Field(default_factory=list)
     kill_switch_enabled: bool = Field(default=True)
+    auto_replies: List[AutoReplyPair] = Field(default_factory=list)
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -313,6 +319,15 @@ class CampaignUpdate(BaseModel):
     status: Optional[CampaignStatus] = None
     negative_keywords: Optional[List[str]] = None
     kill_switch_enabled: Optional[bool] = None
+    auto_replies: Optional[List[AutoReplyPair]] = None
+
+class CampaignFullUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    initial_message: str = Field(..., min_length=1)
+    negative_keywords: List[str] = Field(default_factory=list)
+    kill_switch_enabled: bool = Field(default=True)
+    auto_replies: List[AutoReplyPair] = Field(default_factory=list)
+    steps: List['CampaignStepCreate'] = Field(default_factory=list)
 
 class CampaignResponse(BaseModel):
     id: int
@@ -327,6 +342,7 @@ class CampaignResponse(BaseModel):
     next_reset_at: Optional[datetime] = None
     negative_keywords: List[str] = []
     kill_switch_enabled: bool = True
+    auto_replies: List[AutoReplyPair] = []
     created_at: datetime
     updated_at: datetime
 
@@ -337,6 +353,7 @@ class CampaignStepCreate(BaseModel):
     response_text: str = Field(..., min_length=1)
     keyword_response_text: Optional[str] = None
     next_step: Optional[int] = None
+    auto_replies: List[AutoReplyPair] = Field(default_factory=list)
 
 class CampaignStepUpdate(BaseModel):
     wait_time_hours: Optional[float] = None
@@ -344,6 +361,7 @@ class CampaignStepUpdate(BaseModel):
     response_text: Optional[str] = None
     keyword_response_text: Optional[str] = None
     next_step: Optional[int] = None
+    auto_replies: Optional[List[AutoReplyPair]] = None
 
 class CampaignStepResponse(BaseModel):
     id: int
@@ -354,6 +372,7 @@ class CampaignStepResponse(BaseModel):
     response_text: str
     keyword_response_text: Optional[str] = None
     next_step: Optional[int] = None
+    auto_replies: List[AutoReplyPair] = []
     created_at: datetime
 
 class LeadStatus(str, Enum):

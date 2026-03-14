@@ -1,5 +1,6 @@
 import logging
-from typing import Optional, Dict, Any
+import json
+from typing import Optional, Dict, Any, List, cast
 from database import db
 from telethon_service import telethon_service
 from websocket_manager import manager
@@ -61,10 +62,13 @@ class AutoResponderService:
             campaign_lead = await db.fetchrow(
                 """
                 SELECT l.id, l.campaign_id, l.current_step, l.assigned_account_id,
+                       c.auto_replies as global_auto_replies,
                        s.keywords, s.response_text as step_response, s.keyword_response_text,
+                       s.auto_replies as step_auto_replies,
                        s.wait_time_hours, s.id as step_id, s.next_step as step_next_step,
                        (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = l.campaign_id) as max_step
                 FROM campaign_leads l
+                JOIN campaigns c ON l.campaign_id = c.id
                 JOIN campaign_steps s ON l.campaign_id = s.campaign_id 
                 AND s.step_number = (
                     SELECT MAX(step_number) FROM campaign_steps 
@@ -95,45 +99,96 @@ class AutoResponderService:
                     peer_id, peer_username, account_id
                 )
                 if step0_lead:
-                    # Fetch Step 1 definition for this campaign
-                    step1 = await db.fetchrow(
-                        "SELECT keywords, response_text, keyword_response_text, next_step FROM campaign_steps WHERE campaign_id = $1 AND step_number = 1",
+                    # Fetch campaign info, and optionally Step 1 if it exists
+                    camp_data = await db.fetchrow(
+                        """
+                        SELECT c.auto_replies as global_auto_replies,
+                               s.keywords, s.response_text, s.keyword_response_text, s.next_step, s.auto_replies as step_auto_replies
+                        FROM campaigns c
+                        LEFT JOIN campaign_steps s ON c.id = s.campaign_id AND s.step_number = 1
+                        WHERE c.id = $1
+                        """,
                         step0_lead['campaign_id']
                     )
-                    if step1:
+                    if camp_data:
                         # Build a synthetic campaign_lead object for keyword processing
                         campaign_lead = {
                             'id': step0_lead['id'],
                             'campaign_id': step0_lead['campaign_id'],
                             'current_step': 0,
-                            'max_step': step0_lead['max_step'],
-                            'keywords': step1['keywords'],
-                            'step_response': step1['response_text'],
-                            'keyword_response_text': step1['keyword_response_text'],
-                            'step_next_step': step1['next_step'],
+                            'max_step': step0_lead['max_step'] or 0,
+                            'keywords': camp_data['keywords'],
+                            'step_response': camp_data['response_text'],
+                            'keyword_response_text': camp_data['keyword_response_text'],
+                            'step_next_step': camp_data['next_step'],
+                            'step_auto_replies': camp_data['step_auto_replies'],
+                            'global_auto_replies': camp_data['global_auto_replies']
                         }
 
             if campaign_lead:
-                campaign_lead = dict(campaign_lead)
-            
-            if campaign_lead and campaign_lead['keywords']:
-                import json
+                campaign_lead = cast(Dict[str, Any], dict(campaign_lead))
+                # Use translated text for matching if available (which matched operator's language), otherwise original
+                match_text = message_data.get('translated_text') or message_text
+                message_lower = match_text.lower()
+
+                kw_raw = campaign_lead.get('keywords')
                 try:
-                    keywords_list = json.loads(campaign_lead['keywords']) if isinstance(campaign_lead['keywords'], str) else campaign_lead['keywords']
+                    keywords_list = json.loads(str(kw_raw)) if isinstance(kw_raw, str) else cast(List[Any], kw_raw)
                 except Exception:
                     keywords_list = []
                     
-                message_lower = message_text.lower()
                 matched_camp_keyword = None
                 forced_next_step = None
+                specific_reply = None
 
-                for kw_item in keywords_list:
-                    # kw_item can be a string or a dict {"text": "hi", "next_step": 2}
-                    kw_text = kw_item["text"] if isinstance(kw_item, dict) else kw_item
-                    if kw_text.lower() in message_lower:
-                        matched_camp_keyword = kw_text
-                        forced_next_step = kw_item.get("next_step") if isinstance(kw_item, dict) else None
-                        break
+                # 1. Check Step-Specific multi-replies (PRIORITY 1)
+                step_replies_list = []
+                try:
+                    raw_step_replies = campaign_lead.get('step_auto_replies')
+                    if raw_step_replies:
+                        step_replies_list = json.loads(str(raw_step_replies)) if isinstance(raw_step_replies, str) else raw_step_replies
+                except Exception: pass
+
+                if isinstance(step_replies_list, list):
+                    for pair in step_replies_list:
+                        if not isinstance(pair, dict): continue
+                        for kw in pair.get('keywords', []):
+                            if str(kw).lower() in message_lower:
+                                matched_camp_keyword = str(kw)
+                                specific_reply = pair.get('reply')
+                                forced_next_step = pair.get('next_step')
+                                break
+                        if matched_camp_keyword: break
+
+                # 2. Check Global multi-replies (PRIORITY 2)
+                if not matched_camp_keyword:
+                    global_replies_list = []
+                    try:
+                        raw_global_replies = campaign_lead.get('global_auto_replies')
+                        if raw_global_replies:
+                            global_replies_list = json.loads(str(raw_global_replies)) if isinstance(raw_global_replies, str) else raw_global_replies
+                    except Exception: pass
+
+                    if isinstance(global_replies_list, list):
+                        for pair in global_replies_list:
+                            if not isinstance(pair, dict): continue
+                            for kw in pair.get('keywords', []):
+                                if str(kw).lower() in message_lower:
+                                    matched_camp_keyword = str(kw)
+                                    specific_reply = pair.get('reply')
+                                    forced_next_step = pair.get('next_step')
+                                    break
+                            if matched_camp_keyword: break
+
+                # 3. Fallback to Legacy Keywords (PRIORITY 3)
+                if not matched_camp_keyword:
+                    for kw_item in keywords_list:
+                        # kw_item can be a string or a dict {"text": "hi", "next_step": 2}
+                        kw_text = kw_item["text"] if isinstance(kw_item, dict) else str(kw_item)
+                        if kw_text.lower() in message_lower:
+                            matched_camp_keyword = kw_text
+                            forced_next_step = kw_item.get("next_step") if isinstance(kw_item, dict) else None
+                            break
                 
                 if matched_camp_keyword:
                     # Determine target step
@@ -159,12 +214,16 @@ class AutoResponderService:
                     )
                     
                     # Determine response text priority:
-                    # 1. Keyword Response (AI Box 2) of the step that MATCHED
-                    # 2. Keyword Response of the TARGET step (if jumping)
-                    # 3. Follow-up Text (Box 1) of the TARGET step
-                    # 4. Initial Message (if jumping to 0)
+                    # 1. Specific Reply from the matched pair (NEW)
+                    # 2. Keyword Response (AI Box 2) of the step that MATCHED
+                    # 3. Keyword Response of the TARGET step (if jumping)
+                    # 4. Follow-up Text (Box 1) of the TARGET step
+                    # 5. Initial Message (if jumping to 0)
                     
-                    final_response_text = campaign_lead.get('keyword_response_text')
+                    final_response_text = specific_reply
+                    
+                    if not final_response_text:
+                        final_response_text = campaign_lead.get('keyword_response_text')
                     
                     if not final_response_text and target_step_data:
                         final_response_text = target_step_data.get('keyword_response_text') or target_step_data.get('response_text')
@@ -173,12 +232,13 @@ class AutoResponderService:
                         # Special Case: Loop back to start
                         camp_info = await db.fetchrow("SELECT initial_message FROM campaigns WHERE id = $1", campaign_lead['campaign_id'])
                         final_response_text = camp_info['initial_message'] if camp_info else None
-
+ 
                     if not final_response_text:
                         # Absolute fallback
-                        final_response_text = campaign_lead.get('step_response')
+                        final_response_text = cast(Optional[str], campaign_lead.get('step_response'))
                     
-                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead['id']} said '{matched_camp_keyword}'. Moving to step {target_step_num}.")
+                    final_response_text = cast(Optional[str], final_response_text)
+                    logger.info(f"Campaign Keyword Match! Lead {campaign_lead.get('id')} said '{matched_camp_keyword}'. Moving to step {target_step_num}.")
                     
                     # 1. Prepare translation
                     target_msg_text = final_response_text
@@ -241,9 +301,9 @@ class AutoResponderService:
                     success = await self._send_response(
                         account_id,
                         peer_id,
-                        target_msg_text,
-                        final_response_text,
-                        source_language, 
+                        cast(Optional[str], target_msg_text),
+                        cast(Optional[str], final_response_text),
+                        cast(Optional[str], source_language), 
                         None, None
                     )
                     
@@ -333,11 +393,11 @@ class AutoResponderService:
     # Actually dispatch the automated reply to the contact via Telethon, handling media attachments and database saving
     async def _send_response(
         self,
-        account_id: int,
-        peer_id: int,
-        translated_text: str,
-        original_text: str,
-        source_lang: str,
+        account_id: Any,
+        peer_id: Any,
+        translated_text: Optional[str],
+        original_text: Optional[str],
+        source_lang: Optional[str],
         media_type: Optional[str],
         media_file_path: Optional[str]
     ) -> bool:
@@ -455,9 +515,9 @@ class AutoResponderService:
     # Persist a log record in the database whenever an auto-responder rule successfully fires
     async def _log_trigger(
         self,
-        rule_id: int,
+        rule_id: Any,
         message_data: Dict[str, Any],
-        matched_keyword: str
+        matched_keyword: Optional[str]
     ):
         """Log the auto-responder trigger"""
         try:

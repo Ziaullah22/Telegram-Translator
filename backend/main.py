@@ -105,8 +105,10 @@ async def lifespan(app: FastAPI):
         ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
         ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
         ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS replied_leads INTEGER DEFAULT 0;
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
         ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
         ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS keyword_response_text TEXT;
+        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
         ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
         ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
         """)
@@ -409,6 +411,7 @@ async def lifespan(app: FastAPI):
                             return
 
             # 2. Check for auto-responder matches
+            message_data['translated_text'] = processed_translated
             await auto_responder_service.check_and_respond(
                 message_data,
                 account['user_id']

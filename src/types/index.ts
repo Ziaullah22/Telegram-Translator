@@ -177,6 +177,12 @@ export interface AutoResponderLog {
   triggered_at: string;
 }
 
+export interface AutoReplyPair {
+  keywords: string[];
+  reply: string;
+  next_step?: number | null;
+}
+
 export interface Campaign {
   id: number;
   user_id: number;
@@ -190,6 +196,7 @@ export interface Campaign {
   replied_leads?: number;
   negative_keywords?: string[];
   kill_switch_enabled?: boolean;
+  auto_replies?: AutoReplyPair[];
   created_at: string;
   updated_at: string;
 }
@@ -203,6 +210,7 @@ export interface CampaignStep {
   response_text: string;
   keyword_response_text?: string;
   next_step?: number;
+  auto_replies?: AutoReplyPair[];
   created_at: string;
 }
 

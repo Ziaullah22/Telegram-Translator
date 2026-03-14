@@ -114,6 +114,8 @@ async def migrate():
                     media_mime_type VARCHAR(100),
                     media_file_size BIGINT,
                     media_thumbnail_path TEXT,
+                    media_thumbnail TEXT,
+                    media_duration INTEGER,
                     is_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
                     is_read BOOLEAN NOT NULL DEFAULT FALSE,
                     reply_to_telegram_id BIGINT,
@@ -233,7 +235,9 @@ async def migrate():
                     replied_leads INTEGER DEFAULT 0,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    negative_keywords JSONB DEFAULT '[]'
+                    negative_keywords JSONB DEFAULT '[]',
+                    kill_switch_enabled BOOLEAN DEFAULT TRUE,
+                    auto_replies JSONB DEFAULT '[]'
                 );
 
                 CREATE TABLE IF NOT EXISTS campaign_steps (
@@ -243,7 +247,9 @@ async def migrate():
                     wait_time_hours FLOAT DEFAULT 0,
                     keywords JSONB DEFAULT '[]',
                     response_text TEXT NOT NULL,
+                    keyword_response_text TEXT,
                     next_step INTEGER,
+                    auto_replies JSONB DEFAULT '[]',
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(campaign_id, step_number)
                 );
@@ -288,6 +294,9 @@ async def migrate():
                 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}';
                 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
                 
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_thumbnail TEXT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_duration INTEGER;
+                
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(100);
                 
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
@@ -302,6 +311,14 @@ async def migrate():
 
                 -- ID tracking for bulletproof reply detection
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
+
+                -- Milestone 5: Sequence Builder & Kill Switch & Auto Replies
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
+                ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
+                ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS keyword_response_text TEXT;
+                ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
 
                 -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
                 DO $$
@@ -319,10 +336,6 @@ async def migrate():
                     END IF;
                     ALTER TABLE campaign_logs ADD CONSTRAINT campaign_logs_lead_id_fkey 
                         FOREIGN KEY (lead_id) REFERENCES campaign_leads(id) ON DELETE SET NULL;
-
-                    -- Milestone 5: Sequence Builder & Kill Switch
-                    ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
-                    ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
 
                 END $$;
             """)

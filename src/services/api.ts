@@ -7,7 +7,7 @@
  */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair } from '../types';
 
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
@@ -606,14 +606,30 @@ export const campaignsAPI = {
     initial_message: string; 
     negative_keywords?: string[];
     kill_switch_enabled?: boolean;
+    auto_replies?: AutoReplyPair[];
   }): Promise<Campaign> => {
     const response = await api.post('/campaigns', data);
     return response.data;
   },
 
-  // Update a campaign's settings or status
-  updateCampaign: async (campaignId: number, data: Partial<Campaign>): Promise<Campaign> => {
-    const response = await api.patch(`/campaigns/${campaignId}`, data);
+  // Update a campaign and its steps fully
+  updateCampaignFull: async (campaignId: number, data: {
+    name: string;
+    initial_message: string;
+    negative_keywords: string[];
+    kill_switch_enabled: boolean;
+    auto_replies?: AutoReplyPair[];
+    steps: {
+      step_number: number;
+      wait_time_hours: number;
+      keywords: string[];
+      response_text: string;
+      keyword_response_text?: string;
+      next_step?: number;
+      auto_replies?: AutoReplyPair[];
+    }[];
+  }): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(`/campaigns/${campaignId}`, data);
     return response.data;
   },
 
@@ -635,6 +651,7 @@ export const campaignsAPI = {
     response_text: string;
     keyword_response_text?: string;
     next_step?: number;
+    auto_replies?: AutoReplyPair[];
   }): Promise<CampaignStep> => {
     const response = await api.post(`/campaigns/${campaignId}/steps`, data);
     return response.data;
@@ -648,6 +665,7 @@ export const campaignsAPI = {
     response_text: string;
     keyword_response_text?: string;
     next_step?: number;
+    auto_replies?: AutoReplyPair[];
   }): Promise<CampaignStep> => {
     const response = await api.post(`/campaigns/${campaignId}/steps`, data);
     return response.data;

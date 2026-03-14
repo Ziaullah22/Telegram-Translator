@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, cast
 import io
 import csv
 from datetime import datetime
@@ -12,7 +12,8 @@ from models import (
     CampaignStepResponse,
     CampaignLeadResponse,
     TokenData,
-    CampaignStatus
+    CampaignStatus,
+    CampaignFullUpdate
 )
 import logging
 from campaign_service import campaign_service
@@ -30,8 +31,8 @@ async def create_campaign(
     try:
         row = await db.fetchrow(
             """
-            INSERT INTO campaigns (user_id, name, initial_message, status, negative_keywords, kill_switch_enabled)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO campaigns (user_id, name, initial_message, status, negative_keywords, kill_switch_enabled, auto_replies)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
             """,
             current_user.user_id,
@@ -39,11 +40,14 @@ async def create_campaign(
             campaign.initial_message,
             CampaignStatus.draft,
             json.dumps(campaign.negative_keywords),
-            campaign.kill_switch_enabled
+            campaign.kill_switch_enabled,
+            json.dumps([r.dict() for r in campaign.auto_replies])
         )
         row_dict = dict(row)
         if isinstance(row_dict.get('negative_keywords'), str):
             row_dict['negative_keywords'] = json.loads(row_dict['negative_keywords'])
+        if isinstance(row_dict.get('auto_replies'), str):
+            row_dict['auto_replies'] = json.loads(row_dict['auto_replies'])
         return row_dict
     except Exception as e:
         logger.error(f"Failed to create campaign: {e}")
@@ -65,6 +69,8 @@ async def get_campaigns(
         camp_dict = dict(row)
         if isinstance(camp_dict.get('negative_keywords'), str):
             camp_dict['negative_keywords'] = json.loads(camp_dict['negative_keywords'])
+        if isinstance(camp_dict.get('auto_replies'), str):
+            camp_dict['auto_replies'] = json.loads(camp_dict['auto_replies'])
         hibernation = await campaign_service.get_campaign_hibernation_status(camp_dict['id'], current_user.user_id)
         camp_dict.update(hibernation)
         result.append(camp_dict)
@@ -89,6 +95,8 @@ async def get_campaign(
     camp_dict = dict(row)
     if isinstance(camp_dict.get('negative_keywords'), str):
         camp_dict['negative_keywords'] = json.loads(camp_dict['negative_keywords'])
+    if isinstance(camp_dict.get('auto_replies'), str):
+        camp_dict['auto_replies'] = json.loads(camp_dict['auto_replies'])
     hibernation = await campaign_service.get_campaign_hibernation_status(campaign_id, current_user.user_id)
     camp_dict.update(hibernation)
     return camp_dict
@@ -122,14 +130,14 @@ async def upload_leads(
             if identifier:
                 # Strip out common URL formats
                 if identifier.startswith('https://t.me/'):
-                    identifier = identifier[13:]
+                    identifier = identifier.replace('https://t.me/', '', 1)
                 elif identifier.startswith('http://t.me/'):
-                    identifier = identifier[12:]
+                    identifier = identifier.replace('http://t.me/', '', 1)
                 elif identifier.startswith('t.me/'):
-                    identifier = identifier[5:]
+                    identifier = identifier.replace('t.me/', '', 1)
                     
                 if identifier.startswith('@'):
-                    identifier = identifier[1:]
+                    identifier = identifier.replace('@', '', 1)
                 
                 # Only add if we still have a valid identifier after cleanup
                 if identifier:
@@ -204,8 +212,8 @@ async def add_campaign_step(
     try:
         row = await db.fetchrow(
             """
-            INSERT INTO campaign_steps (campaign_id, step_number, wait_time_hours, keywords, response_text, keyword_response_text, next_step)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO campaign_steps (campaign_id, step_number, wait_time_hours, keywords, response_text, keyword_response_text, next_step, auto_replies)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
             """,
             campaign_id,
@@ -214,11 +222,14 @@ async def add_campaign_step(
             json.dumps(step.keywords),
             step.response_text,
             step.keyword_response_text,
-            step.next_step
+            step.next_step,
+            json.dumps([r.dict() for r in step.auto_replies])
         )
         row_dict = dict(row)
         if isinstance(row_dict.get('keywords'), str):
             row_dict['keywords'] = json.loads(row_dict['keywords'])
+        if isinstance(row_dict.get('auto_replies'), str):
+            row_dict['auto_replies'] = json.loads(row_dict['auto_replies'])
             
         return row_dict
     except Exception as e:
@@ -239,9 +250,17 @@ async def get_campaign_steps(
     import json
     result = []
     for row in rows:
-        d = dict(row)
-        if isinstance(d['keywords'], str):
-            d['keywords'] = json.loads(d['keywords'])
+        d = cast(Dict[str, Any], dict(row))
+        kw = d.get('keywords')
+        if isinstance(kw, str):
+            d['keywords'] = json.loads(kw)
+        
+        ar = d.get('auto_replies')
+        if isinstance(ar, str):
+            d['auto_replies'] = json.loads(ar)
+        elif ar is None:
+            d['auto_replies'] = []
+            
         result.append(d)
         
     return result
@@ -385,3 +404,61 @@ async def delete_campaign(
     except Exception as e:
         logger.error(f"Failed to delete campaign: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete campaign")
+
+@router.put("/{campaign_id}")
+async def update_campaign_full(
+    campaign_id: int,
+    campaign_update: CampaignFullUpdate,
+    current_user: TokenData = Depends(get_current_user)
+):
+    campaign = await db.fetchrow(
+        "SELECT id FROM campaigns WHERE id = $1 AND user_id = $2",
+        campaign_id,
+        current_user.user_id
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    import json
+    try:
+        # Update main campaign fields
+        await db.execute(
+            """
+            UPDATE campaigns 
+            SET name = $1, initial_message = $2, negative_keywords = $3, 
+                kill_switch_enabled = $4, auto_replies = $5
+            WHERE id = $6
+            """,
+            campaign_update.name,
+            campaign_update.initial_message,
+            json.dumps(campaign_update.negative_keywords),
+            campaign_update.kill_switch_enabled,
+            json.dumps([r.dict() for r in campaign_update.auto_replies]),
+            campaign_id
+        )
+
+        # Recreate steps (easiest way to handle updates without complex matching)
+        await db.execute("DELETE FROM campaign_steps WHERE campaign_id = $1", campaign_id)
+
+        for step in campaign_update.steps:
+            await db.execute(
+                """
+                INSERT INTO campaign_steps (
+                    campaign_id, step_number, wait_time_hours, keywords, 
+                    response_text, keyword_response_text, next_step, auto_replies
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """,
+                campaign_id,
+                step.step_number,
+                step.wait_time_hours,
+                json.dumps(step.keywords),
+                step.response_text,
+                step.keyword_response_text,
+                step.next_step,
+                json.dumps([r.dict() for r in step.auto_replies])
+            )
+
+        return {"success": True, "message": "Campaign updated successfully"}
+    except Exception as e:
+        logger.error(f"Failed to update campaign {campaign_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update campaign")
