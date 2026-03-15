@@ -128,7 +128,7 @@ const KeywordReplyManager = ({ items, onChange, title, description, showTitle = 
                 </div>
             )}
             
-            <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {items.map((item, i) => (
                     <div key={i} className="bg-white dark:bg-white/5 p-6 rounded-[32px] border-2 border-gray-100 dark:border-white/10 flex flex-col gap-5 group relative shadow-sm">
                         <div className="absolute -top-3 -left-3 w-9 h-9 rounded-full bg-purple-600 text-white flex items-center justify-center font-black text-xs shadow-lg ring-4 ring-purple-600/20">
@@ -199,7 +199,7 @@ const KeywordReplyManager = ({ items, onChange, title, description, showTitle = 
                 
                 <button 
                     onClick={() => onChange([...items, { keywords: '', reply: '', next_step: null }])}
-                    className="flex items-center justify-center gap-3 py-6 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-[32px] text-xs font-black text-gray-400 uppercase tracking-[0.2em] hover:border-purple-400 hover:text-purple-600 transition-all bg-gray-50/50 dark:bg-transparent hover:scale-[1.01] active:scale-[0.99]"
+                    className="md:col-span-2 flex items-center justify-center gap-3 py-6 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-[32px] text-xs font-black text-gray-400 uppercase tracking-[0.2em] hover:border-purple-400 hover:text-purple-600 transition-all bg-gray-50/50 dark:bg-transparent hover:scale-[1.01] active:scale-[0.99]"
                 >
                     <Plus className="w-5 h-5" />
                     Add Keyword Response Rule
@@ -457,29 +457,40 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex flex-col bg-white dark:bg-[#1a222c] animate-fade-in">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-0">
+            {/* ── BACKDROP ── */}
+            <div 
+                className="absolute inset-0 bg-black/60 animate-fade-in" 
+                onClick={onClose}
+            />
 
-            {/* ── HEADER ── */}
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-6 lg:px-8 py-5 shrink-0 shadow-lg">
-                <div className="max-w-6xl mx-auto w-full flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 shadow-xl shrink-0">
-                            <Rocket className="w-5 h-5" />
+            {/* ── MODAL CONTAINER ── */}
+            <div className="relative w-full h-full flex flex-col bg-white dark:bg-[#1a222c] overflow-hidden animate-fade-in">
+
+                {/* ── HEADER ── */}
+                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-8 py-3 shrink-0 shadow-lg z-20">
+                    <div className="w-full flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 shadow-xl shrink-0">
+                                <Rocket className="w-5 h-5" />
+                            </div>
+                            <div className="flex flex-col">
+                                <h2 className="text-xl font-black text-white tracking-tight leading-none uppercase">Create Campaign</h2>
+                                <p className="text-blue-100 font-bold uppercase text-[9px] tracking-[0.2em] leading-none mt-1">New Strategic Outreach</p>
+                            </div>
                         </div>
-                        <div className="flex flex-col">
-                            <h2 className="text-2xl font-black text-white tracking-tight leading-none">Create a Campaign</h2>
-                            <p className="text-blue-100 font-bold uppercase text-[10px] tracking-widest leading-none mt-1">Campaign Builder</p>
-                        </div>
+                        <button 
+                            onClick={onClose} 
+                            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all hover:rotate-90"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="text-white/60 hover:text-white transition-colors shrink-0">
-                        <X className="w-6 h-6" />
-                    </button>
                 </div>
-            </div>
 
-            {/* ── SCROLLABLE BODY ── */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50 dark:bg-[#0f172a]">
-                <div className="max-w-6xl mx-auto w-full px-6 lg:px-8 py-8">
+                {/* ── BODY ── */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]">
+                    <div className="w-full px-[8%] py-6">
 
                     {/* Progress Bar — 4 equal segments */}
                     <div className="flex items-center gap-3 mb-10">
@@ -553,12 +564,12 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 <p className="text-sm text-gray-400 italic">This message will be sent automatically to every person on your list.</p>
                             </div>
 
-                            <div className="flex justify-end mt-4">
+                            <div className="flex justify-end pt-8 border-t border-gray-100 dark:border-white/5">
                                 <button
                                     onClick={() => (name && initialMessage) ? setStep(editCampaignId ? 3 : 2) : setError("Please give your campaign a name and write a first message!")}
-                                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20"
+                                    className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-[20px] font-black uppercase tracking-widest text-sm transition-all shadow-xl shadow-blue-600/30 hover:scale-[1.02] active:scale-[0.98]"
                                 >
-                                    {editCampaignId ? "Next: Configure Follow-ups →" : "Next: Who should the campaign talk to? →"}
+                                    {editCampaignId ? "Configure Follow-ups →" : "Add Target Audience →"}
                                 </button>
                             </div>
                         </div>
@@ -598,19 +609,19 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-center gap-4 pt-8 border-t border-gray-100 dark:border-white/5">
                                 <button
                                     onClick={() => setStep(1)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
+                                    className="w-60 py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-[20px] font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-100 dark:hover:bg-white/5"
                                 >
                                     ← Back
                                 </button>
                                 <button
                                     disabled={!csvFile}
                                     onClick={() => setStep(3)}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-600/20"
+                                    className="w-80 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-[20px] font-black uppercase tracking-widest text-sm transition-all shadow-xl shadow-blue-600/30 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                                 >
-                                    Next: Teach the campaign how to reply →
+                                    Build Follow-up Strategy →
                                 </button>
                             </div>
                         </div>
@@ -674,7 +685,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                         </div>
                                                     </div>
 
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                                                    <div className="flex flex-col gap-10">
                                                         <div className="flex flex-col gap-4">
                                                             <div className="flex items-center gap-2 text-gray-400">
                                                                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -716,10 +727,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             )}
 
                             {/* Sticky bottom bar for Step 3 */}
-                            <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1a222c] border-t-2 border-gray-100 dark:border-white/5 pt-4 pb-6 flex items-center gap-4 z-10">
+                            <div className="sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 py-2.5 px-10 flex items-center justify-center gap-4 z-40 -mx-[8%] -mb-6">
                                 <button
                                     onClick={() => setStep(editCampaignId ? 1 : 2)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
+                                    className="w-60 py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-[22px] font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-100 dark:hover:bg-white/5"
                                 >
                                     ← Back
                                 </button>
@@ -728,10 +739,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         setSteps(prev => [...prev, { step_number: prev.length + 1, wait_days: 0, wait_hours: 0, wait_minutes: 0, keywords: '', response_text: '', keyword_response_text: '' }]);
                                         setTimeout(() => newCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
                                     }}
-                                    className="shrink-0 flex items-center gap-2 px-6 py-4 bg-white dark:bg-white/5 border-2 border-blue-500 text-blue-600 dark:text-blue-400 rounded-xl font-black uppercase tracking-widest text-sm hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all shadow-lg"
+                                    className="shrink-0 flex items-center gap-2 px-8 py-4 bg-transparent border-2 border-blue-500 text-blue-600 dark:text-blue-400 rounded-[22px] font-black uppercase tracking-[0.2em] text-[11px] hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all shadow-lg"
                                 >
                                     <span className="text-xl leading-none font-black">+</span>
-                                    <span>Add Follow-up</span>
+                                    <span>Add Step</span>
                                 </button>
                                 <button
                                     onClick={() => {
@@ -746,9 +757,9 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         setFailedStepIdx(null);
                                         setStep(4);
                                     }}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-blue-600/20"
+                                    className="w-80 py-4 bg-blue-600 text-white rounded-[22px] font-black uppercase tracking-[0.2em] text-[11px] hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl shadow-blue-600/40"
                                 >
-                                    Next: Check everything & save →
+                                    Next: Review & Save →
                                 </button>
                             </div>
                         </div>
@@ -820,13 +831,14 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
 
-                                {/* Left Side: Editable Stats */}
-                                <div className="lg:col-span-1 flex flex-col gap-6">
-                                    <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-2xl shadow-blue-600/30 flex flex-col gap-6">
+                            <div className="flex flex-col gap-8">
 
-                                        {/* Campaign Name — Editable */}
+                                {/* Top Stats Bar — Full Width, Horizontal */}
+                                <div className="bg-blue-600 rounded-2xl p-4 text-white shadow-2xl shadow-blue-600/30">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
+
+                                        {/* Campaign Name */}
                                         <div className="flex flex-col gap-1">
                                             <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Campaign Name</span>
                                             {isEditingAll ? (
@@ -836,92 +848,55 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                     className="w-full bg-white/10 border border-white/30 rounded-xl px-3 py-2 text-white font-bold text-base outline-none focus:border-white/60 placeholder-white/40"
                                                 />
                                             ) : (
-                                                <p className="text-2xl font-black break-all leading-tight">{name}</p>
+                                                <p className="text-xl font-black break-all leading-tight">{name}</p>
                                             )}
                                         </div>
 
-                                        <div className="h-px bg-white/20" />
-
-                                        {/* File info */}
-                                        <div className="flex items-start gap-4">
-                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileText className="w-6 h-6 text-white" /></div>
-                                            <div className="flex flex-col gap-1 min-w-0 flex-1 pt-1">
-                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none truncate block">Target Audience</span>
-                                                <span className="text-lg font-bold break-all leading-tight block">{editCampaignId ? "Active Campaign Leads" : csvFile?.name}</span>
+                                        {/* Target Audience */}
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Target Audience</span>
+                                            <div className="flex items-center gap-2">
+                                                <FileText className="w-5 h-5 text-blue-200 shrink-0" />
+                                                <span className="text-lg font-bold break-all leading-tight">{editCampaignId ? "Active Campaign Leads" : csvFile?.name}</span>
                                             </div>
                                         </div>
 
-                                        {/* Steps count */}
-                                        <div className="flex items-center gap-4 mt-2">
-                                            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><Zap className="w-6 h-6 text-white" /></div>
-                                            <div className="flex flex-col gap-1 min-w-0 flex-1">
-                                                <span className="text-xs font-black text-blue-200 uppercase tracking-widest leading-none truncate block">Total Message Sequence</span>
-                                                <span className="text-lg font-bold block">{steps.length} follow-up step{steps.length !== 1 ? 's' : ''}</span>
+                                        {/* Total Steps */}
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Total Message Sequence</span>
+                                            <div className="flex items-center gap-2">
+                                                <Zap className="w-5 h-5 text-blue-200 shrink-0" />
+                                                <span className="text-lg font-bold">{steps.length} follow-up step{steps.length !== 1 ? 's' : ''}</span>
                                             </div>
                                         </div>
-                                    </div>
 
-
-                                    {/* Safety Words — Editable */}
-                                    <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <ShieldOff className="w-4 h-4 text-red-500" />
-                                            <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Stop Words</span>
-                                        </div>
-                                        {isEditingAll ? (
-                                            <input
-                                                value={negativeKeywords}
-                                                onChange={e => setNegativeKeywords(e.target.value)}
-                                                placeholder="e.g. stop, no thanks"
-                                                className="w-full bg-gray-50 dark:bg-white/5 border-2 border-red-300 dark:border-red-500/40 rounded-2xl px-4 py-3 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-red-500 transition-all"
-                                            />
-                                        ) : (
-                                            <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
-                                                <p className="text-sm font-bold text-red-600 dark:text-red-400 leading-relaxed italic">
+                                        {/* Stop Words */}
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <ShieldOff className="w-3.5 h-3.5 text-red-300" />
+                                                <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Stop Words</span>
+                                            </div>
+                                            {isEditingAll ? (
+                                                <input
+                                                    value={negativeKeywords}
+                                                    onChange={e => setNegativeKeywords(e.target.value)}
+                                                    placeholder="e.g. stop, no thanks"
+                                                    className="w-full bg-white/10 border border-white/30 rounded-xl px-3 py-2 text-white font-bold text-sm outline-none focus:border-white/60 placeholder-white/40"
+                                                />
+                                            ) : (
+                                                <p className="text-sm font-bold text-blue-100 italic leading-snug">
                                                     {killSwitchEnabled
-                                                        ? `Stops if lead says: "${negativeKeywords || 'No stop words set yet'}"`
+                                                        ? `"${negativeKeywords || 'No stop words set yet'}"`
                                                         : 'Stop words are disabled.'}
                                                 </p>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Global Auto-Replies Summary/Edit */}
-                                    <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <Zap className="w-4 h-4 text-orange-500" />
-                                            <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Global Auto-Replies</span>
+                                            )}
                                         </div>
-                                        {isEditingAll ? (
-                                            <KeywordReplyManager 
-                                                title="Edit Global Rules"
-                                                description="These apply to all messages."
-                                                items={globalAutoReplies}
-                                                onChange={setGlobalAutoReplies}
-                                            />
-                                        ) : (
-                                            <div className="flex flex-col gap-3">
-                                                {globalAutoReplies.length === 0 ? (
-                                                    <p className="text-[11px] font-bold text-gray-400 italic">No global rules defined.</p>
-                                                ) : (
-                                                    globalAutoReplies.map((r, i) => (
-                                                        <div key={i} className="flex flex-col gap-1 border-b border-gray-100 dark:border-white/5 pb-2 last:border-0">
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {r.keywords.map((kw: string, ki: number) => (
-                                                                    <span key={ki} className="text-[9px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded uppercase">{kw}</span>
-                                                                ))}
-                                                            </div>
-                                                            <p className="text-[11px] text-gray-500 italic line-clamp-2">"{r.reply}"</p>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        )}
+
                                     </div>
                                 </div>
 
-                                {/* Right Side: Message Timeline */}
-                                <div className="lg:col-span-2 flex flex-col gap-6">
+                                {/* Message Timeline — Full Width */}
+                                <div className="flex flex-col gap-6">
 
                                     {/* The Opening Message — Editable inline */}
                                     <div className="flex gap-6">
@@ -935,7 +910,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                             <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
                                                 <div className="flex items-center justify-between mb-4">
                                                     <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Initial Greeting</span>
-                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Instant Delivery</span>
+                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Send Instantly</span>
                                                 </div>
                                                 {isEditingAll ? (
                                                     <textarea
@@ -1014,10 +989,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                     </button>
                                                         </div>
 
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-px items-stretch flex-1 bg-gray-100 dark:bg-white/5">
+                                                        <div className="flex flex-col items-stretch flex-1 bg-gray-100 dark:bg-white/5">
 
                                                             {/* Path A: Fallback */}
-                                                            <div className="p-6 bg-white dark:bg-black/20 flex flex-col gap-3">
+                                                            <div className="p-6 bg-white dark:bg-black/20 flex flex-col gap-3 border-b border-gray-100 dark:border-white/5">
                                                                 <div className="flex items-center gap-2">
                                                                     <div className="w-6 h-6 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center border border-blue-100 dark:border-blue-800/50">
                                                                         <AlertCircle className="w-3 h-3 text-blue-600" />
@@ -1033,7 +1008,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                     />
                                                                 ) : (
                                                                     <div className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5 text-left">
-                                                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-200 break-words leading-relaxed line-clamp-3">
+                                                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-200 break-words leading-relaxed">
                                                                             "{s.response_text || 'No message set'}"
                                                                         </p>
                                                                     </div>
@@ -1059,12 +1034,14 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                                 n[idx].auto_replies = newItems;
                                                                                 setSteps(n);
                                                                             }}
+                                                                            totalSteps={steps.length}
+                                                                            currentStep={idx + 1}
                                                                         />
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="flex flex-col gap-3">
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                         {(!s.auto_replies || s.auto_replies.length === 0) && (
-                                                                            <div className="px-5 py-4 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/5">
+                                                                            <div className="md:col-span-2 px-5 py-4 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/5">
                                                                                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest italic text-center">No keyword rules defined</p>
                                                                             </div>
                                                                         )}
@@ -1135,22 +1112,22 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             </div>
 
                             {/* Final Launch Button Fixed at Bottom */}
-                            <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1a222c] border-t-2 border-gray-100 dark:border-white/5 pt-4 pb-6 flex items-center gap-4 z-20">
+                            <div className="sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 py-2.5 px-10 flex items-center justify-center gap-4 z-40 -mx-[8%] -mb-6">
                                 <button
                                     onClick={() => setStep(1)}
-                                    className="flex-1 py-4 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-xl font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-200 dark:hover:bg-white/10"
+                                    className="w-60 py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-[22px] font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-100 dark:hover:bg-white/5"
                                 >
                                     ← Edit Campaign
                                 </button>
                                 <button
                                     disabled={isSubmitting}
                                     onClick={handleSubmit}
-                                    className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-3"
+                                    className="w-80 py-4 bg-blue-600 text-white rounded-[22px] font-black uppercase tracking-[0.2em] text-[11px] hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl shadow-blue-600/40 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
                                     {isSubmitting ? (
                                         <>
                                             <Loader2 className="w-6 h-6 animate-spin shrink-0" />
-                                            <span>{editCampaignId ? "Saving..." : "Building..."}</span>
+                                            <span>{editCampaignId ? "Saving Changes..." : "Launching..."}</span>
                                         </>
                                     ) : (
                                         <>
@@ -1411,6 +1388,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 </div>
             )}
         </div>
+    </div>
     );
 };
 

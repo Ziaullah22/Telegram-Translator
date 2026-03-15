@@ -235,30 +235,36 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                                             <div className="absolute -right-8 -bottom-8 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
                                         </div>
 
-                                        {/* Recent Activity Mini-Feed */}
+                                        {/* Strategic Sequence Funnel */}
                                         <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] border border-gray-100 dark:border-white/5 p-6 shadow-sm overflow-hidden flex flex-col">
                                             <div className="flex items-center justify-between mb-4">
-                                                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Recent Activity</h3>
-                                                <button 
-                                                    onClick={() => setActiveTab('leads')}
-                                                    className="text-[10px] font-bold text-blue-500 hover:underline"
-                                                >
-                                                    View All
-                                                </button>
+                                                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Strategic Funnel</h3>
+                                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-500/10 px-2 py-0.5 rounded-lg">Live Accuracy</span>
                                             </div>
-                                            <div className="space-y-4 flex-1">
-                                                {(analytics.recent_activity || []).slice(0, 4).map((log: any, i: number) => (
-                                                    <div key={i} className="flex gap-3">
-                                                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                                                            log.action === 'keyword_reply' ? 'bg-green-500' : 'bg-blue-500'
-                                                        }`} />
-                                                        <div>
-                                                            <p className="text-xs font-black text-gray-900 dark:text-white leading-tight">
-                                                                @{log.telegram_identifier} <span className="text-gray-400 font-bold">{log.action === 'keyword_reply' ? 'Replied' : 'Sent'}</span>
-                                                            </p>
-                                                            <p className="text-[10px] text-gray-400 font-medium truncate max-w-[200px]">{log.details}</p>
+                                            <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                                                {(analytics.step_performance || []).map((step: any, i: number) => (
+                                                    <div key={i} className="group">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-tight">{step.label}</span>
+                                                                {step.reply_count > 0 && (
+                                                                    <span className="text-[9px] font-black text-green-500 uppercase tracking-tighter bg-green-500/10 px-1.5 rounded">+{step.reply_count} Replies</span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] font-black text-gray-400">{step.reached_count} Users</span>
                                                         </div>
-                                                        <span className="ml-auto text-[10px] text-gray-300 font-bold">{formatTimeOnly(log.created_at)}</span>
+                                                        <div className="w-full h-1.5 bg-gray-100 dark:bg-black/20 rounded-full overflow-hidden">
+                                                            <div 
+                                                                className={`h-full transition-all duration-1000 ${
+                                                                    i === 0 ? 'bg-blue-500' : 'bg-indigo-500'
+                                                                }`}
+                                                                style={{ 
+                                                                    width: `${analytics.summary.total_leads > 0 
+                                                                        ? (step.reached_count / analytics.summary.total_leads * 100) 
+                                                                        : 0}%` 
+                                                                }}
+                                                            />
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>

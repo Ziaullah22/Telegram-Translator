@@ -122,8 +122,11 @@ class CampaignService:
             )
             
             if not has_active_leads:
-                logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}) has zero active leads left. Marking as COMPLETED.")
-                await db.execute("UPDATE campaigns SET status = 'completed' WHERE id = $1", campaign_id)
+                # Double check: are there ANY leads at all?
+                total_leads = await db.fetchval("SELECT COUNT(*) FROM campaign_leads WHERE campaign_id = $1", campaign_id)
+                if total_leads > 0:
+                    logger.info(f"Campaign '{campaign['name']}' (ID: {campaign_id}) has no active leads left (all failed/completed). Marking campaign as COMPLETED.")
+                    await db.execute("UPDATE campaigns SET status = 'completed' WHERE id = $1", campaign_id)
                 continue
 
             # Get all active accounts for this user
@@ -262,12 +265,24 @@ class CampaignService:
 
                 # 4. Global Safety Check (for Step 0 only, and ONLY for brand new strangers)
                 if current_step == 0 and lead.get('telegram_id') is None:
-                    already_contacted = await db.fetchval(
-                        "SELECT EXISTS(SELECT 1 FROM campaign_leads WHERE telegram_identifier = $1 AND status IN ('contacted', 'replied', 'completed') AND id != $2)",
+                    # New Logic: Only skip if the lead is currently active/running in another campaign.
+                    # This allows users to re-run outreach to the same leads in separate campaign tests.
+                    already_active = await db.fetchval(
+                        """
+                        SELECT EXISTS(
+                            SELECT 1 FROM campaign_leads cl
+                            JOIN campaigns c ON cl.campaign_id = c.id
+                            WHERE cl.telegram_identifier = $1 
+                            AND cl.status IN ('pending', 'contacted', 'replied') 
+                            AND c.status = 'running'
+                            AND cl.id != $2
+                        )
+                        """,
                         lead['telegram_identifier'], lead['id']
                     )
-                    if already_contacted:
-                        await db.execute("UPDATE campaign_leads SET status = 'completed', failure_reason = 'Already contacted globally' WHERE id = $1", lead['id'])
+                    if already_active:
+                        logger.info(f"Skipping lead {lead['telegram_identifier']} - currently being handled by another active campaign.")
+                        await db.execute("UPDATE campaign_leads SET status = 'completed', failure_reason = 'Active in another campaign' WHERE id = $1", lead['id'])
                         continue
 
                 # 5. Process the Message
