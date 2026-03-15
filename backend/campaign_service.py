@@ -370,6 +370,12 @@ class CampaignService:
                         }, account_id, account['user_id'])
                         
                         logger.info(f"Synced campaign message to local history for account {account_id}")
+                        
+                        # --- REAL-TIME ANALYTICS PUSH ---
+                        await manager.send_personal_message({
+                            "type": "campaign_stats_update",
+                            "campaign_id": campaign_id
+                        }, account['user_id'])
                     except Exception as sync_err:
                         logger.error(f"Failed to sync campaign message to history: {sync_err}")
 

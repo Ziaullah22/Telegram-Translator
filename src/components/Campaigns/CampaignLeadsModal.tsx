@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Users, Search, Smartphone, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import type { Campaign, CampaignLead } from '../../types';
 
 interface CampaignLeadsModalProps {
@@ -13,34 +14,25 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
     const [leads, setLeads] = useState<CampaignLead[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const { onMessage } = useSocket();
 
     useEffect(() => {
         if (isOpen && campaign) {
             fetchLeads();
 
             // Listen for updates via WebSocket
-            const handleWebSocketMessage = (event: MessageEvent) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    // Refresh if a message arrives or stats change (with a 500ms safety buffer)
-                    if (data.type === 'new_message' || data.type === 'campaign_stats_update') {
-                        setTimeout(() => fetchLeads(), 500);
-                    }
-                } catch (err) { }
-            };
-
-            const socket = (window as any).socket;
-            if (socket) {
-                socket.addEventListener('message', handleWebSocketMessage);
-            }
+            const unsubscribe = onMessage((data: any) => {
+                // Refresh if a message arrives or stats change (with a 500ms safety buffer)
+                if (data.type === 'new_message' || data.type === 'campaign_stats_update') {
+                    setTimeout(() => fetchLeads(), 500);
+                }
+            });
 
             return () => {
-                if (socket) {
-                    socket.removeEventListener('message', handleWebSocketMessage);
-                }
+                unsubscribe();
             };
         }
-    }, [isOpen, campaign]);
+    }, [isOpen, campaign, onMessage]);
 
     const fetchLeads = async () => {
         if (!campaign) return;

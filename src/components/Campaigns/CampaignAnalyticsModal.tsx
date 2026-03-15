@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     BarChart3, Clock, Target, MessageSquare, TrendingUp, 
     Users, Activity, Zap, X, AlertCircle
 } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 
 const formatDate = (date: string | Date) => {
     if (!date) return 'N/A';
@@ -42,24 +43,52 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
     const [selectedLeadData, setSelectedLeadData] = useState<any>(null);
     const [leadHistory, setLeadHistory] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const chatContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (isOpen && campaignId) {
-            fetchAnalytics();
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTo({
+                top: chatContainerRef.current.scrollHeight,
+                behavior: 'smooth'
+            });
         }
-    }, [isOpen, campaignId]);
+    }, [leadHistory]);
 
-    const fetchAnalytics = async () => {
+    const { onMessage } = useSocket();
+
+    const fetchAnalytics = React.useCallback(async () => {
+        if (!campaignId) return;
         try {
-            setIsLoading(true);
-            const data = await campaignsAPI.getCampaignAnalytics(campaignId!);
+            const data = await campaignsAPI.getCampaignAnalytics(campaignId);
             setAnalytics(data);
         } catch (error) {
             console.error('Failed to fetch campaign analytics:', error);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [campaignId]);
+
+    useEffect(() => {
+        if (isOpen && campaignId) {
+            fetchAnalytics();
+
+            // --- REAL-TIME LIVE UPDATES ---
+            const unsubscribe = onMessage((data: any) => {
+                const isNewMessage = data.type === 'new_message';
+                const isStatsUpdate = data.type === 'campaign_stats_update';
+                const isCorrectCampaign = !data.campaign_id || Number(data.campaign_id) === Number(campaignId);
+
+                if ((isNewMessage || isStatsUpdate) && isCorrectCampaign) {
+                    // Small buffer to let the backend finish DB writes
+                    setTimeout(() => fetchAnalytics(), 800);
+                }
+            });
+
+            return () => {
+                unsubscribe();
+            };
+        }
+    }, [isOpen, campaignId, fetchAnalytics, onMessage]);
 
     const handleViewLeadHistory = async (leadID: number) => {
         try {
@@ -252,9 +281,8 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                                             <tr className="bg-gray-50/50 dark:bg-black/20 border-b border-gray-100 dark:border-white/5">
                                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Lead Identifier</th>
                                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Step</th>
-                                                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Reply Text</th>
+                                                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Last Message (Translated)</th>
                                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Resp. Time</th>
-                                                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 dark:divide-white/5">
@@ -270,49 +298,28 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                                                         <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-500 text-[10px] font-black rounded-lg">Step {lead.step_number}</span>
                                                      </td>
                                                     <td className="px-6 py-4 max-w-[300px]">
-                                                        <div className="space-y-1">
-                                                            <div className="flex flex-col gap-2 py-1">
-                                                                <div className="space-y-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[9px] font-black text-blue-500 uppercase shrink-0 min-w-[50px]">Original:</span>
-                                                                        <p className="text-[10px] text-gray-500 font-medium line-clamp-1 italic">
-                                                                            {lead.sent_original || lead.sent_text || 'Initial Message'}
-                                                                        </p>
-                                                                    </div>
-                                                                    {(lead.sent_translated && (lead.sent_original || lead.sent_text)) && (
-                                                                        <div className="flex items-center gap-2 opacity-70">
-                                                                            <span className="text-[8px] font-black text-blue-400 uppercase shrink-0 min-w-[50px]">Translated:</span>
-                                                                            <p className="text-[9px] text-blue-400 font-medium line-clamp-1">
-                                                                                {lead.sent_translated}
-                                                                            </p>
-                                                                        </div>
+                                                        {(() => {
+                                                            const isReplyNewer = lead.reply_at && (!lead.sent_at || new Date(lead.reply_at) > new Date(lead.sent_at));
+                                                            const lastTranslated = isReplyNewer 
+                                                                ? (lead.reply_translated || lead.reply_original) 
+                                                                : (lead.sent_translated || lead.sent_text);
+                                                            const lastTime = isReplyNewer ? lead.reply_at : lead.sent_at;
+                                                            return (
+                                                                <div className="flex flex-col gap-1">
+                                                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200 line-clamp-2 leading-tight">
+                                                                        {lastTranslated || 'No message'}
+                                                                    </p>
+                                                                    {lastTime && (
+                                                                        <span className="text-[10px] text-gray-400 font-medium">
+                                                                            {formatDate(lastTime)}
+                                                                        </span>
                                                                     )}
                                                                 </div>
-
-                                                                <div className="space-y-1 pl-2 border-l-2 border-green-500/20">
-                                                                    <div className="flex items-start gap-2">
-                                                                        <span className="text-[9px] font-black text-green-500 uppercase shrink-0 min-w-[50px]">Original:</span>
-                                                                        <p className="text-[11px] text-gray-600 dark:text-gray-200 font-bold leading-tight line-clamp-2">
-                                                                            {lead.reply_original || 'No reply text'}
-                                                                        </p>
-                                                                    </div>
-                                                                    {(lead.reply_original && lead.reply_translated) && (
-                                                                        <div className="flex items-start gap-2 opacity-70">
-                                                                            <span className="text-[8px] font-black text-green-600 uppercase shrink-0 min-w-[50px]">Translated:</span>
-                                                                            <p className="text-[10px] text-green-600 font-medium italic leading-tight">
-                                                                                {lead.reply_translated}
-                                                                            </p>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <span className="text-xs font-bold text-blue-500">{formatDuration(lead.response_time_seconds)}</span>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className="text-[10px] text-gray-400 font-medium">{formatDate(lead.responded_at)}</span>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -367,7 +374,10 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                         </div>
 
                         {/* History Messages */}
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gray-50/30 dark:bg-black/10">
+                        <div 
+                            ref={chatContainerRef}
+                            className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gray-50/30 dark:bg-black/10"
+                        >
                             {isHistoryLoading ? (
                                 <div className="flex flex-col items-center justify-center py-20">
                                     <div className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4" />
@@ -403,12 +413,12 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                                                                 : 'border-gray-100 dark:border-white/5'
                                                             }`}>
                                                                 <div className={`text-[9px] font-black uppercase tracking-widest mb-1 ${
-                                                                    msg.is_outgoing ? 'text-white/50' : 'text-indigo-400'
+                                                                    msg.is_outgoing ? 'text-white/50' : 'text-gray-400'
                                                                 }`}>
                                                                     Translated
                                                                 </div>
-                                                                <div className={`text-sm italic opacity-90 ${
-                                                                    msg.is_outgoing ? 'text-indigo-100' : 'text-indigo-500 dark:text-indigo-400'
+                                                                <div className={`text-sm opacity-90 ${
+                                                                    msg.is_outgoing ? 'text-white' : 'text-gray-900 dark:text-white'
                                                                 }`}>
                                                                     {msg.translated_text}
                                                                 </div>

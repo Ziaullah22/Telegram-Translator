@@ -324,6 +324,13 @@ class AutoResponderService:
                             "INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details) VALUES ($1, $2, $3, 'keyword_reply', $4)",
                             campaign_lead['campaign_id'], campaign_lead['id'], account_id, f"Auto-replied to keyword: {matched_camp_keyword}. Moved to Step {next_followup_step}"
                         )
+                        
+                        # --- REAL-TIME ANALYTICS PUSH ---
+                        await manager.send_personal_message({
+                            "type": "campaign_stats_update",
+                            "campaign_id": campaign_lead['campaign_id']
+                        }, (await db.fetchval("SELECT user_id FROM telegram_accounts WHERE id = $1", account_id)))
+                        
                         return True
 
             # 2. Check each global rule for a match

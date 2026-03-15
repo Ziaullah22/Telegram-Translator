@@ -1,15 +1,19 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import Cookies from 'js-cookie';
 import { useAuth } from './useAuth';
 
+// --- SINGLETON SOCKET STATE ---
+// We keep these outside the hook so that multiple components calling useSocket()
+// share the same connection and message bus, instead of opening many sockets.
+let globalWs: WebSocket | null = null;
+let globalHandlers: Set<(data: any) => void> = new Set();
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let reconnectAttemptsGlobal = 0;
+
 export function useSocket() {
   const { isAuthenticated, token: authContextToken } = useAuth();
-  const wsRef = useRef<WebSocket | null>(null);
-  const messageHandlers = useRef<Set<(data: any) => void>>(new Set());
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
   const connect = useCallback(() => {
@@ -19,27 +23,27 @@ export function useSocket() {
     // Use token from context or fallback to cookie
     const token = authContextToken || Cookies.get('auth_token');
 
-    if (!token) {
-      // If we think we're authenticated but have no token, don't spam the console on login page
-      return;
-    }
+    if (!token) return;
 
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
-      return; // Already connected or connecting
+    if (globalWs?.readyState === WebSocket.OPEN || globalWs?.readyState === WebSocket.CONNECTING) {
+      setIsConnected(true);
+      return; 
     }
 
     try {
-      // DEBUG: console.log('Attempting WebSocket connection...');
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`);
+
+      // Expose globally for legacy components (CampaignLeadsModal, etc.)
+      (window as any).socket = ws;
 
       ws.onopen = () => {
         console.log('WebSocket connected successfully');
         setIsConnected(true);
-        reconnectAttempts.current = 0;
+        reconnectAttemptsGlobal = 0;
 
         // Start heartbeat
-        heartbeatIntervalRef.current = setInterval(() => {
+        heartbeatInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }));
           }
@@ -49,7 +53,7 @@ export function useSocket() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          messageHandlers.current.forEach(handler => handler(data));
+          globalHandlers.forEach(handler => handler(data));
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
@@ -63,22 +67,23 @@ export function useSocket() {
       ws.onclose = (event) => {
         console.log('WebSocket disconnected', event.code, event.reason);
         setIsConnected(false);
-        wsRef.current = null;
+        globalWs = null;
+        (window as any).socket = null;
 
         // Clear heartbeat
-        if (heartbeatIntervalRef.current) {
-          clearInterval(heartbeatIntervalRef.current);
-          heartbeatIntervalRef.current = null;
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
         }
 
         // Attempt to reconnect if not a normal closure and we have a token
         if (event.code !== 1000 && isAuthenticated) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`Attempting to reconnect in ${delay}ms (Attempt ${reconnectAttempts.current + 1})`);
-          reconnectAttempts.current++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsGlobal), 30000);
+          console.log(`Attempting to reconnect in ${delay}ms (Attempt ${reconnectAttemptsGlobal + 1})`);
+          reconnectAttemptsGlobal++;
 
-          if (reconnectAttempts.current < maxReconnectAttempts) {
-            reconnectTimeoutRef.current = setTimeout(() => {
+          if (reconnectAttemptsGlobal < maxReconnectAttempts) {
+            reconnectTimeout = setTimeout(() => {
               connect();
             }, delay);
           } else {
@@ -87,7 +92,7 @@ export function useSocket() {
         }
       };
 
-      wsRef.current = ws;
+      globalWs = ws;
     } catch (error) {
       console.error('Error creating WebSocket:', error);
     }
@@ -98,40 +103,35 @@ export function useSocket() {
       connect();
     }
 
+    // Since this is a singleton, we only cleanup on REAL logout
+    // Components unmounting shouldn't kill the global stream.
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
-      if (wsRef.current) {
-        console.log('Closing WebSocket connection due to unmount or logout');
-        wsRef.current.close(1000, 'Component unmounting');
-        wsRef.current = null;
+      if (!isAuthenticated && globalWs) {
+         globalWs.close(1000, 'User logged out');
+         globalWs = null;
+         (window as any).socket = null;
       }
     };
   }, [connect, isAuthenticated]);
 
   const onMessage = useCallback((handler: (data: any) => void) => {
-    messageHandlers.current.add(handler);
-
+    globalHandlers.add(handler);
     return () => {
-      messageHandlers.current.delete(handler);
+      globalHandlers.delete(handler);
     };
   }, []);
 
   const sendMessage = useCallback((data: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
+    if (globalWs && globalWs.readyState === WebSocket.OPEN) {
+      globalWs.send(JSON.stringify(data));
     }
   }, []);
 
   return {
-    ws: wsRef.current,
+    ws: globalWs,
     onMessage,
     sendMessage,
-    isConnected,
+    isConnected: isConnected || (globalWs?.readyState === WebSocket.OPEN),
     reconnect: connect,
   };
-}
+}
