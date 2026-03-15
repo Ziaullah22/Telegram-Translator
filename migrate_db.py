@@ -262,6 +262,10 @@ async def migrate():
                     status VARCHAR(50) DEFAULT 'pending',
                     failure_reason TEXT,
                     last_contact_at TIMESTAMP WITH TIME ZONE,
+                    first_contacted_at TIMESTAMP WITH TIME ZONE,
+                    responded_at TIMESTAMP WITH TIME ZONE,
+                    response_time_seconds INTEGER,
+                    replied_at_step INTEGER,
                     assigned_account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(campaign_id, telegram_identifier)
@@ -300,6 +304,10 @@ async def migrate():
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(100);
                 
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS first_contacted_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS responded_at TIMESTAMP WITH TIME ZONE;
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS response_time_seconds INTEGER;
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS replied_at_step INTEGER;
 
                 -- Bulletproof Safety: Add account_id to logs and remove strict cascade dependencies
                 ALTER TABLE campaign_logs ADD COLUMN IF NOT EXISTS account_id INTEGER;
@@ -311,6 +319,7 @@ async def migrate():
 
                 -- ID tracking for bulletproof reply detection
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
+                ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS restarted_at TIMESTAMP WITH TIME ZONE;
 
                 -- Milestone 5: Sequence Builder & Kill Switch & Auto Replies
                 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';

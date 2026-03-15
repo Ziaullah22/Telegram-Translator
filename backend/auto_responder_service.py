@@ -5,6 +5,7 @@ from database import db
 from telethon_service import telethon_service
 from websocket_manager import manager
 from translation_service import translation_service
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -59,83 +60,80 @@ class AutoResponderService:
             peer_id = message_data.get('peer_id')
             peer_username = message_data.get('sender_username') or str(peer_id)
             
-            campaign_lead = await db.fetchrow(
+            # Find if this sender is a lead in an active campaign
+            # We look for contacted/replied leads to see if they are responding to our outreach
+            campaign_lead_row = await db.fetchrow(
                 """
-                SELECT l.id, l.campaign_id, l.current_step, l.assigned_account_id,
+                SELECT cl.*, c.name as campaign_name, c.initial_message, 
+                       c.negative_keywords::text as negative_keywords_json,
+                       c.kill_switch_enabled, 
                        c.auto_replies as global_auto_replies,
-                       s.keywords, s.response_text as step_response, s.keyword_response_text,
-                       s.auto_replies as step_auto_replies,
-                       s.wait_time_hours, s.id as step_id, s.next_step as step_next_step,
-                       (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = l.campaign_id) as max_step
-                FROM campaign_leads l
-                JOIN campaigns c ON l.campaign_id = c.id
-                JOIN campaign_steps s ON l.campaign_id = s.campaign_id 
-                AND s.step_number = (
-                    SELECT MAX(step_number) FROM campaign_steps 
-                    WHERE campaign_id = l.campaign_id 
-                    AND step_number <= CASE WHEN l.current_step = 0 THEN 1 ELSE l.current_step END
-                )
-                WHERE (l.telegram_id = $1 OR l.telegram_identifier = $2) 
-                AND l.assigned_account_id = $3
-                AND l.status IN ('contacted', 'replied', 'completed')
+                       (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = cl.campaign_id) as max_step,
+                       s.keywords::text as step_keywords, s.response_text as step_response, 
+                       s.next_step as step_next_step, s.keyword_response_text, s.auto_replies as step_auto_replies
+                FROM campaign_leads cl
+                JOIN campaigns c ON cl.campaign_id = c.id
+                LEFT JOIN campaign_steps s ON cl.campaign_id = s.campaign_id AND cl.current_step = s.step_number
+                WHERE (cl.telegram_id = $1 OR cl.telegram_identifier = $2)
+                AND cl.assigned_account_id = $3
+                AND c.status = 'running'
+                AND cl.status IN ('contacted', 'replied', 'completed')
                 """,
                 peer_id, peer_username, account_id
             )
 
-            # Also handle leads at step 0 (received initial message, now replying)
-            # Step 0 has no campaign_steps row, so above query returns nothing.
-            # We need to grab Step 1 keywords for these leads.
-            if not campaign_lead:
-                step0_lead = await db.fetchrow(
-                    """
-                    SELECT l.id, l.campaign_id, l.current_step, l.assigned_account_id,
-                           (SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = l.campaign_id) as max_step
-                    FROM campaign_leads l
-                    WHERE (l.telegram_id = $1 OR l.telegram_identifier = $2)
-                    AND l.assigned_account_id = $3
-                    AND l.status IN ('contacted', 'replied')
-                    AND l.current_step = 0
-                    """,
-                    peer_id, peer_username, account_id
-                )
-                if step0_lead:
-                    # Fetch campaign info, and optionally Step 1 if it exists
-                    camp_data = await db.fetchrow(
-                        """
-                        SELECT c.auto_replies as global_auto_replies,
-                               s.keywords, s.response_text, s.keyword_response_text, s.next_step, s.auto_replies as step_auto_replies
-                        FROM campaigns c
-                        LEFT JOIN campaign_steps s ON c.id = s.campaign_id AND s.step_number = 1
-                        WHERE c.id = $1
-                        """,
-                        step0_lead['campaign_id']
-                    )
-                    if camp_data:
-                        # Build a synthetic campaign_lead object for keyword processing
-                        campaign_lead = {
-                            'id': step0_lead['id'],
-                            'campaign_id': step0_lead['campaign_id'],
-                            'current_step': 0,
-                            'max_step': step0_lead['max_step'] or 0,
-                            'keywords': camp_data['keywords'],
-                            'step_response': camp_data['response_text'],
-                            'keyword_response_text': camp_data['keyword_response_text'],
-                            'step_next_step': camp_data['next_step'],
-                            'step_auto_replies': camp_data['step_auto_replies'],
-                            'global_auto_replies': camp_data['global_auto_replies']
-                        }
+            campaign_lead = None
+            if campaign_lead_row:
+                campaign_lead = dict(campaign_lead_row)
+                
+                # --- UNIVERSAL ANALYTICS: Track ANY reply (First response only) ---
+                if campaign_lead.get('responded_at') is None and campaign_lead.get('first_contacted_at'):
+                    try:
+                        resp_time = datetime.now(timezone.utc) - campaign_lead['first_contacted_at']
+                        resp_seconds = int(resp_time.total_seconds())
+                        
+                        await db.execute(
+                            """
+                            UPDATE campaign_leads 
+                            SET responded_at = NOW(),
+                                response_time_seconds = $2,
+                                replied_at_step = $3,
+                                status = 'replied',
+                                telegram_id = $4
+                            WHERE id = $1
+                            """,
+                            campaign_lead['id'], resp_seconds, campaign_lead['current_step'], peer_id
+                        )
+                        # Increment replied stats for campaign
+                        await db.execute(
+                            "UPDATE campaigns SET replied_leads = replied_leads + 1 WHERE id = $1",
+                            campaign_lead['campaign_id']
+                        )
+                        # Log it
+                        await db.execute(
+                            "INSERT INTO campaign_logs (campaign_id, lead_id, account_id, action, details) VALUES ($1, $2, $3, 'lead_replied', $4)",
+                            campaign_lead['campaign_id'], campaign_lead['id'], account_id, f"Lead replied with: {message_text[:50]}..."
+                        )
+                        # Update local dict for further processing
+                        campaign_lead['status'] = 'replied'
+                        campaign_lead['responded_at'] = datetime.now(timezone.utc)
+                    except Exception as anal_err:
+                        logger.error(f"Failed to save response analytics: {anal_err}")
 
             if campaign_lead:
-                campaign_lead = cast(Dict[str, Any], dict(campaign_lead))
-                # Use translated text for matching if available (which matched operator's language), otherwise original
-                match_text = message_data.get('translated_text') or message_text
-                message_lower = match_text.lower()
-
-                kw_raw = campaign_lead.get('keywords')
+                # Prepare keywords for matching from the step
+                # (Synthesize the structure the rest of the code expects)
+                kw_raw = campaign_lead.get('step_keywords')
                 try:
                     keywords_list = json.loads(str(kw_raw)) if isinstance(kw_raw, str) else cast(List[Any], kw_raw)
                 except Exception:
                     keywords_list = []
+                
+                campaign_lead['keywords'] = keywords_list
+                
+                # Use translated text for matching if available, otherwise original
+                match_text = message_data.get('translated_text') or message_text
+                message_lower = match_text.lower()
                     
                 matched_camp_keyword = None
                 forced_next_step = None
@@ -199,10 +197,14 @@ class AutoResponderService:
                         target_step_num = campaign_lead['step_next_step']
                         logger.info(f"Intelligent Branching! Step default jump to step {target_step_num}")
                     else:
-                        # PROGRESSION: If no explicit jump, move to the next sequential step
-                        # This avoids the lead getting stuck at Step 0 forever.
+                        # PROGRESSION: Ensure lead moves FORWARD.
+                        # If they are at Step 0, they MUST go to Step 1.
+                        # If they are at Step N, they go to N+1.
                         target_step_num = min(campaign_lead['max_step'], campaign_lead['current_step'] + 1)
-                        logger.info(f"Standard Progression! Keyword match moved lead to step {target_step_num}")
+                        # Bulletproof: If they were stuck at 0, force them to 1 if Step 1 exists
+                        if target_step_num == 0 and campaign_lead['max_step'] > 0:
+                            target_step_num = 1
+                        logger.info(f"Standard Progression! Keyword match moved lead from {campaign_lead['current_step']} to step {target_step_num}")
                     
                     # Ensure within bounds
                     if target_step_num < 0: target_step_num = 0
@@ -239,6 +241,31 @@ class AutoResponderService:
                     
                     final_response_text = cast(Optional[str], final_response_text)
                     logger.info(f"Campaign Keyword Match! Lead {campaign_lead.get('id')} said '{matched_camp_keyword}'. Moving to step {target_step_num}.")
+
+                    # ANALYTICS: Track response time if this is the first reply
+                    if campaign_lead.get('responded_at') is None and campaign_lead.get('first_contact_at'):
+                        try:
+                            resp_time = datetime.now(timezone.utc) - campaign_lead['first_contact_at']
+                            resp_seconds = int(resp_time.total_seconds())
+                            
+                            await db.execute(
+                                """
+                                UPDATE campaign_leads 
+                                SET responded_at = NOW(),
+                                    response_time_seconds = $2,
+                                    replied_at_step = $3,
+                                    status = 'replied'
+                                WHERE id = $1
+                                """,
+                                campaign_lead['id'], resp_seconds, campaign_lead['current_step']
+                            )
+                            # Increment replied stats for campaign
+                            await db.execute(
+                                "UPDATE campaigns SET replied_leads = replied_leads + 1 WHERE id = $1",
+                                campaign_lead['campaign_id']
+                            )
+                        except Exception as anal_err:
+                            logger.error(f"Failed to save response analytics: {anal_err}")
                     
                     # 1. Prepare translation
                     target_msg_text = final_response_text
@@ -246,8 +273,8 @@ class AutoResponderService:
                         try:
                             translation = await translation_service.translate_text(
                                 final_response_text,
-                                target_language,
-                                source_language
+                                source_language,
+                                target_language
                             )
                             target_msg_text = translation['translated_text']
                         except Exception as e:
@@ -267,34 +294,17 @@ class AutoResponderService:
                         )
                         # Ensure the campaign is marked as 'running' again if it was 'completed'
                         await db.execute("UPDATE campaigns SET status = 'running' WHERE id = $1", campaign_lead['campaign_id'])
-                        logger.info(f"Lead {campaign_lead['id']} looped back to Initial Message (Step 0). Campaign Reactivated.")
+                        logger.info(f"Lead {campaign_lead['id']} looped back to Initial Message (Step 0).")
                     else:
-                        # Check if this target step actually exists
-                        exists = await db.fetchval(
-                            "SELECT EXISTS(SELECT 1 FROM campaign_steps WHERE campaign_id = $1 AND step_number = $2)",
-                            campaign_lead['campaign_id'], target_step_num
-                        )
+                        # Determine if this match reaches the end
+                        is_at_end = target_step_num >= campaign_lead['max_step']
+                        new_status = 'completed' if is_at_end else 'replied'
                         
-                        if not exists:
-                            # If jumping to a non-existent step, it's effectively completing
-                            await db.execute(
-                                "UPDATE campaign_leads SET current_step = $2, status = 'completed', last_contact_at = NOW() WHERE id = $1",
-                                campaign_lead['id'], target_step_num
-                            )
-                            logger.info(f"Lead {campaign_lead['id']} completed (jumped to non-existent step {target_step_num}).")
-                        elif target_step_num > 0 and target_step_num >= campaign_lead['max_step']:
-                            # If jumping to the LAST step, we just sent the reply, so they are done!
-                            await db.execute(
-                                "UPDATE campaign_leads SET current_step = $2, status = 'completed', last_contact_at = NOW() WHERE id = $1",
-                                campaign_lead['id'], target_step_num
-                            )
-                            logger.info(f"Lead {campaign_lead['id']} reached final step {target_step_num} via keyword match. Marked as COMPLETED.")
-                        else:
-                            await db.execute(
-                                "UPDATE campaign_leads SET current_step = $2, status = 'contacted', last_contact_at = NOW() WHERE id = $1",
-                                campaign_lead['id'], target_step_num
-                            )
-                            logger.info(f"Lead {campaign_lead['id']} moved to Step {target_step_num}.")
+                        await db.execute(
+                            "UPDATE campaign_leads SET current_step = $2, status = $3, last_contact_at = NOW() WHERE id = $1",
+                            campaign_lead['id'], target_step_num, new_status
+                        )
+                        logger.info(f"Lead {campaign_lead['id']} moved to Step {target_step_num} ({new_status}) via keyword match.")
 
 
                     # 3. Send Campaign Response
@@ -303,7 +313,8 @@ class AutoResponderService:
                         peer_id,
                         cast(Optional[str], target_msg_text),
                         cast(Optional[str], final_response_text),
-                        cast(Optional[str], source_language), 
+                        cast(Optional[str], target_language), # Rule Language
+                        cast(Optional[str], source_language), # Recipient Language
                         None, None
                     )
                     
@@ -371,6 +382,7 @@ class AutoResponderService:
                         translated_response,
                         original_response,
                         rule_language,
+                        source_language,
                         rule['media_type'],
                         rule['media_file_path']
                     )
@@ -397,7 +409,8 @@ class AutoResponderService:
         peer_id: Any,
         translated_text: Optional[str],
         original_text: Optional[str],
-        source_lang: Optional[str],
+        source_lang: Optional[str], # Language of original_text (Operator)
+        target_lang: Optional[str], # Language of translated_text (Recipient)
         media_type: Optional[str],
         media_file_path: Optional[str]
     ) -> bool:
@@ -471,8 +484,8 @@ class AutoResponderService:
                 msg_type,
                 original_text,  # Original response in rule's language
                 translated_text,  # Translated to customer's language
-                source_lang,  # Rule's language
-                account['target_language'] if account else 'en',
+                source_lang,  
+                target_lang,
                 sent_message.date,
                 True,  # is_outgoing
                 has_media,
@@ -491,10 +504,10 @@ class AutoResponderService:
                         "sender_name": "Auto-Responder",
                         "sender_username": "auto_responder",
                         "type": msg_type,
-                        "original_text": original_text,  # Original in rule's language
-                        "translated_text": translated_text,  # Translated to customer's language
-                        "source_language": source_lang,  # Rule's language
-                        "target_language": account['target_language'] if account else 'en',
+                        "original_text": original_text,  
+                        "translated_text": translated_text,  
+                        "source_language": source_lang,  
+                        "target_language": target_lang,
                         "created_at": sent_message.date.isoformat() if sent_message.date else None,
                         "is_outgoing": True,
                         "has_media": has_media,

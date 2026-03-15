@@ -8,6 +8,7 @@ import { campaignsAPI } from '../../services/api';
 import type { Campaign } from '../../types';
 import CreateCampaignModal from './CreateCampaignModal';
 import CampaignLeadsModal from './CampaignLeadsModal';
+import CampaignAnalyticsModal from './CampaignAnalyticsModal';
 import ConfirmModal from '../Common/ConfirmModal';
 
 // ── How To Use Data ───────────────────────────────────────────────────────────
@@ -127,6 +128,8 @@ const CampaignPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedCampaignForLeads, setSelectedCampaignForLeads] = useState<Campaign | null>(null);
+    const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
+    const [selectedAnalyticsCampaignId, setSelectedAnalyticsCampaignId] = useState<number | null>(null);
     const [showGuide, setShowGuide] = useState(false);
     const [expandedScenario, setExpandedScenario] = useState<number | null>(null);
     const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
@@ -518,6 +521,13 @@ const CampaignPage: React.FC = () => {
                                                 <Users className="w-4 h-4" />
                                             </button>
                                             <button
+                                                title="View Analytics"
+                                                onClick={() => { setIsAnalyticsOpen(true); setSelectedAnalyticsCampaignId(camp.id); }}
+                                                className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all"
+                                            >
+                                                <BarChart2 className="w-4 h-4" />
+                                            </button>
+                                            <button
                                                 title={camp.status !== 'paused' && camp.status !== 'draft' ? "Pause campaign to edit" : "Edit Campaign"}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -584,6 +594,14 @@ const CampaignPage: React.FC = () => {
                 editCampaignId={editCampaignId}
             />
 
+            {/* Analytics Modal */}
+            <CampaignAnalyticsModal
+                isOpen={isAnalyticsOpen}
+                onClose={() => setIsAnalyticsOpen(false)}
+                campaignId={selectedAnalyticsCampaignId}
+            />
+
+            {/* Leads Modal */}
             <CampaignLeadsModal
                 isOpen={!!selectedCampaignForLeads}
                 onClose={() => setSelectedCampaignForLeads(null)}

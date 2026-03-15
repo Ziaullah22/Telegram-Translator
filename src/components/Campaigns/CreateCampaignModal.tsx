@@ -1002,16 +1002,16 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                         {/* Step header with specific Subtract button */}
                                                         <div className="flex items-center justify-between px-6 py-3 bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
                                                             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Sequence Step {idx + 1}</span>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const updated = steps.filter((_, i) => i !== idx).map((st, i) => ({ ...st, step_number: i + 1 }));
-                                                                    setSteps(updated);
-                                                                }}
-                                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all uppercase tracking-widest border border-transparent hover:border-red-100"
-                                                            >
-                                                                <Minus className="w-3 h-3" />
-                                                                Subtract
-                                                            </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const updated = steps.filter((_, i) => i !== idx).map((st, i) => ({ ...st, step_number: i + 1 }));
+                                                                            setSteps(updated);
+                                                                        }}
+                                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all uppercase tracking-widest border border-transparent hover:border-red-100"
+                                                                    >
+                                                                        <Minus className="w-3 h-3" />
+                                                                        Subtract
+                                                                    </button>
                                                         </div>
 
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-px items-stretch flex-1 bg-gray-100 dark:bg-white/5">

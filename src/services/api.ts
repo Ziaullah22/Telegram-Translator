@@ -600,6 +600,18 @@ export const campaignsAPI = {
     return response.data;
   },
 
+  // Fetch in-depth analytics for a single campaign
+  getCampaignAnalytics: async (campaignId: number): Promise<any> => {
+    const response = await api.get(`/campaigns/${campaignId}/analytics`);
+    return response.data;
+  },
+
+  // Get a lead's campaign history
+  getLeadCampaignHistory: async (campaignId: number, leadId: number): Promise<any> => {
+    const response = await api.get(`/campaigns/${campaignId}/leads/${leadId}/history`);
+    return response.data;
+  },
+
   // Create a new campaign with a name and opening message
   createCampaign: async (data: { 
     name: string; 

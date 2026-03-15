@@ -349,7 +349,12 @@ async def restart_campaign(
             SET current_step = 0,
                 status = 'pending',
                 last_contact_at = NULL,
-                failure_reason = NULL
+                first_contacted_at = NULL,
+                responded_at = NULL,
+                response_time_seconds = NULL,
+                replied_at_step = NULL,
+                failure_reason = NULL,
+                restarted_at = NOW()
             WHERE campaign_id = $1
             """,
             campaign_id
@@ -365,6 +370,12 @@ async def restart_campaign(
             WHERE id = $1 AND user_id = $2
             """,
             campaign_id, current_user.user_id
+        )
+
+        # 3. Clear campaign logs (start activities from fresh)
+        await db.execute(
+            "DELETE FROM campaign_logs WHERE campaign_id = $1",
+            campaign_id
         )
 
         return {"success": True, "message": "Campaign restarted from scratch"}
@@ -404,6 +415,198 @@ async def delete_campaign(
     except Exception as e:
         logger.error(f"Failed to delete campaign: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete campaign")
+
+@router.get("/{campaign_id}/analytics")
+async def get_campaign_analytics(
+    campaign_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    # Verify ownership
+    campaign = await db.fetchrow(
+        "SELECT id, name, total_leads, completed_leads, replied_leads FROM campaigns WHERE id = $1 AND user_id = $2",
+        campaign_id, current_user.user_id
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # 1. Basic Stats
+    total = campaign['total_leads'] or 0
+    replied = campaign['replied_leads'] or 0
+    conversion_rate = (replied / total * 100) if total > 0 else 0
+
+    # 2. Average Response Time (only for leads that replied)
+    avg_response_seconds = await db.fetchval(
+        """
+        SELECT AVG(response_time_seconds) 
+        FROM campaign_leads 
+        WHERE campaign_id = $1 AND response_time_seconds IS NOT NULL
+        """,
+        campaign_id
+    ) or 0
+
+    # 3. Step Performance Tracking (Include Step 0 and Reach vs Replies)
+    step_stats = await db.fetch(
+        """
+        WITH all_steps AS (
+            SELECT 0 as step_number, 'Initial Message' as label
+            UNION ALL
+            SELECT step_number, 'Step ' || step_number FROM campaign_steps WHERE campaign_id = $1
+        )
+        SELECT 
+            als.step_number,
+            als.label,
+            (SELECT COUNT(*) FROM campaign_leads WHERE campaign_id = $1 AND current_step >= als.step_number) as reached_count,
+            (SELECT COUNT(*) FROM campaign_leads WHERE campaign_id = $1 AND replied_at_step = als.step_number) as reply_count,
+            (SELECT AVG(response_time_seconds) FROM campaign_leads WHERE campaign_id = $1 AND replied_at_step = als.step_number) as avg_response_time
+        FROM all_steps als
+        ORDER BY als.step_number
+        """,
+        campaign_id
+    )
+
+    # 4. Timeline Logs (Latest 50 actions for context, filtered by restart)
+    logs = await db.fetch(
+        """
+        SELECT cl.action, cl.details, cl.created_at, l.telegram_identifier
+        FROM campaign_logs cl
+        JOIN campaign_leads l ON cl.lead_id = l.id
+        WHERE cl.campaign_id = $1 
+        AND cl.created_at >= COALESCE(l.restarted_at, '2000-01-01'::timestamp)
+        ORDER BY cl.created_at DESC
+        LIMIT 50
+        """,
+        campaign_id
+    )
+
+    # 5. Engagement List (Use current_step as lead's actual progress)
+    top_leads = await db.fetch(
+        """
+        SELECT cl.id, cl.telegram_identifier, cl.current_step as step_number, cl.response_time_seconds, 
+               cl.responded_at, cl.status, cl.last_contact_at,
+               COALESCE(cs_current.response_text, c.initial_message) as sent_text,
+               (SELECT original_text FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = FALSE 
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at ASC LIMIT 1) as reply_original,
+               (SELECT translated_text FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = FALSE 
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at ASC LIMIT 1) as reply_translated,
+               (SELECT source_language FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = FALSE 
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at ASC LIMIT 1) as reply_source_lang,
+               (SELECT target_language FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = FALSE 
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at ASC LIMIT 1) as reply_target_lang,
+               (SELECT original_text FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = TRUE
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at DESC LIMIT 1) as sent_original,
+               (SELECT translated_text FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = TRUE
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at DESC LIMIT 1) as sent_translated,
+               (SELECT source_language FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = TRUE
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at DESC LIMIT 1) as sent_source_lang,
+               (SELECT target_language FROM messages m 
+                JOIN conversations conv ON m.conversation_id = conv.id 
+                WHERE (conv.telegram_peer_id = cl.telegram_id OR (cl.telegram_id IS NULL AND CAST(conv.telegram_peer_id AS TEXT) = cl.telegram_identifier))
+                AND m.is_outgoing = TRUE
+                AND m.created_at >= COALESCE(cl.restarted_at, cl.first_contacted_at)
+                ORDER BY m.created_at DESC LIMIT 1) as sent_target_lang
+        FROM campaign_leads cl
+        JOIN campaigns c ON cl.campaign_id = c.id
+        LEFT JOIN campaign_steps cs_reply ON cl.campaign_id = cs_reply.campaign_id AND cl.replied_at_step = cs_reply.step_number
+        LEFT JOIN campaign_steps cs_current ON cl.campaign_id = cs_current.campaign_id AND cl.current_step = cs_current.step_number
+        WHERE cl.campaign_id = $1 AND cl.status IN ('contacted', 'replied', 'completed')
+        ORDER BY cl.responded_at DESC NULLS LAST, cl.last_contact_at DESC
+        LIMIT 20
+        """,
+        campaign_id
+    )
+
+    return {
+        "summary": {
+            "name": campaign['name'],
+            "total_leads": total,
+            "reached_leads": campaign['completed_leads'],
+            "replied_leads": replied,
+            "conversion_rate": round(float(conversion_rate), 1),
+            "avg_response_time_seconds": int(avg_response_seconds)
+        },
+        "step_performance": [dict(s) for s in step_stats],
+        "recent_activity": [dict(l) for l in logs],
+        "top_conversions": [dict(tl) for tl in top_leads]
+    }
+
+
+@router.get("/{campaign_id}/leads/{lead_id}/history")
+async def get_lead_campaign_history(
+    campaign_id: int,
+    lead_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    # Verify ownership of the campaign and lead
+    lead = await db.fetchrow(
+        """
+        SELECT cl.*, c.name as campaign_name, c.user_id
+        FROM campaign_leads cl
+        JOIN campaigns c ON cl.campaign_id = c.id
+        WHERE cl.id = $1 AND cl.campaign_id = $2 AND c.user_id = $3
+        """,
+        lead_id, campaign_id, current_user.user_id
+    )
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+        
+    start_time = lead['restarted_at'] or lead['first_contacted_at']
+    if not start_time:
+        return {"history": []}
+
+    # Fetch messages in the conversation starting from first contact
+    # We find the conversation between the assigned account and the telegram_id
+    history = await db.fetch(
+        """
+        SELECT m.id, m.original_text, m.translated_text, m.is_outgoing, m.created_at, m.is_encrypted,
+               m.source_language, m.target_language
+        FROM messages m
+        JOIN conversations conv ON m.conversation_id = conv.id
+        WHERE conv.telegram_account_id = $1
+        AND conv.telegram_peer_id = $2
+        AND m.created_at >= $3
+        ORDER BY m.created_at ASC
+        """,
+        lead['assigned_account_id'], lead['telegram_id'], start_time
+    )
+    
+    return {
+        "lead": {
+            "identifier": lead['telegram_identifier'],
+            "status": lead['status'],
+            "current_step": lead['current_step']
+        },
+        "history": [dict(h) for h in history]
+    }
+
 
 @router.put("/{campaign_id}")
 async def update_campaign_full(

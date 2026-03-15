@@ -286,8 +286,8 @@ class CampaignService:
                         try:
                             translation = await translation_service.translate_text(
                                 message_to_send,
-                                account['target_language'],
-                                account['source_language']
+                                account['source_language'],
+                                account['target_language']
                             )
                             target_msg_text = translation['translated_text']
                         except Exception as e:
@@ -331,8 +331,9 @@ class CampaignService:
                         msg_id = await db.fetchval(
                             """
                             INSERT INTO messages 
-                            (conversation_id, telegram_message_id, original_text, translated_text, is_outgoing, created_at, sender_user_id, sender_name, sender_username, type)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'text')
+                            (conversation_id, telegram_message_id, original_text, translated_text, is_outgoing, created_at, 
+                             sender_user_id, sender_name, sender_username, type, source_language, target_language)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'text', $10, $11)
                             RETURNING id
                             """,
                             conversation_id, 
@@ -343,7 +344,9 @@ class CampaignService:
                             sent_msg['date'], 
                             sent_msg['sender_user_id'],
                             sent_msg.get('sender_name') or 'Me',
-                            sent_msg.get('sender_username') or 'unknown'
+                            sent_msg.get('sender_username') or 'unknown',
+                            account['target_language'],
+                            account['source_language']
                         )
 
                         # Notify Frontend via WebSocket
@@ -378,10 +381,15 @@ class CampaignService:
                     # Check if this was the LAST step for the campaign
                     total_steps = await db.fetchval("SELECT MAX(step_number) FROM campaign_steps WHERE campaign_id = $1", campaign_id) or 0
                     
+                    # If we just sent the last step, they are COMPLETED!
+                    # If we are loopers (step 0), they are just starting (contacted)
                     final_status = 'contacted'
+                    final_step = next_step
+                    
                     if current_step > 0 and current_step >= total_steps:
-                        final_status = 'completed' # No more steps left
-                        logger.info(f"Lead {lead['id']} has finished all {total_steps} steps. Marking as completed.")
+                        final_status = 'completed'
+                        final_step = current_step # Keep them at the last step number for context
+                        logger.info(f"Lead {lead['id']} has reached the absolute end of the sequence (Step {total_steps}). Marking as COMPLETED.")
 
                     await db.execute(
                         """
@@ -389,10 +397,11 @@ class CampaignService:
                         SET status = $2, 
                             current_step = $3, 
                             last_contact_at = NOW(),
+                            first_contacted_at = CASE WHEN $3 = 1 AND first_contacted_at IS NULL THEN NOW() ELSE first_contacted_at END,
                             telegram_id = $4
                         WHERE id = $1
                         """,
-                        lead['id'], final_status, next_step, peer_id
+                        lead['id'], final_status, final_step, peer_id
                     )
 
                     # E. Update Campaign Stats
