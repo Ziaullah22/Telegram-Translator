@@ -113,58 +113,63 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0">
             <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose} />
             
-            <div className="relative bg-white dark:bg-[#0f172a] w-full max-w-5xl max-h-[90vh] rounded-[2rem] shadow-2xl overflow-hidden flex flex-col border border-gray-100 dark:border-white/5">
+            <div className="relative bg-white dark:bg-[#0f172a] w-full h-full overflow-hidden flex flex-col">
                 
-                {/* Header */}
-                <div className="p-6 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center">
-                            <BarChart3 className="w-6 h-6 text-blue-500" />
+                {/* Optimized Header with Integrated Tabs */}
+                <div className="px-8 py-4 border-b border-blue-100 dark:border-white/5 flex items-center justify-between bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
+                    
+                    {/* Left: Branding & Context */}
+                    <div className="flex items-center gap-4 min-w-[280px]">
+                        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                            <BarChart3 className="w-5 h-5" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-black text-gray-900 dark:text-white">Campaign Analytics</h2>
-                            <p className="text-sm text-gray-400 font-medium">{analytics?.summary?.name || 'Loading...'}</p>
+                            <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Campaign Analytics</h2>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 truncate max-w-[200px]">{analytics?.summary?.name || 'Live Insights'}</p>
                         </div>
                     </div>
-                    
-                    <div className="flex items-center gap-2">
+
+                    {/* Center: Navigation Tabs (Segmented Control) */}
+                    <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+                        {[
+                            { id: 'overview', label: 'Overview', icon: <TrendingUp className="w-3.5 h-3.5" /> },
+                            { id: 'leads', label: 'Chat History', icon: <Target className="w-3.5 h-3.5" /> },
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id as any)}
+                                className={`flex items-center gap-2 py-2 px-6 text-xs font-black uppercase tracking-widest transition-all rounded-xl ${
+                                    activeTab === tab.id 
+                                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
+                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                                }`}
+                            >
+                                {tab.icon}
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-3 min-w-[280px] justify-end">
                         <button 
                             onClick={fetchAnalytics}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors text-gray-400"
+                            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-all text-gray-400 group"
                         >
-                            <Activity className="w-5 h-5" />
+                            <Activity className={`w-4 h-4 group-hover:text-blue-500 transition-colors ${isLoading ? 'animate-spin text-blue-500' : ''}`} />
+                            <span className="text-[10px] font-black uppercase tracking-widest group-hover:text-blue-500 transition-colors">Refresh</span>
                         </button>
+                        <div className="w-px h-6 bg-gray-100 dark:bg-white/5 mx-1" />
                         <button 
                             onClick={onClose}
-                            className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors text-gray-400 hover:text-red-500"
+                            className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
                         >
                             <X className="w-6 h-6" />
                         </button>
                     </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="px-6 py-2 bg-gray-50/50 dark:bg-black/20 border-b border-gray-100 dark:border-white/5 flex items-center gap-6">
-                    {[
-                        { id: 'overview', label: 'Overview', icon: <TrendingUp className="w-4 h-4" /> },
-                        { id: 'leads', label: 'Chat History', icon: <Target className="w-4 h-4" /> },
-                    ].map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id as any)}
-                            className={`flex items-center gap-2 py-3 px-1 text-sm font-bold transition-all border-b-2 ${
-                                activeTab === tab.id 
-                                ? 'text-blue-500 border-blue-500' 
-                                : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-gray-200'
-                            }`}
-                        >
-                            {tab.icon}
-                            {tab.label}
-                        </button>
-                    ))}
                 </div>
 
                 {/* Content */}

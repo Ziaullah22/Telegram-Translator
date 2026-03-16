@@ -64,27 +64,41 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-            <div className="bg-white dark:bg-[#1a222c] w-full max-w-4xl h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-gray-100 dark:border-white/5">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-0 bg-black/60 backdrop-blur-md animate-fade-in">
+            <div className="bg-white dark:bg-[#111827] w-full h-full flex flex-col overflow-hidden">
 
-                {/* Header */}
-                <div className="p-6 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                        <div className="p-3 bg-white/20 backdrop-blur-md rounded-2xl border border-white/20">
-                            <Users className="w-6 h-6" />
+                {/* ── OPTIMIZED HEADER ── */}
+                <div className="px-8 py-4 border-b border-blue-100 dark:border-white/5 flex items-center justify-between bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
+                    
+                    {/* Left: Campaign Context */}
+                    <div className="flex items-center gap-4 min-w-[280px]">
+                        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                            <Users className="w-5 h-5" />
                         </div>
-                        <div>
-                            <h2 className="text-xl font-black tracking-tight">{campaign.name}</h2>
-                            <p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Lead Assignment Intel</p>
+                        <div className="flex flex-col">
+                            <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Lead Intel</h2>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 truncate max-w-[200px]">{campaign.name}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
-                        <X className="w-6 h-6" />
-                    </button>
+
+                    {/* Center: Branding Title */}
+                    <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 px-4 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+                        <span className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-[0.2em]">Assignment Database</span>
+                    </div>
+
+                    {/* Right: Exit Action */}
+                    <div className="flex items-center justify-end min-w-[280px]">
+                        <button 
+                            onClick={onClose} 
+                            className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Toolbar */}
-                <div className="p-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20 flex items-center space-x-4">
+                <div className="px-20 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20 flex items-center space-x-4">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -102,8 +116,8 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                     </div>
                 </div>
 
-                {/* Leads Table */}
-                <div className="flex-1 overflow-y-auto">
+                {/* Body Alignment Wrapper */}
+                <div className="flex-1 overflow-hidden flex flex-col px-20">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center h-full">
                             <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4" />
@@ -202,7 +216,7 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">
+                <div className="p-4 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center mt-auto">
                     Round-robin load balancing active • Protecting your accounts via staggered outreach
                 </div>
             </div>

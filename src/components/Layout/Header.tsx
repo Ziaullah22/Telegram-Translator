@@ -14,86 +14,60 @@ export default function Header({ onStartTour }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-b border-gray-100 dark:border-white/5 px-6 py-4 transition-colors duration-300">
+    <header className="bg-[#f0f9ff] dark:bg-[#0f172a] border-b border-blue-100 dark:border-white/5 px-8 py-4 sticky top-0 z-[50] transition-colors duration-300 shadow-sm">
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-6">
-          <div id="app-logo" className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('/')}>
-            <MessageCircle className="w-8 h-8 text-blue-500" />
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Telegram Translator</h1>
+        <div className="flex items-center space-x-10">
+          <div id="app-logo" className="flex items-center space-x-3 cursor-pointer group" onClick={() => navigate('/')}>
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20 transition-transform group-hover:scale-105">
+              <MessageCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Telegram</h1>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Strategic Translator</p>
+            </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="flex items-center space-x-2">
-            <button
-              onClick={() => navigate('/')}
-              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+          {/* Navigation Links (Segmented Style) */}
+          <nav className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+            {[
+              { path: '/', label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+              { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
+              { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
+              { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
+            ].map(item => (
+              <button
+                key={item.path}
+                id={item.id}
+                onClick={() => navigate(item.path)}
+                className={`flex items-center gap-2 py-2 px-6 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${
+                  location.pathname === item.path 
+                  ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
+                  : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                 }`}
-            >
-              <div className="flex items-center space-x-2 font-medium">
-                <MessageCircle className="w-4 h-4" />
-                <span>Chat</span>
-              </div>
-            </button>
-            <button
-              id="nav-auto-responder"
-              onClick={() => navigate('/auto-responder')}
-              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/auto-responder'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
-                }`}
-            >
-              <div className="flex items-center space-x-2 font-medium">
-                <Zap className="w-4 h-4" />
-                <span>Auto-Responder</span>
-              </div>
-            </button>
-
-            <button
-              id="nav-analytics"
-              onClick={() => navigate('/analytics')}
-              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/analytics'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
-                }`}
-            >
-              <div className="flex items-center space-x-2 font-medium">
-                <BarChart2 className="w-4 h-4" />
-                <span>Performance</span>
-              </div>
-            </button>
-
-            <button
-              id="nav-campaigns"
-              onClick={() => navigate('/campaigns')}
-              className={`px-4 py-2 rounded-lg transition-all duration-300 ${location.pathname === '/campaigns'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
-                }`}
-            >
-              <div className="flex items-center space-x-2 font-medium">
-                <Zap className="w-4 h-4 text-orange-500" />
-                <span>Campaigns</span>
-              </div>
-            </button>
-
-            <button
-              onClick={onStartTour}
-              className="px-4 py-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-all duration-300 flex items-center space-x-2 font-medium"
-              title="Quick Tour"
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Take a Tour</span>
-            </button>
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
           </nav>
         </div>
 
         <div className="flex items-center space-x-4">
+          <button
+            onClick={onStartTour}
+            className="hidden lg:flex items-center gap-2 px-4 py-2 hover:bg-white/80 dark:hover:bg-white/5 rounded-xl transition-all text-gray-400 group"
+            title="Quick Tour"
+          >
+            <HelpCircle className="w-4 h-4 group-hover:text-blue-500 transition-colors" />
+            <span className="text-[10px] font-black uppercase tracking-widest group-hover:text-blue-500 transition-colors">Tour</span>
+          </button>
+
+          <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-1" />
+
           {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className="p-2 text-gray-500 dark:text-gray-400 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark rounded-lg transition-all duration-300 group"
+            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-white/80 dark:hover:bg-white/5 rounded-xl transition-all group"
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
             {theme === 'light' ? (
@@ -103,11 +77,13 @@ export default function Header({ onStartTour }: HeaderProps) {
             )}
           </button>
 
-          <div className="h-6 w-px bg-gray-100 dark:bg-white/10 mx-2" />
+          <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-1" />
 
-          <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-300">
-            <User className="w-4 h-4" />
-            <span className="text-sm font-medium">{user?.username}</span>
+          <div className="flex items-center space-x-3 text-gray-600 dark:text-gray-300 bg-white/50 dark:bg-white/5 px-4 py-2 rounded-xl border border-gray-100 dark:border-white/5">
+            <div className="w-6 h-6 bg-blue-500/10 rounded-lg flex items-center justify-center">
+              <User className="w-4 h-4 text-blue-500" />
+            </div>
+            <span className="text-xs font-black uppercase tracking-tight">{user?.username}</span>
           </div>
 
           <button
@@ -115,7 +91,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               logout();
               navigate('/login');
             }}
-            className="p-2 text-gray-500 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-telegram-hover-dark rounded-lg transition-all duration-300"
+            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all"
             title="Logout"
           >
             <LogOut className="w-5 h-5" />
