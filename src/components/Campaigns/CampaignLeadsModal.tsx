@@ -98,33 +98,36 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                 </div>
 
                 {/* Toolbar */}
-                <div className="px-20 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20 flex items-center space-x-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by identifier or account..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm focus:border-blue-500 outline-none transition-all"
-                        />
-                    </div>
-                    <div className="flex items-center space-x-2 text-xs font-bold text-gray-500 dark:text-gray-400">
-                        <span>Total: {leads.length}</span>
-                        <span className="h-3 w-px bg-gray-300 dark:bg-gray-700" />
-                        <span>Filtered: {filteredLeads.length}</span>
+                <div className="bg-gray-50/50 dark:bg-[#111827] border-b border-gray-100 dark:border-white/5 py-4">
+                    <div className="max-w-6xl mx-auto px-6 flex items-center space-x-4">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search by identifier or account..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm focus:border-blue-500 outline-none transition-all"
+                            />
+                        </div>
+                        <div className="flex items-center space-x-2 text-xs font-bold text-gray-500 dark:text-gray-400">
+                            <span>Total: {leads.length}</span>
+                            <span className="h-3 w-px bg-gray-300 dark:bg-gray-700" />
+                            <span>Filtered: {filteredLeads.length}</span>
+                        </div>
                     </div>
                 </div>
 
-                {/* Body Alignment Wrapper */}
-                <div className="flex-1 overflow-hidden flex flex-col px-20">
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto bg-gray-50/50 dark:bg-[#111827] custom-scrollbar">
+                    <div className="max-w-6xl mx-auto px-6 py-4">
                     {isLoading ? (
-                        <div className="flex flex-col items-center justify-center h-full">
+                        <div className="flex flex-col items-center justify-center py-20">
                             <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4" />
                             <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Scanning lead database...</p>
                         </div>
                     ) : filteredLeads.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                             <Search className="w-12 h-12 mb-4 opacity-20" />
                             <p className="font-bold">No leads found</p>
                         </div>
@@ -213,6 +216,7 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
                             </tbody>
                         </table>
                     )}
+                    </div>
                 </div>
 
                 {/* Footer */}

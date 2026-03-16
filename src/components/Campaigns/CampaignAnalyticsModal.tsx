@@ -173,7 +173,8 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]">
+                    <div className="max-w-6xl mx-auto px-6 py-6">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-20">
                             <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4" />
@@ -341,6 +342,7 @@ const CampaignAnalyticsModal: React.FC<CampaignAnalyticsModalProps> = ({ isOpen,
                             )}
                         </div>
                     )}
+                    </div>
                 </div>
 
                 {/* Footer Info */}
