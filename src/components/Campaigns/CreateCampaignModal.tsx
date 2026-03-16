@@ -217,7 +217,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [negativeKeywords, setNegativeKeywords] = useState('');
-    const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
+    const [killSwitchEnabled, setKillSwitchEnabled] = useState(false);
     const [steps, setSteps] = useState<any[]>([]); // Strategic Sequence Steps
     
     // Popup Error State
@@ -235,77 +235,59 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
         auto_replies: []
     });
 
-    // --- Draft Persistence & Edit Logic ---
+    // --- Reset Logic for New Campaigns ---
     useEffect(() => {
-        if (!isOpen) return;
+        if (isOpen && !editCampaignId) {
+            // Force reset all state when opening a new campaign window
+            setName('');
+            setInitialMessage('');
+            setNegativeKeywords('');
+            setKillSwitchEnabled(false);
+            setSteps([]);
+            setGlobalAutoReplies([]);
+            setStep(1);
+            setCsvFile(null);
+            setIsSubmitting(false);
+            setError(null);
+        }
+    }, [isOpen, editCampaignId]);
+
+    // --- Edit Logic (Fetch existing data) ---
+    useEffect(() => {
+        if (!isOpen || !editCampaignId) return;
         
         const loadEditData = async () => {
-            if (editCampaignId) {
-                try {
-                    const campaign = await campaignsAPI.getCampaign(editCampaignId);
-                    const campaignSteps = await campaignsAPI.getSteps(editCampaignId);
-                    
-                    setName(campaign.name || '');
-                    setInitialMessage(campaign.initial_message || '');
-                    setNegativeKeywords((campaign.negative_keywords || []).join(', '));
-                    setKillSwitchEnabled(campaign.kill_switch_enabled ?? true);
-                    setGlobalAutoReplies(campaign.auto_replies || []);
-                    
-                    const formattedSteps = campaignSteps.map(s => ({
-                        ...s,
-                        wait_days: Math.floor(s.wait_time_hours / 24),
-                        wait_hours: Math.floor(s.wait_time_hours % 24),
-                        wait_minutes: Math.round((s.wait_time_hours % 1) * 60),
-                        keywords: (s.keywords || []).join(', ')
-                    }));
-                    setSteps(formattedSteps);
-                    
-                    setStep(4); // Jump directly to summary step
-                    setIsEditingAll(true);
-                } catch (error) {
-                    console.error("Failed to load edit campaign data:", error);
-                    setError("Failed to load campaign data for editing.");
-                }
-            } else {
-                // New campaign -> load draft
-                const savedDraft = localStorage.getItem(DRAFT_KEY);
-                if (savedDraft) {
-                    try {
-                        const draft = JSON.parse(savedDraft);
-                        setName(draft.name || '');
-                        setInitialMessage(draft.initialMessage || '');
-                        setNegativeKeywords(draft.negativeKeywords || '');
-                        setKillSwitchEnabled(draft.killSwitchEnabled ?? true);
-                        setSteps(draft.steps || []);
-                        setGlobalAutoReplies(draft.globalAutoReplies || []);
-                        if (draft.step) setStep(draft.step);
-                    } catch (e) {
-                        console.error("Failed to load draft:", e);
-                    }
-                }
+            try {
+                const campaign = await campaignsAPI.getCampaign(editCampaignId);
+                const campaignSteps = await campaignsAPI.getSteps(editCampaignId);
+                
+                setName(campaign.name || '');
+                setInitialMessage(campaign.initial_message || '');
+                setNegativeKeywords((campaign.negative_keywords || []).join(', '));
+                setKillSwitchEnabled(campaign.kill_switch_enabled ?? false);
+                setGlobalAutoReplies(campaign.auto_replies || []);
+                
+                const formattedSteps = campaignSteps.map(s => ({
+                    ...s,
+                    wait_days: Math.floor(s.wait_time_hours / 24),
+                    wait_hours: Math.floor(s.wait_time_hours % 24),
+                    wait_minutes: Math.round((s.wait_time_hours % 1) * 60),
+                    keywords: (s.keywords || []).join(', ')
+                }));
+                setSteps(formattedSteps);
+                
+                setStep(4); // Jump directly to summary step
+                setIsEditingAll(true);
+            } catch (error) {
+                console.error("Failed to load edit campaign data:", error);
+                setError("Failed to load campaign data for editing.");
             }
         };
 
         loadEditData();
     }, [isOpen, editCampaignId]);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        try {
-            const draft = {
-                name,
-                initialMessage,
-                negativeKeywords,
-                killSwitchEnabled,
-                steps,
-                globalAutoReplies,
-                step
-            };
-            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-        } catch (error) {
-            console.warn("Could not save draft to local storage (quota exceeded or disabled).", error);
-        }
-    }, [name, initialMessage, negativeKeywords, killSwitchEnabled, steps, globalAutoReplies, step, isOpen]);
+    // Draft saving logic removed to ensure fresh starts as requested.
 
     const clearDraft = () => {
         localStorage.removeItem(DRAFT_KEY);
