@@ -27,8 +27,8 @@ export default function Header({ onStartTour }: HeaderProps) {
             </div>
           </div>
 
-          {/* Navigation Links (Segmented Style) */}
-          <nav className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+          {/* Navigation Links (Minimal Style) */}
+          <nav className="flex items-center gap-2">
             {[
               { path: '/', label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" /> },
               { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
@@ -39,9 +39,9 @@ export default function Header({ onStartTour }: HeaderProps) {
                 key={item.path}
                 id={item.id}
                 onClick={() => navigate(item.path)}
-                className={`flex items-center gap-2 py-2 px-6 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${
+                className={`flex items-center gap-2 py-2 px-4 text-[10px] font-black uppercase tracking-widest transition-all ${
                   location.pathname === item.path 
-                  ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
+                  ? 'text-blue-600 dark:text-blue-500' 
                   : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                 }`}
               >
