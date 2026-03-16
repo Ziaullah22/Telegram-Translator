@@ -172,6 +172,11 @@ export const telegramAPI = {
     return response.data;
   },
 
+  getPeerProfile: async (accountId: number, peerId: number): Promise<{ phone: string, bio: string }> => {
+    const response = await api.get(`/telegram/accounts/${accountId}/peers/${peerId}/profile`);
+    return response.data;
+  },
+
   createConversation: async (accountId: number, data: {
     telegram_peer_id: number;
     title?: string;

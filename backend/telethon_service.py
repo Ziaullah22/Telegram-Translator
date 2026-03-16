@@ -1730,6 +1730,85 @@ class TelethonService:
             return f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
         return None  # Entity has no profile photo set
 
+    async def get_peer_profile(self, account_id: int, peer_id: int) -> dict:
+        """Get the profile info (bio, phone) of a specific peer"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+            
+        from telethon.tl.functions.users import GetFullUserRequest
+        
+        try:
+            entity = await session.client.get_entity(peer_id)
+            # Only users have FullUser
+            if hasattr(entity, 'first_name') or hasattr(entity, 'last_name'):
+                full = await session.client(GetFullUserRequest(entity))
+                user = full.users[0]
+                return {
+                    "id": user.id,
+                    "first_name": getattr(user, 'first_name', '') or "",
+                    "last_name": getattr(user, 'last_name', '') or "",
+                    "username": getattr(user, 'username', '') or "",
+                    "phone": getattr(user, 'phone', '') or "",
+                    "bio": getattr(full.full_user, 'about', '') or ""
+                }
+            else:
+                # For channels/groups
+                from telethon.tl.functions.channels import GetFullChannelRequest
+                from telethon.tl.functions.messages import GetFullChatRequest
+                if hasattr(entity, 'megagroup') or hasattr(entity, 'broadcast'):
+                    full = await session.client(GetFullChannelRequest(entity))
+                    count = getattr(full.full_chat, 'participants_count', 0)
+                    members = []
+                    # Try to get participants if we can
+                    try:
+                        participants = await session.client.get_participants(entity, limit=30)
+                        for p in participants:
+                            members.append({
+                                "id": p.id,
+                                "first_name": getattr(p, 'first_name', '') or "",
+                                "last_name": getattr(p, 'last_name', '') or "",
+                                "username": getattr(p, 'username', '') or ""
+                            })
+                    except Exception as pe:
+                        logger.warning(f"Could not fetch participants for {peer_id}: {pe}")
+                        
+                    return {
+                        "id": entity.id,
+                        "type": "channel" if hasattr(entity, 'broadcast') and entity.broadcast else "group",
+                        "phone": "",
+                        "bio": getattr(full.full_chat, 'about', '') or "",
+                        "participants_count": count,
+                        "members": members
+                    }
+                else:
+                    full = await session.client(GetFullChatRequest(entity.id))
+                    count = getattr(full.full_chat, 'participants_count', 0)
+                    members = []
+                    try:
+                        participants = await session.client.get_participants(entity, limit=30)
+                        for p in participants:
+                            members.append({
+                                "id": p.id,
+                                "first_name": getattr(p, 'first_name', '') or "",
+                                "last_name": getattr(p, 'last_name', '') or "",
+                                "username": getattr(p, 'username', '') or ""
+                            })
+                    except Exception as pe:
+                        logger.warning(f"Could not fetch participants for {peer_id}: {pe}")
+
+                    return {
+                        "id": entity.id,
+                        "type": "group",
+                        "phone": "",
+                        "bio": getattr(full.full_chat, 'about', '') or "",
+                        "participants_count": count,
+                        "members": members
+                    }
+        except Exception as e:
+            logger.error(f"Error fetching peer profile for {peer_id}: {e}")
+            raise e
+
     async def send_reaction(self, account_id: int, peer_id: int, message_id: int, emoji: str):
         """Send a reaction to a message"""
         session = self.sessions.get(account_id)

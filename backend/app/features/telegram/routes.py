@@ -791,6 +791,39 @@ async def search_users(
             detail=f"Failed to search users: {str(e)}",
         )
 
+# Get full profile information of a specific peer (user, group, or channel)
+@router.get("/accounts/{account_id}/peers/{peer_id}/profile")
+async def get_peer_profile(
+    account_id: int,
+    peer_id: int,
+    current_user = Depends(get_current_user),
+):
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id,
+        current_user.user_id,
+    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+        
+    try:
+        profile = await telethon_service.get_peer_profile(account_id, peer_id)
+        if not profile:
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile could not be fetched",
+            )
+        return profile
+    except Exception as e:
+        logger.error(f"Error getting peer profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get peer profile: {str(e)}",
+        )
+
 
 # Initiate a new local conversation context with a target Telegram peer ID
 @router.post("/accounts/{account_id}/conversations", response_model=ConversationResponse)

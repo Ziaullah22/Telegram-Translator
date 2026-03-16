@@ -17,6 +17,7 @@ import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, S
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
 import ContactInfoModal from '../Modals/ContactInfoModal';
+import ChatProfileModal from '../Modals/ChatProfileModal';
 import ConfirmModal from '../Modals/ConfirmModal';
 import PeerAvatar from '../Common/PeerAvatar';
 import ForwardMessageModal from '../Modals/ForwardMessageModal';
@@ -610,6 +611,7 @@ export default function ChatWindow({
   };
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showChatProfileModal, setShowChatProfileModal] = useState(false);
   const [contactSaveAlert, setContactSaveAlert] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -1336,8 +1338,13 @@ export default function ChatWindow({
         ) : (
           <div className="flex items-center justify-between animate-fade-in">
             <div className="flex-1">
-              <div className="flex items-center space-x-4">
-                <PeerAvatar
+              <div 
+                className="flex items-center space-x-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1.5 -ml-1.5 rounded-2xl transition-all duration-200 group w-fit pr-6"
+                onClick={() => setShowChatProfileModal(true)}
+                title="View Profile Information"
+              >
+                <div className="transform transition-transform group-hover:scale-105">
+                  <PeerAvatar
                   accountId={currentAccount?.id}
                   peerId={
                     currentConversation?.telegram_peer_id ||
@@ -1349,6 +1356,7 @@ export default function ChatWindow({
                   name={currentConversation?.title || 'Unknown'}
                   className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
                 />
+                </div>
                 <div className="flex-1 min-w-0">
                   {/* [FEATURE: Advanced Username Handling] 
                       Automatically display the @username in the chat header if the conversation title is just a phone number. */}
@@ -2145,7 +2153,12 @@ export default function ChatWindow({
         sourceConversationId={conversationId || null}
         currentAccountId={currentAccount?.id}
       />
-
+      <ChatProfileModal
+        isOpen={showChatProfileModal}
+        onClose={() => setShowChatProfileModal(false)}
+        chat={currentConversation}
+        accountId={currentAccount?.id}
+      />
     </div >
   );
 }

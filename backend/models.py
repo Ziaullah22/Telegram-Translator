@@ -386,11 +386,17 @@ class CampaignLeadResponse(BaseModel):
     id: int
     campaign_id: int
     telegram_identifier: str
+    telegram_id: Optional[int] = None
     current_step: int
     status: LeadStatus
     failure_reason: Optional[str] = None
-    last_contact_at: Optional[datetime]
-    assigned_account_id: Optional[int]
+    first_contacted_at: Optional[datetime] = None
+    last_contact_at: Optional[datetime] = None
+    responded_at: Optional[datetime] = None
+    response_time_seconds: Optional[int] = None
+    replied_at_step: Optional[int] = None
+    restarted_at: Optional[datetime] = None
+    assigned_account_id: Optional[int] = None
     assigned_account_name: Optional[str] = None
     assigned_account_display_name: Optional[str] = None
     created_at: datetime
