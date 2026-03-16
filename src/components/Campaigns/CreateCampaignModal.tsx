@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Timer, Zap, ShieldOff, Pencil, Plus, Minus, Trash2, Check, Clock, MessageSquare } from 'lucide-react';
+import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, Timer, Zap, ShieldOff, Pencil, Plus, Minus, Trash2, Check, Clock, MessageSquare } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 import ConfirmModal from '../Common/ConfirmModal';
 
@@ -11,86 +11,7 @@ interface CreateCampaignModalProps {
 }
 
 // --- Custom Dropdown Component (Fixed to handle screen positioning) ---
-const JumpSelect = ({ value, onChange, totalSteps, currentStep }: { value: number | undefined, onChange: (val: number | undefined) => void, totalSteps: number, currentStep: number }) => {
-    const [showMenu, setShowMenu] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [dropDirection, setDropDirection] = useState<'down' | 'up'>('down');
 
-    const jumpOptions = Array.from({ length: totalSteps }, (_, i) => ({
-        label: `➔ Jump to Step ${i + 1}`,
-        value: i + 1
-    })).filter(o => o.value !== currentStep);
-
-    useEffect(() => {
-        if (showMenu && containerRef.current) {
-            const rect = containerRef.current.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
-            // If less than 350px below, flip it up to ensure items fit
-            setDropDirection(spaceBelow < 350 ? 'up' : 'down');
-        }
-    }, [showMenu]);
-
-    const currentLabel = value
-        ? jumpOptions.find(o => o.value === value)?.label || `➔ Jump to Step ${value}`
-        : "➡️ Normal: Just go to the next step";
-
-    // If no other steps exist to jump to, just show a static "Normal" display
-    if (jumpOptions.length === 0) {
-        return (
-            <div className="w-full bg-gray-50 dark:bg-black/10 border-2 border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-base font-bold text-gray-400/60 flex items-center gap-2 select-none">
-                <span>{currentLabel}</span>
-            </div>
-        );
-    }
-
-    return (
-        <div className="relative" ref={containerRef}>
-            <div
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(!showMenu);
-                }}
-                className="w-full flex items-center justify-between bg-white dark:bg-black/20 border-2 border-gray-200 dark:border-white/10 rounded-2xl px-5 py-4 text-base font-bold focus:border-blue-500 outline-none appearance-none cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-white/5"
-            >
-                <span className={value !== undefined ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"}>
-                    {currentLabel}
-                </span>
-                <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200 ${showMenu ? 'rotate-180' : ''}`} />
-            </div>
-
-            {showMenu && (
-                <>
-                    <div className="fixed inset-0 z-[10001] bg-transparent" onClick={(e) => {
-                        e.stopPropagation();
-                        setShowMenu(false);
-                    }} />
-                    <div
-                        className={`absolute left-0 right-0 z-[10002] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-${dropDirection === 'down' ? 'top' : 'bottom'}-2 duration-200 ${dropDirection === 'down' ? 'top-full mt-2' : 'bottom-full mb-2'}`}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="max-h-80 overflow-y-auto py-1 custom-scrollbar">
-                            <div
-                                onClick={() => { onChange(undefined); setShowMenu(false); }}
-                                className={`w-full text-left px-5 py-4 text-base font-bold cursor-pointer transition-colors ${value === undefined ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-                            >
-                                ➡️ Normal: Just go to the next step
-                            </div>
-                            {jumpOptions.map((opt, i) => (
-                                <div
-                                    key={i}
-                                    onClick={() => { onChange(opt.value); setShowMenu(false); }}
-                                    className={`w-full text-left px-5 py-4 text-base font-bold cursor-pointer transition-colors ${value === opt.value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-                                >
-                                    {opt.label}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </>
-            )}
-        </div>
-    );
-};
 
 // --- Animated wrapper: slides + fades in each new follow-up card ---
 const AnimatedCard = ({ children }: { children: React.ReactNode }) => {
@@ -118,7 +39,7 @@ const toTotalHours = (days: number, hours: number, minutes: number) =>
 
 const DRAFT_KEY = 'campaign_creation_draft';
 
-const KeywordReplyManager = ({ items, onChange, title, description, showTitle = true, totalSteps = 0, currentStep = 0 }: { items: any[], onChange: (items: any[]) => void, title?: string, description?: string, showTitle?: boolean, totalSteps?: number, currentStep?: number }) => {
+const KeywordReplyManager = ({ items, onChange, title, description, showTitle = true }: { items: any[], onChange: (items: any[]) => void, title?: string, description?: string, showTitle?: boolean }) => {
     return (
         <div className="flex flex-col gap-5">
             {showTitle && (
@@ -177,22 +98,7 @@ const KeywordReplyManager = ({ items, onChange, title, description, showTitle = 
                                 />
                             </div>
 
-                            <div className="flex flex-col gap-3">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                                    AND THEN jumping to...
-                                </label>
-                                <JumpSelect
-                                    value={item.next_step}
-                                    onChange={(val) => {
-                                        const newItems = [...items];
-                                        newItems[i].next_step = val;
-                                        onChange(newItems);
-                                    }}
-                                    totalSteps={totalSteps}
-                                    currentStep={currentStep}
-                                />
-                            </div>
+
                         </div>
                     </div>
                 ))}
@@ -224,7 +130,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     const [showErrorPopup, setShowErrorPopup] = useState(false);
     const [popupMessage, setPopupMessage] = useState('');
     const [failedStepIdx, setFailedStepIdx] = useState<number | null>(null);
-    const [viewingStepDetail, setViewingStepDetail] = useState<{idx: number, step: any} | null>(null);
     const [isEditingAll, setIsEditingAll] = useState(false); // Global edit mode for summary
     const [editSnapshot, setEditSnapshot] = useState<any>(null); // To revert changes if cancelled
     const [globalAutoReplies, setGlobalAutoReplies] = useState<any[]>([]);
@@ -722,8 +627,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                     showTitle={false}
                                                                     items={Array.isArray(s.auto_replies) ? s.auto_replies : []}
                                                                     onChange={(newItems) => { const n = [...steps]; n[idx].auto_replies = newItems; setSteps(n); }}
-                                                                    totalSteps={steps.length}
-                                                                    currentStep={idx + 1}
                                                                 />
                                                             </div>
                                                         </div>
@@ -991,9 +894,9 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                             const updated = steps.filter((_, i) => i !== idx).map((st, i) => ({ ...st, step_number: i + 1 }));
                                                                             setSteps(updated);
                                                                         }}
-                                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all uppercase tracking-widest border border-transparent hover:border-red-100"
+                                                                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all uppercase tracking-widest border border-transparent hover:border-red-100 shadow-sm"
                                                                     >
-                                                                        <Minus className="w-3 h-3" />
+                                                                        <Minus className="w-4 h-4" />
                                                                         Subtract
                                                                     </button>
                                                         </div>
@@ -1043,8 +946,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                                 n[idx].auto_replies = newItems;
                                                                                 setSteps(n);
                                                                             }}
-                                                                            totalSteps={steps.length}
-                                                                            currentStep={idx + 1}
                                                                         />
                                                                     </div>
                                                                 ) : (
@@ -1078,13 +979,6 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                             </div>
                                                         </div>
 
-                                                        {/* View Detail Button */}
-                                                        <button
-                                                            onClick={() => setViewingStepDetail({ idx, step: s })}
-                                                            className="w-full py-3.5 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-[10px] hover:bg-blue-700 transition-all flex items-center justify-center gap-3 border-t border-white/10"
-                                                        >
-                                                            <span>🔎 View Full Detail</span>
-                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1163,106 +1057,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 type="info"
             />
 
-            {/* Step Detail Focus Popup */}
-            {viewingStepDetail && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in" onClick={() => setViewingStepDetail(null)} />
-                    <div className="bg-white dark:bg-[#1e293b] w-full max-w-5xl rounded-[40px] shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10">
-                        <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-black text-xl shadow-lg ring-4 ring-purple-500/20">
-                                    {viewingStepDetail.idx + 1}
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-black text-gray-900 dark:text-white">Step Setup Details</h3>
-                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Full Logic Configuration</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setViewingStepDetail(null)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center text-gray-500 hover:rotate-90 transition-all">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        
-                        <div className="p-8 max-h-[70vh] overflow-y-auto custom-scrollbar flex flex-col gap-6">
-                            {/* Detailed Path A */}
-                            <div className="p-6 bg-blue-50/50 dark:bg-blue-500/5 rounded-[32px] border-2 border-blue-100 dark:border-blue-900/20">
-                                <div className="flex flex-col gap-1 mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <AlertCircle className="w-5 h-5 text-blue-600" />
-                                        <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Scenario A: Silent Lead</span>
-                                    </div>
-                                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed pl-8">
-                                        This is your safety net. The system sends this message if the lead completely ignores you.
-                                    </p>
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="p-5 bg-white dark:bg-black/40 rounded-2xl border border-blue-200 dark:border-white/5">
-                                        <p className="text-gray-700 dark:text-gray-300 font-bold leading-relaxed">"{viewingStepDetail.step.response_text}"</p>
-                                    </div>
-                                </div>
-                            </div>
 
-                            {/* Scenario B: Keyword Specific Responses */}
-                            <div className="p-8 bg-purple-50/50 dark:bg-purple-500/5 rounded-[40px] border-2 border-purple-100 dark:border-purple-900/10">
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-lg shadow-purple-600/30 ring-4 ring-purple-500/10">
-                                        <CheckCircle2 className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">Scenario B: Keyword Target Match</h4>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mt-1">
-                                            INSTANT REPLIES FOR SPECIFIC KEYWORDS
-                                        </p>
-                                    </div>
-                                </div>
-                                
-                                <div className="flex flex-col gap-4">
-                                    {(!viewingStepDetail.step.auto_replies || viewingStepDetail.step.auto_replies.length === 0) ? (
-                                        <div className="p-8 bg-white dark:bg-black/40 rounded-[32px] border-2 border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center justify-center gap-2 opacity-60">
-                                            <p className="text-sm font-black text-gray-400 uppercase tracking-widest">No keyword rules</p>
-                                        </div>
-                                    ) : (
-                                        viewingStepDetail.step.auto_replies.map((r: any, ri: number) => (
-                                            <div key={ri} className="bg-white dark:bg-black/40 p-8 rounded-[40px] border-2 border-purple-200/50 dark:border-white/5 flex flex-col gap-5 relative shadow-sm">
-                                                <div className="flex flex-col gap-3">
-                                                    <div className="flex items-center gap-2 px-3 py-1 bg-purple-600/10 text-purple-600 rounded-lg w-fit">
-                                                        <span className="text-[10px] font-black uppercase tracking-tighter">Rule {ri + 1}</span>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {(typeof r.keywords === 'string' ? r.keywords.split(',') : (Array.isArray(r.keywords) ? r.keywords : [])).map((rk: string, rki: number) => {
-                                                            const trimmed = rk.trim();
-                                                            if (!trimmed) return null;
-                                                            return (
-                                                                <span key={rki} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md">
-                                                                    {trimmed}
-                                                                </span>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                                <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5">
-                                                    <p className="text-gray-700 dark:text-gray-300 font-bold leading-relaxed">
-                                                        "{r.reply}"
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-6 bg-gray-50/50 dark:bg-white/5 flex items-center justify-center">
-                            <button 
-                                onClick={() => setViewingStepDetail(null)}
-                                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 hover:scale-[1.02] transition-all shadow-xl"
-                            >
-                                Back to Setup Map
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* NEW: Add Step Configuration Popup */}
             {showAddStepPopup && (
