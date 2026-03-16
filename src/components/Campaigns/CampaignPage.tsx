@@ -225,39 +225,38 @@ const CampaignPage: React.FC = () => {
         // Prevent spam clicking if already updating
         if (updatingCampaigns.has(id)) return;
 
-        try {
-            // 1. Mark as updating
-            setUpdatingCampaigns(prev => new Set(prev).add(id));
+        const targetStatus = currentStatus === 'running' ? 'paused' : 'running';
 
-            // 2. Optimistically update UI
-            const targetStatus = currentStatus === 'running' ? 'paused' : 'running';
+        try {
+            // 1. Mark as updating and set optimistic state FIRST
+            setUpdatingCampaigns(prev => new Set(prev).add(id));
             setCampaigns(prev => prev.map(c => 
                 c.id === id ? { ...c, status: targetStatus } : c
             ));
             
-            // 3. Call API
+            // 2. Call API
             if (currentStatus === 'running') {
                 await campaignsAPI.pauseCampaign(id);
             } else {
                 await campaignsAPI.resumeCampaign(id);
             }
 
-            // 4. Release lock immediately after API returns success
-            setUpdatingCampaigns(prev => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-            });
-            fetchCampaigns(true);
+            // 3. Small buffer to allow backend DB sync, then fetch
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchCampaigns(true);
 
-        } catch {
+        } catch (error) {
+            console.error('Failed to update campaign status:', error);
             alert('Failed to update campaign status. Please try again.');
+            // Revert on error
+            fetchCampaigns(true);
+        } finally {
+            // 4. Release lock AFTER fetch completes or error occurs
             setUpdatingCampaigns(prev => {
                 const next = new Set(prev);
                 next.delete(id);
                 return next;
             });
-            fetchCampaigns(true);
         }
     };
 
