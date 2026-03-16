@@ -65,7 +65,9 @@ async def lifespan(app: FastAPI):
             completed_leads INTEGER DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            negative_keywords JSONB DEFAULT '[]'
+            negative_keywords JSONB DEFAULT '[]',
+            kill_switch_enabled BOOLEAN DEFAULT TRUE,
+            auto_replies JSONB DEFAULT '[]'
         );
 
         CREATE TABLE IF NOT EXISTS campaign_steps (
@@ -76,6 +78,7 @@ async def lifespan(app: FastAPI):
             keywords JSONB DEFAULT '[]',
             response_text TEXT NOT NULL,
             next_step INTEGER,
+            auto_replies JSONB DEFAULT '[]',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(campaign_id, step_number)
         );
@@ -100,6 +103,12 @@ async def lifespan(app: FastAPI):
             details TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Add missing columns to existing tables if they weren't created fresh
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
+        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
+
 
         -- Milestone 5 Migrations for Existing Tables
         ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';

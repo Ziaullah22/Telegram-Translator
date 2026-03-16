@@ -55,11 +55,11 @@ export default function Header({ onStartTour }: HeaderProps) {
         <div className="flex items-center space-x-4">
           <button
             onClick={onStartTour}
-            className="hidden lg:flex items-center gap-2 px-4 py-2 hover:bg-white/80 dark:hover:bg-white/5 rounded-xl transition-all text-gray-400 group"
+            className="hidden lg:flex items-center gap-2 px-4 py-2 hover:text-blue-500 rounded-xl transition-all text-gray-400 group"
             title="Quick Tour"
           >
-            <HelpCircle className="w-4 h-4 group-hover:text-blue-500 transition-colors" />
-            <span className="text-[10px] font-black uppercase tracking-widest group-hover:text-blue-500 transition-colors">Tour</span>
+            <HelpCircle className="w-4 h-4 transition-colors" />
+            <span className="text-[10px] font-black uppercase tracking-widest transition-colors">Tour</span>
           </button>
 
           <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-1" />
@@ -67,7 +67,7 @@ export default function Header({ onStartTour }: HeaderProps) {
           {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-white/80 dark:hover:bg-white/5 rounded-xl transition-all group"
+            className="w-10 h-10 flex items-center justify-center text-gray-400 rounded-xl transition-all group"
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
             {theme === 'light' ? (
@@ -91,7 +91,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               logout();
               navigate('/login');
             }}
-            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all"
+            className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all"
             title="Logout"
           >
             <LogOut className="w-5 h-5" />

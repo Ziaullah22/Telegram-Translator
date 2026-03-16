@@ -25,7 +25,7 @@ export const allTourSteps: TourStep[] = [
     // ── STEP 0: Welcome ──────────────────────────────────────────────────────
     {
         title: "Welcome to Telegram Translator",
-        description: "A professional multi-account Telegram client with real-time AI translation. Let's explore every feature together.",
+        description: "A professional multi-account Telegram client with real-time translation. Let's explore every feature together.",
         targetId: 'app-logo',
         group: 'main',
         placement: 'bottom'

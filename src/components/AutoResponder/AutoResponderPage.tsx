@@ -9,7 +9,7 @@
  * 4. Language-specific responding
  */
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Power, PowerOff, Image, Video, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Power, PowerOff, Image, Video, X, Zap } from 'lucide-react';
 import { autoResponderAPI } from '../../services/api';
 import type { AutoResponderRule } from '../../types';
 import AutoResponderModal from './AutoResponderModal.tsx';
@@ -95,149 +95,166 @@ export default function AutoResponderPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 overflow-hidden transition-colors duration-300">
-      {/* Header */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
+    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-6 lg:p-8">
+      <div className="max-w-6xl mx-auto space-y-8">
+        {/* ── Header ── */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Auto-Responder</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Automatically respond to messages with keywords
+            <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
+              <span className="w-10 h-10 bg-[#419FD9] rounded-xl flex items-center justify-center shadow-lg shadow-[#419FD9]/30">
+                <Zap className="w-5 h-5 text-white" />
+              </span>
+              Auto-Responder Rules
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm font-medium">
+              Automatically respond to incoming messages using smart keyword rules.
             </p>
           </div>
           <button
             id="ar-add-rule-btn"
             onClick={handleCreate}
-            className="flex items-center space-x-2 px-4 py-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white rounded-lg transition-colors shadow-md shadow-[#419FD9]/20"
+            className="flex items-center gap-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-[#419FD9]/25 font-bold text-sm"
           >
             <Plus className="w-5 h-5" />
-            <span>Add Rule</span>
+            <span>New Rule</span>
           </button>
         </div>
-      </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg flex items-center justify-between">
-          <p className="text-red-600 dark:text-red-400">{error}</p>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {/* Rules List */}
-      <div className="flex-1 overflow-y-auto p-6" id="ar-rules-list">
-        {rules.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Plus className="w-8 h-8 text-gray-400 dark:text-gray-600" />
+        {/* ── Error Message ── */}
+        {error && (
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-between animate-shake">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
+                <X className="w-5 h-5 text-red-500" />
+              </div>
+              <p className="text-red-600 dark:text-red-400 font-bold text-sm">{error}</p>
             </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No auto-responder rules</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              Create your first rule to automatically respond to messages
-            </p>
-            <button
-              id="ar-create-first-rule-btn"
-              onClick={handleCreate}
-              className="px-4 py-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white rounded-lg transition-colors"
-            >
-              Create First Rule
+            <button onClick={() => setError(null)} className="p-2 hover:bg-white/50 dark:hover:bg-white/5 rounded-lg transition-colors">
+              <X className="w-5 h-5 text-red-400" />
             </button>
           </div>
-        ) : (
-          <div className="grid gap-4">
-            {rules.map((rule) => (
-              <div
-                key={rule.id}
-                className={`bg-gray-50 dark:bg-gray-800 border rounded-lg p-4 transition-all ${rule.is_active
-                  ? 'border-gray-200 dark:border-gray-700'
-                  : 'border-gray-100 dark:border-gray-700/50 opacity-60'
-                  }`}
+        )}
+
+        {/* ── Rules List ── */}
+        <div id="ar-rules-list">
+          {rules.length === 0 ? (
+            <div className="text-center py-20 bg-white dark:bg-[#1e293b] rounded-3xl border-2 border-dashed border-gray-100 dark:border-white/5">
+              <div className="w-20 h-20 bg-gray-50 dark:bg-black/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Zap className="w-10 h-10 text-gray-300 dark:text-gray-600" />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">No responder rules yet</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-sm mx-auto font-medium">
+                Create your first automated response rule to handle messages while you're away.
+              </p>
+              <button
+                id="ar-create-first-rule-btn"
+                onClick={handleCreate}
+                className="inline-flex items-center gap-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-sm transition-all shadow-xl shadow-[#419FD9]/20"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{rule.name}</h3>
-                      {rule.is_active ? (
-                        <span className="px-2 py-1 bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 text-xs rounded-full">Active</span>
-                      ) : (
-                        <span className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs rounded-full">Inactive</span>
-                      )}
-                      {rule.priority > 0 && (
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded-full">
-                          Priority: {rule.priority}
-                        </span>
-                      )}
-                      <span className="px-2 py-1 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs rounded-full">
-                        {rule.language.toUpperCase()}
-                      </span>
+                <Plus className="w-5 h-5" />
+                Setup First Rule
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {rules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={`group bg-white dark:bg-[#1e293b] border-2 rounded-[32px] p-6 transition-all duration-300 hover:shadow-xl hover:shadow-[#419FD9]/5 ${rule.is_active
+                    ? 'border-gray-100 dark:border-white/5'
+                    : 'border-transparent opacity-60 grayscale'
+                    }`}
+                >
+                  <div className="flex flex-col h-full">
+                    {/* Card Header */}
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">{rule.name}</h3>
+                          {rule.is_active ? (
+                            <span className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/50" />
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-gray-400" />
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="px-2.5 py-1 bg-purple-500/10 text-purple-500 text-[10px] font-black uppercase tracking-widest rounded-lg border border-purple-500/10">
+                            {rule.language.toUpperCase()}
+                          </span>
+                          {rule.priority > 0 && (
+                            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-500 text-[10px] font-black uppercase tracking-widest rounded-lg border border-blue-500/10">
+                              Priority: {rule.priority}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleActive(rule)}
+                          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${rule.is_active
+                            ? 'bg-green-500/10 text-green-500 hover:bg-green-500'
+                            : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200'
+                            } hover:text-white`}
+                          title={rule.is_active ? 'Deactivate' : 'Activate'}
+                        >
+                          {rule.is_active ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
+                        </button>
+                        <button
+                          onClick={() => handleEdit(rule)}
+                          className="w-10 h-10 flex items-center justify-center bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white rounded-xl transition-all"
+                          title="Edit"
+                        >
+                          <Edit className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(rule.id)}
+                          className="w-10 h-10 flex items-center justify-center bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Keywords */}
-                    <div className="mb-3">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Keywords:</p>
+                    {/* Keywords Section */}
+                    <div className="bg-gray-50/50 dark:bg-black/20 rounded-2xl p-4 mb-4 border border-gray-100 dark:border-white/5">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Target Keywords</p>
                       <div className="flex flex-wrap gap-2">
                         {rule.keywords.map((keyword, idx) => (
-                          <span key={idx} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded">
+                          <span key={idx} className="px-3 py-1 bg-white dark:bg-white/10 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl shadow-sm border border-gray-100 dark:border-white/5">
                             {keyword}
                           </span>
                         ))}
                       </div>
                     </div>
 
-                    {/* Response */}
-                    <div className="mb-2">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Response:</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/50 p-2 rounded">
-                        {rule.response_text}
-                      </p>
+                    {/* Response Section */}
+                    <div className="flex-1 space-y-3">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auto-Response Message</p>
+                      <div className="relative">
+                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300 italic leading-relaxed pl-4 border-l-4 border-[#419FD9]">
+                          "{rule.response_text}"
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Media */}
+                    {/* Media Footer */}
                     {rule.media_type && (
-                      <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+                      <div className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-500 rounded-xl w-fit">
                         {rule.media_type === 'photo' ? <Image className="w-4 h-4" /> : <Video className="w-4 h-4" />}
-                        <span>With {rule.media_type}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest">With Attached {rule.media_type}</span>
                       </div>
                     )}
                   </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      onClick={() => handleToggleActive(rule)}
-                      className={`p-2 rounded-lg transition-colors ${rule.is_active
-                        ? 'bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-500/30'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      title={rule.is_active ? 'Deactivate' : 'Activate'}
-                    >
-                      {rule.is_active ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
-                    </button>
-                    <button
-                      onClick={() => handleEdit(rule)}
-                      className="p-2 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(rule.id)}
-                      className="p-2 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Modal */}
+      {/* ── Modals ── */}
       {showModal && (
         <AutoResponderModal
           isOpen={showModal}
@@ -252,7 +269,7 @@ export default function AutoResponderPage() {
         onConfirm={confirmDelete}
         title="Delete Rule"
         message="Are you sure you want to delete this auto-responder rule? This action cannot be undone."
-        confirmText="Delete"
+        confirmText="Delete Rule"
         type="danger"
       />
     </div>

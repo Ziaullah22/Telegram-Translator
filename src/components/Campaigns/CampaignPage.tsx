@@ -9,6 +9,7 @@ import type { Campaign } from '../../types';
 import CreateCampaignModal from './CreateCampaignModal';
 import CampaignLeadsModal from './CampaignLeadsModal';
 import CampaignAnalyticsModal from './CampaignAnalyticsModal';
+import CampaignSummaryModal from './CampaignSummaryModal';
 import ConfirmModal from '../Common/ConfirmModal';
 
 // ── How To Use Data ───────────────────────────────────────────────────────────
@@ -28,8 +29,8 @@ const HOW_TO_USE_STEPS = [
     {
         icon: <GitBranch className="w-5 h-5" />,
         color: 'violet',
-        title: '3. Set AI Responses & Jumps',
-        desc: 'Each step now has TWO boxes: one for a timed follow-up (sent if the user is silent) and one for an AI Keyword Response (sent instantly if they reply with a keyword).',
+        title: '3. Set Campaign Responses & Jumps',
+        desc: 'Each step now has TWO boxes: one for a timed follow-up (sent if the user is silent) and one for a Campaign Keyword Response (sent instantly if they reply with a keyword).',
     },
     {
         icon: <ShieldOff className="w-5 h-5" />,
@@ -100,9 +101,9 @@ const SCENARIOS = [
     },
     {
         icon: <Zap className="w-5 h-5" />,
-        badge: 'AI Replier',
+        badge: 'Campaign Replier',
         badgeColor: 'amber',
-        title: 'Double-Box System (Timer vs AI)',
+        title: 'Double-Box System (Timer vs Campaign)',
         desc: 'Understand the difference: Blue box is a "Reminder" (sent if silent); Purple box is an "Answer" (sent if they talk).',
         steps: [
             { label: 'Wait 1 Hour', text: 'User is silent → Campaign sends Blue Box reminder.' },
@@ -134,6 +135,7 @@ const CampaignPage: React.FC = () => {
     const [expandedScenario, setExpandedScenario] = useState<number | null>(null);
     const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
     const [updatingCampaigns, setUpdatingCampaigns] = useState<Set<number>>(new Set());
+    const [selectedSummaryCampaignId, setSelectedSummaryCampaignId] = useState<number | null>(null);
 
     const [confirmConfig, setConfirmConfig] = useState<{
         isOpen: boolean;
@@ -480,9 +482,17 @@ const CampaignPage: React.FC = () => {
                                             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0 group-hover:scale-105 transition-transform">
                                                 <FileText className="w-5 h-5" />
                                             </div>
-                                            <div className="min-w-0">
+                                            <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                    <h3 className="text-base font-black text-gray-900 dark:text-white leading-none truncate">{camp.name}</h3>
+                                                    <h3 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedSummaryCampaignId(camp.id);
+                                                        }}
+                                                        className="text-base font-black text-gray-900 dark:text-white leading-none truncate hover:text-blue-600 transition-colors cursor-help border-b border-dashed border-transparent hover:border-blue-600/30 pb-0.5"
+                                                    >
+                                                        {camp.name}
+                                                    </h3>
                                                     {getStatusBadge(camp.status, camp.is_hibernating)}
                                                     {camp.is_hibernating && camp.status === 'running' && (
                                                         <span className="text-[10px] font-bold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-lg">
@@ -598,6 +608,13 @@ const CampaignPage: React.FC = () => {
                 isOpen={isAnalyticsOpen}
                 onClose={() => setIsAnalyticsOpen(false)}
                 campaignId={selectedAnalyticsCampaignId}
+            />
+
+            {/* Campaign Summary Modal */}
+            <CampaignSummaryModal
+                isOpen={!!selectedSummaryCampaignId}
+                onClose={() => setSelectedSummaryCampaignId(null)}
+                campaignId={selectedSummaryCampaignId}
             />
 
             {/* Leads Modal */}

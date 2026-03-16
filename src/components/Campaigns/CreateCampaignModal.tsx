@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, Timer, Zap, ShieldOff, Pencil, Plus, Minus, Trash2, Check, Clock, MessageSquare } from 'lucide-react';
+import { X, Rocket, FileText, CheckCircle2, AlertCircle, Loader2, Timer, Zap, ShieldOff, Pencil, Plus, Minus, Trash2, Check, Clock, MessageSquare, Target } from 'lucide-react';
 import { campaignsAPI } from '../../services/api';
 import ConfirmModal from '../Common/ConfirmModal';
 
@@ -295,7 +295,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     await campaignsAPI.uploadLeads(campaign.id, csvFile);
                 }
 
-                // 3. Create AI Steps (Keywords & Responses)
+                // 3. Create Campaign Steps (Keywords & Responses)
                 for (const s of payloadSteps) {
                     await campaignsAPI.createStep(campaign.id, s);
                 }
@@ -546,11 +546,41 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             {step === 3 && (
                 <div className="flex flex-col gap-8 animate-slide-right pb-32">
                     <div className="flex flex-col gap-1">
-                        <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Build your Sequence</h2>
-                        <p className="text-base font-bold text-gray-400 uppercase tracking-widest">Step-by-step follow-up setup</p>
+                        <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Sequence Builder</h2>
+                        <p className="text-base font-bold text-gray-400 uppercase tracking-widest leading-loose">Define your logic flow and automated responses</p>
                     </div>
 
-                            {steps.length === 0 ? (
+                    {/* NEW: Always On Replies (Global Campaign Brain) - Refined Aesthetic */}
+                    <div className="bg-white dark:bg-[#1a222c] rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden mb-4">
+                        <div className="bg-gray-50/50 dark:bg-white/5 px-8 py-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
+                                    <Zap className="w-6 h-6" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <h3 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Always On Replies</h3>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1.5 opacity-80 italic">Keywords that trigger replies anywhere in the campaign</p>
+                                </div>
+                            </div>
+                            <div className="px-4 py-2 bg-blue-600/5 rounded-xl border border-blue-600/10 shrink-0">
+                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest leading-none">{globalAutoReplies.length} Rules Active</span>
+                            </div>
+                        </div>
+                        <div className="p-8">
+                            <KeywordReplyManager
+                                items={globalAutoReplies}
+                                onChange={setGlobalAutoReplies}
+                                showTitle={false}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 px-2 mt-8 mb-4">
+                        <div className="w-1.5 h-8 bg-blue-600 rounded-full" />
+                        <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Step-by-Step Sequence</h2>
+                    </div>
+
+                             {steps.length === 0 ? (
                                 <div className="flex flex-col items-center gap-4 py-20 bg-gray-50 dark:bg-white/5 rounded-3xl border-2 border-dashed border-gray-200 dark:border-white/10">
                                     <AlertCircle className="w-14 h-14 text-gray-300" />
                                     <p className="text-lg font-bold text-gray-500 text-center">No follow-up rules added yet.<br />That's okay — the campaign will still send the first message!</p>
@@ -724,8 +754,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                             }
                                         }}
                                         className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-sm transition-all shadow-lg ${
-                                            isEditingAll 
-                                            ? "bg-green-600 text-white hover:bg-green-700 shadow-green-600/20" 
+                                            isEditingAll
+                                            ? "bg-green-600 text-white hover:bg-green-700 shadow-green-600/20"
                                             : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/20"
                                         }`}
                                     >
@@ -745,69 +775,125 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             </div>
 
 
-                            <div className="flex flex-col gap-8">
+                            <div className="flex flex-col gap-10">
 
-                                {/* Top Stats Bar — Full Width, Horizontal */}
-                                <div className="bg-blue-600 rounded-2xl p-4 text-white shadow-2xl shadow-blue-600/30">
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
+                                {/* 1. Basics Card */}
+                                <div className="bg-white dark:bg-[#1a222c] rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                                    <div className="bg-gray-50/50 dark:bg-white/5 px-8 py-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-11 h-11 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
+                                                <Target className="w-5 h-5" />
+                                            </div>
+                                            <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-widest">Campaign Basics</h3>
+                                        </div>
+                                    </div>
 
+                                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                                         {/* Campaign Name */}
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Campaign Name</span>
+                                        <div className="flex flex-col gap-1.5">
+                                            <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Campaign Name</span>
                                             {isEditingAll ? (
                                                 <input
                                                     value={name}
                                                     onChange={e => setName(e.target.value)}
-                                                    className="w-full bg-white/10 border border-white/30 rounded-xl px-3 py-2 text-white font-bold text-base outline-none focus:border-white/60 placeholder-white/40"
+                                                    className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2 text-gray-900 dark:text-white font-bold text-sm outline-none focus:border-blue-500 transition-all"
                                                 />
                                             ) : (
-                                                <p className="text-xl font-black break-all leading-tight">{name}</p>
+                                                <p className="text-lg font-black text-gray-900 dark:text-white break-all leading-tight">{name}</p>
                                             )}
                                         </div>
 
                                         {/* Target Audience */}
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Target Audience</span>
+                                        <div className="flex flex-col gap-1.5">
+                                            <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Target Audience</span>
                                             <div className="flex items-center gap-2">
-                                                <FileText className="w-5 h-5 text-blue-200 shrink-0" />
-                                                <span className="text-lg font-bold break-all leading-tight">{editCampaignId ? "Active Campaign Leads" : csvFile?.name}</span>
+                                                <FileText className="w-4 h-4 text-blue-500 shrink-0" />
+                                                <span className="text-base font-bold text-gray-700 dark:text-gray-300 break-all leading-tight">{editCampaignId ? "Active Campaign Leads" : csvFile?.name}</span>
                                             </div>
                                         </div>
 
                                         {/* Total Steps */}
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-1">Total Message Sequence</span>
+                                        <div className="flex flex-col gap-1.5">
+                                            <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Sequence Length</span>
                                             <div className="flex items-center gap-2">
-                                                <Zap className="w-5 h-5 text-blue-200 shrink-0" />
-                                                <span className="text-lg font-bold">{steps.length} follow-up step{steps.length !== 1 ? 's' : ''}</span>
+                                                <Zap className="w-4 h-4 text-blue-500 shrink-0" />
+                                                <span className="text-base font-bold text-gray-700 dark:text-gray-300">{steps.length} follow-up step{steps.length !== 1 ? 's' : ''}</span>
                                             </div>
                                         </div>
 
                                         {/* Stop Words */}
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-col gap-1.5">
                                             <div className="flex items-center gap-1.5 mb-1">
-                                                <ShieldOff className="w-3.5 h-3.5 text-red-300" />
-                                                <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest">Stop Words</span>
+                                                <ShieldOff className="w-3.5 h-3.5 text-red-500" />
+                                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Kill Switch</span>
                                             </div>
                                             {isEditingAll ? (
                                                 <input
                                                     value={negativeKeywords}
                                                     onChange={e => setNegativeKeywords(e.target.value)}
                                                     placeholder="e.g. stop, no thanks"
-                                                    className="w-full bg-white/10 border border-white/30 rounded-xl px-3 py-2 text-white font-bold text-sm outline-none focus:border-white/60 placeholder-white/40"
+                                                    className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2 text-gray-900 dark:text-white font-bold text-sm outline-none focus:border-blue-500 transition-all"
                                                 />
                                             ) : (
-                                                <p className="text-sm font-bold text-blue-100 italic leading-snug">
+                                                <p className="text-sm font-bold text-red-500 italic leading-snug">
                                                     {killSwitchEnabled
-                                                        ? `"${negativeKeywords || 'No stop words set yet'}"`
-                                                        : 'Stop words are disabled.'}
+                                                        ? `"${negativeKeywords || 'No stop words set'}"`
+                                                        : 'Disabled.'}
                                                 </p>
                                             )}
                                         </div>
-
                                     </div>
                                 </div>
+                                                         {/* 2. Always On Replies Card */}
+                                <div className="bg-white dark:bg-[#1a222c] rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                                    <div className="bg-gray-50/50 dark:bg-white/5 px-8 py-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-11 h-11 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
+                                                <Zap className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-widest">Always On Replies (A.I. Brain)</h3>
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-80 italic">Universal interaction logic</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
+                                    <div className="p-8">
+                                        {isEditingAll ? (
+                                            <div className="bg-gray-50 dark:bg-white/5 rounded-2xl p-6 border border-gray-100 dark:border-white/5">
+                                                <KeywordReplyManager
+                                                    items={globalAutoReplies}
+                                                    onChange={setGlobalAutoReplies}
+                                                    showTitle={false}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {(!globalAutoReplies || globalAutoReplies.length === 0) && (
+                                                    <div className="md:col-span-2 px-5 py-10 bg-gray-50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10 text-center">
+                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">No global rules defined for this campaign</p>
+                                                    </div>
+                                                )}
+                                                {(globalAutoReplies || []).map((r: any, ri: number) => (
+                                                    <div key={ri} className="p-6 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5 flex flex-col gap-4">
+                                                        <div className="flex flex-wrap gap-2 pr-10">
+                                                            {(typeof r.keywords === 'string' ? r.keywords.split(',') : (Array.isArray(r.keywords) ? r.keywords : [])).map((rk: string, rki: number) => {
+                                                                const trimmed = rk.trim();
+                                                                if (!trimmed) return null;
+                                                                return (
+                                                                    <span key={rki} className="text-[9px] font-black text-blue-600 bg-blue-600/10 px-2 py-0.5 rounded-md uppercase border border-blue-600/20">{trimmed}</span>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300 break-words leading-relaxed pl-3 border-l-2 border-blue-600/30">
+                                                            "{r.reply}"
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                                 {/* Message Timeline — Full Width */}
                                 <div className="flex flex-col gap-6">
 
@@ -931,10 +1017,12 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                             {/* Path B: Keyword Match Rule List */}
                                                             <div className="p-6 bg-white dark:bg-black/20 flex flex-col gap-4">
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="w-7 h-7 rounded-lg bg-purple-600/10 flex items-center justify-center border border-purple-600/20">
-                                                                        <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                                                                 <div className="flex items-center gap-2">
+                                                                    <div className="w-7 h-7 rounded-lg bg-blue-600/10 flex items-center justify-center border border-blue-600/20">
+                                                                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
                                                                     </div>
-                                                                    <h5 className="text-[11px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest">Keyword Match Responses</h5>
+                                                                    <h5 className="text-[11px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">Keyword Match Responses</h5>
+                                                                </div>
                                                                 </div>
 
                                                                 {isEditingAll ? (
@@ -957,8 +1045,8 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                             </div>
                                                                         )}
                                                                         {(s.auto_replies || []).map((r: any, ri: number) => (
-                                                                            <div key={ri} className="p-5 bg-purple-50/20 dark:bg-purple-900/10 rounded-3xl border border-purple-100 dark:border-purple-900/20 text-left flex flex-col gap-3 relative overflow-hidden group">
-                                                                                <div className="absolute top-0 right-0 px-3 py-1 bg-purple-600/10 text-purple-600 text-[8px] font-black uppercase rounded-bl-xl tracking-tighter">
+                                                                            <div key={ri} className="p-5 bg-gray-50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5 text-left flex flex-col gap-3 relative overflow-hidden group">
+                                                                                <div className="absolute top-0 right-0 px-3 py-1 bg-blue-600/10 text-blue-600 text-[8px] font-black uppercase rounded-bl-xl tracking-tighter">
                                                                                     Rule {ri + 1}
                                                                                 </div>
                                                                                 <div className="flex flex-wrap gap-1.5 pr-10">
@@ -966,11 +1054,11 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                                                         const trimmed = rk.trim();
                                                                                         if (!trimmed) return null;
                                                                                         return (
-                                                                                            <span key={rki} className="text-[9px] font-black text-purple-600 bg-white dark:bg-purple-950 px-2 py-0.5 rounded-md border border-purple-100 dark:border-purple-800 uppercase shadow-sm">{trimmed}</span>
+                                                                                            <span key={rki} className="text-[9px] font-black text-blue-600 bg-blue-600/10 px-2 py-0.5 rounded-md border border-blue-600/20 uppercase shadow-sm">{trimmed}</span>
                                                                                         );
                                                                                     })}
                                                                                 </div>
-                                                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-200 break-words leading-relaxed pl-1 border-l-2 border-purple-300 dark:border-purple-700">
+                                                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300 break-words leading-relaxed pl-1 border-l-2 border-blue-600/30">
                                                                                     "{r.reply}"
                                                                                 </p>
                                                                             </div>
@@ -1146,14 +1234,14 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     </div>
 
                                     {/* 2. The Multi-Reply Keyword Rules */}
-                                    <div className="bg-white dark:bg-white/5 p-8 rounded-[40px] border-2 border-purple-500/20 shadow-xl relative z-10">
+                                    <div className="bg-white dark:bg-white/5 p-8 rounded-[40px] border border-gray-100 dark:border-white/5 shadow-xl relative z-10">
                                         <div className="flex items-center gap-4 mb-8">
-                                            <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-lg shadow-purple-600/30">
+                                            <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center shadow-sm">
                                                 <MessageSquare className="w-6 h-6" />
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded">Keyword Rules</span>
+                                                    <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded">Keyword Rules</span>
                                                 </div>
                                                 <h5 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">IF Lead replies with specific words...</h5>
                                             </div>
