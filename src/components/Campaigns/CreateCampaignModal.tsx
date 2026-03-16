@@ -823,7 +823,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                             <div className="bg-white dark:bg-black/20 rounded-3xl p-6 border-2 border-gray-100 dark:border-white/5 shadow-sm">
                                                 <div className="flex items-center justify-between mb-4">
                                                     <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Initial Greeting</span>
-                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-black uppercase rounded-full tracking-tighter">Send Instantly</span>
+                                                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[11px] font-black uppercase rounded-full tracking-widest">Send Instantly</span>
                                                 </div>
                                                 {isEditingAll ? (
                                                     <textarea
