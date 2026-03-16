@@ -769,11 +769,11 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     {step === 4 && (
                         <div className="flex flex-col gap-10 animate-slide-right pb-10">
 
-                            {/* Header */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
-                                <div className="flex flex-col gap-2">
-                                    <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Campaign Overview</h2>
-                                    <p className="text-sm font-bold text-gray-400 tracking-widest uppercase">Review and edit anything below before launching.</p>
+                            {/* Sticky Header for Quick Editing */}
+                            <div className="sticky top-0 z-50 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-xl -mx-[8%] px-[8%] py-5 -mt-6 border-b border-gray-100 dark:border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 transition-all">
+                                <div className="flex flex-col gap-1">
+                                    <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Campaign Overview</h2>
+                                    <p className="text-[10px] font-black text-gray-400 tracking-[0.2em] uppercase">Review and edit anything below before launching.</p>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
                                     {isEditingAll && (
