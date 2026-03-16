@@ -466,7 +466,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                     {/* Center: Sequence Progress (Segmented Control) */}
                     <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
                         {[
-                            { s: 1, label: 'Strategy' },
+                            { s: 1, label: 'Setup' },
                             { s: 2, label: 'Audience' },
                             { s: 3, label: 'Sequence' },
                             { s: 4, label: 'Launch' }
@@ -630,7 +630,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     onClick={() => setStep(3)}
                                     className="w-80 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-[20px] font-black uppercase tracking-widest text-sm transition-all shadow-xl shadow-blue-600/30 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                                 >
-                                    Build Follow-up Strategy →
+                                    Build Follow-up Setup →
                                 </button>
                             </div>
                         </div>
@@ -641,7 +641,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 <div className="flex flex-col gap-8 animate-slide-right pb-32">
                     <div className="flex flex-col gap-1">
                         <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-none">Build your Sequence</h2>
-                        <p className="text-base font-bold text-gray-400 uppercase tracking-widest">Step-by-step follow-up strategy</p>
+                        <p className="text-base font-bold text-gray-400 uppercase tracking-widest">Step-by-step follow-up setup</p>
                     </div>
 
                             {steps.length === 0 ? (
@@ -833,7 +833,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                         ) : (
                                             <>
                                                 <Pencil className="w-4 h-4" />
-                                                <span>Edit Strategy</span>
+                                                <span>Edit Setup</span>
                                             </>
                                         )}
                                     </button>
@@ -1174,7 +1174,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                     {viewingStepDetail.idx + 1}
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-black text-gray-900 dark:text-white">Step Strategy Details</h3>
+                                    <h3 className="text-xl font-black text-gray-900 dark:text-white">Step Setup Details</h3>
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Full Logic Configuration</p>
                                 </div>
                             </div>
@@ -1257,7 +1257,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 onClick={() => setViewingStepDetail(null)}
                                 className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 hover:scale-[1.02] transition-all shadow-xl"
                             >
-                                Back to Strategy Map
+                                Back to Setup Map
                             </button>
                         </div>
                     </div>
@@ -1390,7 +1390,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                 }}
                                 className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 hover:scale-[1.02] transition-all shadow-xl"
                             >
-                                Add to Strategy
+                                Add to Setup
                             </button>
                         </div>
                     </div>
