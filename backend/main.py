@@ -386,10 +386,19 @@ async def lifespan(app: FastAPI):
                         except Exception:
                             neg_keywords = []
 
-                        msg_lower = text.lower()
+                        # Match against all available versions (Original Lead text AND Operator translation)
+                        text_versions = [
+                            text.lower(),
+                            processed_translated.lower(),
+                            processed_original.lower()
+                        ]
+                        # Filter out empty and redundant versions
+                        text_versions = list(set([v for v in text_versions if v.strip()]))
+
                         matched_neg = None
                         for nkw in neg_keywords:
-                            if nkw.lower() in msg_lower:
+                            nkw_lower = nkw.lower()
+                            if any(nkw_lower in v for v in text_versions):
                                 matched_neg = nkw
                                 break
                         
@@ -412,6 +421,7 @@ async def lifespan(app: FastAPI):
 
             # 2. Check for auto-responder matches
             message_data['translated_text'] = processed_translated
+            message_data['operator_text'] = processed_original
             await auto_responder_service.check_and_respond(
                 message_data,
                 account['user_id']

@@ -131,9 +131,14 @@ class AutoResponderService:
                 
                 campaign_lead['keywords'] = keywords_list
                 
-                # Use translated text for matching if available, otherwise original
-                match_text = message_data.get('translated_text') or message_text
-                message_lower = match_text.lower()
+                # Match against all available versions (Original Lead text AND Operator translation)
+                text_versions = [
+                    message_text.lower(),
+                    (message_data.get('translated_text') or "").lower(),
+                    (message_data.get('operator_text') or "").lower()
+                ]
+                # Filter out empty and redundant versions
+                text_versions = list(set([v for v in text_versions if v.strip()]))
                     
                 matched_camp_keyword = None
                 forced_next_step = None
@@ -151,7 +156,8 @@ class AutoResponderService:
                     for pair in step_replies_list:
                         if not isinstance(pair, dict): continue
                         for kw in pair.get('keywords', []):
-                            if str(kw).lower() in message_lower:
+                            kw_lower = str(kw).lower()
+                            if any(kw_lower in v for v in text_versions):
                                 matched_camp_keyword = str(kw)
                                 specific_reply = pair.get('reply')
                                 forced_next_step = pair.get('next_step')
@@ -171,7 +177,8 @@ class AutoResponderService:
                         for pair in global_replies_list:
                             if not isinstance(pair, dict): continue
                             for kw in pair.get('keywords', []):
-                                if str(kw).lower() in message_lower:
+                                kw_lower = str(kw).lower()
+                                if any(kw_lower in v for v in text_versions):
                                     matched_camp_keyword = str(kw)
                                     specific_reply = pair.get('reply')
                                     forced_next_step = pair.get('next_step')
@@ -183,7 +190,8 @@ class AutoResponderService:
                     for kw_item in keywords_list:
                         # kw_item can be a string or a dict {"text": "hi", "next_step": 2}
                         kw_text = kw_item["text"] if isinstance(kw_item, dict) else str(kw_item)
-                        if kw_text.lower() in message_lower:
+                        kw_lower = kw_text.lower()
+                        if any(kw_lower in v for v in text_versions):
                             matched_camp_keyword = kw_text
                             forced_next_step = kw_item.get("next_step") if isinstance(kw_item, dict) else None
                             break
@@ -340,12 +348,13 @@ class AutoResponderService:
                 
                 # Translate incoming message to rule's language for matching
                 translated_message = message_text
-                if rule_language != source_language:
+                # Use 'auto' as source language since message_text is the raw incoming message from Lead
+                if rule_language != 'auto': 
                     try:
                         translation_result = await translation_service.translate_text(
                             message_text,
                             target_language=rule_language,
-                            source_language=source_language
+                            source_language='auto'
                         )
                         translated_message = translation_result.get('translated_text', message_text)
                         logger.debug(f"Translated message to {rule_language}: {translated_message}")
