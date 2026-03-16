@@ -355,61 +355,62 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             <div className="relative w-full h-full flex flex-col bg-white dark:bg-[#1a222c] overflow-hidden animate-fade-in">
 
                 {/* ── OPTIMIZED HEADER ── */}
-                <div className="px-8 py-4 border-b border-blue-100 dark:border-white/5 flex items-center justify-between bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
-                    
-                    {/* Left: Branding & Action Type */}
-                    <div className="flex items-center gap-4 min-w-[280px]">
-                        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-                            <Rocket className="w-5 h-5" />
-                        </div>
-                        <div className="flex flex-col">
-                            <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Create Campaign</h2>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">New Strategic Outreach</p>
-                        </div>
-                    </div>
-
-                    {/* Center: Sequence Progress (Segmented Control) */}
-                    <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
-                        {[
-                            { s: 1, label: 'Setup' },
-                            { s: 2, label: 'Audience' },
-                            { s: 3, label: 'Sequence' },
-                            { s: 4, label: 'Launch' }
-                        ].map((item) => (
-                            <div
-                                key={item.s}
-                                className={`flex items-center gap-2 py-2 px-6 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${
-                                    step === item.s 
-                                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
-                                    : step > item.s 
-                                        ? 'text-green-500' 
-                                        : 'text-gray-400'
-                                }`}
-                            >
-                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${
-                                    step === item.s ? 'bg-blue-100 dark:bg-white text-blue-600' : 'bg-gray-100 dark:bg-white/5 text-gray-400'
-                                }`}>
-                                    {step > item.s ? "✓" : item.s}
-                                </span>
-                                <span className="hidden md:inline">{item.label}</span>
+                <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
+                    <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+                        {/* Left: Branding & Action Type */}
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                                <Rocket className="w-5 h-5" />
                             </div>
-                        ))}
-                    </div>
+                            <div className="flex flex-col">
+                                <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Create Campaign</h2>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">New Strategic Outreach</p>
+                            </div>
+                        </div>
 
-                    {/* Right: Exit Action */}
-                    <div className="flex items-center justify-end min-w-[280px]">
-                        <button 
-                            onClick={onClose} 
-                            className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
-                        >
-                            <X className="w-6 h-6" />
-                        </button>
+                        {/* Center: Sequence Progress (Segmented Control) */}
+                        <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+                            {[
+                                { s: 1, label: 'Setup' },
+                                { s: 2, label: 'Audience' },
+                                { s: 3, label: 'Sequence' },
+                                { s: 4, label: 'Launch' }
+                            ].map((item) => (
+                                <div
+                                    key={item.s}
+                                    className={`flex items-center gap-2 py-2 px-6 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${
+                                        step === item.s 
+                                        ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
+                                        : step > item.s 
+                                            ? 'text-green-500' 
+                                            : 'text-gray-400'
+                                    }`}
+                                >
+                                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${
+                                        step === item.s ? 'bg-blue-100 dark:bg-white text-blue-600' : 'bg-gray-100 dark:bg-white/5 text-gray-400'
+                                    }`}>
+                                        {step > item.s ? "✓" : item.s}
+                                    </span>
+                                    <span className="hidden md:inline">{item.label}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Right: Exit Action */}
+                        <div className="flex items-center justify-end">
+                            <button 
+                                onClick={onClose} 
+                                className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 {/* ── BODY ── */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]">
-                    <div className="w-full px-[8%] py-6">
+                    <div className="max-w-6xl mx-auto px-6 py-6">
 
 
 
@@ -1015,7 +1016,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                             </div>
 
                             {/* Final Launch Button Fixed at Bottom */}
-                            <div className="sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 py-2.5 px-10 flex items-center justify-center gap-4 z-40 -mx-[8%] -mb-6">
+                            <div className="sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 py-2.5 px-6 flex items-center justify-center gap-4 z-40 -mx-6 -mb-6">
                                 <button
                                     onClick={() => setStep(1)}
                                     className="w-60 py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-[22px] font-black uppercase tracking-widest text-sm transition-all hover:bg-gray-100 dark:hover:bg-white/5"
