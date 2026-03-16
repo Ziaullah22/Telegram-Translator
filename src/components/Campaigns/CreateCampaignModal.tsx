@@ -344,7 +344,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-0">
+        <div className="fixed inset-x-0 bottom-0 top-[73px] z-[10000] flex items-center justify-center p-0">
             {/* ── BACKDROP ── */}
             <div 
                 className="absolute inset-0 bg-black/60 animate-fade-in" 
@@ -1061,7 +1061,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
 
             {/* NEW: Add Step Configuration Popup */}
             {showAddStepPopup && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div className="fixed inset-x-0 bottom-0 top-[73px] z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in" onClick={() => setShowAddStepPopup(false)} />
                     <div className="bg-white dark:bg-[#1e293b] w-full max-w-4xl rounded-[40px] shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10">
                         <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5">

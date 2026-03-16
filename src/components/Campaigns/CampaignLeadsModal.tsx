@@ -64,36 +64,39 @@ const CampaignLeadsModal: React.FC<CampaignLeadsModalProps> = ({ isOpen, onClose
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-0 bg-black/60 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-x-0 bottom-0 top-[73px] z-[10000] flex items-center justify-center p-0 bg-black/60 backdrop-blur-md animate-fade-in">
             <div className="bg-white dark:bg-[#111827] w-full h-full flex flex-col overflow-hidden">
 
                 {/* ── OPTIMIZED HEADER ── */}
-                <div className="px-8 py-4 border-b border-blue-100 dark:border-white/5 flex items-center justify-between bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
-                    
-                    {/* Left: Campaign Context */}
-                    <div className="flex items-center gap-4 min-w-[280px]">
-                        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-                            <Users className="w-5 h-5" />
+                <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
+                    <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+                        
+                        {/* Left: Campaign Context */}
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                                <Users className="w-5 h-5" />
+                            </div>
+                            <div className="flex flex-col">
+                                <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Lead Intel</h2>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 truncate max-w-[200px]">{campaign.name}</p>
+                            </div>
                         </div>
-                        <div className="flex flex-col">
-                            <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">Lead Intel</h2>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 truncate max-w-[200px]">{campaign.name}</p>
+
+                        {/* Right: Branding & Action */}
+                        <div className="flex items-center gap-6">
+                            {/* Branding Title */}
+                            <div className="hidden md:flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 px-4 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
+                                <span className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-[0.2em]">Assignment Database</span>
+                            </div>
+
+                            {/* Exit Action */}
+                            <button 
+                                onClick={onClose} 
+                                className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
                         </div>
-                    </div>
-
-                    {/* Center: Branding Title */}
-                    <div className="flex items-center gap-1 bg-white/50 dark:bg-black/30 p-1 px-4 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
-                        <span className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-[0.2em]">Assignment Database</span>
-                    </div>
-
-                    {/* Right: Exit Action */}
-                    <div className="flex items-center justify-end min-w-[280px]">
-                        <button 
-                            onClick={onClose} 
-                            className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
-                        >
-                            <X className="w-6 h-6" />
-                        </button>
                     </div>
                 </div>
 
