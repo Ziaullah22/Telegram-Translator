@@ -86,18 +86,18 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
     };
 
     return (
-        <div className={`bg-white dark:bg-[#17212b] rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/5 flex flex-col ${className}`}>
+        <div className={`bg-white dark:bg-[#1e293b] rounded-2xl shadow-sm overflow-hidden border border-gray-100 dark:border-white/5 flex flex-col ${className}`}>
             {/* Table Header */}
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02]">
+            <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
                 <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500 shadow-inner">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
                         <Trophy className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="font-black text-gray-900 dark:text-gray-100 uppercase tracking-wider italic">
+                        <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-widest leading-none">
                             {title || (type === 'conversations' ? 'Chat Ranking' : 'Account Ranking')}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-widest leading-none mt-1">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
                             Response Time Leaderboard
                         </p>
                     </div>
@@ -105,9 +105,9 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
                 <button
                     onClick={fetchData}
                     disabled={loading}
-                    className="p-2 hover:bg-white dark:hover:bg-white/10 rounded-xl transition-all border border-transparent hover:border-gray-200 dark:hover:border-white/10 text-gray-500 active:scale-95"
+                    className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
                 >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-500' : ''}`} />
                 </button>
             </div>
 
@@ -198,8 +198,8 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
 
             {/* Footer */}
             {!loading && data.length > 0 && (
-                <div className="px-6 py-4 bg-gray-50/30 dark:bg-white/[0.01] border-t border-gray-100 dark:border-white/5">
-                    <p className="text-[10px] text-center text-gray-400 font-bold uppercase tracking-[0.25em]">
+                <div className="px-6 py-4 bg-gray-50/50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5">
+                    <p className="text-[10px] text-center text-gray-400 font-black uppercase tracking-widest">
                         Performance data updates in real-time
                     </p>
                 </div>

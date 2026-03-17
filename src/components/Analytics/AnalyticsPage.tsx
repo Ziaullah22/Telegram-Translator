@@ -9,13 +9,11 @@
  */
 import React, { useState, useEffect } from 'react';
 import ResponseTimeRanking from './ResponseTimeRanking';
-import { BarChart2, Activity, ArrowLeft, ChevronDown, Smartphone } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { BarChart2, Activity, ChevronDown, Smartphone } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
 const AnalyticsPage: React.FC = () => {
-    const navigate = useNavigate();
     const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
     const [selectedAccountId, setSelectedAccountId] = useState<number | 'all'>('all');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -44,46 +42,56 @@ const AnalyticsPage: React.FC = () => {
     }, [accounts, selectedAccountId]);
 
     return (
-        <div className="flex-1 bg-gray-50 dark:bg-[#0e1621] p-8 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-6 lg:p-8">
             <div className="max-w-6xl mx-auto space-y-8">
-                {/* Navigation Bar */}
-                <div className="flex items-center justify-between mb-2">
-                    <button
-                        onClick={() => navigate('/')}
-                        className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-blue-500 transition-colors bg-white dark:bg-[#17212b] px-4 py-2 rounded-xl border border-gray-100 dark:border-white/5"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Back to Chats
-                    </button>
 
+                {/* ── Header ── */}
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h1 id="analytics-header" className="text-3xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
+                            <span className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                                <BarChart2 className="w-5 h-5 text-white" />
+                            </span>
+                            Performance Analytics
+                        </h1>
+                        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm font-medium">
+                            {selectedAccount
+                                ? `Detailed response metrics for ${selectedAccount.displayName || selectedAccount.accountName}.`
+                                : 'Monitor response times and performance across all sessions.'}
+                        </p>
+                    </div>
+
+                    {/* Account Filter */}
                     <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Filter Stats:</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 hidden sm:block">Filter:</span>
                         <div className="relative">
                             <button
                                 id="analytics-filter-btn"
                                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                                className="flex items-center gap-3 bg-white dark:bg-[#17212b] text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl border border-gray-100 dark:border-white/5 text-xs font-black uppercase tracking-widest shadow-sm hover:border-blue-500/50 transition-all active:scale-95"
+                                className="flex items-center gap-2 bg-white dark:bg-[#1e293b] text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-xs font-black uppercase tracking-widest shadow-sm hover:border-blue-500/50 transition-all"
                             >
-                                <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-                                <span>{selectedAccount ? (selectedAccount.displayName || selectedAccount.accountName) : "All Sessions Overview"}</span>
-                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                                <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+                                <span className="max-w-[160px] truncate">
+                                    {selectedAccount ? (selectedAccount.displayName || selectedAccount.accountName) : 'All Sessions'}
+                                </span>
+                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
                             </button>
 
                             {isDropdownOpen && (
                                 <>
                                     <div className="fixed inset-0 z-10" onClick={() => setIsDropdownOpen(false)} />
-                                    <div className="absolute right-0 mt-2 w-64 bg-white/80 dark:bg-[#17212b]/80 backdrop-blur-xl border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                        <div className="p-2 border-b border-gray-100 dark:border-white/5 text-[9px] font-black uppercase tracking-widest text-gray-400 px-4">
-                                            Select Perspective
+                                    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/10 rounded-2xl shadow-2xl z-20 overflow-hidden">
+                                        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 text-[9px] font-black uppercase tracking-widest text-gray-400">
+                                            Select Account
                                         </div>
                                         <div className="max-h-64 overflow-y-auto custom-scrollbar">
                                             {accounts.map(acc => (
                                                 <button
                                                     key={acc.id}
                                                     onClick={() => { setSelectedAccountId(acc.id); setIsDropdownOpen(false); }}
-                                                    className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center gap-2 hover:bg-blue-500/10 transition-colors ${selectedAccountId === acc.id ? 'text-blue-500' : 'text-gray-600 dark:text-gray-300'}`}
+                                                    className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center gap-2 hover:bg-blue-500/10 transition-colors ${selectedAccountId === acc.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
                                                 >
-                                                    <Smartphone className="w-3.5 h-3.5" />
+                                                    <Smartphone className="w-3.5 h-3.5 shrink-0" />
                                                     {acc.displayName || acc.accountName}
                                                 </button>
                                             ))}
@@ -95,43 +103,49 @@ const AnalyticsPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h1 id="analytics-header" className="text-3xl font-black text-gray-900 dark:text-white uppercase tracking-wider italic flex items-center gap-3">
-                            <BarChart2 className="w-8 h-8 text-blue-500" />
-                            {selectedAccount ? (
-                                <>Statistics <span className="text-blue-500">for {selectedAccount.displayName || selectedAccount.accountName}</span></>
-                            ) : (
-                                <>Global <span className="text-blue-500">Statistics</span></>
-                            )}
-                        </h1>
-                        <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium">
-                            {selectedAccount
-                                ? "Detailed response metrics for this specific session."
-                                : "Monitor response times and team performance across all platforms."}
-                        </p>
-                    </div>
-
-                    <div id="analytics-active-focus" className="flex items-center gap-4 bg-white dark:bg-[#17212b] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
-                        <div className="p-3 bg-green-500/10 rounded-xl text-green-500">
-                            <Activity className="w-6 h-6" />
+                {/* ── Stats Overview Cards ── */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {[
+                        {
+                            label: 'Active Session',
+                            value: selectedAccount?.displayName || selectedAccount?.accountName || '—',
+                            icon: <Activity className="w-5 h-5" />,
+                            bg: 'bg-blue-600/10',
+                            text: 'text-blue-600',
+                        },
+                        {
+                            label: 'Accounts Loaded',
+                            value: accounts.length,
+                            icon: <Smartphone className="w-5 h-5" />,
+                            bg: 'bg-indigo-500/10',
+                            text: 'text-indigo-500',
+                        },
+                        {
+                            label: 'Data Mode',
+                            value: selectedAccount ? 'Per Account' : 'Global',
+                            icon: <BarChart2 className="w-5 h-5" />,
+                            bg: 'bg-green-500/10',
+                            text: 'text-green-500',
+                        },
+                    ].map(stat => (
+                        <div key={stat.label} className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-white/5 shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className={`p-2 rounded-xl ${stat.bg}`}>
+                                    <span className={stat.text}>{stat.icon}</span>
+                                </div>
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{stat.label}</span>
+                            </div>
+                            <p className="text-xl font-black text-gray-900 dark:text-white truncate">{stat.value}</p>
                         </div>
-                        <div>
-                            <p className="text-xs text-gray-500 uppercase font-black tracking-widest">Active Focus</p>
-                            <p className="text-lg font-bold text-gray-900 dark:text-gray-100 italic truncate max-w-[150px]">
-                                {selectedAccount?.displayName || selectedAccount?.accountName || "..."}
-                            </p>
-                        </div>
-                    </div>
+                    ))}
                 </div>
 
-                {/* Stats List */}
+                {/* ── Rankings Table ── */}
                 <div className="flex flex-col gap-8">
                     {selectedAccountId !== 'all' && (
                         <ResponseTimeRanking
                             type="conversations"
-                            title={`Statistics for ${selectedAccount?.displayName || selectedAccount?.accountName}`}
+                            title={`Response Rankings — ${selectedAccount?.displayName || selectedAccount?.accountName}`}
                             accountId={selectedAccountId}
                         />
                     )}

@@ -117,6 +117,7 @@ const KeywordReplyManager = ({ items, onChange, title, description, showTitle = 
 
 const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClose, onSuccess, editCampaignId }) => {
     const [step, setStep] = useState(1);
+    const scrollRef = useRef<HTMLDivElement>(null);
     const [name, setName] = useState('');
     const [initialMessage, setInitialMessage] = useState('');
     const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -228,6 +229,13 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
             setError(null);
         }
     }, [isOpen]);
+
+    // Auto-scroll to top on step change
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [step, isOpen]);
 
     if (!isOpen) return null;
 
@@ -409,7 +417,10 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                 </div>
 
                 {/* ── BODY ── */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]">
+                <div 
+                    ref={scrollRef}
+                    className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]"
+                >
                     <div className="max-w-6xl mx-auto px-6 py-6">
 
 
@@ -550,7 +561,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                         <p className="text-base font-bold text-gray-400 uppercase tracking-widest leading-loose">Define your logic flow and automated responses</p>
                     </div>
 
-                    {/* NEW: Always On Replies (Global Campaign Brain) - Refined Aesthetic */}
+                    {/* NEW: Always On Replies (Global Campaign Control) - Refined Aesthetic */}
                     <div className="bg-white dark:bg-[#1a222c] rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden mb-4">
                         <div className="bg-gray-50/50 dark:bg-white/5 px-8 py-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
                             <div className="flex items-center gap-4">
@@ -852,7 +863,7 @@ const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({ isOpen, onClo
                                                 <Zap className="w-5 h-5" />
                                             </div>
                                             <div className="flex flex-col">
-                                                <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-widest">Always On Replies (A.I. Brain)</h3>
+                                                <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-widest">Always On Replies</h3>
                                                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-80 italic">Universal interaction logic</p>
                                             </div>
                                         </div>

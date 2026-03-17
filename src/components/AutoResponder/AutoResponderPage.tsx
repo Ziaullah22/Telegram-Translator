@@ -85,10 +85,10 @@ export default function AutoResponderPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 transition-colors duration-300">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#419FD9] mx-auto mb-4"></div>
-          <p className="text-gray-500 dark:text-gray-400">Loading auto-responder rules...</p>
+      <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-[#0f172a]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-gray-400 font-black uppercase tracking-widest text-xs">Loading rules...</p>
         </div>
       </div>
     );
@@ -97,11 +97,12 @@ export default function AutoResponderPage() {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-8">
+
         {/* ── Header ── */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
-              <span className="w-10 h-10 bg-[#419FD9] rounded-xl flex items-center justify-center shadow-lg shadow-[#419FD9]/30">
+              <span className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
                 <Zap className="w-5 h-5 text-white" />
               </span>
               Auto-Responder Rules
@@ -113,16 +114,16 @@ export default function AutoResponderPage() {
           <button
             id="ar-add-rule-btn"
             onClick={handleCreate}
-            className="flex items-center gap-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-[#419FD9]/25 font-bold text-sm"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-600/25 font-bold text-sm"
           >
-            <Plus className="w-5 h-5" />
-            <span>New Rule</span>
+            <Plus className="w-4 h-4" />
+            New Rule
           </button>
         </div>
 
         {/* ── Error Message ── */}
         {error && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-between animate-shake">
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
                 <X className="w-5 h-5 text-red-500" />
@@ -138,114 +139,113 @@ export default function AutoResponderPage() {
         {/* ── Rules List ── */}
         <div id="ar-rules-list">
           {rules.length === 0 ? (
-            <div className="text-center py-20 bg-white dark:bg-[#1e293b] rounded-3xl border-2 border-dashed border-gray-100 dark:border-white/5">
-              <div className="w-20 h-20 bg-gray-50 dark:bg-black/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Zap className="w-10 h-10 text-gray-300 dark:text-gray-600" />
+            <div className="bg-white dark:bg-[#1e293b] rounded-2xl border-2 border-dashed border-gray-200 dark:border-white/5 p-12 text-center">
+              <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Zap className="w-8 h-8 text-blue-500" />
               </div>
-              <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">No responder rules yet</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-sm mx-auto font-medium">
+              <h3 className="text-lg font-black text-gray-900 dark:text-white mb-1">No Rules Yet</h3>
+              <p className="text-gray-400 text-sm mb-6 max-w-xs mx-auto">
                 Create your first automated response rule to handle messages while you're away.
               </p>
               <button
                 id="ar-create-first-rule-btn"
                 onClick={handleCreate}
-                className="inline-flex items-center gap-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-sm transition-all shadow-xl shadow-[#419FD9]/20"
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20"
               >
-                <Plus className="w-5 h-5" />
-                Setup First Rule
+                <Plus className="w-4 h-4" /> Setup First Rule
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
               {rules.map((rule) => (
                 <div
                   key={rule.id}
-                  className={`group bg-white dark:bg-[#1e293b] border-2 rounded-[32px] p-6 transition-all duration-300 hover:shadow-xl hover:shadow-[#419FD9]/5 ${rule.is_active
-                    ? 'border-gray-100 dark:border-white/5'
-                    : 'border-transparent opacity-60 grayscale'
-                    }`}
+                  className={`bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all duration-200 shadow-sm hover:shadow-md ${!rule.is_active ? 'opacity-60 grayscale' : ''}`}
                 >
-                  <div className="flex flex-col h-full">
-                    {/* Card Header */}
-                    <div className="flex items-start justify-between mb-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">{rule.name}</h3>
-                          {rule.is_active ? (
-                            <span className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/50" />
-                          ) : (
-                            <span className="w-2 h-2 rounded-full bg-gray-400" />
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <span className="px-2.5 py-1 bg-purple-500/10 text-purple-500 text-[10px] font-black uppercase tracking-widest rounded-lg border border-purple-500/10">
+                  <div className="p-5 flex flex-wrap items-center justify-between gap-4">
+
+                    {/* Left: Icon + Name + Badges */}
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
+                        <Zap className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <h3 className="text-base font-black text-gray-900 dark:text-white leading-none truncate">
+                            {rule.name}
+                          </h3>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            rule.is_active
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-300'
+                          }`}>
+                            {rule.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                          <span className="px-2.5 py-1 bg-purple-500/10 text-purple-500 text-[10px] font-black uppercase tracking-widest rounded-full border border-purple-500/10">
                             {rule.language.toUpperCase()}
                           </span>
                           {rule.priority > 0 && (
-                            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-500 text-[10px] font-black uppercase tracking-widest rounded-lg border border-blue-500/10">
-                              Priority: {rule.priority}
+                            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-blue-500/10">
+                              Priority {rule.priority}
                             </span>
                           )}
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleToggleActive(rule)}
-                          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${rule.is_active
-                            ? 'bg-green-500/10 text-green-500 hover:bg-green-500'
-                            : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200'
-                            } hover:text-white`}
-                          title={rule.is_active ? 'Deactivate' : 'Activate'}
-                        >
-                          {rule.is_active ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
-                        </button>
-                        <button
-                          onClick={() => handleEdit(rule)}
-                          className="w-10 h-10 flex items-center justify-center bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white rounded-xl transition-all"
-                          title="Edit"
-                        >
-                          <Edit className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(rule.id)}
-                          className="w-10 h-10 flex items-center justify-center bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Keywords Section */}
-                    <div className="bg-gray-50/50 dark:bg-black/20 rounded-2xl p-4 mb-4 border border-gray-100 dark:border-white/5">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Target Keywords</p>
-                      <div className="flex flex-wrap gap-2">
-                        {rule.keywords.map((keyword, idx) => (
-                          <span key={idx} className="px-3 py-1 bg-white dark:bg-white/10 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl shadow-sm border border-gray-100 dark:border-white/5">
-                            {keyword}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Response Section */}
-                    <div className="flex-1 space-y-3">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auto-Response Message</p>
-                      <div className="relative">
-                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300 italic leading-relaxed pl-4 border-l-4 border-[#419FD9]">
-                          "{rule.response_text}"
+                        <p className="text-xs text-gray-400 italic truncate max-w-xs">
+                          "{rule.response_text?.substring(0, 60) || ''}..."
                         </p>
                       </div>
                     </div>
 
-                    {/* Media Footer */}
-                    {rule.media_type && (
-                      <div className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-500 rounded-xl w-fit">
-                        {rule.media_type === 'photo' ? <Image className="w-4 h-4" /> : <Video className="w-4 h-4" />}
-                        <span className="text-[10px] font-black uppercase tracking-widest">With Attached {rule.media_type}</span>
+                    {/* Center: Keywords */}
+                    <div className="flex items-center gap-6 flex-wrap">
+                      <div className="flex flex-wrap gap-1.5 max-w-[240px]">
+                        {rule.keywords.slice(0, 4).map((keyword, idx) => (
+                          <span key={idx} className="px-2.5 py-1 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-[10px] font-bold rounded-lg border border-gray-200 dark:border-white/5">
+                            {keyword}
+                          </span>
+                        ))}
+                        {rule.keywords.length > 4 && (
+                          <span className="px-2.5 py-1 bg-gray-100 dark:bg-white/5 text-gray-500 text-[10px] font-bold rounded-lg border border-gray-200 dark:border-white/5">
+                            +{rule.keywords.length - 4} more
+                          </span>
+                        )}
                       </div>
-                    )}
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-2">
+                      {rule.media_type && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 text-orange-500 rounded-lg text-[10px] font-black uppercase tracking-widest shrink-0">
+                          {rule.media_type === 'photo' ? <Image className="w-3 h-3" /> : <Video className="w-3 h-3" />}
+                          <span className="hidden sm:inline">{rule.media_type}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => handleToggleActive(rule)}
+                        title={rule.is_active ? 'Deactivate' : 'Activate'}
+                        className={`p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 transition-all ${
+                          rule.is_active
+                            ? 'text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20'
+                            : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        {rule.is_active ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={() => handleEdit(rule)}
+                        title="Edit"
+                        className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(rule.id)}
+                        title="Delete"
+                        className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

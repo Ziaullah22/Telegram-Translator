@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     FileText, X, Rocket, Users, CheckCircle2, MessageSquare, 
     Target, Clock, ShieldOff, GitBranch, Zap, ChevronRight,
@@ -18,6 +18,7 @@ const CampaignSummaryModal: React.FC<CampaignSummaryModalProps> = ({ isOpen, onC
     const [steps, setSteps] = useState<CampaignStep[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (isOpen && campaignId) {
@@ -41,6 +42,12 @@ const CampaignSummaryModal: React.FC<CampaignSummaryModalProps> = ({ isOpen, onC
             loadData();
         }
     }, [isOpen, campaignId]);
+ 
+    useEffect(() => {
+        if (isOpen && !loading && scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [isOpen, loading]);
 
     if (!isOpen) return null;
 
@@ -70,7 +77,7 @@ const CampaignSummaryModal: React.FC<CampaignSummaryModalProps> = ({ isOpen, onC
         <div className="fixed inset-x-0 bottom-0 top-[73px] z-[100] flex items-center justify-center p-0">
             <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose} />
             
-            <div className="relative bg-[#f8fafc] dark:bg-[#0f172a] w-full h-full overflow-hidden flex flex-col animate-fade-in">
+            <div className="relative bg-[#f8fafc] dark:bg-[#0f172a] w-full h-full overflow-hidden flex flex-col animate-fade-in" onClick={(e) => e.stopPropagation()}>
                 
                 {/* ── HEADER ── */}
                 <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
@@ -108,7 +115,10 @@ const CampaignSummaryModal: React.FC<CampaignSummaryModalProps> = ({ isOpen, onC
                         <button onClick={onClose} className="px-6 py-2 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 rounded-xl font-bold">Close</button>
                     </div>
                 ) : campaign ? (
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    <div 
+                        ref={scrollRef}
+                        className="flex-1 overflow-y-auto custom-scrollbar"
+                    >
                         <div className="w-full px-6 py-8 space-y-8">
                             
                             {/* Stats */}
