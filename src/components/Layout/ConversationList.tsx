@@ -190,7 +190,7 @@ export default function ConversationList({
       <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 space-y-3">
         <div className="relative group">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-[#419FD9]' : 'text-gray-400 dark:text-gray-500'}`} />
+            <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
           </div>
           <input
             type="search"
@@ -201,7 +201,7 @@ export default function ConversationList({
             spellCheck={false}
             name="search-query-field"
             placeholder={isConnected ? "Search chats or usernames..." : "Connect account to search..."}
-            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-[#419FD9] dark:focus:border-[#419FD9] rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none [&::-webkit-search-cancel-button]:hidden"
+            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none [&::-webkit-search-cancel-button]:hidden"
           />
           {searchQuery && (
             <button
@@ -213,7 +213,7 @@ export default function ConversationList({
           )}
           {isSearching && (
             <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
-              <Loader2 className="w-4 h-4 text-[#419FD9] animate-spin" />
+              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
             </div>
           )}
         </div>
@@ -256,11 +256,11 @@ export default function ConversationList({
                       <h3 className="text-sm font-semibold truncate text-gray-900 dark:text-white">
                         {displayName}
                       </h3>
-                      <p className="text-xs text-[#4da2d9] truncate">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 truncate">
                         {subtitle}
                       </p>
                     </div>
-                    <div className="text-[#4da2d9] pr-2 opacity-70">
+                    <div className="text-blue-600 dark:text-blue-400 pr-2 opacity-70">
                       {getResultIcon(user.type)}
                     </div>
                   </div>
@@ -294,7 +294,7 @@ export default function ConversationList({
                     setContextMenu({ conversation, x: e.clientX, y: e.clientY });
                   }}
                   className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group ${isActive
-                    ? 'bg-[#419FD9] shadow-inner'
+                    ? 'bg-blue-600 shadow-inner'
                     : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                     }`}
                 >
@@ -323,7 +323,7 @@ export default function ConversationList({
                       </h3>
                       <div className="flex items-center space-x-1 ml-2 flex-shrink-0 relative">
                         {isOutgoing && (
-                          <svg className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-[#419FD9] dark:text-[#419FD9]'}`} fill="currentColor" viewBox="0 0 20 20">
+                          <svg className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`} fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
                         )}
@@ -343,7 +343,7 @@ export default function ConversationList({
                         {lastPreview}
                       </p>
                       {unread > 0 && (
-                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black text-white ${isActive ? 'bg-white/30' : conversation.is_muted ? 'bg-gray-400 dark:bg-gray-500' : 'bg-[#40A7E3]'}`}>
+                        <span className={`ml-2 flex-shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black text-white ${isActive ? 'bg-white/30' : conversation.is_muted ? 'bg-gray-400 dark:bg-gray-500' : 'bg-blue-600'}`}>
                           {unread}
                         </span>
                       )}

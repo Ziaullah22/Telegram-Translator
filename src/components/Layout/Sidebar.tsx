@@ -62,7 +62,7 @@ export default function Sidebar({
         <button
           id="add-account-btn"
           onClick={onAddAccount}
-          className="w-full flex items-center justify-center space-x-2 bg-[#419FD9] hover:bg-[#3a8fc4] text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-[#419FD9]/20 text-sm"
+          className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-blue-600/20 text-sm"
         >
           <Plus className="w-4 h-4" />
           <span>Add Account</span>
@@ -95,7 +95,7 @@ export default function Sidebar({
                     onClick={() => onAccountSelect(account)}
                   >
                     {currentAccount?.id === account.id && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#419FD9]" />
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                     )}
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-bold truncate text-[13px] flex-1 mr-1">{account.displayName || account.accountName}</h4>
@@ -104,7 +104,7 @@ export default function Sidebar({
                           const map = unreadCounts[account.id] || {};
                           const total = Object.values(map).reduce((s, n) => s + (n || 0), 0);
                           return total > 0 ? (
-                            <div className="flex items-center space-x-0.5 px-1.5 py-0.5 rounded-xl bg-[#40A7E3] shadow-sm animate-pulse-subtle">
+                            <div className="flex items-center space-x-0.5 px-1.5 py-0.5 rounded-xl bg-blue-600 shadow-sm animate-pulse-subtle">
                               <Bell className="w-2.5 h-2.5 text-white" />
                               <span className="text-[9px] font-black text-white leading-none">
                                 {total}

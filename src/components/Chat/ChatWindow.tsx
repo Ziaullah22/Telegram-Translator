@@ -1089,14 +1089,14 @@ export default function ChatWindow({
                 if (msgs.length > 0) setForwardMessage(msgs[0]);
               }}
               disabled={selectedMessages.length === 0}
-              className="flex items-center space-x-1.5 px-4 py-1.5 bg-[#40a7e3] hover:bg-[#3396d1] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
+              className="flex items-center space-x-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
             >
               <span>Forward {selectedMessages.length > 0 ? selectedMessages.length : ''}</span>
             </button>
             <button
               onClick={handleDeleteSelected}
               disabled={selectedMessages.length === 0}
-              className="flex items-center space-x-1.5 px-4 py-1.5 bg-[#40a7e3] hover:bg-[#3396d1] disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
+              className="flex items-center space-x-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-bold rounded-lg transition-colors uppercase text-[13px] tracking-wide disabled:opacity-50 shadow-sm"
             >
               <span>Delete {selectedMessages.length > 0 ? selectedMessages.length : ''}</span>
             </button>
@@ -2096,7 +2096,7 @@ export default function ChatWindow({
               </form>
             )}
 
-            <p className="text-xs text-blue-500 dark:text-[#4da2d9] mt-2">
+            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
               Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
             </p>
           </>
