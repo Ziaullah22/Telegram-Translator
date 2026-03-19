@@ -294,6 +294,7 @@ async def migrate():
                     price DECIMAL(12, 2) NOT NULL DEFAULT 0,
                     stock_quantity INTEGER NOT NULL DEFAULT 0,
                     keywords JSONB DEFAULT '[]'::jsonb,
+                    photo_url TEXT,
                     photo_urls JSONB DEFAULT '[]'::jsonb,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -309,7 +310,7 @@ async def migrate():
                 CREATE TABLE IF NOT EXISTS orders (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    po_number VARCHAR(50) NOT NULL UNIQUE,
+                    po_number VARCHAR(100) NOT NULL UNIQUE,
                     product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
                     telegram_account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE SET NULL,
                     telegram_peer_id BIGINT NOT NULL,
@@ -375,6 +376,7 @@ async def migrate():
                 ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
 
                 -- Milestone: Inventory Updates
+                ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_url TEXT;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
 
