@@ -33,7 +33,30 @@ class SalesService:
         account_id = int(account_id_raw)
         peer_id = int(peer_id_raw)
 
-        # 1. Check current conversation state
+        # PRE-PROCESSING: Internal Back-Translation for Logic
+        # We translate the customer's message to English internally to perform regex matching.
+        # This allows the bot to understand "确认" as "CONFIRM" or "طلب" as "Order".
+        logic_text = text # Fallback
+        try:
+            # Fetch target language for this account
+            account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+            target_lang = account_data['target_language'] if account_data else 'en'
+            
+            # If the user's language is NOT english, we translate their message back to english for the bot's logic
+            if target_lang != 'en':
+                # We translate text -> English (en)
+                t_data = await translation_service.translate_text(text, 'en')
+                logic_text = t_data['translated_text'].strip()
+                logger.debug(f"Internally translated incoming text for logic: '{text}' -> '{logic_text}'")
+        except Exception as e:
+            logger.error(f"Error in back-translation for logic: {e}")
+            logic_text = text
+
+        # Use logic_text for ALL intent detection below
+        logic_text_upper = logic_text.upper()
+        logic_text_lower = logic_text.lower()
+
+        # 1. Check current conversation state using logic_text
         state = await db.fetchrow(
             "SELECT * FROM sales_states WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
             account_id, peer_id
@@ -41,10 +64,10 @@ class SalesService:
 
         if state and state['status'] == 'awaiting_confirmation':
             # Handle Confirmation/Cancellation
-            if text.upper() == 'CONFIRM':
+            if logic_text_upper == 'CONFIRM' or 'CONFIRM' in logic_text_upper:
                 logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
                 return await self._process_confirmation(account_id, peer_id, state, user_id)
-            elif text.upper() == 'CANCEL':
+            elif logic_text_upper == 'CANCEL' or 'CANCEL' in logic_text_upper:
                 logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
                 await db.execute(
                     "UPDATE sales_states SET status = 'idle' WHERE id = $1",
@@ -53,29 +76,33 @@ class SalesService:
                 await self._translate_and_send_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
                 return True
 
-        # 2. Check for "order [product] [quantity]" pattern
-        # Greedy (.+) ensures we capture "iphone 11" as product and the LAST number as quantity
-        order_match = re.search(r'(?i)order\s+(.+)\s+(\d+)\s*$', text.strip())
+        # 2. Check for "order [product] [quantity]" pattern using logic_text
+        # We use a more flexible regex that matches "order", "command", "request", "buy", "purchase", etc.
+        # This is needed because back-translation of native commands might use these synonyms.
+        cmd_pattern = r'(?i)(order|command|request|buy|purchase|订购|طلب|命令)\s+'
+        
+        # Pattern 1: [Order] [Product] [Quantity]
+        order_match = re.search(cmd_pattern + r'(.+)\s+(\d+)\s*$', logic_text.strip())
         if not order_match:
-            # Fallback for "order [quantity] [product]"
-            order_match = re.search(r'(?i)order\s+(\d+)\s+(.+)\s*$', text.strip())
+            # Fallback Pattern 2: [Order] [Quantity] [Product]
+            order_match = re.search(cmd_pattern + r'(\d+)\s+(.+)\s*$', logic_text.strip())
             if order_match:
-                quantity = int(order_match.group(1))
-                product_query = order_match.group(2).strip()
+                quantity = int(order_match.group(2))
+                product_query = order_match.group(3).strip()
             else:
                 quantity = None
                 product_query = None
         else:
-            product_query = order_match.group(1).strip()
-            quantity = int(order_match.group(2))
+            product_query = order_match.group(2).strip()
+            quantity = int(order_match.group(3))
 
         if product_query and quantity:
             logger.info(f"Order intent detected: {product_query} x {quantity}")
             return await self._handle_order_intent(account_id, peer_id, product_query, quantity, user_id)
 
-        # 3. Check for product inquiries (Keywords)
+        # 3. Check for product inquiries (Keywords) using logic_text
         products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
-        text_lower = text.lower()
+        # We use logic_text_lower here so Chinese "价格是多少" -> "how much is it" matches keywords like "price"
         matches = []
         for product in products:
             keywords = product['keywords']
@@ -88,7 +115,7 @@ class SalesService:
             if not isinstance(keywords, list):
                 keywords = []
 
-            if any(k.lower() in text_lower for k in keywords if k):
+            if any(k.lower() in logic_text_lower for k in keywords if k):
                 matches.append(product)
 
         if matches:
@@ -136,36 +163,42 @@ class SalesService:
 
         total = product['price'] * quantity
         
-        # Translate labels for the invoice
+        # Translate labels and product name for context
         try:
             t_title_data = await translation_service.translate_text("ORDER DRAFT", target_lang)
             t_prod_data = await translation_service.translate_text("Product:", target_lang)
             t_qty_data = await translation_service.translate_text("Quantity:", target_lang)
             t_price_data = await translation_service.translate_text("Price:", target_lang)
             t_total_data = await translation_service.translate_text("Total Amount:", target_lang)
-            t_reply_data = await translation_service.translate_text("Reply to place order", target_lang)
-            t_discard_data = await translation_service.translate_text("to discard", target_lang)
+            t_reply_data = await translation_service.translate_text("Reply to place order:", target_lang)
+            t_discard_data = await translation_service.translate_text("to discard:", target_lang)
+            t_name_data = await translation_service.translate_text(product['name'], target_lang)
+            t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
+            t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
             
             t_title = t_title_data['translated_text']
             t_prod = t_prod_data['translated_text']
             t_qty = t_qty_data['translated_text']
             t_price = t_price_data['translated_text']
             t_total = t_total_data['translated_text']
-            t_reply = t_reply_data['translated_text']
-            t_discard = t_discard_data['translated_text']
+            t_reply = t_reply_data['translated_text'].rstrip(':')
+            t_discard = t_discard_data['translated_text'].rstrip(':')
+            t_name = t_name_data['translated_text']
+            t_confirm = t_confirm_data['translated_text'].upper()
+            t_cancel = t_cancel_data['translated_text'].upper()
         except:
-            t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard")
+            t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard, t_name, t_confirm, t_cancel = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard", product['name'], "CONFIRM", "CANCEL")
 
         invoice_msg = (
             f"📋 **{t_title}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔹 **{t_prod}** {product['name']}\n"
+            f"🔹 **{t_prod}** {t_name}\n"
             f"🔹 **{t_qty}** {quantity}\n"
             f"🔹 **{t_price}** ${product['price']:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **{t_total} ${total:.2f}**\n\n"
-            f"✅ {t_reply} **CONFIRM**\n"
-            f"❌ {t_discard} **CANCEL**"
+            f"✅ {t_reply} **{t_confirm}**\n"
+            f"❌ {t_discard} **{t_cancel}**"
         )
         await self._send_simple_reply(account_id, peer_id, invoice_msg, user_id)
         return True
@@ -195,11 +228,16 @@ class SalesService:
                             try:
                                 account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
                                 target_lang = account_data['target_language'] if account_data else 'en'
-                                base_msg = f"❌ Sorry, we only have {actual_stock} units of {product['name']} available. Would you like to order {actual_stock} instead? Reply to proceed or to cancel."
-                                t_msg_data = await translation_service.translate_text(base_msg, target_lang)
-                                t_msg = t_msg_data['translated_text']
-                                # Inject English keywords back in
-                                final_msg = f"{t_msg}\n✅ **CONFIRM** | ❌ **CANCEL**"
+                                
+                                # Translate EVERYTHING
+                                t_not_enough_data = await translation_service.translate_text(f"❌ Sorry, we only have {actual_stock} units of {product['name']} left.", target_lang)
+                                t_offer_data = await translation_service.translate_text(f"Would you like to order {actual_stock} units instead?", target_lang)
+                                t_reply_data = await translation_service.translate_text("Reply to proceed or to cancel.", target_lang)
+                                t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
+                                t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
+                                
+                                t_msg = f"{t_not_enough_data['translated_text']}\n{t_offer_data['translated_text']}\n{t_reply_data['translated_text']}"
+                                final_msg = f"{t_msg}\n✅ **{t_confirm_data['translated_text']}** | ❌ **{t_cancel_data['translated_text']}**"
                             except:
                                 final_msg = f"❌ Sorry, we only have {actual_stock} units available. Reply **CONFIRM** or **CANCEL**."
                             
@@ -300,31 +338,47 @@ class SalesService:
         # Fetch target language for the account to provide pre-translation
         account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
         target_lang = account_data['target_language'] if account_data else 'en'
-        
-        # Translate labels and actual description
+
+        # Translate COMPLETELY everything (Name, Labels, Description)
         try:
-            # Only translate these labels as requested
+            # Localize Name
+            t_name_data = await translation_service.translate_text(name, target_lang)
+            translated_name = t_name_data['translated_text']
+            
+            # Localize Labels
             t_price_label_data = await translation_service.translate_text("Price:", target_lang)
             t_desc_label_data = await translation_service.translate_text("Description:", target_lang)
+            t_order_instr_data = await translation_service.translate_text("To order, please reply:", target_lang)
             
             t_price_label = t_price_label_data['translated_text'].rstrip(':') + ':'
             t_desc_label = t_desc_label_data['translated_text'].rstrip(':') + ':'
+            t_order_instr = t_order_instr_data['translated_text']
             
-            # Translate the actual content
+            # Localize Description
             t_desc_data = await translation_service.translate_text(desc, target_lang)
             translated_desc = t_desc_data['translated_text']
+            
+            # Localize the Command Prefix and Placeholder
+            t_order_cmd_data = await translation_service.translate_text("Order", target_lang)
+            t_qty_placeholder_data = await translation_service.translate_text("[quantity]", target_lang)
+            t_order_cmd = t_order_cmd_data['translated_text']
+            t_qty_placeholder = t_qty_placeholder_data['translated_text']
         except Exception:
+            translated_name = name
             t_price_label = "Price:"
             t_desc_label = "Description:"
+            t_order_instr = "To order, please reply:"
             translated_desc = desc
+            t_order_cmd = "Order"
+            t_qty_placeholder = "[quantity]"
 
-        # Create the message for the CUSTOMER (Translated labels/desc, English instructions/Commands)
+        # Create the message for the CUSTOMER (100% Translated including COMMAND)
         customer_reply_text = (
-            f"📦 **{name}**\n"
+            f"📦 **{translated_name}**\n"
             f"💰 **{t_price_label}** ${price:.2f}\n"
             f"📝 **{t_desc_label}** {translated_desc}\n\n"
-            f"🛒 To order, please reply:\n"
-            f"`Order {name} [quantity]`"
+            f"🛒 {t_order_instr}\n"
+            f"`{t_order_cmd} {translated_name} {t_qty_placeholder}`"
         )
         
         # Original English text for Admin records
