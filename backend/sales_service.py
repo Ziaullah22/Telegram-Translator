@@ -50,7 +50,7 @@ class SalesService:
                     "UPDATE sales_states SET status = 'idle' WHERE id = $1",
                     state['id']
                 )
-                await self._send_simple_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
+                await self._translate_and_send_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
                 return True
 
         # 2. Check for "order [product] [quantity]" pattern
@@ -113,11 +113,11 @@ class SalesService:
         )
 
         if not product:
-            await self._send_simple_reply(account_id, peer_id, f"Sorry, I couldn't find a product matching '{product_query}'.", user_id)
+            await self._translate_and_send_reply(account_id, peer_id, f"Sorry, I couldn't find a product matching '{product_query}'.", user_id)
             return True
 
         if product['stock_quantity'] < 1:
-            await self._send_simple_reply(account_id, peer_id, f"Sorry, {product['name']} is currently out of stock.", user_id)
+            await self._translate_and_send_reply(account_id, peer_id, f"Sorry, {product['name']} is currently out of stock.", user_id)
             return True
 
         await db.execute(
@@ -184,24 +184,30 @@ class SalesService:
                     )
 
                     if not product:
-                        await self._send_simple_reply(account_id, peer_id, "Sorry, the product was not found. Order cancelled.", user_id)
+                        await self._translate_and_send_reply(account_id, peer_id, "Sorry, the product was not found. Order cancelled.", user_id)
                         return True
 
                     actual_stock = product['stock_quantity']
 
                     if actual_stock < requested_qty:
                         if actual_stock > 0:
-                            msg = (
-                                f"❌ Sorry, we only have {actual_stock} unit{'s' if actual_stock > 1 else ''} of {product['name']} available right now. "
-                                f"Would you like to order {actual_stock} unit{'s' if actual_stock > 1 else ''} instead? "
-                                f"Reply **CONFIRM** to proceed or **CANCEL** to cancel."
-                            )
+                            # We translate most of the message but keep keywords original
+                            try:
+                                account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+                                target_lang = account_data['target_language'] if account_data else 'en'
+                                base_msg = f"❌ Sorry, we only have {actual_stock} units of {product['name']} available. Would you like to order {actual_stock} instead? Reply to proceed or to cancel."
+                                t_msg_data = await translation_service.translate_text(base_msg, target_lang)
+                                t_msg = t_msg_data['translated_text']
+                                # Inject English keywords back in
+                                final_msg = f"{t_msg}\n✅ **CONFIRM** | ❌ **CANCEL**"
+                            except:
+                                final_msg = f"❌ Sorry, we only have {actual_stock} units available. Reply **CONFIRM** or **CANCEL**."
+                            
+                            await self._send_simple_reply(account_id, peer_id, final_msg, user_id)
                             await conn.execute("UPDATE sales_states SET pending_quantity = $1 WHERE id = $2", actual_stock, state['id'])
                         else:
-                            msg = f"❌ Sorry, {product['name']} just went out of stock."
+                            await self._translate_and_send_reply(account_id, peer_id, f"❌ Sorry, {product['name']} just went out of stock.", user_id)
                             await conn.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
-                        
-                        await self._send_simple_reply(account_id, peer_id, msg, user_id)
                         return True
 
                     new_stock = actual_stock - requested_qty
@@ -222,15 +228,38 @@ class SalesService:
                     settings = await conn.fetchrow("SELECT payment_details FROM sales_settings WHERE user_id = $1", user_id)
                     payment_info = settings['payment_details'] if settings and settings['payment_details'] else "[No payment details configured]"
 
+                    # Translate labels and payment info for full localization
+                    try:
+                        account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+                        target_lang = account_data['target_language'] if account_data else 'en'
+                        
+                        t_conf_data = await translation_service.translate_text("ORDER CONFIRMED!", target_lang)
+                        t_order_id_data = await translation_service.translate_text("Order ID:", target_lang)
+                        t_date_data = await translation_service.translate_text("Date:", target_lang)
+                        t_details_data = await translation_service.translate_text("Details:", target_lang)
+                        t_pay_data = await translation_service.translate_text("Payment Instructions:", target_lang)
+                        t_thanks_data = await translation_service.translate_text("Thank you for your business!", target_lang)
+                        t_pi_data = await translation_service.translate_text(payment_info, target_lang)
+                        
+                        header = t_conf_data['translated_text']
+                        l_id = t_order_id_data['translated_text']
+                        l_date = t_date_data['translated_text']
+                        l_det = t_details_data['translated_text']
+                        l_pay = t_pay_data['translated_text']
+                        footer = t_thanks_data['translated_text']
+                        final_pi = t_pi_data['translated_text']
+                    except:
+                        header, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you!", payment_info)
+
                     conf_msg = (
-                        f"🎉 **ORDER CONFIRMED!**\n"
-                        f"Order ID: `{po_number}`\n"
-                        f"Date: {datetime.now().strftime('%d %B %Y')}\n\n"
-                        f"📦 **Details:**\n"
+                        f"🎉 **{header}**\n"
+                        f"{l_id} `{po_number}`\n"
+                        f"{l_date} {datetime.now().strftime('%d %B %Y')}\n\n"
+                        f"📦 **{l_det}**\n"
                         f"{product['name']} × {requested_qty} = **${total_price:.2f}**\n\n"
-                        f"💳 **Payment Instructions:**\n"
-                        f"{payment_info}\n\n"
-                        f"Thank you for your business! 🙏"
+                        f"💳 **{l_pay}**\n"
+                        f"{final_pi}\n\n"
+                        f"{footer} 🙏"
                     )
 
                     await conn.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
@@ -424,5 +453,28 @@ class SalesService:
                     "created_at": datetime.now().isoformat()
                 }
             }, account_id, user_id)
+
+    async def _send_simple_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
+        """Send message and broadcast to admin UI"""
+        session = await telethon_service.get_session(account_id)
+        if session and session.is_connected:
+            result = await session.client.send_message(peer_id, text)
+            await self._save_auto_message(account_id, peer_id, text, user_id, telegram_message_id=result.id)
+
+    async def _translate_and_send_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
+        """Fetch target lang, translate, and send"""
+        try:
+            account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+            target_lang = account_data['target_language'] if account_data else 'en'
+            
+            if target_lang != 'en':
+                t_data = await translation_service.translate_text(text, target_lang)
+                translated_text = t_data['translated_text']
+            else:
+                translated_text = text
+        except:
+            translated_text = text
+            
+        await self._send_simple_reply(account_id, peer_id, translated_text, user_id)
 
 sales_service = SalesService()
