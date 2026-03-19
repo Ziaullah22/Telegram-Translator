@@ -104,7 +104,7 @@ async def create_product(
         description, 
         price, 
         stock_quantity, 
-        keywords_list, 
+        json.dumps(keywords_list), 
         photo_url,
         json.dumps(photo_urls)
     )
@@ -182,7 +182,7 @@ async def update_product(
         description, 
         price, 
         stock_quantity, 
-        keywords_list, 
+        json.dumps(keywords_list), 
         photo_url,
         json.dumps(photo_urls),
         product_id,
