@@ -54,9 +54,11 @@ class SalesService:
                 return True
 
         # 2. Check for "order [product] [quantity]" pattern
-        order_match = re.search(r'(?i)order\s+(.+?)\s+(\d+)', text)
+        # Greedy (.+) ensures we capture "iphone 11" as product and the LAST number as quantity
+        order_match = re.search(r'(?i)order\s+(.+)\s+(\d+)\s*$', text.strip())
         if not order_match:
-            order_match = re.search(r'(?i)order\s+(\d+)\s+(.+)', text)
+            # Fallback for "order [quantity] [product]"
+            order_match = re.search(r'(?i)order\s+(\d+)\s+(.+)\s*$', text.strip())
             if order_match:
                 quantity = int(order_match.group(1))
                 product_query = order_match.group(2).strip()
