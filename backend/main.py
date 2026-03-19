@@ -25,9 +25,12 @@ from app.features.auto_responder.routes import router as auto_responder_router
 from app.features.admin.routes import router as admin_router
 from app.features.analytics.routes import router as analytics_router
 from app.features.campaign.routes import router as campaign_router
+from app.features.products.routes import router as products_router
+from app.features.sales.routes import router as sales_router
 from auth import get_current_user
 from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
+from sales_service import sales_service
 from app.core.admin_security import ADMIN_SECRET_KEY, ADMIN_ALGORITHM
 
 logging.basicConfig(
@@ -110,16 +113,38 @@ async def lifespan(app: FastAPI):
         ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
 
 
-        -- Milestone 5 Migrations for Existing Tables
-        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
-        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
-        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS replied_leads INTEGER DEFAULT 0;
-        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
-        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
-        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS keyword_response_text TEXT;
-        ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
-        ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
-        ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
+        -- Milestone 2: Sales & Inventory Automation
+        CREATE TABLE IF NOT EXISTS sales_states (
+            id SERIAL PRIMARY KEY,
+            telegram_account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE CASCADE,
+            telegram_peer_id BIGINT NOT NULL,
+            status VARCHAR(50) DEFAULT 'idle', -- 'idle', 'awaiting_confirmation'
+            pending_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+            pending_quantity INTEGER,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(telegram_account_id, telegram_peer_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            po_number VARCHAR(100) UNIQUE,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+            telegram_account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
+            telegram_peer_id BIGINT,
+            quantity INTEGER,
+            unit_price FLOAT,
+            total_price FLOAT,
+            status VARCHAR(50) DEFAULT 'confirmed', 
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS sales_settings (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+            payment_details TEXT,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
         """)
         logger.info("Database migration (reply support & Campaign tables) completed")
     except Exception as e:
@@ -195,18 +220,38 @@ async def lifespan(app: FastAPI):
             # We want to show the message in the user's 'target_language' (translated) 
             # and the 'source_language' (original).
             
-            translated_text = text
+            processed_original = text
+            processed_translated = text
             source_lang = account['source_language']
             
             if text:
                 try:
                     # Detect language first to see if it's already in the target language
                     detected = translation_service.detect_language(text)
-                    
                     target_lang = account['target_language']
-                    logger.info(f"Processing message: detected={detected}, target={target_lang}, account_src={account['source_language']}")
                     
-                    if detected == target_lang:
+                    # Special Logic for Product Auto-Replies:
+                    # If it's an outgoing product message, we only want to show the Description translation in the Admin UI.
+                    if message_data.get('is_outgoing') and "📝 **Description:**" in text:
+                        # Find the description part and translate ONLY that
+                        # For now, it's already in the message (original text).
+                        # Let's see if there is a translated desc already included (it will be in parenthesis)
+                        import re
+                        match = re.search(r'📝 \*\*Description:\*\* .*?\n\((.*?)\)', text)
+                        if match:
+                            # We already included it in the SalesService construct
+                            processed_translated = match.group(1).strip('_- ')
+                            processed_original = text
+                            logger.info("Parsed pre-translated product description for Admin UI")
+                        else:
+                            # If not included, we translate the line after the label
+                            desc_match = re.search(r'📝 \*\*Description:\*\* (.*?)\n', text)
+                            if desc_match:
+                                translation = await translation_service.translate_text(desc_match.group(1), target_lang)
+                                processed_translated = translation['translated_text']
+                                logger.info("Manually translated product description for Admin UI")
+                    
+                    elif detected == target_lang:
                         logger.info("Message already in target language, back-translating to original")
                         back_translation = await translation_service.translate_text(
                             text,
@@ -215,7 +260,6 @@ async def lifespan(app: FastAPI):
                         )
                         processed_original = back_translation['translated_text']
                         processed_translated = text
-                        source_lang = account['source_language']
                     else:
                         logger.info(f"Translating message to {target_lang}")
                         translation = await translation_service.translate_text(
@@ -226,7 +270,6 @@ async def lifespan(app: FastAPI):
                         processed_original = text
                         processed_translated = translation['translated_text']
                         source_lang = translation['source_language']
-                        logger.info(f"Translation result: {processed_translated[:50]}...")
                 except Exception as e:
                     logger.error(f"Translation error in handle_new_message: {e}")
                     processed_original = text
@@ -428,13 +471,21 @@ async def lifespan(app: FastAPI):
                             # Do not process auto-responder after kill switch
                             return
 
-            # 2. Check for auto-responder matches
-            message_data['translated_text'] = processed_translated
-            message_data['operator_text'] = processed_original
-            await auto_responder_service.check_and_respond(
+            # 2. Check for Products/Sales/Inventory logic (Milestone 2)
+            # This handles product inquiries, order commands, and confirmations.
+            sales_handled = await sales_service.check_and_handle_sales(
                 message_data,
                 account['user_id']
             )
+            
+            # 3. Check for auto-responder matches (Global keywords)
+            if not sales_handled:
+                message_data['translated_text'] = processed_translated
+                message_data['operator_text'] = processed_original
+                await auto_responder_service.check_and_respond(
+                    message_data,
+                    account['user_id']
+                )
 
         except Exception as e:
             logger.error(f"Error handling new message: {e}")
@@ -525,6 +576,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+from fastapi.staticfiles import StaticFiles
+import os
+os.makedirs("backend/media/products", exist_ok=True)
+app.mount("/media", StaticFiles(directory="backend/media"), name="media")
+
 # Global exception handler to catch all unhandled exceptions and return a 500 response
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -554,6 +610,8 @@ app.include_router(auto_responder_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
 app.include_router(campaign_router)
+app.include_router(products_router)
+app.include_router(sales_router)
 
 # Health check endpoint for monitoring application status
 @app.get("/api/health")

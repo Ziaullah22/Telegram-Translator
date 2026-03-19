@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image as ImageIcon, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -28,11 +28,34 @@ import ForwardMessageModal from '../Modals/ForwardMessageModal';
 const isOnlyEmoji = (str: string) => {
   if (!str) return false;
   const cleanStr = str.replace(/\s/g, '');
-  if (!cleanStr || cleanStr.length > 10) return false;
+  const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g;
+  const matches = cleanStr.match(emojiRegex);
+  return matches && matches.length === Array.from(cleanStr).length && matches.length <= 10;
+};
 
-  // Regex covering major emoji ranges (Smileys, Symbols, Transport, etc.)
-  const emojiRegex = /^(\u2702|\u2705|\u2708|\u2709|\u270A-\u270D|\u270F|\u2712|\u2714|\u2716|\u271D|\u2721|\u2728|\u2733|\u2734|\u2744|\u2747|\u274C|\u274E|\u2753-\u2755|\u2757|\u2763|\u2764|\u2795-\u2797|\u27A1|\u27B0|\u27BF|\u2934|\u2935|\u2B05-\u2B07|\u2B1B|\u2B1C|\u2B50|\u2B55|\u3030|\u303D|\u3297|\u3299|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\uD83D[\uDE00-\uDE4F]|\uD83D[\uDE80-\uDEFF]|\uD83E[\uDD00-\uDDFF])+$/u;
-  return emojiRegex.test(cleanStr);
+// --- UTILITY: MARKDOWN FORMATTER ---
+// Basic regex-based parser for Telegram-style formatting
+const renderFormattedText = (text: string) => {
+  if (!text) return null;
+  
+  // This split handles bold (**), italic (__), strike (~~), and inline code (`)
+  const parts = text.split(/(\*\*.*?\*\*|__.*?__|~~.*?__|`.+?`)/g);
+  
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('__') && part.endsWith('__')) {
+      return <em key={i} className="italic">{part.slice(2, -2)}</em>;
+    }
+    if (part.startsWith('~~') && part.endsWith('~~')) {
+      return <del key={i} className="line-through opacity-70">{part.slice(2, -2)}</del>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={i} className="bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-[13px]">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
 };
 
 // --- UTILITY: FILE SIZE FORMATTING ---
@@ -114,169 +137,76 @@ const setCachedMedia = async (id: number, blob: Blob) => {
 // Displays an image with progressive download, blurring, and persistent caching
 const PhotoMessage: React.FC<{
   message: TelegramMessage;
-  loadedImages: Record<number, string>;
-  loadImage: (message: TelegramMessage, onProgress?: (p: { loaded: number; total: number; percentage: number }) => void) => Promise<string | null>;
-  onDownload: (message: TelegramMessage) => void;
+  loadedImages: Record<string, string>; // keyed by "msgId_url"
+  loadImage: (message: TelegramMessage, urlOverride?: string, onProgress?: (p: { loaded: number; total: number; percentage: number }) => void) => Promise<string | null>;
+  onDownload: (message: TelegramMessage, urlOverride?: string) => void;
   onImageLoad?: () => void;
 }> = ({ message, loadedImages, loadImage, onDownload, onImageLoad }) => {
-  const [imageUrl, setImageUrl] = useState<string | null>(loadedImages[message.id] || null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [progress, setProgress] = useState<{ loaded: number; total: number; percentage: number } | null>(null);
-
-  // Check the browser's IndexedDB for a cached version of this photo on mount
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [loading, setLoading] = useState<Record<number, boolean>>({});
+  
   useEffect(() => {
-    if (!imageUrl && !loading) {
-      getCachedMedia(message.id).then(blob => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          setImageUrl(url);
-        }
-      });
-    }
-  }, [message.id]);
-
-  // Initiates the media download from the backend API
-  const startDownload = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (loading || imageUrl) return;
-    setLoading(true);
-    loadImage(message, setProgress).then(url => {
-      if (url) {
-        setImageUrl(url);
-      } else {
-        setError(true);
+    // Parse album if it's a JSON array
+    if (message.media_file_name?.startsWith('[')) {
+      try {
+        setPhotoUrls(JSON.parse(message.media_file_name));
+      } catch (e) {
+        setPhotoUrls(message.media_file_name ? [message.media_file_name] : []);
       }
-      setLoading(false);
-    });
-  };
+    } else {
+      setPhotoUrls(message.media_file_name ? [message.media_file_name] : []);
+    }
+  }, [message.media_file_name]);
 
-  // If the media file was previously available but is now deleted (TDLib logic)
-  if (imageUrl === 'DELETED') {
-    return (
-      <div className="mb-2">
-        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex items-center space-x-3">
-          <ImageIcon className="w-8 h-8 text-red-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-red-300">📷 Photo</p>
-            <p className="text-xs text-red-400">Media has been deleted</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const renderPhoto = (url: string, index: number) => {
+    const cacheKey = `${message.id}_${url}`;
+    const displayUrl = loadedImages[cacheKey];
 
-  // Placeholder state: Shows a blurred thumbnail and a download button
-  if (!imageUrl) {
-    return (
-      <div className="mb-2">
-        <div
-          className="relative overflow-hidden rounded-xl min-w-[240px] min-h-[180px] cursor-pointer group transition-all border border-gray-200/10 shadow-lg"
-          onClick={startDownload}
+    if (!displayUrl) {
+      return (
+        <div 
+          key={index}
+          className="relative bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden flex items-center justify-center cursor-pointer min-h-[120px]"
+          onClick={() => {
+            setLoading(prev => ({ ...prev, [index]: true }));
+            loadImage(message, url).finally(() => setLoading(prev => ({ ...prev, [index]: false })));
+          }}
         >
-          {/* STAGE 1: Low-Quality Blurred Placeholder (Base64 from API) */}
-          {message.media_thumbnail && (
-            <div
-              className="absolute inset-0 bg-cover bg-center scale-110 transition-transform duration-500 group-hover:scale-105"
-              style={{
-                backgroundImage: `url(data:image/jpeg;base64,${message.media_thumbnail})`,
-                filter: 'blur(4px) brightness(0.8)'
-              }}
-            />
+          {loading[index] ? (
+            <div className="w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          ) : (
+             <Download className="w-6 h-6 text-gray-400" />
           )}
-
-          {!message.media_thumbnail && (
-            <div className="absolute inset-0 bg-gradient-to-br from-gray-700/40 to-gray-900/40 flex items-center justify-center opacity-50">
-              <ImageIcon className="w-20 h-20 text-white/10 blur-[2px]" />
-            </div>
-          )}
-
-          {/* STAGE 2: Interactive Download Overlay */}
-          <div className="relative z-10 flex flex-col items-center justify-center min-h-[180px] w-full bg-black/5 group-hover:bg-black/10 transition-colors">
-            <div className="flex flex-col items-center space-y-3">
-              <div className="relative flex items-center justify-center">
-                {loading ? (
-                  // Circular progress indicator while downloading
-                  <div className="relative w-14 h-14 flex items-center justify-center">
-                    <svg className="w-full h-full -rotate-90 transform">
-                      <circle
-                        cx="28"
-                        cy="28"
-                        r="25"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        fill="transparent"
-                        className="text-white/20"
-                      />
-                      <circle
-                        cx="28"
-                        cy="28"
-                        r="25"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        fill="transparent"
-                        strokeDasharray={157}
-                        strokeDashoffset={157 - (157 * (progress?.percentage || 0)) / 100}
-                        className="text-white transition-all duration-300"
-                      />
-                    </svg>
-                    <span className="absolute text-[11px] font-bold text-white">
-                      {progress?.percentage || 0}%
-                    </span>
-                  </div>
-                ) : (
-                  // Static download icon link
-                  <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform border border-white/20">
-                    <Download className="w-7 h-7 text-white" />
-                  </div>
-                )}
-              </div>
-              <div className="text-center px-4">
-                <p className="text-[13px] font-bold text-white drop-shadow-lg">Photo</p>
-                {progress && progress.total > 0 && (
-                  <p className="text-[11px] text-white font-medium mt-0.5 drop-shadow-md">
-                    {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
-                  </p>
-                )}
-                {error && <p className="text-xs text-red-500 mt-1 font-bold tracking-tight">Failed to load. Click to retry.</p>}
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // STAGE 3: Final High-Resolution Display
-  return (
-    <div className="mb-2">
-      <div className="relative rounded-lg overflow-hidden cursor-pointer group max-w-md shadow-sm border border-black/5 dark:border-white/5">
+    return (
+      <div key={index} className="relative group rounded-lg overflow-hidden shadow-sm border border-black/5 dark:border-white/5">
         <img
-          src={imageUrl}
-          alt={message.media_file_name || 'Photo'}
-          className="w-full h-auto max-h-[450px] object-contain bg-gray-900/50"
-          style={{ display: 'block' }}
+          src={displayUrl}
+          className="w-full h-full object-cover max-h-[400px]"
+          alt={`Photo ${index + 1}`}
           onLoad={() => onImageLoad?.()}
         />
-        {/* Hover Action: Download to User's computer */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-          <div className="opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-300">
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                onDownload(message);
-              }}
-              className="bg-black/60 hover:bg-black/80 p-3 rounded-full text-white flex items-center justify-center space-x-2 backdrop-blur-sm shadow-xl"
-            >
-              <Download className="w-5 h-5" />
-              <span className="text-xs font-bold uppercase tracking-wider">Save to disk</span>
-            </div>
-          </div>
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+           <button 
+             onClick={(e) => { e.stopPropagation(); onDownload(message, url); }}
+             className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"
+           >
+             <Download className="w-5 h-5" />
+           </button>
         </div>
       </div>
-      {message.media_file_name && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 px-1 font-medium">{message.media_file_name}</p>
-      )}
+    );
+  };
+
+  if (photoUrls.length === 0) return null;
+
+  // Render Grid
+  return (
+    <div className={`mb-2 gap-1.5 grid ${photoUrls.length >= 3 ? 'grid-cols-2' : photoUrls.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {photoUrls.map((url, idx) => renderPhoto(url, idx))}
     </div>
   );
 };
@@ -285,9 +215,9 @@ const PhotoMessage: React.FC<{
 // Handles video playback, buffering states, and persistent storage
 const VideoMessage: React.FC<{
   message: TelegramMessage;
-  loadedImages: Record<number, string>;
-  loadImage: (message: TelegramMessage, onProgress?: (p: { loaded: number; total: number; percentage: number }) => void) => Promise<string | null>;
-  onDownload: (message: TelegramMessage) => void;
+  loadedImages: Record<string, string>;
+  loadImage: (message: TelegramMessage, urlOverride?: string, onProgress?: (p: { loaded: number; total: number; percentage: number }) => void) => Promise<string | null>;
+  onDownload: (message: TelegramMessage, urlOverride?: string) => void;
   onImageLoad?: () => void;
 }> = ({ message, loadedImages, loadImage, onDownload, onImageLoad }) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(loadedImages[message.id] || null);
@@ -312,7 +242,7 @@ const VideoMessage: React.FC<{
     e?.stopPropagation();
     if (loading || videoUrl) return;
     setLoading(true);
-    loadImage(message, setProgress).then(url => {
+    loadImage(message, undefined, setProgress).then(url => {
       if (url) {
         setVideoUrl(url);
       } else {
@@ -616,7 +546,7 @@ export default function ChatWindow({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [loadedImages, setLoadedImages] = useState<Record<number, string>>({});
+  const [loadedImages, setLoadedImages] = useState<Record<string, string>>({});
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -635,7 +565,8 @@ export default function ChatWindow({
   // --- UTILITY: MEDIA TYPE DETECTION ---
   const hasPhoto = (message: TelegramMessage) => {
     return message.type === 'photo' ||
-      (message.type === 'auto_reply' && message.media_file_name?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+      message.media_file_name?.startsWith('[') ||
+      (message.media_file_name?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   };
 
   const hasVideo = (message: TelegramMessage) => {
@@ -869,19 +800,23 @@ export default function ChatWindow({
   // Uses Streams to track download progress real-time.
   const loadImage = async (
     message: TelegramMessage,
+    urlOverride?: string,
     onProgress?: (progress: { loaded: number; total: number; percentage: number }) => void
   ) => {
     // 1. Return memory-cached URL if already loaded in this session
-    if (loadedImages[message.id]) {
-      return loadedImages[message.id];
+    const cacheKey = urlOverride ? `${message.id}_${urlOverride}` : `${message.id}`;
+    if (loadedImages[cacheKey]) {
+      return loadedImages[cacheKey];
     }
 
     // 2. Check persistent IndexedDB cache (stored from previous sessions)
+    // For albums, we use a composite key in IndexedDB too
+    const dbKey = urlOverride ? `${message.id}_${urlOverride}` : message.id;
     try {
-      const cachedBlob = await getCachedMedia(message.id);
+      const cachedBlob = await getCachedMedia(dbKey as any);
       if (cachedBlob) {
         const url = URL.createObjectURL(cachedBlob);
-        setLoadedImages(prev => ({ ...prev, [message.id]: url }));
+        setLoadedImages(prev => ({ ...prev, [cacheKey]: url }));
         return url;
       }
     } catch (e) {
@@ -891,7 +826,11 @@ export default function ChatWindow({
     // 3. Fallback: Download from API
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
-      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
+      const params = new URLSearchParams();
+      if (message.telegram_message_id) params.append('telegram_message_id', String(message.telegram_message_id));
+      if (urlOverride) params.append('media_file', urlOverride);
+      
+      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}${params.toString() ? '?' + params.toString() : ''}`;
 
       const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -934,7 +873,7 @@ export default function ChatWindow({
       await setCachedMedia(message.id, blob);
 
       // Cache the memory URL so switching between tabs doesn't cause a flicker
-      setLoadedImages(prev => ({ ...prev, [message.id]: imageUrl }));
+      setLoadedImages(prev => ({ ...prev, [cacheKey]: imageUrl }));
 
       return imageUrl;
     } catch (error) {
@@ -943,10 +882,14 @@ export default function ChatWindow({
     }
   };
 
-  const handleDownloadMedia = async (message: TelegramMessage) => {
+  const handleDownloadMedia = async (message: TelegramMessage, urlOverride?: string) => {
     try {
       const token = document.cookie.split('auth_token=')[1]?.split(';')[0];
-      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}?telegram_message_id=${message.telegram_message_id}`;
+      const params = new URLSearchParams();
+      if (message.telegram_message_id) params.append('telegram_message_id', String(message.telegram_message_id));
+      if (urlOverride) params.append('media_file', urlOverride);
+      
+      const url = `/api/messages/download-media/${message.conversation_id}/${message.id}${params.toString() ? '?' + params.toString() : ''}`;
 
       const response = await fetch(url, {
         headers: {
@@ -1766,11 +1709,15 @@ export default function ChatWindow({
                           {/* Caption/Text */}
                           {message.original_text && (
                             <div className="mb-2">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <span className="text-xs font-medium text-blue-400">
-                                  {message.source_language && `${message.source_language.toUpperCase()}`}
-                                </span>
-                                <span className="text-sm leading-relaxed break-all">{message.original_text}</span>
+                              {message.source_language && (
+                                <div className="mb-1">
+                                  <span className="text-[10px] font-bold text-blue-500/60 dark:text-blue-400/60 uppercase tracking-wider bg-blue-500/5 px-1.5 py-0.5 rounded">
+                                    {message.source_language.toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="text-[14.5px] leading-relaxed break-words whitespace-pre-wrap max-w-[280px]">
+                                {renderFormattedText(message.original_text)}
                               </div>
                             </div>
                           )}
@@ -1778,7 +1725,9 @@ export default function ChatWindow({
                           {/* Translated caption/message */}
                           {message.translated_text && (
                             <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
-                              <p className={`text-sm font-bold leading-relaxed break-all ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>{message.translated_text}</p>
+                              <div className={`text-[14.5px] font-bold leading-relaxed break-words whitespace-pre-wrap max-w-[280px] ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>
+                                {renderFormattedText(message.translated_text)}
+                              </div>
                             </div>
                           )}
 
@@ -1973,19 +1922,31 @@ export default function ChatWindow({
 
                 {/* Text input with emoji icon inside */}
                 <div className="flex-1 relative">
-                  <input
-                    ref={inputRef}
-                    type="text"
+                  <textarea
+                    ref={inputRef as any}
+                    rows={1}
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e as any);
+                        const target = e.target as HTMLTextAreaElement;
+                        target.style.height = 'auto';
+                      }
+                    }}
                     placeholder={
                       !currentConversation
                         ? 'Select a conversation to start messaging'
                         : isConnected
-                          ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}... (will be translated to ${sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()})`
+                          ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}...`
                           : 'Connect to an account to start messaging'
                     }
-                    className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm"
+                    className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm resize-none overflow-hidden min-h-[46px] leading-normal"
                     disabled={!isConnected || !currentConversation || translating}
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">

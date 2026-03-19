@@ -226,7 +226,7 @@ async def migrate():
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS campaigns (
                     id SERIAL PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                     name VARCHAR(255) NOT NULL,
                     initial_message TEXT NOT NULL,
                     status VARCHAR(50) DEFAULT 'draft',
@@ -266,7 +266,7 @@ async def migrate():
                     responded_at TIMESTAMP WITH TIME ZONE,
                     response_time_seconds INTEGER,
                     replied_at_step INTEGER,
-                    assigned_account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
+                    assigned_account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE SET NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(campaign_id, telegram_identifier)
                 );
@@ -275,7 +275,7 @@ async def migrate():
                     id SERIAL PRIMARY KEY,
                     campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
                     lead_id INTEGER REFERENCES campaign_leads(id) ON DELETE SET NULL,
-                    account_id INTEGER REFERENCES telegram_accounts(id) ON DELETE SET NULL,
+                    account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE SET NULL,
                     action VARCHAR(255) NOT NULL,
                     details TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -283,7 +283,49 @@ async def migrate():
             """)
             print("✓ Tables: campaigns, steps, leads, logs")
 
-            # --- 4. SCHEMA UPDATES (Incremental fixes) ---
+            # --- 4. SALES & INVENTORY TABLES ---
+
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS products (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    price DECIMAL(12, 2) NOT NULL DEFAULT 0,
+                    stock_quantity INTEGER NOT NULL DEFAULT 0,
+                    keywords JSONB DEFAULT '[]'::jsonb,
+                    photo_urls JSONB DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_products_user ON products(user_id);
+
+                CREATE TABLE IF NOT EXISTS sales_settings (
+                    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    payment_details TEXT,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    po_number VARCHAR(50) NOT NULL UNIQUE,
+                    product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+                    telegram_account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE SET NULL,
+                    telegram_peer_id BIGINT NOT NULL,
+                    quantity INTEGER NOT NULL DEFAULT 1,
+                    unit_price DECIMAL(12, 2) NOT NULL,
+                    total_price DECIMAL(12, 2) NOT NULL,
+                    status VARCHAR(50) DEFAULT 'confirmed',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+                CREATE INDEX IF NOT EXISTS idx_orders_po ON orders(po_number);
+            """)
+            print("✓ Tables: products, orders, sales_settings")
+
+            # --- 5. SCHEMA UPDATES (Incremental fixes) ---
             
             # Ensure latest columns exist if tables were created via old scripts
             await conn.execute("""
@@ -310,7 +352,7 @@ async def migrate():
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS replied_at_step INTEGER;
 
                 -- Bulletproof Safety: Add account_id to logs and remove strict cascade dependencies
-                ALTER TABLE campaign_logs ADD COLUMN IF NOT EXISTS account_id INTEGER;
+                ALTER TABLE campaign_logs ADD COLUMN IF NOT EXISTS account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE SET NULL;
                 ALTER TABLE campaign_logs ALTER COLUMN campaign_id DROP NOT NULL;
                 ALTER TABLE campaign_logs ALTER COLUMN lead_id DROP NOT NULL;
                 
@@ -325,9 +367,16 @@ async def migrate():
                 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
                 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;
                 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_hibernating BOOLEAN DEFAULT FALSE;
+                ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS next_reset_at TIMESTAMPTZ;
+                
                 ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS next_step INTEGER;
                 ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS keyword_response_text TEXT;
                 ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
+
+                -- Milestone: Inventory Updates
+                ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+                ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
 
                 -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
                 DO $$

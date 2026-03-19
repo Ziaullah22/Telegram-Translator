@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
-from typing import List
+from typing import List, Optional, Any
 from datetime import datetime
 from app.core.database import db
 from app.core.security import get_current_user
@@ -417,10 +417,18 @@ async def send_media(
 async def download_media(
     conversation_id: int,
     message_id: int,
-    telegram_message_id: int,
+    telegram_message_id: Optional[str] = Query(None),
+    media_file: Optional[str] = Query(None),
     current_user = Depends(get_current_user),
 ):
-    """Download media from a message"""
+    # Parse telegram_message_id safely
+    tg_msg_id = None
+    if telegram_message_id and telegram_message_id != "undefined":
+        try:
+            tg_msg_id = int(telegram_message_id)
+        except ValueError:
+            pass
+
     # Get message with filename
     message = await db.fetchrow(
         """
@@ -442,26 +450,50 @@ async def download_media(
         )
 
     try:
-        # Create structured downloads directory
+        # 1. Handle local files (Bot auto-replies or product images)
+        # Use override if provided, else use stored filename
+        local_filename = media_file or message.get('media_file_name')
+        
+        # If it's a JSON array (album), and no override, take the first one
+        if local_filename and local_filename.startswith('['):
+            try:
+                paths = json.loads(local_filename)
+                if paths:
+                    local_filename = paths[0]
+            except:
+                pass
+                
+        if local_filename and (local_filename.startswith('/media/') or local_filename.startswith('media/')):
+            local_rel_path = local_filename.lstrip('/')
+            abs_path = os.path.join(os.getcwd(), 'backend', local_rel_path)
+            if not os.path.exists(abs_path):
+                abs_path = os.path.join(os.getcwd(), local_rel_path)
+            
+            if os.path.exists(abs_path):
+                logger.info(f"Serving local media file: {abs_path}")
+                return FileResponse(
+                    path=abs_path,
+                    filename=os.path.basename(abs_path),
+                    media_type='application/octet-stream'
+                )
+
+        # 2. Download via Telegram (Existing behavior)
+        if not tg_msg_id:
+             raise HTTPException(status_code=400, detail="Telegram message ID required for non-local media")
+        
         download_dir = f"temp/downloads/{conversation_id}"
         os.makedirs(download_dir, exist_ok=True)
         
-        # Use telegram_message_id as base filename to avoid conflicts
-        # (multiple files can have the same name)
-        base_filename = str(telegram_message_id)
+        base_filename = str(tg_msg_id)
         download_path = os.path.join(download_dir, base_filename)
         
-        # Check if file already exists (with any extension) to avoid re-downloading
-        # Telethon adds extensions like .mp4, .jpg, etc.
         existing_files = [f for f in os.listdir(download_dir) if f.startswith(base_filename)]
         
         if existing_files:
-            # Use the existing cached file
             cached_file = os.path.join(download_dir, existing_files[0])
             logger.info(f"Using cached media file: {cached_file}")
             file_path = cached_file
         else:
-            # Download media via Telethon
             logger.info(f"Downloading media for message {telegram_message_id}")
             file_path = await telethon_service.download_media(
                 message['telegram_account_id'],
@@ -476,7 +508,6 @@ async def download_media(
                     detail="Media file not found",
                 )
         
-        # Use stored filename or fallback to downloaded filename
         filename = message.get('media_file_name') or os.path.basename(file_path)
         
         return FileResponse(

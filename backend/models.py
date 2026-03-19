@@ -400,3 +400,31 @@ class CampaignLeadResponse(BaseModel):
     assigned_account_name: Optional[str] = None
     assigned_account_display_name: Optional[str] = None
     created_at: datetime
+
+# --- Product Models ---
+class ProductCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    price: float = Field(..., ge=0)
+    stock_quantity: int = Field(..., ge=0)
+    keywords: List[str] = Field(default_factory=list)
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    stock_quantity: Optional[int] = None
+    keywords: Optional[List[str]] = None
+
+class ProductResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    description: Optional[str] = None
+    price: float
+    stock_quantity: int
+    keywords: List[str]
+    photo_url: Optional[str] = None
+    photo_urls: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime

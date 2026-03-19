@@ -214,6 +214,20 @@ export interface CampaignStep {
   created_at: string;
 }
 
+export interface Product {
+  id: number;
+  user_id: number;
+  name: string;
+  description?: string;
+  price: number;
+  stock_quantity: number;
+  keywords: string[];
+  photo_url?: string;
+  photo_urls: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CampaignLead {
   id: number;
   campaign_id: number;
@@ -228,3 +242,21 @@ export interface CampaignLead {
   assigned_account_display_name?: string;
   created_at: string;
 }
+
+export interface Order {
+  id: number;
+  po_number: string;
+  product_id?: number;
+  product_name: string;
+  telegram_account_id?: number;
+  telegram_peer_id: number;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  status: 'confirmed' | 'cancelled' | 'paid';
+  created_at: string;
+}
+
+export interface SalesSettings {
+  payment_details: string;
+}

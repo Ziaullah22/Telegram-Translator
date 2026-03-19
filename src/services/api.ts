@@ -7,7 +7,7 @@
  */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair, Product, Order, SalesSettings } from '../types';
 
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
@@ -724,5 +724,52 @@ export const campaignsAPI = {
   getSafetyStats: async (accountId: number): Promise<{ new_conversations_today: number; limit: number; remaining: number }> => {
     const response = await api.get(`/campaigns/safety-stats/${accountId}`);
     return response.data;
+  },
+};
+
+// --- PRODUCT CATALOG & INVENTORY SERVICES ---
+export const productsAPI = {
+  getProducts: async (): Promise<Product[]> => {
+    const response = await api.get('/products/');
+    return response.data;
+  },
+
+  createProduct: async (formData: FormData): Promise<Product> => {
+    const response = await api.post('/products/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  updateProduct: async (productId: number, formData: FormData): Promise<Product> => {
+    const response = await api.put(`/products/${productId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  deleteProduct: async (productId: number): Promise<void> => {
+    await api.delete(`/products/${productId}`);
+  },
+};
+
+// --- SALES & ORDERS SERVICES ---
+export const salesAPI = {
+  getOrders: async (): Promise<Order[]> => {
+    const response = await api.get('/sales/orders');
+    return response.data;
+  },
+
+  getSettings: async (): Promise<SalesSettings> => {
+    const response = await api.get('/sales/settings');
+    return response.data;
+  },
+
+  updateSettings: async (settings: SalesSettings): Promise<void> => {
+    await api.post('/sales/settings', settings);
   },
 };

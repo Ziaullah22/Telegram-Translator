@@ -1,4 +1,4 @@
-import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2 } from 'lucide-react';
+import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -34,6 +34,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
               { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
               { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
+              { path: '/products', label: 'Inventory', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
             ].map(item => (
               <button
                 key={item.path}
