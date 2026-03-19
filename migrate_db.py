@@ -380,6 +380,24 @@ async def migrate():
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
 
+                -- Repair keywords/photo_urls if they were created as TEXT[] arrays (fixes 500 errors)
+                DO $$ 
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'products' AND column_name = 'keywords' AND data_type = 'ARRAY'
+                    ) THEN
+                        ALTER TABLE products ALTER COLUMN keywords TYPE JSONB USING to_jsonb(keywords);
+                    END IF;
+                    
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'products' AND column_name = 'photo_urls' AND data_type = 'ARRAY'
+                    ) THEN
+                        ALTER TABLE products ALTER COLUMN photo_urls TYPE JSONB USING to_jsonb(photo_urls);
+                    END IF;
+                END $$;
+
                 -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
                 DO $$
                 BEGIN

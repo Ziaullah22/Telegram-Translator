@@ -104,9 +104,9 @@ async def create_product(
         description, 
         price, 
         stock_quantity, 
-        json.dumps(keywords_list), 
+        keywords_list, 
         photo_url,
-        json.dumps(photo_urls)
+        photo_urls
     )
     return map_product_row(row)
 
@@ -182,9 +182,9 @@ async def update_product(
         description, 
         price, 
         stock_quantity, 
-        json.dumps(keywords_list), 
+        keywords_list, 
         photo_url,
-        json.dumps(photo_urls),
+        photo_urls,
         product_id,
         current_user.user_id
     )

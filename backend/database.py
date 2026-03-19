@@ -11,16 +11,26 @@ class Database:
     def __init__(self):
         self.pool: Optional[asyncpg.Pool] = None
 
-    # Connect to the PostgreSQL database and establish a connection pool
+    # Connect to the PostgreSQL database and establish a connection pool with JSONB support
     async def connect(self):
         try:
+            import json
+            async def init(conn):
+                await conn.set_type_codec(
+                    'jsonb',
+                    encoder=json.dumps,
+                    decoder=json.loads,
+                    schema='pg_catalog'
+                )
+
             self.pool = await asyncpg.create_pool(
                 settings.database_url,
                 min_size=5,
                 max_size=30,
-                command_timeout=60
+                command_timeout=60,
+                setup=init
             )
-            logger.info("Database connection pool created successfully")
+            logger.info("Database connection pool created successfully with JSONB support")
         except Exception as e:
             logger.error(f"Failed to create database pool: {e}")
             raise

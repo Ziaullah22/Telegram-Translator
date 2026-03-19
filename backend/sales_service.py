@@ -285,13 +285,27 @@ class SalesService:
             photo_urls = [product['photo_url']]
             
         if photo_urls:
+            project_root = os.getcwd()
             for url in photo_urls:
                 rel_path = url.lstrip('/')
-                path = os.path.join(os.getcwd(), 'backend', rel_path)
-                if not os.path.exists(path):
-                    path = os.path.join(os.getcwd(), rel_path)
-                if os.path.exists(path):
-                    photo_paths_with_urls.append((path, url))
+                # Try multiple path resolutions for Windows/Linux compatibility
+                possible_paths = [
+                    os.path.join(project_root, rel_path),
+                    os.path.join(project_root, 'backend', rel_path),
+                    os.path.join(os.path.dirname(os.path.dirname(__file__)), rel_path),
+                    os.path.join(os.path.dirname(__file__), rel_path)
+                ]
+                
+                found_path = None
+                for p in possible_paths:
+                    if os.path.exists(p) and os.path.isfile(p):
+                        found_path = p
+                        break
+                
+                if found_path:
+                    photo_paths_with_urls.append((found_path, url))
+                else:
+                    logger.warning(f"Product photo not found at any of: {possible_paths}")
 
         session = await telethon_service.get_session(account_id)
         if session and session.is_connected:
