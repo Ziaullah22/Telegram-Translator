@@ -146,17 +146,28 @@ const PhotoMessage: React.FC<{
   const [loading, setLoading] = useState<Record<number, boolean>>({});
   
   useEffect(() => {
-    // Parse album if it's a JSON array
+    // 1. Initial Parse: Determine which URLs we need to load
+    let urls: string[] = [];
     if (message.media_file_name?.startsWith('[')) {
       try {
-        setPhotoUrls(JSON.parse(message.media_file_name));
+        urls = JSON.parse(message.media_file_name);
       } catch (e) {
-        setPhotoUrls(message.media_file_name ? [message.media_file_name] : []);
+        urls = message.media_file_name ? [message.media_file_name] : [];
       }
     } else {
-      setPhotoUrls(message.media_file_name ? [message.media_file_name] : []);
+      urls = message.media_file_name ? [message.media_file_name] : [];
     }
-  }, [message.media_file_name]);
+    setPhotoUrls(urls);
+
+    // 2. Auto-load Logic: Start downloading if not in cache
+    urls.forEach((url, index) => {
+      const cacheKey = `${message.id}_${url}`;
+      if (!loadedImages[cacheKey] && !loading[index]) {
+        setLoading(prev => ({ ...prev, [index]: true }));
+        loadImage(message, url).finally(() => setLoading(prev => ({ ...prev, [index]: false })));
+      }
+    });
+  }, [message.media_file_name, loadedImages, message.id]);
 
   const renderPhoto = (url: string, index: number) => {
     const cacheKey = `${message.id}_${url}`;
@@ -225,14 +236,18 @@ const VideoMessage: React.FC<{
   const [error, setError] = useState(false);
   const [progress, setProgress] = useState<{ loaded: number; total: number; percentage: number } | null>(null);
 
-  // Sync with IndexedDB cache on component initialization
+  // Sync with IndexedDB cache or start auto-download on initialization
   useEffect(() => {
     if (!videoUrl && !loading) {
-      getCachedMedia(message.id).then(blob => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
+      setLoading(true);
+      // Try to get from cache or start downloading automatically
+      loadImage(message, undefined, setProgress).then(url => {
+        if (url) {
           setVideoUrl(url);
+        } else {
+          setError(true);
         }
+        setLoading(false);
       });
     }
   }, [message.id]);

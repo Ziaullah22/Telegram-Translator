@@ -494,10 +494,10 @@ async def download_media(
             logger.info(f"Using cached media file: {cached_file}")
             file_path = cached_file
         else:
-            logger.info(f"Downloading media for message {telegram_message_id}")
+            logger.info(f"Downloading media for message {tg_msg_id}")
             file_path = await telethon_service.download_media(
                 message['telegram_account_id'],
-                telegram_message_id,
+                tg_msg_id,
                 message['telegram_peer_id'],
                 download_path
             )
