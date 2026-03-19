@@ -130,17 +130,42 @@ class SalesService:
             account_id, peer_id, product['id'], quantity
         )
 
+        # Fetch target language
+        account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+        target_lang = account_data['target_language'] if account_data else 'en'
+
         total = product['price'] * quantity
+        
+        # Translate labels for the invoice
+        try:
+            t_title_data = await translation_service.translate_text("ORDER DRAFT", target_lang)
+            t_prod_data = await translation_service.translate_text("Product:", target_lang)
+            t_qty_data = await translation_service.translate_text("Quantity:", target_lang)
+            t_price_data = await translation_service.translate_text("Price:", target_lang)
+            t_total_data = await translation_service.translate_text("Total Amount:", target_lang)
+            t_reply_data = await translation_service.translate_text("Reply to place order", target_lang)
+            t_discard_data = await translation_service.translate_text("to discard", target_lang)
+            
+            t_title = t_title_data['translated_text']
+            t_prod = t_prod_data['translated_text']
+            t_qty = t_qty_data['translated_text']
+            t_price = t_price_data['translated_text']
+            t_total = t_total_data['translated_text']
+            t_reply = t_reply_data['translated_text']
+            t_discard = t_discard_data['translated_text']
+        except:
+            t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard")
+
         invoice_msg = (
-            f"📋 **ORDER DRAFT**\n"
+            f"📋 **{t_title}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔹 **Product:** {product['name']}\n"
-            f"🔹 **Quantity:** {quantity}\n"
-            f"🔹 **Price:** ${product['price']:.2f}\n"
+            f"🔹 **{t_prod}** {product['name']}\n"
+            f"🔹 **{t_qty}** {quantity}\n"
+            f"🔹 **{t_price}** ${product['price']:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 **Total Amount: ${total:.2f}**\n\n"
-            f"✅ Reply **CONFIRM** to place order\n"
-            f"❌ Reply **CANCEL** to discard"
+            f"💰 **{t_total} ${total:.2f}**\n\n"
+            f"✅ {t_reply} **CONFIRM**\n"
+            f"❌ {t_discard} **CANCEL**"
         )
         await self._send_simple_reply(account_id, peer_id, invoice_msg, user_id)
         return True
@@ -247,23 +272,33 @@ class SalesService:
         account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
         target_lang = account_data['target_language'] if account_data else 'en'
         
-        # Translate ONLY the description part for the customer and Admin UI
+        # Translate labels and actual description
         try:
-            t_data = await translation_service.translate_text(desc, target_lang)
-            translated_desc = t_data['translated_text']
+            # Only translate these labels as requested
+            t_price_label_data = await translation_service.translate_text("Price:", target_lang)
+            t_desc_label_data = await translation_service.translate_text("Description:", target_lang)
+            
+            t_price_label = t_price_label_data['translated_text'].rstrip(':') + ':'
+            t_desc_label = t_desc_label_data['translated_text'].rstrip(':') + ':'
+            
+            # Translate the actual content
+            t_desc_data = await translation_service.translate_text(desc, target_lang)
+            translated_desc = t_desc_data['translated_text']
         except Exception:
+            t_price_label = "Price:"
+            t_desc_label = "Description:"
             translated_desc = desc
 
-        # Create the message for the CUSTOMER (Translated description only)
+        # Create the message for the CUSTOMER (Translated labels/desc, English instructions/Commands)
         customer_reply_text = (
             f"📦 **{name}**\n"
-            f"💰 **Price:** ${price:.2f}\n"
-            f"📝 **Description:** {translated_desc}\n\n"
+            f"💰 **{t_price_label}** ${price:.2f}\n"
+            f"📝 **{t_desc_label}** {translated_desc}\n\n"
             f"🛒 To order, please reply:\n"
             f"`Order {name} [quantity]`"
         )
         
-        # Create the message for the ADMIN (English everything)
+        # Original English text for Admin records
         admin_original_text = (
             f"📦 **{name}**\n"
             f"💰 **Price:** ${price:.2f}\n"
