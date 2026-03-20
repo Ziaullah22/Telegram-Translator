@@ -259,7 +259,7 @@ class SalesService:
                                 await self._send_simple_reply(account_id, peer_id, final_msg, user_id, original_text=eng_msg)
                             except:
                                 final_msg = f"❌ Sorry, we only have {actual_stock} units available. Reply **CONFIRM** or **CANCEL**."
-                                await self._send_simple_reply(account_id, peer_id, final_msg, user_id)
+                                await self._send_simple_reply(account_id, peer_id, final_msg, user_id, original_text=final_msg)
                             
                             await conn.execute("UPDATE sales_states SET pending_quantity = $1 WHERE id = $2", actual_stock, state['id'])
                         else:
@@ -318,12 +318,25 @@ class SalesService:
                         f"{final_pi}\n\n"
                         f"{footer} 🙏"
                     )
+                    
+                    # Original English for Admin
+                    eng_msg = (
+                        f"🎉 **ORDER CONFIRMED!**\n"
+                        f"Order ID: `{po_number}`\n"
+                        f"Date: {datetime.now().strftime('%d %B %Y')}\n\n"
+                        f"📦 **Details:**\n"
+                        f"{product['name']} × {requested_qty} = **${total_price:.2f}**\n\n"
+                        f"💳 **Payment Instructions:**\n"
+                        f"{payment_info}\n\n"
+                        f"Thank you for your business! 🙏"
+                    )
 
                     await conn.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
                     
                     # Store info for reply outside transaction
                     final_data = {
                         "conf_msg": conf_msg,
+                        "eng_msg": eng_msg,
                         "po_number": po_number,
                         "product_name": product['name'],
                         "qty": requested_qty,
@@ -331,7 +344,7 @@ class SalesService:
                     }
                 
                 # Transaction finished successfully
-                await self._send_simple_reply(account_id, peer_id, final_data['conf_msg'], user_id)
+                await self._send_simple_reply(account_id, peer_id, final_data['conf_msg'], user_id, original_text=final_data['eng_msg'])
                 
                 await manager.send_personal_message({
                     "type": "order_confirmed",
