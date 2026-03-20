@@ -200,7 +200,21 @@ class SalesService:
             f"✅ {t_reply} **{t_confirm}**\n"
             f"❌ {t_discard} **{t_cancel}**"
         )
-        await self._send_simple_reply(account_id, peer_id, invoice_msg, user_id)
+        
+        # Original English text for Admin records
+        eng_msg = (
+            f"📋 **ORDER DRAFT**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔹 **Product:** {product['name']}\n"
+            f"🔹 **Quantity:** {quantity}\n"
+            f"🔹 **Price:** ${product['price']:.2f}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 **Total Amount: ${total:.2f}**\n\n"
+            f"✅ Reply to place order: **CONFIRM**\n"
+            f"❌ to discard: **CANCEL**"
+        )
+        
+        await self._send_simple_reply(account_id, peer_id, invoice_msg, user_id, original_text=eng_msg)
         return True
 
     async def _process_confirmation(self, account_id: int, peer_id: int, state: Any, user_id: int) -> bool:
@@ -238,10 +252,15 @@ class SalesService:
                                 
                                 t_msg = f"{t_not_enough_data['translated_text']}\n{t_offer_data['translated_text']}\n{t_reply_data['translated_text']}"
                                 final_msg = f"{t_msg}\n✅ **{t_confirm_data['translated_text']}** | ❌ **{t_cancel_data['translated_text']}**"
+                                
+                                # Original English for Admin
+                                eng_msg = f"❌ Sorry, we only have {actual_stock} units left.\nWould you like to order {actual_stock} instead?\nReply **CONFIRM** or **CANCEL**."
+                                
+                                await self._send_simple_reply(account_id, peer_id, final_msg, user_id, original_text=eng_msg)
                             except:
                                 final_msg = f"❌ Sorry, we only have {actual_stock} units available. Reply **CONFIRM** or **CANCEL**."
+                                await self._send_simple_reply(account_id, peer_id, final_msg, user_id)
                             
-                            await self._send_simple_reply(account_id, peer_id, final_msg, user_id)
                             await conn.execute("UPDATE sales_states SET pending_quantity = $1 WHERE id = $2", actual_stock, state['id'])
                         else:
                             await self._translate_and_send_reply(account_id, peer_id, f"❌ Sorry, {product['name']} just went out of stock.", user_id)
@@ -508,12 +527,13 @@ class SalesService:
                 }
             }, account_id, user_id)
 
-    async def _send_simple_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
-        """Send message and broadcast to admin UI"""
+    async def _send_simple_reply(self, account_id: int, peer_id: int, text: str, user_id: int, original_text: str = None):
+        """Send message and broadcast to admin UI, preserving original text if provided"""
         session = await telethon_service.get_session(account_id)
         if session and session.is_connected:
             result = await session.client.send_message(peer_id, text)
-            await self._save_auto_message(account_id, peer_id, text, user_id, telegram_message_id=result.id)
+            # Use original_text if provided, otherwise fallback to the translated text
+            await self._save_auto_message(account_id, peer_id, original_text or text, user_id, telegram_message_id=result.id, translated_text=text)
 
     async def _translate_and_send_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
         """Fetch target lang, translate, and send"""
@@ -529,6 +549,6 @@ class SalesService:
         except:
             translated_text = text
             
-        await self._send_simple_reply(account_id, peer_id, translated_text, user_id)
+        await self._send_simple_reply(account_id, peer_id, translated_text, user_id, original_text=text)
 
 sales_service = SalesService()
