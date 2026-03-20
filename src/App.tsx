@@ -181,10 +181,6 @@ function App() {
         const activeConv = currentConversationRef.current;
         const activeAccountId = activeAcc ? Number(activeAcc.id) : null;
         const activeConversationId = activeConv ? Number(activeConv.id) : null;
-        
-        // Use Number() to ensure type consistency for all comparisons
-        const incAccId = Number(incomingAccountId);
-        const incConvId = Number(incomingConversationId);
 
         // Prevent processing the same message multipe times (deduplication)
         if (data.message.id && processedMessageIds.current.has(data.message.id)) return;
@@ -197,7 +193,7 @@ function App() {
           }
         }
 
-        const isActiveConv = activeAccountId === incAccId && activeConversationId === incConvId;
+        const isActiveConv = activeAccountId === incomingAccountId && activeConversationId === incomingConversationId;
 
         // If it's an incoming message (not sent by us)
         if (!data.message.is_outgoing) {
@@ -233,10 +229,10 @@ function App() {
         });
 
         // Update the conversation list ordering (bring latest chat to the top)
-        if (activeAccountId === incAccId) {
+        if (activeAccountId === incomingAccountId) {
           setConversations(prev => {
-            const index = prev.findIndex(c => Number(c.id) === incConvId);
-            if (index === -1) return [{ id: incConvId, title: data.message.peer_title || 'Unknown', type: 'private', lastMessage: data.message }, ...prev] as TelegramChat[];
+            const index = prev.findIndex(c => Number(c.id) === incomingConversationId);
+            if (index === -1) return [{ id: incomingConversationId, title: data.message.peer_title || 'Unknown', type: 'private', lastMessage: data.message }, ...prev] as TelegramChat[];
             const updated = [...prev];
             const conversation = { ...updated[index], lastMessage: data.message };
             updated.splice(index, 1);
@@ -244,7 +240,7 @@ function App() {
           });
 
           // If the message belongs to the current open chat, append it to the view
-          if (activeConversationId === incConvId) {
+          if (activeConversationId === incomingConversationId) {
             setMessages(prev => {
               // Final check for duplicates via Telegram Message ID
               const isDuplicate = prev.some(msg => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
