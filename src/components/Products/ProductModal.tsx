@@ -30,9 +30,9 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       setStock(product.stock_quantity);
       setKeywords(product.keywords?.join(', ') || '');
       setImages([]);
-      const urls = product.photo_urls && product.photo_urls.length > 0 
-          ? [...product.photo_urls] 
-          : (product.photo_url ? [product.photo_url] : []);
+      const urls = product.photo_urls && product.photo_urls.length > 0
+        ? [...product.photo_urls]
+        : (product.photo_url ? [product.photo_url] : []);
       setRetainedPhotoUrls(urls);
       setImagePreviews(urls);
     } else {
@@ -54,7 +54,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       setImages(prev => [...prev, ...newFiles]);
-      
+
       const newPreviews = newFiles.map(file => URL.createObjectURL(file));
       setImagePreviews(prev => [...prev, ...newPreviews]);
     }
@@ -88,7 +88,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       formData.append('description', description);
       formData.append('price', price.toString());
       formData.append('stock_quantity', stock.toString());
-      
+
       const keywordArray = keywords.split(',').map(k => k.trim()).filter(k => k);
       formData.append('keywords', JSON.stringify(keywordArray));
 
@@ -116,7 +116,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
   return (
     <div className="fixed inset-x-0 bottom-0 top-[73px] z-[10000] flex items-center justify-center p-0">
       <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={onClose} />
-      
+
       <div className="relative w-full h-full flex flex-col bg-white dark:bg-[#1a222c] overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
@@ -157,7 +157,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="flex flex-col gap-3">
                     <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                       1. Product Name
+                      1. Product Name
                     </label>
                     <input
                       type="text"
@@ -171,7 +171,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
 
                   <div className="flex flex-col gap-3">
                     <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                       2. Keywords (Auto-detection)
+                      2. Keywords (Auto-detection)
                     </label>
                     <input
                       type="text"
@@ -184,7 +184,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
 
                   <div className="flex flex-col gap-3">
                     <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                       3. Price (USD)
+                      3. Price (USD)
                     </label>
                     <div className="relative">
                       <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</div>
@@ -201,7 +201,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
 
                   <div className="flex flex-col gap-3">
                     <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                       4. Stock Quantity
+                      4. Stock Quantity
                     </label>
                     <input
                       type="number"
@@ -215,7 +215,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
 
                 <div className="flex flex-col gap-3">
                   <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                     5. Product Description
+                    5. Product Description
                   </label>
                   <textarea
                     rows={4}
@@ -230,13 +230,13 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                   <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
                     <Upload className="w-3.5 h-3.5" /> Product Photos
                   </label>
-                  
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {imagePreviews.map((preview, index) => (
                       <div key={index} className="relative group aspect-square rounded-2xl overflow-hidden border border-gray-100 dark:border-white/10">
                         <img src={preview} alt={`Preview ${index}`} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button 
+                          <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
                             className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg"
@@ -246,8 +246,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                         </div>
                       </div>
                     ))}
-                    
-                    <div 
+
+                    <div
                       onClick={() => document.getElementById('product-image-upload')?.click()}
                       className="aspect-square rounded-2xl bg-gray-50 dark:bg-black/20 border-2 border-dashed border-gray-200 dark:border-white/10 hover:border-blue-500/50 transition-all overflow-hidden flex flex-col items-center justify-center gap-2 cursor-pointer group"
                     >

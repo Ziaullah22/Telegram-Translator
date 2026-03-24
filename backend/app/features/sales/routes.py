@@ -12,8 +12,12 @@ class OrderResponse(BaseModel):
     po_number: str
     product_id: Optional[int]
     product_name: str
+    photo_urls: Optional[List[str]] = []
+    product_description: Optional[str] = None
     telegram_account_id: Optional[int]
     telegram_peer_id: int
+    customer_name: Optional[str] = None
+    customer_username: Optional[str] = None
     quantity: int
     unit_price: float
     total_price: float
@@ -27,9 +31,16 @@ class SalesSettingsSchema(BaseModel):
 async def get_orders(user = Depends(get_current_user)):
     rows = await db.fetch(
         """
-        SELECT o.*, p.name as product_name 
+        SELECT 
+            o.*, 
+            p.name as product_name,
+            p.photo_urls,
+            p.description as product_description,
+            c.title as customer_name, 
+            c.username as customer_username
         FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
+        LEFT JOIN conversations c ON o.telegram_account_id = c.telegram_account_id AND o.telegram_peer_id = c.telegram_peer_id
         WHERE o.user_id = $1
         ORDER BY o.created_at DESC
         """,

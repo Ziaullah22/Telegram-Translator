@@ -248,8 +248,12 @@ export interface Order {
   po_number: string;
   product_id?: number;
   product_name: string;
+  photo_urls?: string[];
+  product_description?: string;
   telegram_account_id?: number;
   telegram_peer_id: number;
+  customer_name?: string;
+  customer_username?: string;
   quantity: number;
   unit_price: number;
   total_price: number;
