@@ -94,6 +94,7 @@ export const telegramAPI = {
       isActive: a.is_active,
       sourceLanguage: a.source_language,
       targetLanguage: a.target_language,
+      isTranslationEnabled: a.translation_enabled !== false,
       createdAt: a.created_at,
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
@@ -124,13 +125,14 @@ export const telegramAPI = {
 
   updateAccount: async (
     accountId: number,
-    payload: { displayName?: string; sourceLanguage?: string; targetLanguage?: string; isActive?: boolean }
+    payload: { displayName?: string; sourceLanguage?: string; targetLanguage?: string; isActive?: boolean; isTranslationEnabled?: boolean }
   ): Promise<TelegramAccount> => {
     const response = await api.patch(`/telegram/accounts/${accountId}`, {
       display_name: payload.displayName,
       source_language: payload.sourceLanguage,
       target_language: payload.targetLanguage,
       is_active: payload.isActive,
+      translation_enabled: payload.isTranslationEnabled,
     });
     const a = response.data;
     return {
@@ -140,6 +142,7 @@ export const telegramAPI = {
       isActive: a.is_active,
       sourceLanguage: a.source_language,
       targetLanguage: a.target_language,
+      isTranslationEnabled: a.translation_enabled !== false,
       createdAt: a.created_at,
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,

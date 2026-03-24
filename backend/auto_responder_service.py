@@ -48,13 +48,14 @@ class AutoResponderService:
             )
             rules = rules or []
             
-            # Get account's source and target languages
+            # Get account's source and target languages and translation toggle
             account = await db.fetchrow(
-                "SELECT source_language, target_language FROM telegram_accounts WHERE id = $1",
+                "SELECT source_language, target_language, translation_enabled FROM telegram_accounts WHERE id = $1",
                 account_id
             )
             source_language = account['source_language'] if account else 'auto'
             target_language = account['target_language'] if account else 'en'
+            translation_enabled = account['translation_enabled'] if account else True
             
             # 1. NEW: Check for Campaign-Specific Keywords first
             peer_id = message_data.get('peer_id')
@@ -275,9 +276,9 @@ class AutoResponderService:
                         except Exception as anal_err:
                             logger.error(f"Failed to save response analytics: {anal_err}")
                     
-                    # 1. Prepare translation
+                    # 1. Prepare translation (if enabled)
                     target_msg_text = final_response_text
-                    if source_language != target_language:
+                    if source_language != target_language and translation_enabled:
                         try:
                             translation = await translation_service.translate_text(
                                 final_response_text,
@@ -346,10 +347,10 @@ class AutoResponderService:
                 matched_keyword = None
                 rule_language = rule['language']
                 
-                # Translate incoming message to rule's language for matching
+                # Translate incoming message to rule's language for matching (only if translation is enabled)
                 translated_message = message_text
                 # Use 'auto' as source language since message_text is the raw incoming message from Lead
-                if rule_language != 'auto': 
+                if rule_language != 'auto' and translation_enabled: 
                     try:
                         translation_result = await translation_service.translate_text(
                             message_text,
@@ -373,11 +374,11 @@ class AutoResponderService:
                 if matched_keyword:
                     logger.info(f"Auto-responder rule {rule['id']} matched keyword '{matched_keyword}' in message")
                     
-                    # Translate response to account's source language (the language user speaks)
+                    # Translate response to account's source language (only if translation is enabled)
                     original_response = rule['response_text']
                     translated_response = rule['response_text']
                     
-                    if source_language != rule_language:
+                    if source_language != rule_language and translation_enabled:
                         try:
                             translation_result = await translation_service.translate_text(
                                 rule['response_text'],

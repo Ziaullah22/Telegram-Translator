@@ -164,7 +164,7 @@ async def lifespan(app: FastAPI):
             peer_id = message_data['peer_id']
 
             account = await db.fetchrow(
-                "SELECT user_id, target_language, source_language FROM telegram_accounts WHERE id = $1",
+                "SELECT user_id, target_language, source_language, translation_enabled FROM telegram_accounts WHERE id = $1",
                 account_id
             )
 
@@ -223,8 +223,9 @@ async def lifespan(app: FastAPI):
             processed_original = text
             processed_translated = text
             source_lang = account['source_language']
+            translation_enabled = account.get('translation_enabled', True)
             
-            if text:
+            if text and translation_enabled:
                 try:
                     # Detect language first to see if it's already in the target language
                     detected = translation_service.detect_language(text)

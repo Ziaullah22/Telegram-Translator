@@ -38,16 +38,20 @@ class SalesService:
         # This allows the bot to understand "确认" as "CONFIRM" or "طلب" as "Order".
         logic_text = text # Fallback
         try:
-            # Fetch target language for this account
-            account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+            # Fetch target language and translation toggle for this account
+            account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
             target_lang = account_data['target_language'] if account_data else 'en'
+            translation_enabled = account_data['translation_enabled'] if account_data else True
             
-            # If the user's language is NOT english, we translate their message back to english for the bot's logic
-            if target_lang != 'en':
+            # If the user's language is NOT english AND translator is ON, we translate their message back to english for the bot's logic
+            # This allows the bot to understand foreign language intents like "确认" as "CONFIRM"
+            if target_lang != 'en' and translation_enabled:
                 # We translate text -> English (en)
                 t_data = await translation_service.translate_text(text, 'en')
                 logic_text = t_data['translated_text'].strip()
                 logger.debug(f"Internally translated incoming text for logic: '{text}' -> '{logic_text}'")
+            else:
+                logic_text = text
         except Exception as e:
             logger.error(f"Error in back-translation for logic: {e}")
             logic_text = text
@@ -157,36 +161,40 @@ class SalesService:
             account_id, peer_id, product['id'], quantity
         )
 
-        # Fetch target language
-        account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+        # Fetch target language and toggle
+        account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
         target_lang = account_data['target_language'] if account_data else 'en'
+        translation_enabled = account_data['translation_enabled'] if account_data else True
 
         total = product['price'] * quantity
         
-        # Translate labels and product name for context
-        try:
-            t_title_data = await translation_service.translate_text("ORDER DRAFT", target_lang)
-            t_prod_data = await translation_service.translate_text("Product:", target_lang)
-            t_qty_data = await translation_service.translate_text("Quantity:", target_lang)
-            t_price_data = await translation_service.translate_text("Price:", target_lang)
-            t_total_data = await translation_service.translate_text("Total Amount:", target_lang)
-            t_reply_data = await translation_service.translate_text("Reply to place order:", target_lang)
-            t_discard_data = await translation_service.translate_text("to discard:", target_lang)
-            t_name_data = await translation_service.translate_text(product['name'], target_lang)
-            t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
-            t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
-            
-            t_title = t_title_data['translated_text']
-            t_prod = t_prod_data['translated_text']
-            t_qty = t_qty_data['translated_text']
-            t_price = t_price_data['translated_text']
-            t_total = t_total_data['translated_text']
-            t_reply = t_reply_data['translated_text'].rstrip(':')
-            t_discard = t_discard_data['translated_text'].rstrip(':')
-            t_name = t_name_data['translated_text']
-            t_confirm = t_confirm_data['translated_text'].upper()
-            t_cancel = t_cancel_data['translated_text'].upper()
-        except:
+        # Translate labels and product name for context if enabled
+        if translation_enabled and target_lang != 'en':
+            try:
+                t_title_data = await translation_service.translate_text("ORDER DRAFT", target_lang)
+                t_prod_data = await translation_service.translate_text("Product:", target_lang)
+                t_qty_data = await translation_service.translate_text("Quantity:", target_lang)
+                t_price_data = await translation_service.translate_text("Price:", target_lang)
+                t_total_data = await translation_service.translate_text("Total Amount:", target_lang)
+                t_reply_data = await translation_service.translate_text("Reply to place order:", target_lang)
+                t_discard_data = await translation_service.translate_text("to discard:", target_lang)
+                t_name_data = await translation_service.translate_text(product['name'], target_lang)
+                t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
+                t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
+                
+                t_title = t_title_data['translated_text']
+                t_prod = t_prod_data['translated_text']
+                t_qty = t_qty_data['translated_text']
+                t_price = t_price_data['translated_text']
+                t_total = t_total_data['translated_text']
+                t_reply = t_reply_data['translated_text'].rstrip(':')
+                t_discard = t_discard_data['translated_text'].rstrip(':')
+                t_name = t_name_data['translated_text']
+                t_confirm = t_confirm_data['translated_text'].upper()
+                t_cancel = t_cancel_data['translated_text'].upper()
+            except:
+                t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard, t_name, t_confirm, t_cancel = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard", product['name'], "CONFIRM", "CANCEL")
+        else:
             t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard, t_name, t_confirm, t_cancel = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard", product['name'], "CONFIRM", "CANCEL")
 
         invoice_msg = (
@@ -240,18 +248,22 @@ class SalesService:
                         if actual_stock > 0:
                             # We translate most of the message but keep keywords original
                             try:
-                                account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+                                account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
                                 target_lang = account_data['target_language'] if account_data else 'en'
+                                translation_enabled = account_data['translation_enabled'] if account_data else True
                                 
-                                # Translate EVERYTHING
-                                t_not_enough_data = await translation_service.translate_text(f"❌ Sorry, we only have {actual_stock} units of {product['name']} left.", target_lang)
-                                t_offer_data = await translation_service.translate_text(f"Would you like to order {actual_stock} units instead?", target_lang)
-                                t_reply_data = await translation_service.translate_text("Reply to proceed or to cancel.", target_lang)
-                                t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
-                                t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
-                                
-                                t_msg = f"{t_not_enough_data['translated_text']}\n{t_offer_data['translated_text']}\n{t_reply_data['translated_text']}"
-                                final_msg = f"{t_msg}\n✅ **{t_confirm_data['translated_text']}** | ❌ **{t_cancel_data['translated_text']}**"
+                                # Translate if enabled
+                                if translation_enabled and target_lang != 'en':
+                                    t_not_enough_data = await translation_service.translate_text(f"❌ Sorry, we only have {actual_stock} units of {product['name']} left.", target_lang)
+                                    t_offer_data = await translation_service.translate_text(f"Would you like to order {actual_stock} units instead?", target_lang)
+                                    t_reply_data = await translation_service.translate_text("Reply to proceed or to cancel.", target_lang)
+                                    t_confirm_data = await translation_service.translate_text("CONFIRM", target_lang)
+                                    t_cancel_data = await translation_service.translate_text("CANCEL", target_lang)
+                                    
+                                    t_msg = f"{t_not_enough_data['translated_text']}\n{t_offer_data['translated_text']}\n{t_reply_data['translated_text']}"
+                                    final_msg = f"{t_msg}\n✅ **{t_confirm_data['translated_text']}** | ❌ **{t_cancel_data['translated_text']}**"
+                                else:
+                                    final_msg = f"❌ Sorry, we only have {actual_stock} units of {product['name']} left.\nWould you like to order {actual_stock} units instead?\nReply **CONFIRM** or **CANCEL**."
                                 
                                 # Original English for Admin
                                 eng_msg = f"❌ Sorry, we only have {actual_stock} units left.\nWould you like to order {actual_stock} instead?\nReply **CONFIRM** or **CANCEL**."
@@ -285,26 +297,30 @@ class SalesService:
                     settings = await conn.fetchrow("SELECT payment_details FROM sales_settings WHERE user_id = $1", user_id)
                     payment_info = settings['payment_details'] if settings and settings['payment_details'] else "[No payment details configured]"
 
-                    # Translate labels and payment info for full localization
+                    # Fetch target language and toggle for full localization
                     try:
-                        account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+                        account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
                         target_lang = account_data['target_language'] if account_data else 'en'
+                        translation_enabled = account_data['translation_enabled'] if account_data else True
                         
-                        t_conf_data = await translation_service.translate_text("ORDER CONFIRMED!", target_lang)
-                        t_order_id_data = await translation_service.translate_text("Order ID:", target_lang)
-                        t_date_data = await translation_service.translate_text("Date:", target_lang)
-                        t_details_data = await translation_service.translate_text("Details:", target_lang)
-                        t_pay_data = await translation_service.translate_text("Payment Instructions:", target_lang)
-                        t_thanks_data = await translation_service.translate_text("Thank you for your business!", target_lang)
-                        t_pi_data = await translation_service.translate_text(payment_info, target_lang)
-                        
-                        header = t_conf_data['translated_text']
-                        l_id = t_order_id_data['translated_text']
-                        l_date = t_date_data['translated_text']
-                        l_det = t_details_data['translated_text']
-                        l_pay = t_pay_data['translated_text']
-                        footer = t_thanks_data['translated_text']
-                        final_pi = t_pi_data['translated_text']
+                        if translation_enabled and target_lang != 'en':
+                            t_conf_data = await translation_service.translate_text("ORDER CONFIRMED!", target_lang)
+                            t_order_id_data = await translation_service.translate_text("Order ID:", target_lang)
+                            t_date_data = await translation_service.translate_text("Date:", target_lang)
+                            t_details_data = await translation_service.translate_text("Details:", target_lang)
+                            t_pay_data = await translation_service.translate_text("Payment Instructions:", target_lang)
+                            t_thanks_data = await translation_service.translate_text("Thank you for your business!", target_lang)
+                            t_pi_data = await translation_service.translate_text(payment_info, target_lang)
+                            
+                            header = t_conf_data['translated_text']
+                            l_id = t_order_id_data['translated_text']
+                            l_date = t_date_data['translated_text']
+                            l_det = t_details_data['translated_text']
+                            l_pay = t_pay_data['translated_text']
+                            footer = t_thanks_data['translated_text']
+                            final_pi = t_pi_data['translated_text']
+                        else:
+                            header, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you!", payment_info)
                     except:
                         header, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you!", payment_info)
 
@@ -367,34 +383,44 @@ class SalesService:
         desc = product.get('description') or 'Quality product'
         name = product.get('name', 'Product')
 
-        # Fetch target language for the account to provide pre-translation
-        account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+        # Fetch target language and toggle for the account to provide pre-translation
+        account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
         target_lang = account_data['target_language'] if account_data else 'en'
+        translation_enabled = account_data['translation_enabled'] if account_data else True
 
-        # Translate COMPLETELY everything (Name, Labels, Description)
+        # Translate COMPLETELY everything (Name, Labels, Description) IF ENABLED
         try:
-            # Localize Name
-            t_name_data = await translation_service.translate_text(name, target_lang)
-            translated_name = t_name_data['translated_text']
-            
-            # Localize Labels
-            t_price_label_data = await translation_service.translate_text("Price:", target_lang)
-            t_desc_label_data = await translation_service.translate_text("Description:", target_lang)
-            t_order_instr_data = await translation_service.translate_text("To order, please reply:", target_lang)
-            
-            t_price_label = t_price_label_data['translated_text'].rstrip(':') + ':'
-            t_desc_label = t_desc_label_data['translated_text'].rstrip(':') + ':'
-            t_order_instr = t_order_instr_data['translated_text']
-            
-            # Localize Description
-            t_desc_data = await translation_service.translate_text(desc, target_lang)
-            translated_desc = t_desc_data['translated_text']
-            
-            # Localize the Command Prefix and Placeholder
-            t_order_cmd_data = await translation_service.translate_text("Order", target_lang)
-            t_qty_placeholder_data = await translation_service.translate_text("[quantity]", target_lang)
-            t_order_cmd = t_order_cmd_data['translated_text']
-            t_qty_placeholder = t_qty_placeholder_data['translated_text']
+            if translation_enabled and target_lang != 'en':
+                # Localize Name
+                t_name_data = await translation_service.translate_text(name, target_lang)
+                translated_name = t_name_data['translated_text']
+                
+                # Localize Labels
+                t_price_label_data = await translation_service.translate_text("Price:", target_lang)
+                t_desc_label_data = await translation_service.translate_text("Description:", target_lang)
+                t_order_instr_data = await translation_service.translate_text("To order, please reply:", target_lang)
+                
+                t_price_label = t_price_label_data['translated_text'].rstrip(':') + ':'
+                t_desc_label = t_desc_label_data['translated_text'].rstrip(':') + ':'
+                t_order_instr = t_order_instr_data['translated_text']
+                
+                # Localize Description
+                t_desc_data = await translation_service.translate_text(desc, target_lang)
+                translated_desc = t_desc_data['translated_text']
+                
+                # Localize the Command Prefix and Placeholder
+                t_order_cmd_data = await translation_service.translate_text("Order", target_lang)
+                t_qty_placeholder_data = await translation_service.translate_text("[quantity]", target_lang)
+                t_order_cmd = t_order_cmd_data['translated_text']
+                t_qty_placeholder = t_qty_placeholder_data['translated_text']
+            else:
+                translated_name = name
+                t_price_label = "Price:"
+                t_desc_label = "Description:"
+                t_order_instr = "To order, please reply:"
+                translated_desc = desc
+                t_order_cmd = "Order"
+                t_qty_placeholder = "[quantity]"
         except Exception:
             translated_name = name
             t_price_label = "Price:"
@@ -551,10 +577,11 @@ class SalesService:
     async def _translate_and_send_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
         """Fetch target lang, translate, and send"""
         try:
-            account_data = await db.fetchrow("SELECT target_language FROM telegram_accounts WHERE id = $1", account_id)
+            account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
             target_lang = account_data['target_language'] if account_data else 'en'
+            translation_enabled = account_data['translation_enabled'] if account_data else True
             
-            if target_lang != 'en':
+            if target_lang != 'en' and translation_enabled:
                 t_data = await translation_service.translate_text(text, target_lang)
                 translated_text = t_data['translated_text']
             else:

@@ -290,14 +290,16 @@ class CampaignService:
                     action_type = "initial_outreach" if current_step == 0 else f"follow_up_step_{current_step}"
                     logger.info(f"Processing {action_type} for lead {lead['telegram_identifier']} via account {account_id}")
                     
-                    # 1. Prepare translation (translate source to target)
+                    # 1. Prepare translation (translate source to target) if enabled
                     account = await db.fetchrow(
-                        "SELECT user_id, source_language, target_language FROM telegram_accounts WHERE id = $1",
+                        "SELECT user_id, source_language, target_language, translation_enabled FROM telegram_accounts WHERE id = $1",
                         account_id
                     )
                     
                     target_msg_text = message_to_send
-                    if account and account['source_language'] != account['target_language']:
+                    translation_enabled = account['translation_enabled'] if account else True
+                    
+                    if account and account['source_language'] != account['target_language'] and translation_enabled:
                         try:
                             translation = await translation_service.translate_text(
                                 message_to_send,

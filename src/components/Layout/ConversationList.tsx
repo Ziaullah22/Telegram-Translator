@@ -23,6 +23,7 @@ interface ConversationListProps {
   unreadCounts: Record<number, number>;
   accountId?: number;
   onConversationCreated?: () => Promise<void>;
+  isTranslationEnabled?: boolean;
 }
 
 const formatConvDate = (dateStr: string) => {
@@ -48,6 +49,7 @@ export default function ConversationList({
   unreadCounts,
   accountId,
   onConversationCreated,
+  isTranslationEnabled = true,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
@@ -158,7 +160,10 @@ export default function ConversationList({
   const getLastMessagePreview = (conversation: TelegramChat) => {
     if (!conversation.lastMessage) return 'No messages yet';
     const msg = conversation.lastMessage;
-    if (msg.type === 'text') return msg.translated_text || msg.original_text || '';
+    if (msg.type === 'text') {
+      const text = isTranslationEnabled ? (msg.translated_text || msg.original_text) : msg.original_text;
+      return text || '';
+    }
     if (msg.type === 'photo') return '📷 Photo';
     if (msg.type === 'video') return '📹 Video';
     if (msg.type === 'voice') return '🎤 Voice message';

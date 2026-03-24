@@ -195,7 +195,7 @@ async def get_accounts(current_user = Depends(get_current_user)):
     accounts = await db.fetch(
         """
         SELECT ta.id, ta.account_name, ta.display_name, ta.is_active,
-               ta.source_language, ta.target_language, ta.created_at, ta.last_used,
+               ta.source_language, ta.target_language, ta.translation_enabled, ta.created_at, ta.last_used,
                (
                    SELECT COUNT(*) 
                    FROM messages m
@@ -221,6 +221,7 @@ async def get_accounts(current_user = Depends(get_current_user)):
             "is_active": account['is_active'],
             "source_language": account['source_language'],
             "target_language": account['target_language'],
+            "translation_enabled": account['translation_enabled'] if 'translation_enabled' in account else True,
             "created_at": account['created_at'],
             "last_used": account['last_used'],
             "is_connected": is_connected,
@@ -436,6 +437,7 @@ async def create_account(
         "is_active": account['is_active'],
         "source_language": account['source_language'],
         "target_language": account['target_language'],
+        "translation_enabled": account['translation_enabled'] if 'translation_enabled' in account else True,
         "created_at": account['created_at'],
         "last_used": account['last_used'],
         "is_connected": False, # Initially false as it's connecting in background
@@ -561,6 +563,11 @@ async def update_account(
         values.append(update_data.is_active)
         param_count += 1
 
+    if update_data.translation_enabled is not None:
+        update_fields.append(f"translation_enabled = ${param_count}")
+        values.append(update_data.translation_enabled)
+        param_count += 1
+
     if not update_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -586,6 +593,7 @@ async def update_account(
         "is_active": updated_account['is_active'],
         "source_language": updated_account['source_language'],
         "target_language": updated_account['target_language'],
+        "translation_enabled": updated_account['translation_enabled'] if 'translation_enabled' in updated_account else True,
         "created_at": updated_account['created_at'],
         "last_used": updated_account['last_used'],
         "is_connected": is_connected,

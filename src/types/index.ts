@@ -22,6 +22,7 @@ export interface TelegramAccount {
   isActive: boolean;
   sourceLanguage: string;
   targetLanguage: string;
+  isTranslationEnabled: boolean;
   createdAt: string;
   lastUsed?: string;
   isConnected: boolean;

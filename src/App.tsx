@@ -453,7 +453,7 @@ function App() {
     };
     setMessages(prev => [...prev, temp]);
     try {
-      const res = await messagesAPI.sendMessage(currentConversation.id, text, true, replyId);
+      const res = await messagesAPI.sendMessage(currentConversation.id, text, currentAccount?.isTranslationEnabled, replyId);
       if (res && res.id) setMessages(prev => prev.map(m => m.id === temp.id ? res : m));
     } catch (e) { setMessages(prev => prev.filter(m => m.id !== temp.id)); alert('Failed'); }
   };
@@ -558,6 +558,7 @@ function App() {
                   unreadCounts={unreadCounts[currentAccount.id] || {}}
                   accountId={currentAccount.id}
                   onConversationCreated={() => loadConversations(currentAccount.id)}
+                  isTranslationEnabled={currentAccount.isTranslationEnabled}
                 />
               )}
 
@@ -597,6 +598,7 @@ function App() {
                 scheduledMessages={scheduledMessages}
                 setScheduledMessages={setScheduledMessages}
                 conversations={conversations}
+                isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
               />
             </div>
           } />

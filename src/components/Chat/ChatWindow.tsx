@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Image, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -423,6 +423,7 @@ interface ChatWindowProps {
   scheduledMessages: ScheduledMessage[];
   setScheduledMessages: React.Dispatch<React.SetStateAction<ScheduledMessage[]>>;
   conversations: TelegramChat[];
+  isTranslationEnabled: boolean;
 }
 
 export default function ChatWindow({
@@ -431,7 +432,6 @@ export default function ChatWindow({
   currentAccount,
   isConnected,
   sourceLanguage,
-  targetLanguage,
   onSendMessage,
   onSendMedia,
   onJoinConversation,
@@ -445,6 +445,7 @@ export default function ChatWindow({
   scheduledMessages,
   setScheduledMessages,
   conversations,
+  isTranslationEnabled,
 }: ChatWindowProps): JSX.Element {
   // --- UI & INTERACTION STATE ---
   const [showChatMenu, setShowChatMenu] = useState(false);
@@ -1204,7 +1205,7 @@ export default function ChatWindow({
             {/* Copy Text */}
             <button
               onClick={() => {
-                const text = contextMenu.message.translated_text || contextMenu.message.original_text || '';
+                const text = isTranslationEnabled ? (contextMenu.message.translated_text || contextMenu.message.original_text || '') : (contextMenu.message.original_text || '');
                 navigator.clipboard.writeText(text).catch(() => { });
                 setContextMenu(null);
               }}
@@ -1326,11 +1327,6 @@ export default function ChatWindow({
                   <div className="flex items-center space-x-2">
                     {currentConversation?.username && currentConversation.title && !currentConversation.title.startsWith('+') && (
                       <span className="text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
-                    )}
-                    {currentAccount && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {targetLanguage === 'auto' ? 'Auto-detect' : targetLanguage.toUpperCase()} → {sourceLanguage === 'auto' ? 'Auto-detect' : sourceLanguage.toUpperCase()}
-                      </p>
                     )}
                   </div>
                 </div>
@@ -1594,10 +1590,10 @@ export default function ChatWindow({
                       )}
 
                       {/* Message bubble */}
-                      {isOnlyEmoji(message.translated_text || message.original_text) ? (
+                      {isOnlyEmoji(isTranslationEnabled ? (message.translated_text || message.original_text) : message.original_text) ? (
                         <div className="py-1 px-1 inline-block">
                           <span style={{ fontSize: '96px', lineHeight: '1.1' }} className="select-none block">
-                            {message.translated_text || message.original_text}
+                            {isTranslationEnabled ? (message.translated_text || message.original_text) : message.original_text}
                           </span>
                           <div className="flex items-center justify-end mt-1 space-x-1">
                             <div className="flex items-center space-x-1 bg-black/40 dark:bg-black/50 rounded-full px-2 py-0.5">
@@ -1738,7 +1734,7 @@ export default function ChatWindow({
                           )}
 
                           {/* Translated caption/message */}
-                          {message.translated_text && (
+                          {message.translated_text && isTranslationEnabled && (
                             <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
                               <div className={`text-[14.5px] font-bold leading-relaxed break-words whitespace-pre-wrap max-w-[280px] ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>
                                 {renderFormattedText(message.translated_text)}
@@ -1958,7 +1954,7 @@ export default function ChatWindow({
                       !currentConversation
                         ? 'Select a conversation to start messaging'
                         : isConnected
-                          ? `Type in ${targetLanguage === 'auto' ? 'any language' : targetLanguage.toUpperCase()}...`
+                          ? "Write a message..."
                           : 'Connect to an account to start messaging'
                     }
                     className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm resize-none overflow-hidden min-h-[46px] leading-normal"
@@ -2072,9 +2068,11 @@ export default function ChatWindow({
               </form>
             )}
 
-            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
-              Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
-            </p>
+            {isTranslationEnabled && (
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                Your message will be automatically translated and sent in {sourceLanguage === 'auto' ? 'detected language' : sourceLanguage.toUpperCase()}
+              </p>
+            )}
           </>
         )}
       </div>

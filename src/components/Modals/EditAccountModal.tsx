@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { X, AlertCircle } from 'lucide-react';
+import { X, AlertCircle, Languages } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -8,6 +8,7 @@ interface EditAccountFormData {
   displayName: string;
   sourceLanguage: string;
   targetLanguage: string;
+  isTranslationEnabled: boolean;
 }
 
 interface EditAccountModalProps {
@@ -21,13 +22,16 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<EditAccountFormData>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<EditAccountFormData>({
     values: {
       displayName: account?.displayName || account?.accountName || '',
       sourceLanguage: account?.sourceLanguage || 'auto',
       targetLanguage: account?.targetLanguage || 'en',
+      isTranslationEnabled: account?.isTranslationEnabled ?? true,
     },
   });
+
+  const isTranslationEnabled = watch('isTranslationEnabled');
 
   const onSubmit = async (data: EditAccountFormData) => {
     if (!account) return;
@@ -38,6 +42,7 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
         displayName: data.displayName,
         sourceLanguage: data.sourceLanguage,
         targetLanguage: data.targetLanguage,
+        isTranslationEnabled: data.isTranslationEnabled,
       });
       onSuccess();
       onClose();
@@ -122,6 +127,34 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
                 <option value="ru">Russian</option>
                 <option value="zh-cn">Chinese</option>
               </select>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#2b3d4f] rounded-xl border border-gray-100 dark:border-white/5">
+              <div className="flex items-center space-x-3">
+                <div className={`p-2 rounded-lg ${isTranslationEnabled ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>
+                  <Languages className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Enable Translation</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Automatically translate messages</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValue('isTranslationEnabled', !isTranslationEnabled)}
+                disabled={loading}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isTranslationEnabled ? 'bg-[#3390ec]' : 'bg-gray-200 dark:bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isTranslationEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 
