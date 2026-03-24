@@ -52,6 +52,7 @@ async def migrate():
                     is_active BOOLEAN NOT NULL DEFAULT TRUE,
                     source_language VARCHAR(16) NOT NULL DEFAULT 'auto',
                     target_language VARCHAR(16) NOT NULL DEFAULT 'en',
+                    translation_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     username VARCHAR(100),
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     last_used TIMESTAMPTZ
@@ -345,6 +346,7 @@ async def migrate():
                 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_duration INTEGER;
                 
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+                ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS translation_enabled BOOLEAN NOT NULL DEFAULT TRUE;
                 
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS first_contacted_at TIMESTAMP WITH TIME ZONE;
