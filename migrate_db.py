@@ -337,6 +337,7 @@ async def migrate():
                     status VARCHAR(50) NOT NULL DEFAULT 'idle',
                     pending_product_id BIGINT,
                     pending_quantity INTEGER,
+                    delivery_mode VARCHAR(20),
                     delivery_method VARCHAR(20),
                     delivery_address TEXT,
                     delivery_time_slot VARCHAR(100),
@@ -411,6 +412,8 @@ async def migrate():
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE CASCADE;
                 -- Ensure current orders with 'confirmed' status are mapped (if needed) but default to pending_payment for new ones
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
+
+                ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20);
 
                 -- Repair keywords/photo_urls if they were created as TEXT[] arrays (fixes 500 errors)
                 DO $$ 
