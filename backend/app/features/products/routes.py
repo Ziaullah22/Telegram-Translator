@@ -61,6 +61,7 @@ async def create_product(
     price: float = Form(...),
     stock_quantity: int = Form(...),
     keywords: str = Form("[]"), # JSON string of list
+    delivery_mode: str = Form("both"),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     current_user: TokenData = Depends(get_current_user)
@@ -93,8 +94,8 @@ async def create_product(
     photo_url = photo_urls[0] if photo_urls else None
 
     query = """
-        INSERT INTO products (user_id, name, description, price, stock_quantity, keywords, photo_url, photo_urls)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO products (user_id, name, description, price, stock_quantity, keywords, photo_url, photo_urls, delivery_mode)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
     """
     row = await db.fetchrow(
@@ -106,7 +107,8 @@ async def create_product(
         stock_quantity, 
         keywords_list, 
         photo_url,
-        photo_urls
+        photo_urls,
+        delivery_mode
     )
     return map_product_row(row)
 
@@ -118,6 +120,7 @@ async def update_product(
     price: Optional[float] = Form(None),
     stock_quantity: Optional[int] = Form(None),
     keywords: Optional[str] = Form(None),
+    delivery_mode: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     retained_photo_urls: str = Form("[]"),
@@ -172,8 +175,9 @@ async def update_product(
             keywords = COALESCE($5, keywords),
             photo_url = $6,
             photo_urls = $7,
+            delivery_mode = COALESCE($8, delivery_mode),
             updated_at = NOW()
-        WHERE id = $8 AND user_id = $9
+        WHERE id = $9 AND user_id = $10
         RETURNING *
     """
     row = await db.fetchrow(
@@ -185,6 +189,7 @@ async def update_product(
         keywords_list, 
         photo_url,
         photo_urls,
+        delivery_mode,
         product_id,
         current_user.user_id
     )

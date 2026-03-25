@@ -17,15 +17,20 @@ class TranslationService:
         source_language: str = "auto"
     ) -> dict:
         try:
-            result = self.translator.translate(
-                text,
-                dest=target_language,
-                src=source_language
-            )
+            # Add a strict 5-second timeout factor for all translations
+            # This prevents the backend from hanging indefinitely if Google is slow
+            async def _do_translate():
+                res = self.translator.translate(
+                    text,
+                    dest=target_language,
+                    src=source_language
+                )
+                if hasattr(res, '__await__') or asyncio.iscoroutine(res):
+                    return await res
+                return res
 
-            # Check if it's a coroutine (async) or a direct object (sync)
-            if hasattr(result, '__await__') or asyncio.iscoroutine(result):
-                result = await result
+            # Run with timeout
+            result = await asyncio.wait_for(_do_translate(), timeout=5.0)
 
             return {
                 "original_text": text,
@@ -34,6 +39,15 @@ class TranslationService:
                 "target_language": target_language
             }
 
+        except asyncio.TimeoutError:
+            logger.warning(f"Translation timed out for: '{text[:20]}...' Falls back to original.")
+            return {
+                "original_text": text,
+                "translated_text": text,
+                "source_language": source_language,
+                "target_language": target_language,
+                "error": "timeout"
+            }
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return {

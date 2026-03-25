@@ -6,12 +6,31 @@ import {
 } from 'lucide-react';
 import { salesAPI } from '../../services/api';
 import type { Order } from '../../types';
+import ConfirmModal from '../Modals/ConfirmModal';
 
 const OrderDetailModal: React.FC<{
   order: Order;
   onClose: () => void;
-}> = ({ order, onClose }) => {
+  onStatusUpdate: () => void;
+}> = ({ order, onClose, onStatusUpdate }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleMarkAsPaid = async () => {
+    setIsUpdating(true);
+    try {
+      await (salesAPI as any).updateOrderStatus(order.id, 'paid');
+      onStatusUpdate();
+      onClose();
+    } catch (err) {
+      alert('Failed to update order status');
+    } finally {
+      setIsUpdating(false);
+      setShowConfirm(false);
+    }
+  };
   const photos = (order.photo_urls && order.photo_urls.length > 0) 
     ? order.photo_urls 
     : ['/placeholder-product.png'];
@@ -125,27 +144,57 @@ const OrderDetailModal: React.FC<{
                   </p>
                 </div>
 
-                <div className="h-px w-full bg-gray-100 dark:bg-white/5" />
-
-                {/* Customer Section */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                     <User className="w-4 h-4" /> Customer Profile
                   </h3>
                   <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 border border-gray-100 dark:border-white/5 flex items-center gap-5">
-                       <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-black">
-                         {order.customer_name?.[0].toUpperCase() || 'U'}
-                       </div>
-                       <div>
-                         <h3 className="text-base font-black text-gray-900 dark:text-white">{order.customer_name || 'Anonymous User'}</h3>
-                         <div className="flex items-center gap-2 mt-0.5">
-                            {order.customer_username && (
-                              <span className="text-xs font-bold text-blue-600">@{order.customer_username}</span>
-                            )}
-                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">ID: TG-{order.telegram_peer_id}</span>
-                         </div>
-                       </div>
+                    <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-black">
+                      {order.customer_name?.[0].toUpperCase() || 'U'}
                     </div>
+                    <div>
+                      <h3 className="text-base font-black text-gray-900 dark:text-white">{order.customer_name || 'Anonymous User'}</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {order.customer_username && (
+                          <span className="text-xs font-bold text-blue-600">@{order.customer_username}</span>
+                        )}
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">ID: TG-{order.telegram_peer_id}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px w-full bg-gray-100 dark:bg-white/5" />
+
+                {/* Delivery Section */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    <ArrowRight className="w-4 h-4" /> Fulfillment Details
+                  </h3>
+                  <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 border border-gray-100 dark:border-white/5 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Method</p>
+                         <p className="text-sm font-bold text-gray-900 dark:text-white capitalize">{order.delivery_method?.replace('_', ' ') || 'N/A'}</p>
+                       </div>
+                       {order.delivery_time_slot && (
+                         <div>
+                           <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Time Slot</p>
+                           <p className="text-sm font-bold text-gray-900 dark:text-white">{order.delivery_time_slot}</p>
+                         </div>
+                       )}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Address</p>
+                      <p className="text-sm font-bold text-gray-900 dark:text-white">{order.delivery_address || 'N/A'}</p>
+                    </div>
+                    {order.delivery_instructions && (
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Special Instructions</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-white italic">"{order.delivery_instructions}"</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -190,7 +239,28 @@ const OrderDetailModal: React.FC<{
                        </div>
                     </div>
                   </div>
+
+                  {order.status !== 'paid' && (
+                    <button
+                      onClick={() => setShowConfirm(true)}
+                      disabled={isUpdating}
+                      className="w-full px-6 py-5 rounded-[24px] font-black uppercase tracking-[0.2em] text-[10px] transition-all bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/20 disabled:opacity-50"
+                    >
+                      {isUpdating ? 'Updating...' : 'Verify & Mark as Paid'}
+                    </button>
+                  )}
                 </div>
+
+                <ConfirmModal
+                  isOpen={showConfirm}
+                  onClose={() => setShowConfirm(false)}
+                  onConfirm={handleMarkAsPaid}
+                  title="Confirm Payment Verification"
+                  message="Are you sure you want to mark this order as PAID? This will send an automated confirmation message to the customer on Telegram."
+                  confirmText="Verify & Mark Paid"
+                  type="info"
+                />
+
 
                 <button
                   type="button"
@@ -323,6 +393,7 @@ const OrdersTab: React.FC = () => {
         <OrderDetailModal 
           order={selectedOrder} 
           onClose={() => setSelectedOrder(null)} 
+          onStatusUpdate={fetchOrders}
         />
       )}
     </div>

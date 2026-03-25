@@ -1261,11 +1261,10 @@ class TelethonService:
                     "type": msg_type,
                     "has_media": has_media,
                     "media_filename": media_filename,
-                    "media_thumbnail": await session._extract_thumbnail(message),
+                    "media_thumbnail": None,  # Don't block — dispatch immediately
                     "media_duration": duration,
                     "reply_to_msg_id": message.reply_to.reply_to_msg_id if message.reply_to else None
                 }
-                print("message_data", message_data)
 
                 # Mark message as read (only for incoming messages)
                 if not message.out:
@@ -1275,8 +1274,21 @@ class TelethonService:
                     except Exception as e:
                         logger.error(f"Error marking message {message.id} as read: {e}")
 
+                # Dispatch as a background task so a slow handler (like order summary translation)
+                # does NOT block the next message (like your screenshot) from arriving.
                 for handler in self.message_handlers:
-                    await handler(message_data)
+                    asyncio.create_task(handler(message_data))
+
+                # Extract thumbnail in background AFTER dispatch (non-blocking)
+                if has_media:
+                    async def _fetch_thumbnail_bg(msg=message):
+                        try:
+                            thumb = await session._extract_thumbnail(msg)
+                            if thumb:
+                                logger.debug(f"Thumbnail fetched for message {msg.id} in background")
+                        except Exception as e:
+                            logger.debug(f"Background thumbnail extraction failed for {msg.id}: {e}")
+                    asyncio.create_task(_fetch_thumbnail_bg())
 
             except Exception as e:
                 logger.error(f"Error handling new message: {e}")

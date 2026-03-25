@@ -410,6 +410,7 @@ class ProductCreate(BaseModel):
     price: float = Field(..., ge=0)
     stock_quantity: int = Field(..., ge=0)
     keywords: List[str] = Field(default_factory=list)
+    delivery_mode: str = "both" # mailing, hand_to_hand, both
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -417,6 +418,7 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     stock_quantity: Optional[int] = None
     keywords: Optional[List[str]] = None
+    delivery_mode: Optional[str] = None
 
 class ProductResponse(BaseModel):
     id: int
@@ -426,6 +428,7 @@ class ProductResponse(BaseModel):
     price: float
     stock_quantity: int
     keywords: List[str]
+    delivery_mode: str = "both"
     photo_url: Optional[str] = None
     photo_urls: List[str] = Field(default_factory=list)
     created_at: datetime

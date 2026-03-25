@@ -19,6 +19,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
   const [images, setImages] = useState<File[]>([]);
   const [retainedPhotoUrls, setRetainedPhotoUrls] = useState<string[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [deliveryMode, setDeliveryMode] = useState('both');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +36,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
         : (product.photo_url ? [product.photo_url] : []);
       setRetainedPhotoUrls(urls);
       setImagePreviews(urls);
+      setDeliveryMode(product.delivery_mode || 'both');
     } else {
       setName('');
       setDescription('');
@@ -44,6 +46,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       setImages([]);
       setImagePreviews([]);
       setRetainedPhotoUrls([]);
+      setDeliveryMode('both');
     }
     setError(null);
   }, [product, isOpen]);
@@ -88,6 +91,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       formData.append('description', description);
       formData.append('price', price.toString());
       formData.append('stock_quantity', stock.toString());
+      formData.append('delivery_mode', deliveryMode);
 
       const keywordArray = keywords.split(',').map(k => k.trim()).filter(k => k);
       formData.append('keywords', JSON.stringify(keywordArray));
@@ -210,6 +214,21 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                       onChange={(e) => setStock(parseInt(e.target.value))}
                       className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none"
                     />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                       Delivery Mode
+                    </label>
+                    <select
+                      value={deliveryMode}
+                      onChange={(e) => setDeliveryMode(e.target.value)}
+                      className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none"
+                    >
+                      <option value="both">Both (Mailing & Hand-to-Hand)</option>
+                      <option value="mailing">Mailing Only</option>
+                      <option value="hand_to_hand">Hand-to-Hand Only</option>
+                    </select>
                   </div>
                 </div>
 

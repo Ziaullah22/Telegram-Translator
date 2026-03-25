@@ -767,6 +767,10 @@ export const salesAPI = {
     return response.data;
   },
 
+  updateOrderStatus: async (orderId: number, status: string): Promise<void> => {
+    await api.patch(`/sales/orders/${orderId}/status`, { status });
+  },
+
   getSettings: async (): Promise<SalesSettings> => {
     const response = await api.get('/sales/settings');
     return response.data;

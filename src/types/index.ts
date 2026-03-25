@@ -223,6 +223,7 @@ export interface Product {
   price: number;
   stock_quantity: number;
   keywords: string[];
+  delivery_mode: string;
   photo_url?: string;
   photo_urls: string[];
   created_at: string;
@@ -258,7 +259,11 @@ export interface Order {
   quantity: number;
   unit_price: number;
   total_price: number;
-  status: 'confirmed' | 'cancelled' | 'paid';
+  status: string;
+  delivery_method?: string;
+  delivery_address?: string;
+  delivery_time_slot?: string;
+  delivery_instructions?: string;
   created_at: string;
 }
 

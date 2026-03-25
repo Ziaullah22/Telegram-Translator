@@ -297,6 +297,7 @@ async def migrate():
                     keywords JSONB DEFAULT '[]'::jsonb,
                     photo_url TEXT,
                     photo_urls JSONB DEFAULT '[]'::jsonb,
+                    delivery_mode VARCHAR(20) DEFAULT 'both',
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
@@ -318,12 +319,31 @@ async def migrate():
                     quantity INTEGER NOT NULL DEFAULT 1,
                     unit_price DECIMAL(12, 2) NOT NULL,
                     total_price DECIMAL(12, 2) NOT NULL,
-                    status VARCHAR(50) DEFAULT 'confirmed',
+                    status VARCHAR(50) DEFAULT 'pending_payment',
+                    delivery_method VARCHAR(20),
+                    delivery_address TEXT,
+                    delivery_time_slot VARCHAR(100),
+                    delivery_instructions TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_po ON orders(po_number);
+
+                CREATE TABLE IF NOT EXISTS sales_states (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_account_id BIGINT NOT NULL,
+                    telegram_peer_id BIGINT NOT NULL,
+                    status VARCHAR(50) NOT NULL DEFAULT 'idle',
+                    pending_product_id BIGINT,
+                    pending_quantity INTEGER,
+                    delivery_method VARCHAR(20),
+                    delivery_address TEXT,
+                    delivery_time_slot VARCHAR(100),
+                    delivery_instructions TEXT,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(telegram_account_id, telegram_peer_id)
+                );
             """)
             print("✓ Tables: products, orders, sales_settings")
 
@@ -380,6 +400,16 @@ async def migrate():
                 -- Milestone: Inventory Updates
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_url TEXT;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+                ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20) DEFAULT 'both';
+                
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20);
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_slot VARCHAR(100);
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_instructions TEXT;
+                -- CRITICAL: Add missing columns that block order status updates
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE CASCADE;
+                -- Ensure current orders with 'confirmed' status are mapped (if needed) but default to pending_payment for new ones
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
 
                 -- Repair keywords/photo_urls if they were created as TEXT[] arrays (fixes 500 errors)
