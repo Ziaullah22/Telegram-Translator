@@ -414,6 +414,10 @@ async def migrate():
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
 
                 ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20);
+                ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20);
+                ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+                ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_time_slot VARCHAR(100);
+                ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_instructions TEXT;
 
                 -- Repair keywords/photo_urls if they were created as TEXT[] arrays (fixes 500 errors)
                 DO $$ 
