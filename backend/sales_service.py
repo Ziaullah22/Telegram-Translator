@@ -66,19 +66,29 @@ class SalesService:
             account_id, peer_id
         )
 
-        if state and state['status'] == 'awaiting_confirmation':
-            # Handle Confirmation/Cancellation
-            if logic_text_upper == 'CONFIRM' or 'CONFIRM' in logic_text_upper:
-                logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
-                return await self._process_confirmation(account_id, peer_id, state, user_id)
-            elif logic_text_upper == 'CANCEL' or 'CANCEL' in logic_text_upper:
-                logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
-                await db.execute(
-                    "UPDATE sales_states SET status = 'idle' WHERE id = $1",
-                    state['id']
-                )
-                await self._translate_and_send_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
-                return True
+        if state and state['status'] != 'idle':
+            current_status = state['status']
+            if current_status == 'awaiting_delivery_pref':
+                return await self._process_delivery_pref(account_id, peer_id, state, logic_text, text, user_id)
+            elif current_status in ('awaiting_address', 'awaiting_h2h_address'):
+                return await self._process_address(account_id, peer_id, state, text, user_id)
+            elif current_status == 'awaiting_time_slot':
+                return await self._process_time_slot(account_id, peer_id, state, text, user_id)
+            elif current_status == 'awaiting_instructions':
+                return await self._process_instructions(account_id, peer_id, state, text, user_id)
+            elif current_status == 'awaiting_confirmation':
+                # Handle Confirmation/Cancellation
+                if logic_text_upper == 'CONFIRM' or 'CONFIRM' in logic_text_upper:
+                    logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
+                    return await self._process_confirmation(account_id, peer_id, state, user_id)
+                elif logic_text_upper == 'CANCEL' or 'CANCEL' in logic_text_upper:
+                    logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
+                    await db.execute(
+                        "UPDATE sales_states SET status = 'idle' WHERE id = $1",
+                        state['id']
+                    )
+                    await self._translate_and_send_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
+                    return True
 
         # 2. Check for "order [product] [quantity]" pattern using logic_text
         # We use a more flexible regex that matches "order", "command", "request", "buy", "purchase", etc.
@@ -151,22 +161,82 @@ class SalesService:
             await self._translate_and_send_reply(account_id, peer_id, f"Sorry, {product['name']} is currently out of stock.", user_id)
             return True
 
+        delivery_mode = product.get('delivery_mode', 'both')
+        initial_status = 'awaiting_delivery_pref' if delivery_mode == 'both' else 'awaiting_address'
+        
         await db.execute(
             """
-            INSERT INTO sales_states (telegram_account_id, telegram_peer_id, status, pending_product_id, pending_quantity, updated_at)
-            VALUES ($1, $2, 'awaiting_confirmation', $3, $4, NOW())
+            INSERT INTO sales_states (telegram_account_id, telegram_peer_id, status, pending_product_id, pending_quantity, delivery_mode, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
             ON CONFLICT (telegram_account_id, telegram_peer_id)
-            DO UPDATE SET status = 'awaiting_confirmation', pending_product_id = $3, pending_quantity = $4, updated_at = NOW()
+            DO UPDATE SET status = $3, pending_product_id = $4, pending_quantity = $5, delivery_mode = $6, updated_at = NOW()
             """,
-            account_id, peer_id, product['id'], quantity
+            account_id, peer_id, initial_status, product['id'], quantity, delivery_mode
         )
 
+        if delivery_mode == 'both':
+            await self._translate_and_send_reply(account_id, peer_id, "Great! Do you prefer this product to be Mailed to you, or delivered Hand-to-Hand? (Reply 'Mail' or 'Hand')", user_id)
+        elif delivery_mode == 'mailing':
+            await db.execute("UPDATE sales_states SET delivery_method = 'mailing' WHERE telegram_account_id=$1 AND telegram_peer_id=$2", account_id, peer_id)
+            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your full mailing address.", user_id)
+        elif delivery_mode == 'hand_to_hand':
+            await db.execute("UPDATE sales_states SET delivery_method = 'hand_to_hand' WHERE telegram_account_id=$1 AND telegram_peer_id=$2", account_id, peer_id)
+            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your preferred meetup/delivery address.", user_id)
+        return True
+
+    async def _process_delivery_pref(self, account_id: int, peer_id: int, state: Any, logic_text: str, text: str, user_id: int) -> bool:
+        logic_lower = logic_text.lower()
+        if 'mail' in logic_lower:
+            await db.execute("UPDATE sales_states SET delivery_method = 'mailing', status = 'awaiting_address' WHERE id = $1", state['id'])
+            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your full mailing address.", user_id)
+        elif 'hand' in logic_lower:
+            await db.execute("UPDATE sales_states SET delivery_method = 'hand_to_hand', status = 'awaiting_address' WHERE id = $1", state['id'])
+            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your preferred meetup/delivery address.", user_id)
+        else:
+            await self._translate_and_send_reply(account_id, peer_id, "Please reply with either 'Mail' or 'Hand'.", user_id)
+        return True
+
+    async def _process_address(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
+        method = state.get('delivery_method', 'mailing')
+        next_status = 'awaiting_time_slot' if method == 'hand_to_hand' else 'awaiting_instructions'
+        await db.execute("UPDATE sales_states SET delivery_address = $1, status = $2 WHERE id = $3", text, next_status, state['id'])
+        
+        if method == 'hand_to_hand':
+            await self._translate_and_send_reply(account_id, peer_id, "What is your preferred time slot for the delivery?", user_id)
+        else:
+            await self._translate_and_send_reply(account_id, peer_id, "Do you have any extra delivery instructions? (Reply 'None' if not)", user_id)
+        return True
+
+    async def _process_time_slot(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
+        await db.execute("UPDATE sales_states SET delivery_time_slot = $1, status = 'awaiting_instructions' WHERE id = $2", text, state['id'])
+        await self._translate_and_send_reply(account_id, peer_id, "Any extra delivery instructions we should know about? (Reply 'None' if not)", user_id)
+        return True
+
+    async def _process_instructions(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
+        await db.execute("UPDATE sales_states SET delivery_instructions = $1, status = 'awaiting_confirmation' WHERE id = $2", text, state['id'])
+        updated_state = await db.fetchrow("SELECT * FROM sales_states WHERE id = $1", state['id'])
+        return await self._send_order_summary(account_id, peer_id, updated_state, user_id)
+
+    async def _send_order_summary(self, account_id: int, peer_id: int, state: Any, user_id: int) -> bool:
+        product = await db.fetchrow("SELECT * FROM products WHERE id = $1", state['pending_product_id'])
+        quantity = state['pending_quantity']
+        
         # Fetch target language and toggle
         account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
         target_lang = account_data['target_language'] if account_data else 'en'
         translation_enabled = account_data['translation_enabled'] if account_data else True
 
         total = product['price'] * quantity
+        
+        method = state.get('delivery_method', 'mailing')
+        address = state.get('delivery_address', 'N/A')
+        time_slot = state.get('delivery_time_slot', 'N/A')
+        instr = state.get('delivery_instructions', 'None')
+        
+        delivery_details_text = f"🚚 **Delivery Method:** {method.replace('_', ' ').title()}\n📍 **Address:** {address}"
+        if method == 'hand_to_hand':
+            delivery_details_text += f"\n⏰ **Time Slot:** {time_slot}"
+        delivery_details_text += f"\n📝 **Instructions:** {instr}"
         
         # Translate labels and product name for context if enabled
         if translation_enabled and target_lang != 'en':
@@ -198,24 +268,27 @@ class SalesService:
             t_title, t_prod, t_qty, t_price, t_total, t_reply, t_discard, t_name, t_confirm, t_cancel = ("ORDER DRAFT", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to discard", product['name'], "CONFIRM", "CANCEL")
 
         invoice_msg = (
-            f"📋 **{t_title}**\n"
+            f"🛍️ **{t_title}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🔹 **{t_prod}** {t_name}\n"
             f"🔹 **{t_qty}** {quantity}\n"
             f"🔹 **{t_price}** ${product['price']:.2f}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{delivery_details_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **{t_total} ${total:.2f}**\n\n"
             f"✅ {t_reply} **{t_confirm}**\n"
             f"❌ {t_discard} **{t_cancel}**"
         )
         
-        # Original English text for Admin records
         eng_msg = (
-            f"📋 **ORDER DRAFT**\n"
+            f"🛍️ **ORDER SUMMARY**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🔹 **Product:** {product['name']}\n"
             f"🔹 **Quantity:** {quantity}\n"
             f"🔹 **Price:** ${product['price']:.2f}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{delivery_details_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **Total Amount: ${total:.2f}**\n\n"
             f"✅ Reply to place order: **CONFIRM**\n"
@@ -288,10 +361,11 @@ class SalesService:
                     total_price = product['price'] * requested_qty
                     await conn.execute(
                         """
-                        INSERT INTO orders (po_number, user_id, product_id, telegram_account_id, telegram_peer_id, quantity, unit_price, total_price, status)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed')
+                        INSERT INTO orders (po_number, user_id, product_id, telegram_account_id, telegram_peer_id, quantity, unit_price, total_price, status, delivery_method, delivery_address, delivery_time_slot, delivery_instructions)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending_payment', $9, $10, $11, $12)
                         """,
-                        po_number, user_id, product_id, account_id, peer_id, requested_qty, product['price'], total_price
+                        po_number, user_id, product_id, account_id, peer_id, requested_qty, product['price'], total_price,
+                        state.get('delivery_method'), state.get('delivery_address'), state.get('delivery_time_slot'), state.get('delivery_instructions')
                     )
 
                     settings = await conn.fetchrow("SELECT payment_details FROM sales_settings WHERE user_id = $1", user_id)
@@ -332,10 +406,10 @@ class SalesService:
                         f"{product['name']} × {requested_qty} = **${total_price:.2f}**\n\n"
                         f"💳 **{l_pay}**\n"
                         f"{final_pi}\n\n"
+                        f"📸 **Please reply with a screenshot of your payment directly here to finalize your order.**\n\n"
                         f"{footer} 🙏"
                     )
                     
-                    # Original English for Admin
                     eng_msg = (
                         f"🎉 **ORDER CONFIRMED!**\n"
                         f"Order ID: `{po_number}`\n"
@@ -344,6 +418,7 @@ class SalesService:
                         f"{product['name']} × {requested_qty} = **${total_price:.2f}**\n\n"
                         f"💳 **Payment Instructions:**\n"
                         f"{payment_info}\n\n"
+                        f"📸 **Please reply with a screenshot of your payment directly here to finalize your order.**\n\n"
                         f"Thank you for your business! 🙏"
                     )
 
@@ -590,5 +665,14 @@ class SalesService:
             translated_text = text
             
         await self._send_simple_reply(account_id, peer_id, translated_text, user_id, original_text=text)
+
+
+    async def send_payment_confirmation(self, order_id: int, user_id: int) -> bool:
+        order = await db.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
+        if not order: return False
+        
+        msg = "✅ Payment Confirmed! Thank you for your purchase. We are processing your order now and will keep you updated. Have a great day!"
+        await self._translate_and_send_reply(order['telegram_account_id'], order['telegram_peer_id'], msg, user_id)
+        return True
 
 sales_service = SalesService()
