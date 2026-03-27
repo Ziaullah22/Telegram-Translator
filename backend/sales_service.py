@@ -27,12 +27,39 @@ class SalesService:
         account_id_raw = message_data.get('account_id')
         peer_id_raw = message_data.get('peer_id')
         text = message_data.get('text', '').strip()
+        msg_type = message_data.get('type', 'text')
         
-        if account_id_raw is None or peer_id_raw is None or not text:
+        if account_id_raw is None or peer_id_raw is None or (not text and msg_type != 'photo'):
             return False
             
         account_id = int(account_id_raw)
         peer_id = int(peer_id_raw)
+
+        # 0. Check for Payment Screenshot if it's a photo
+        if msg_type == 'photo':
+            # Check for recent pending_payment or disapproved order for this user
+            order = await db.fetchrow(
+                "SELECT id, po_number, status FROM orders WHERE telegram_account_id = $1 AND telegram_peer_id = $2 AND status IN ('pending_payment', 'disapproved') ORDER BY created_at DESC LIMIT 1",
+                account_id, peer_id
+            )
+            if order:
+                media_file = message_data.get('media_filename')
+                # 1. Update order (if it was disapproved, move it back to pending_payment for re-verification)
+                await db.execute(
+                    "UPDATE orders SET payment_screenshot_path = $1, status = 'pending_payment', reminder_count = 0, updated_at = NOW() WHERE id = $2",
+                    media_file, order['id']
+                )
+                
+                # 2. Store in proof history table
+                await db.execute(
+                    "INSERT INTO order_proofs (order_id, file_path) VALUES ($1, $2)",
+                    order['id'], media_file
+                )
+                
+                logger.info(f"Payment screenshot detected and linked to Order {order['po_number']}. History updated.")
+                await self._translate_and_send_reply(account_id, peer_id, f"✅ Thank you for the screenshot! We have received it for Order {order['po_number']} and will verify it shortly. 🙏", user_id)
+                return True
+            return False
 
         # PRE-PROCESSING: Internal Back-Translation for Logic
         # We translate the customer's message to English internally to perform regex matching.
@@ -636,26 +663,43 @@ class SalesService:
         await self._send_simple_reply(account_id, peer_id, translated_text, user_id, original_text=text)
 
 
-    async def send_payment_confirmation(self, order_id: int, user_id: int) -> bool:
+    async def send_status_update_message(self, order_id: int, status: str, user_id: int, reason: str = None) -> bool:
+        """Sends an automated, professionally formatted status update message to the customer."""
         try:
-            logger.info(f"SalesService.send_payment_confirmation called for order_id: {order_id}, user_id: {user_id}")
+            logger.info(f"SalesService.send_status_update_message: order {order_id}, status {status}, user {user_id}")
             order = await db.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
             if not order: 
-                logger.error(f"Order {order_id} not found for payment confirmation")
+                logger.error(f"Order {order_id} not found")
                 return False
             
-            # Additional check: ensure order is actually paid or pending_payment
-            logger.info(f"Targeting account {order['telegram_account_id']} and peer {order['telegram_peer_id']}")
+            # 1. Standardized Professional Status Templates
+            status_templates = {
+                "paid": "✅ *Payment Confirmed!*\n\nWe have successfully verified your payment for Order {order_id}. We are now preparing your items for delivery. Thank you! 🙏",
+                "packed": "📦 *Order Packed & Ready!*\n\nGood news! Your order {order_id} has been packed and is ready for pickup/delivery.",
+                "shipped": "🚚 *Order Shipped!*\n\nYour order {order_id} has been shipped! It is now on its way to your delivery address. 🏁",
+                "delivered": "🎁 *Order Delivered!*\n\nYour order {order_id} has been successfully delivered. We hope you enjoy your purchase! 🌟",
+                "disapproved": "❌ *Verification Issue*\n\nWe were unable to verify your payment for Order {order_id}.\n\n*Reason:* {reason}\n\nPlease check your transaction and attach the correct screenshot to this chat. Thank you!"
+            }
             
-            msg = "✅ Payment Confirmed! Thank you for your purchase. We are processing your order now and will keep you updated. Have a great day!"
+            template = status_templates.get(status)
+            if not template:
+                logger.warning(f"No hardcoded template found for status '{status}'")
+                return False
+                
+            # Use the provided reason or the one from the database
+            final_reason = reason or order.get('disapproval_reason') or "No specific reason provided."
+                
+            # 2. Dynamic Variable Injection
+            msg = template.replace("{order_id}", f"#{order['po_number']}").replace("{reason}", final_reason)
+            
+            # 3. Transparent Translation & Dispatch
+            # The _translate_and_send_reply handles language detection and async sending
             await self._translate_and_send_reply(order['telegram_account_id'], order['telegram_peer_id'], msg, user_id)
             
-            logger.info(f"Payment confirmation message process complete for order {order_id}")
+            logger.info(f"Automated '{status}' notification dispatched for Order {order_id}")
             return True
         except Exception as e:
-            logger.error(f"Error in send_payment_confirmation for order {order_id}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to dispatch status update for order {order_id}: {e}")
             return False
 
 sales_service = SalesService()

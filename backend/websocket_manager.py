@@ -3,7 +3,18 @@ from typing import Dict, Set
 import logging
 import json
 
+from decimal import Decimal
+from datetime import datetime
+
 logger = logging.getLogger(__name__)
+
+class DefaultEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super(DefaultEncoder, self).default(obj)
 
 class ConnectionManager:
     def __init__(self):
@@ -36,9 +47,11 @@ class ConnectionManager:
     async def send_personal_message(self, message: dict, user_id: int):
         if user_id in self.active_connections:
             disconnected = set()
+            # Encode message using custom encoder to handle Decimal/Datetime
+            encoded_message = json.dumps(message, cls=DefaultEncoder)
             for connection in self.active_connections[user_id]:
                 try:
-                    await connection.send_json(message)
+                    await connection.send_text(encoded_message)
                 except Exception as e:
                     logger.error(f"Error sending message to user {user_id}: {e}")
                     disconnected.add(connection)
@@ -47,9 +60,11 @@ class ConnectionManager:
 
     async def broadcast_to_admins(self, message: dict):
         disconnected = set()
+        # Encode message using custom encoder to handle Decimal/Datetime
+        encoded_message = json.dumps(message, cls=DefaultEncoder)
         for connection in self.admin_connections:
             try:
-                await connection.send_json(message)
+                await connection.send_text(encoded_message)
             except Exception as e:
                 logger.error(f"Error sending message to admin: {e}")
                 disconnected.add(connection)

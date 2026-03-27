@@ -762,13 +762,18 @@ export const productsAPI = {
 
 // --- SALES & ORDERS SERVICES ---
 export const salesAPI = {
-  getOrders: async (): Promise<Order[]> => {
-    const response = await api.get('/sales/orders');
+  getOrders: async (status?: string): Promise<Order[]> => {
+    const url = status && status !== 'all' ? `/sales/orders?status=${status}` : '/sales/orders';
+    const response = await api.get(url);
     return response.data;
   },
 
-  updateOrderStatus: async (orderId: number, status: string): Promise<void> => {
-    await api.patch(`/sales/orders/${orderId}/status`, { status });
+  updateOrderStatus: async (orderId: number, status: string, reason?: string): Promise<void> => {
+    await api.patch(`/sales/orders/${orderId}/status`, { status, reason });
+  },
+
+  deleteOrder: async (orderId: number): Promise<void> => {
+    await api.delete(`/sales/orders/${orderId}`);
   },
 
   getSettings: async (): Promise<SalesSettings> => {

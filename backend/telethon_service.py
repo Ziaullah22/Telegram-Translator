@@ -292,6 +292,19 @@ class TelegramSession:
                                     # Get conversation type
                                     conversation_type = self._get_conversation_type(dialog.entity)
                                     
+                                    # Download media if present
+                                    if has_media and media_filename:
+                                        try:
+                                            # We save it to backend/media/files/
+                                            os.makedirs("backend/media/files", exist_ok=True)
+                                            # photo_123.jpg
+                                            file_path = os.path.join("backend/media/files", media_filename)
+                                            if not os.path.exists(file_path):
+                                                await msg.download_media(file=file_path)
+                                                logger.info(f"Downloaded incoming media to {file_path}")
+                                        except Exception as me:
+                                            logger.error(f"Error downloading media for msg {msg.id}: {me}")
+
                                     unread_messages.append({
                                         "message_id": msg.id,
                                         "text": msg.text or msg.message or "",
@@ -1246,6 +1259,17 @@ class TelethonService:
                     if not media_filename:
                         media_filename = f"document_{message.id}"
 
+                # Download media if present
+                if has_media and media_filename:
+                    try:
+                        os.makedirs("backend/media/files", exist_ok=True)
+                        file_path = os.path.join("backend/media/files", media_filename)
+                        if not os.path.exists(file_path):
+                            await message.download_media(file=file_path)
+                            logger.info(f"Event handler downloaded media to {file_path}")
+                    except Exception as me:
+                        logger.error(f"Event downloader error: {me}")
+
                 message_data = {
                     "account_id": session.account_id,
                     "peer_id": peer_id,
@@ -1261,7 +1285,7 @@ class TelethonService:
                     "type": msg_type,
                     "has_media": has_media,
                     "media_filename": media_filename,
-                    "media_thumbnail": None,  # Don't block — dispatch immediately
+                    "media_thumbnail": await session._extract_thumbnail(message),
                     "media_duration": duration,
                     "reply_to_msg_id": message.reply_to.reply_to_msg_id if message.reply_to else None
                 }
@@ -1427,20 +1451,10 @@ class TelethonService:
 
     async def reconnect_if_needed(self, account_id: int):
         """Checks if a session is connected, and attempts to reconnect if not"""
-        session = self.sessions.get(account_id)
-        if not session:
-            # Try to load session from DB if it exists but not in memory
-            from database import db
-            acc = await db.fetchrow("SELECT telegram_api_id, telegram_api_hash, session_filepath FROM telegram_accounts WHERE id = $1", account_id)
-            if acc:
-                await self.connect_session(
-                    account_id,
-                    acc['telegram_api_id'],
-                    acc['telegram_api_hash'],
-                    acc['session_filepath']
-                )
-                session = self.sessions.get(account_id)
+        if account_id not in self.sessions:
+            await self.connect_session(account_id)
             
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Account not connected and could not be found")
             

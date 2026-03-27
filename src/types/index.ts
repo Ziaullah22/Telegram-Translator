@@ -2,11 +2,6 @@
  * --- TS TYPE DEFINITIONS (PROJECT-WIDE) ---
  * 
  * Central registry for all data schemas used in the Frontend & Admin.
- * Categories include: 
- * 1. User/Colleague Data
- * 2. Telegram Core (Messages, Chats, Accounts)
- * 3. CRM & Productivity (Templates, Scheduled, Contacts)
- * 4. Automation (Auto-Responder)
  */
 export interface User {
   id: number;
@@ -27,7 +22,7 @@ export interface TelegramAccount {
   lastUsed?: string;
   isConnected: boolean;
   unreadCount?: number;
-  unreadTotal?: number; // total unread across this account's conversations
+  unreadTotal?: number;
 }
 
 export interface TelegramMessage {
@@ -264,9 +259,26 @@ export interface Order {
   delivery_address?: string;
   delivery_time_slot?: string;
   delivery_instructions?: string;
+  payment_screenshot_path?: string;
+  proof_history?: string[];
+  disapproval_reason?: string;
+  reminder_count?: number;
+  last_reminder_at?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface SalesSettings {
   payment_details: string;
-}
+  payment_reminder_message?: string;
+  payment_reminder_interval_days?: number;
+  payment_reminder_interval_hours?: number;
+  payment_reminder_interval_minutes?: number;
+  payment_reminder_count?: number;
+  disapproved_reminder_message?: string;
+  disapproved_reminder_interval_days?: number;
+  disapproved_reminder_interval_hours?: number;
+  disapproved_reminder_interval_minutes?: number;
+  disapproved_reminder_count?: number;
+  status_messages?: Record<string, string>;
+}

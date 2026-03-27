@@ -300,6 +300,17 @@ async def lifespan(app: FastAPI):
                     reply_to_text = replied_msg['translated_text'] or replied_msg['original_text']
                     reply_to_sender = replied_msg['sender_name']
 
+            # --- DEDUPLICATION LOGIC (Milestone 2) ---
+            # Prevent duplicate storage for messages that were already saved manually (e.g. by sales_service)
+            if message_data.get('is_outgoing'):
+                duplicate_msg = await db.fetchrow(
+                    "SELECT id FROM messages WHERE conversation_id = $1 AND telegram_message_id = $2",
+                    conversation_id, message_data['message_id']
+                )
+                if duplicate_msg:
+                    logger.debug(f"Manual deduplication: Skipping storage and broadcast for already-saved message {message_data['message_id']}")
+                    return
+            
             message_id = await db.fetchval(
                 """
                 INSERT INTO messages

@@ -228,6 +228,9 @@ class SchedulerService:
                     except Exception as e:
                         logger.error(f"Failed to send scheduled message {msg_id}: {e}")
                 
+                # Check for payment reminders (Phase 4)
+                await self._check_order_reminders()
+                
             except Exception as e:
                 logger.error(f"Error in scheduler loop: {e}")
                 await asyncio.sleep(self.check_interval)
@@ -393,5 +396,108 @@ class SchedulerService:
             )
             if message_id in self.scheduled_messages:
                 del self.scheduled_messages[message_id]
+
+    async def _check_order_reminders(self):
+        """Check for orders that need a nudge (Phase 4 & 5)"""
+        try:
+            # Fetch orders in pending_payment or disapproved status that need a reminder
+            # We use CASE to pick the right settings based on status
+            orders = await db.fetch(
+                """
+                WITH settings_expanded AS (
+                    SELECT o.*,
+                           CASE 
+                             WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_message, 'Hello! We haven''t received your payment screenshot for Order {order_id}. Please send it when you can. 🙏')
+                             WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_message, 'We are still waiting for your updated screenshot for Order {order_id}. Please send it as soon as possible. 🙏')
+                           END as reminder_template,
+                           CASE 
+                             WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_interval_days, 0)
+                             WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_interval_days, 0)
+                           END as target_days,
+                           CASE 
+                             WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_interval_hours, 2)
+                             WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_interval_hours, 2)
+                           END as target_hours,
+                           CASE 
+                             WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_interval_minutes, 0)
+                             WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_interval_minutes, 0)
+                           END as target_minutes,
+                           CASE 
+                             WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_count, 3)
+                             WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_count, 3)
+                           END as target_max_count,
+                           CASE
+                             WHEN o.status = 'pending_payment' THEN o.created_at
+                             ELSE o.updated_at
+                           END as base_time
+                    FROM orders o
+                    LEFT JOIN sales_settings s ON o.user_id = s.user_id
+                    WHERE o.status IN ('pending_payment', 'disapproved')
+                )
+                SELECT * FROM settings_expanded
+                WHERE reminder_count < target_max_count
+                AND (
+                    -- Condition for pending_payment: proof must be missing
+                    (status = 'pending_payment' AND payment_screenshot_path IS NULL)
+                    OR
+                    -- Condition for disapproved: just waiting for new interaction
+                    (status = 'disapproved')
+                )
+                AND (
+                    (last_reminder_at IS NULL AND base_time + (target_days * INTERVAL '1 day' + target_hours * INTERVAL '1 hour' + target_minutes * INTERVAL '1 minute') <= NOW())
+                    OR 
+                    (last_reminder_at IS NOT NULL AND last_reminder_at + (target_days * INTERVAL '1 day' + target_hours * INTERVAL '1 hour' + target_minutes * INTERVAL '1 minute') <= NOW())
+                )
+                """
+            )
+            
+            if not orders: return
+
+            from sales_service import sales_service
+            
+            for ord in orders:
+                try:
+                    logger.info(f"Sending automated {ord['status']} reminder for Order {ord['po_number']} to Peer {ord['telegram_peer_id']}")
+                    
+                    # Replace placeholder
+                    message_text = ord['reminder_template'].replace("{order_id}", ord['po_number'])
+                    
+                    # Get bot client
+                    client = await self._get_bot_client(ord['user_id'])
+                    if not client: continue
+                    
+                    # Send message
+                    await client.send_message(ord['telegram_peer_id'], message_text)
+                    
+                    # Update order
+                    await db.execute(
+                        "UPDATE orders SET reminder_count = reminder_count + 1, last_reminder_at = NOW() WHERE id = $1",
+                        ord['id']
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to send reminder for order {ord['id']}: {e}")
+        except Exception as e:
+            logger.error(f"Error in _check_order_reminders: {e}")
+
+    async def _get_bot_client(self, user_id: int):
+        """Helper to get an active bot client for a user's account"""
+        try:
+            # 1. Look for any active telegram account for this user
+            account = await db.fetchrow(
+                "SELECT id FROM telegram_accounts WHERE user_id = $1 AND is_active = TRUE LIMIT 1",
+                user_id
+            )
+            if not account:
+                logger.error(f"No active telegram account found for user {user_id}")
+                return None
+            
+            # 2. Get/Reconnect session via telethon_service
+            from telethon_service import telethon_service
+            session = await telethon_service.reconnect_if_needed(account['id'])
+            return session.client
+        except Exception as e:
+            logger.error(f"Failed to get bot client for user {user_id}: {e}")
+            return None
 
 scheduler_service = SchedulerService()

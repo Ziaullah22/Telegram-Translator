@@ -182,18 +182,30 @@ function App() {
         const activeAccountId = activeAcc ? Number(activeAcc.id) : null;
         const activeConversationId = activeConv ? Number(activeConv.id) : null;
 
-        // Prevent processing the same message multipe times (deduplication)
-        if (data.message.id && processedMessageIds.current.has(data.message.id)) return;
-        if (data.message.id) {
-          processedMessageIds.current.add(data.message.id);
-          // Cleanup set size occasionally to prevent memory leak
-          if (processedMessageIds.current.size > 500) {
-            const first = processedMessageIds.current.values().next().value;
-            if (first !== undefined) processedMessageIds.current.delete(first);
+        const isActiveConv = activeAccountId === incomingAccountId && activeConversationId === incomingConversationId;
+
+        // --- CONTEXT-AWARE DEDUPLICATION ---
+        // Catch messages that arrive through multiple events (Sales Bot vs Telethon event)
+        const tgId = Number(data.message.telegram_message_id);
+        const internalId = Number(data.message.id);
+        
+        const isDuplicate = (tgId !== 0 && processedMessageIds.current.has(tgId)) || 
+                           (internalId > 0 && processedMessageIds.current.has(internalId));
+
+        if (isDuplicate) return;
+
+        // Mark both IDs as processed to block future duplicates
+        if (tgId !== 0) processedMessageIds.current.add(tgId);
+        if (internalId > 0) processedMessageIds.current.add(internalId);
+
+        // Manage set size to prevent memory bloat
+        if (processedMessageIds.current.size > 1000) {
+          const iterator = processedMessageIds.current.values();
+          for (let i = 0; i < 100; i++) {
+            const nextVal = iterator.next().value;
+            if (nextVal !== undefined) processedMessageIds.current.delete(nextVal);
           }
         }
-
-        const isActiveConv = activeAccountId === incomingAccountId && activeConversationId === incomingConversationId;
 
         // If it's an incoming message (not sent by us)
         if (!data.message.is_outgoing) {

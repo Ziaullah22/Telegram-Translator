@@ -306,6 +306,16 @@ async def migrate():
                 CREATE TABLE IF NOT EXISTS sales_settings (
                     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     payment_details TEXT,
+                    payment_reminder_message TEXT DEFAULT 'Hello! We haven''t received your payment screenshot for Order {order_id}. Please send it when you can. 🙏',
+                    payment_reminder_interval_hours FLOAT DEFAULT 2.0,
+                    payment_reminder_count INTEGER DEFAULT 3,
+                    status_messages JSONB DEFAULT '{
+                        "paid": "✅ Your payment has been verified! We are now preparing your order.",
+                        "packed": "📦 Your order has been packed and is ready for shipment!",
+                        "shipped": "🚚 Your order is on its way! We will update you on the delivery progress.",
+                        "delivered": "🎁 Order delivered! Thank you for shopping with us.",
+                        "disapproved": "❌ Your payment verification was unsuccessful. Reason: {reason}. Please send a new screenshot."
+                    }'::jsonb,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
@@ -324,6 +334,10 @@ async def migrate():
                     delivery_address TEXT,
                     delivery_time_slot VARCHAR(100),
                     delivery_instructions TEXT,
+                    payment_screenshot_path TEXT,
+                    disapproval_reason TEXT,
+                    reminder_count INTEGER DEFAULT 0,
+                    last_reminder_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
@@ -400,18 +414,46 @@ async def migrate():
 
                 -- Milestone: Inventory Updates
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_url TEXT;
-                ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20) DEFAULT 'both';
                 
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20);
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time_slot VARCHAR(100);
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_instructions TEXT;
-                -- CRITICAL: Add missing columns that block order status updates
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE CASCADE;
-                -- Ensure current orders with 'confirmed' status are mapped (if needed) but default to pending_payment for new ones
-                ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb;
+
+                -- Repair column types (Safe Migration to JSONB)
+                DO $$ 
+                BEGIN
+                    -- Keywords
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'keywords') THEN
+                        -- Temporarily drop default to avoid cast conflicts
+                        ALTER TABLE products ALTER COLUMN keywords DROP DEFAULT;
+                        -- Attempt conversion
+                        BEGIN
+                             ALTER TABLE products ALTER COLUMN keywords TYPE JSONB USING keywords::jsonb;
+                        EXCEPTION WHEN OTHERS THEN
+                             ALTER TABLE products ALTER COLUMN keywords TYPE JSONB USING to_jsonb(keywords);
+                        END;
+                        ALTER TABLE products ALTER COLUMN keywords SET DEFAULT '[]'::jsonb;
+                    ELSE
+                        ALTER TABLE products ADD COLUMN keywords JSONB DEFAULT '[]'::jsonb;
+                    END IF;
+
+                    -- Photo URLs
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'photo_urls') THEN
+                        ALTER TABLE products ALTER COLUMN photo_urls DROP DEFAULT;
+                        BEGIN
+                             ALTER TABLE products ALTER COLUMN photo_urls TYPE JSONB USING photo_urls::jsonb;
+                        EXCEPTION WHEN OTHERS THEN
+                             ALTER TABLE products ALTER COLUMN photo_urls TYPE JSONB USING to_jsonb(photo_urls);
+                        END;
+                        ALTER TABLE products ALTER COLUMN photo_urls SET DEFAULT '[]'::jsonb;
+                    ELSE
+                        ALTER TABLE products ADD COLUMN photo_urls JSONB DEFAULT '[]'::jsonb;
+                    END IF;
+                END $$;
 
                 ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20);
                 ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20);
@@ -419,23 +461,32 @@ async def migrate():
                 ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_time_slot VARCHAR(100);
                 ALTER TABLE sales_states ADD COLUMN IF NOT EXISTS delivery_instructions TEXT;
 
-                -- Repair keywords/photo_urls if they were created as TEXT[] arrays (fixes 500 errors)
-                DO $$ 
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name = 'products' AND column_name = 'keywords' AND data_type = 'ARRAY'
-                    ) THEN
-                        ALTER TABLE products ALTER COLUMN keywords TYPE JSONB USING to_jsonb(keywords);
-                    END IF;
-                    
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name = 'products' AND column_name = 'photo_urls' AND data_type = 'ARRAY'
-                    ) THEN
-                        ALTER TABLE products ALTER COLUMN photo_urls TYPE JSONB USING to_jsonb(photo_urls);
-                    END IF;
-                END $$;
+                -- New Inventory & Sales Management Columns
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_screenshot_path TEXT;
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS disapproval_reason TEXT;
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS reminder_count INTEGER DEFAULT 0;
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
+
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS payment_reminder_message TEXT;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS payment_reminder_interval_days INTEGER DEFAULT 0;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS payment_reminder_interval_hours INTEGER DEFAULT 2;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS payment_reminder_interval_minutes INTEGER DEFAULT 0;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS payment_reminder_count INTEGER DEFAULT 3;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_message TEXT;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_interval_days INTEGER DEFAULT 0;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_interval_hours INTEGER DEFAULT 2;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_interval_minutes INTEGER DEFAULT 0;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_count INTEGER DEFAULT 3;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS status_messages JSONB DEFAULT '{}'::jsonb;
+                
+                CREATE TABLE IF NOT EXISTS order_proofs (
+                    id SERIAL PRIMARY KEY,
+                    order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+                    file_path TEXT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+
+                -- Columns already repaired above in robust block
 
                 -- Important: Change CASCADE DELETE to SET NULL so logs survive campaign deletion
                 DO $$
