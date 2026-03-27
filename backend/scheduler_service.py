@@ -465,28 +465,13 @@ class SchedulerService:
                     # Replace placeholder
                     message_text = ord['reminder_template'].replace("{order_id}", ord['po_number'])
                     
-                    # Translate message based on customer profile
-                    target_language = ord.get('target_language') or 'EN'
-                    if target_language.upper() != 'EN':
-                        try:
-                            from translation_service import translation_service
-                            translation = await translation_service.translate_text(message_text, target_language)
-                            if translation and 'translated_text' in translation:
-                                message_text = translation['translated_text']
-                        except Exception as e:
-                            logger.error(f"Failed to translate reminder: {e}")
-                    
-                    # Get correct bot client for this specific order
-                    from telethon_service import telethon_service
-                    session = await telethon_service.reconnect_if_needed(ord['telegram_account_id'])
-                    if not session or not session.client:
-                        logger.error(f"Could not connect to telegram account {ord['telegram_account_id']} for order {ord['id']}")
-                        continue
-                        
-                    client = session.client
-                    
-                    # Send message
-                    await client.send_message(ord['telegram_peer_id'], message_text)
+                    # Use sales_service to translate (if enabled), send, and log the broadcast to chat UI
+                    await sales_service._translate_and_send_reply(
+                        account_id=ord['telegram_account_id'],
+                        peer_id=ord['telegram_peer_id'],
+                        text=message_text,
+                        user_id=ord['user_id']
+                    )
                     
                     # Update order
                     await db.execute(
