@@ -408,17 +408,20 @@ class SalesService:
                         translation_service.translate_text("Thank you for your business!", target_lang),
                         translation_service.translate_text(final_data['payment_info'], target_lang),
                         translation_service.translate_text("Please send a screenshot of your payment for verification.", target_lang),
+                        translation_service.translate_text(final_data['product_name'], target_lang),
                     ]
                     results = await asyncio.gather(*tasks)
-                    h, l_id, l_date, l_det, l_pay, footer, final_pi, l_screenshot = [r['translated_text'] for r in results]
+                    h, l_id, l_date, l_det, l_pay, footer, final_pi, l_screenshot, t_product_name = [r['translated_text'] for r in results]
                 else:
                     h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you for your business!", final_data['payment_info'])
                     l_screenshot = "Please send a screenshot of your payment for verification."
+                    t_product_name = final_data['product_name']
             except:
                 h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you for your business!", final_data['payment_info'])
                 l_screenshot = "Please send a screenshot of your payment for verification."
+                t_product_name = final_data['product_name']
 
-            conf_msg = f"🎉 **{h}**\n{l_id} `{final_data['po_number']}`\n{l_date} {datetime.now().strftime('%d %B %Y')}\n\n📦 **{l_det}**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **{l_pay}**\n{final_pi}\n\n📸 {l_screenshot}\n\n{footer} 🙏"
+            conf_msg = f"🎉 **{h}**\n{l_id} `{final_data['po_number']}`\n{l_date} {datetime.now().strftime('%d %B %Y')}\n\n📦 **{l_det}**\n{t_product_name} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **{l_pay}**\n{final_pi}\n\n📸 {l_screenshot}\n\n{footer} 🙏"
             eng_msg = f"🎉 **ORDER CONFIRMED!**\nOrder ID: `{final_data['po_number']}`\nDate: {datetime.now().strftime('%d %B %Y')}\n\n📦 **Details:**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **Payment Instructions:**\n{final_data['payment_info']}\n\n📸 Please send a screenshot of your payment for verification.\n\nThank you for your business! 🙏"
             
             await self._send_simple_reply(account_id, peer_id, conf_msg, user_id, original_text=eng_msg)
