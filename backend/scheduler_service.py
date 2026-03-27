@@ -406,6 +406,8 @@ class SchedulerService:
                 """
                 WITH settings_expanded AS (
                     SELECT o.*,
+                           ta.target_language, 
+                           ta.source_language,
                            CASE 
                              WHEN o.status = 'pending_payment' THEN COALESCE(s.payment_reminder_message, 'Hello! We haven''t received your payment screenshot for Order {order_id}. Please send it when you can. 🙏')
                              WHEN o.status = 'disapproved' THEN COALESCE(s.disapproved_reminder_message, 'We are still waiting for your updated screenshot for Order {order_id}. Please send it as soon as possible. 🙏')
@@ -432,6 +434,7 @@ class SchedulerService:
                            END as base_time
                     FROM orders o
                     LEFT JOIN sales_settings s ON o.user_id = s.user_id
+                    LEFT JOIN telegram_accounts ta ON o.telegram_account_id = ta.id
                     WHERE o.status IN ('pending_payment', 'disapproved')
                 )
                 SELECT * FROM settings_expanded
@@ -462,9 +465,25 @@ class SchedulerService:
                     # Replace placeholder
                     message_text = ord['reminder_template'].replace("{order_id}", ord['po_number'])
                     
-                    # Get bot client
-                    client = await self._get_bot_client(ord['user_id'])
-                    if not client: continue
+                    # Translate message based on customer profile
+                    target_language = ord.get('target_language') or 'EN'
+                    if target_language.upper() != 'EN':
+                        try:
+                            from translation_service import translation_service
+                            translation = await translation_service.translate_text(message_text, target_language)
+                            if translation and 'translated_text' in translation:
+                                message_text = translation['translated_text']
+                        except Exception as e:
+                            logger.error(f"Failed to translate reminder: {e}")
+                    
+                    # Get correct bot client for this specific order
+                    from telethon_service import telethon_service
+                    session = await telethon_service.reconnect_if_needed(ord['telegram_account_id'])
+                    if not session or not session.client:
+                        logger.error(f"Could not connect to telegram account {ord['telegram_account_id']} for order {ord['id']}")
+                        continue
+                        
+                    client = session.client
                     
                     # Send message
                     await client.send_message(ord['telegram_peer_id'], message_text)
@@ -479,25 +498,5 @@ class SchedulerService:
                     logger.error(f"Failed to send reminder for order {ord['id']}: {e}")
         except Exception as e:
             logger.error(f"Error in _check_order_reminders: {e}")
-
-    async def _get_bot_client(self, user_id: int):
-        """Helper to get an active bot client for a user's account"""
-        try:
-            # 1. Look for any active telegram account for this user
-            account = await db.fetchrow(
-                "SELECT id FROM telegram_accounts WHERE user_id = $1 AND is_active = TRUE LIMIT 1",
-                user_id
-            )
-            if not account:
-                logger.error(f"No active telegram account found for user {user_id}")
-                return None
-            
-            # 2. Get/Reconnect session via telethon_service
-            from telethon_service import telethon_service
-            session = await telethon_service.reconnect_if_needed(account['id'])
-            return session.client
-        except Exception as e:
-            logger.error(f"Failed to get bot client for user {user_id}: {e}")
-            return None
 
 scheduler_service = SchedulerService()

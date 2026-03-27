@@ -439,9 +439,9 @@ const OrdersTab: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (background = false) => {
     try {
-      setIsLoading(true);
+      if (!background) setIsLoading(true);
       const data = await (salesAPI as any).getOrders(activeFilter);
       setOrders(data);
       setSelectedOrder((prev) => {
@@ -451,7 +451,7 @@ const OrdersTab: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch orders:', error);
     } finally {
-      setIsLoading(false);
+      if (!background) setIsLoading(false);
     }
   };
 
@@ -575,7 +575,7 @@ const OrdersTab: React.FC = () => {
         <OrderDetailModal 
           order={selectedOrder} 
           onClose={() => setSelectedOrder(null)} 
-          onStatusUpdate={fetchOrders}
+          onStatusUpdate={() => fetchOrders(true)}
         />
       )}
     </div>
