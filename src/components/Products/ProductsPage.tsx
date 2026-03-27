@@ -118,7 +118,7 @@ const ProductsPage: React.FC = () => {
         <div className="flex items-center border-b border-gray-200 dark:border-white/10">
           {[
             { id: 'catalog', label: 'Product Catalog', icon: <Package className="w-4 h-4" /> },
-            { id: 'orders', label: 'Order History', icon: <ShoppingCart className="w-4 h-4" /> },
+            { id: 'orders', label: 'Order Managment', icon: <ShoppingCart className="w-4 h-4" /> },
             { id: 'settings', label: 'Sales Settings', icon: <CreditCard className="w-4 h-4" /> },
           ].map((tab) => (
             <button

@@ -261,12 +261,7 @@ class SalesService:
         time_slot = state.get('delivery_time_slot', 'N/A')
         instr = state.get('delivery_instructions', 'None')
         
-        delivery_details_text = f"🚚 **Delivery Method:** {method.replace('_', ' ').title()}\n📍 **Address:** {address}"
-        if method == 'hand_to_hand':
-            delivery_details_text += f"\n⏰ **Time Slot:** {time_slot}"
-        delivery_details_text += f"\n📝 **Instructions:** {instr}"
-        
-        # Translate labels and product name for context if enabled
+        # Build translated delivery details block
         if translation_enabled and target_lang != 'en':
             try:
                 tasks = [
@@ -280,7 +275,12 @@ class SalesService:
                     translation_service.translate_text("to discard", target_lang),
                     translation_service.translate_text(product['name'], target_lang),
                     translation_service.translate_text("CONFIRM", target_lang),
-                    translation_service.translate_text("CANCEL", target_lang)
+                    translation_service.translate_text("CANCEL", target_lang),
+                    # Delivery labels
+                    translation_service.translate_text("Delivery Method:", target_lang),
+                    translation_service.translate_text("Address:", target_lang),
+                    translation_service.translate_text("Time Slot:", target_lang),
+                    translation_service.translate_text("Instructions:", target_lang),
                 ]
                 results = await asyncio.gather(*tasks)
                 
@@ -295,10 +295,22 @@ class SalesService:
                 t_name = results[8]['translated_text']
                 t_confirm = results[9]['translated_text'].upper()
                 t_cancel = results[10]['translated_text'].upper()
+                t_del_method = results[11]['translated_text']
+                t_address = results[12]['translated_text']
+                t_time_slot = results[13]['translated_text']
+                t_instructions = results[14]['translated_text']
             except:
                 t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
+                t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
         else:
             t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
+            t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
+
+        # Build the (now fully translated) delivery block
+        delivery_details_text = f"🚚 **{t_del_method}** {method.replace('_', ' ').title()}\n📍 **{t_address}** {address}"
+        if method == 'hand_to_hand':
+            delivery_details_text += f"\n⏰ **{t_time_slot}** {time_slot}"
+        delivery_details_text += f"\n📝 **{t_instructions}** {instr}"
 
         invoice_msg = (
             f"🛍️ **{t_title}**\n"
@@ -394,16 +406,19 @@ class SalesService:
                         translation_service.translate_text("Details:", target_lang),
                         translation_service.translate_text("Payment Instructions:", target_lang),
                         translation_service.translate_text("Thank you for your business!", target_lang),
-                        translation_service.translate_text(final_data['payment_info'], target_lang)
+                        translation_service.translate_text(final_data['payment_info'], target_lang),
+                        translation_service.translate_text("Please send a screenshot of your payment for verification.", target_lang),
                     ]
                     results = await asyncio.gather(*tasks)
-                    h, l_id, l_date, l_det, l_pay, footer, final_pi = [r['translated_text'] for r in results]
+                    h, l_id, l_date, l_det, l_pay, footer, final_pi, l_screenshot = [r['translated_text'] for r in results]
                 else:
-                    h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you!", final_data['payment_info'])
+                    h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you for your business!", final_data['payment_info'])
+                    l_screenshot = "Please send a screenshot of your payment for verification."
             except:
-                h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you!", final_data['payment_info'])
+                h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you for your business!", final_data['payment_info'])
+                l_screenshot = "Please send a screenshot of your payment for verification."
 
-            conf_msg = f"🎉 **{h}**\n{l_id} `{final_data['po_number']}`\n{l_date} {datetime.now().strftime('%d %B %Y')}\n\n📦 **{l_det}**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **{l_pay}**\n{final_pi}\n\n📸 **Please send a screenshot of your payment for verification.**\n\n{footer} 🙏"
+            conf_msg = f"🎉 **{h}**\n{l_id} `{final_data['po_number']}`\n{l_date} {datetime.now().strftime('%d %B %Y')}\n\n📦 **{l_det}**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **{l_pay}**\n{final_pi}\n\n📸 {l_screenshot}\n\n{footer} 🙏"
             eng_msg = f"🎉 **ORDER CONFIRMED!**\nOrder ID: `{final_data['po_number']}`\nDate: {datetime.now().strftime('%d %B %Y')}\n\n📦 **Details:**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **Payment Instructions:**\n{final_data['payment_info']}\n\n📸 Please send a screenshot of your payment for verification.\n\nThank you for your business! 🙏"
             
             await self._send_simple_reply(account_id, peer_id, conf_msg, user_id, original_text=eng_msg)
