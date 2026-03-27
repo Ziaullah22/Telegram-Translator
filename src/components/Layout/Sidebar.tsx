@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, User, Shield } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield } from 'lucide-react';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -199,14 +199,22 @@ export default function Sidebar({
                         <span className={`${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'}`}>
                           {account.sourceLanguage} → {account.targetLanguage}
                         </span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${account.isConnected
-                            ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                            : 'bg-red-500/10 text-red-600 dark:text-red-400'
-                            }`}
-                        >
-                          {account.isConnected ? 'Online' : 'Offline'}
-                        </span>
+                        <div className="flex gap-1">
+                          {account.notificationsEnabled === false && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                              <BellOff className="w-2.5 h-2.5" />
+                              Muted
+                            </span>
+                          )}
+                          <span
+                            className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${account.isConnected
+                              ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                              : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                              }`}
+                          >
+                            {account.isConnected ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -46,6 +46,7 @@ class TelegramAccountResponse(BaseModel):
     source_language: str
     target_language: str
     translation_enabled: bool = True
+    notifications_enabled: bool = True
     created_at: datetime
     last_used: Optional[datetime]
     is_connected: bool = False
@@ -58,6 +59,7 @@ class TelegramAccountUpdate(BaseModel):
     target_language: Optional[str] = None
     is_active: Optional[bool] = None
     translation_enabled: Optional[bool] = None
+    notifications_enabled: Optional[bool] = None
 
 # --- Conversation & Message Models ---
 # Enumeration of supported Telegram conversation types

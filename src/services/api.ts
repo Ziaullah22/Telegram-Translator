@@ -99,6 +99,7 @@ export const telegramAPI = {
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
+      notificationsEnabled: a.notifications_enabled !== false,
     }));
   },
 
@@ -120,12 +121,13 @@ export const telegramAPI = {
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
+      notificationsEnabled: a.notifications_enabled !== false,
     } as TelegramAccount;
   },
 
   updateAccount: async (
     accountId: number,
-    payload: { displayName?: string; sourceLanguage?: string; targetLanguage?: string; isActive?: boolean; isTranslationEnabled?: boolean }
+    payload: { displayName?: string; sourceLanguage?: string; targetLanguage?: string; isActive?: boolean; isTranslationEnabled?: boolean; notifications_enabled?: boolean }
   ): Promise<TelegramAccount> => {
     const response = await api.patch(`/telegram/accounts/${accountId}`, {
       display_name: payload.displayName,
@@ -133,6 +135,7 @@ export const telegramAPI = {
       target_language: payload.targetLanguage,
       is_active: payload.isActive,
       translation_enabled: payload.isTranslationEnabled,
+      notifications_enabled: payload.notifications_enabled,
     });
     const a = response.data;
     return {
@@ -147,6 +150,7 @@ export const telegramAPI = {
       lastUsed: a.last_used ?? undefined,
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
+      notificationsEnabled: a.notifications_enabled !== false,
     } as TelegramAccount;
   },
 

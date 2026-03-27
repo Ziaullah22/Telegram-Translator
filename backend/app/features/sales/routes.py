@@ -56,6 +56,10 @@ class SalesSettingsSchema(BaseModel):
     disapproved_reminder_interval_minutes: int = 0
     disapproved_reminder_count: int = 3
     status_messages: dict
+    system_labels: dict = {}
+    system_prompts: dict = {}
+    protected_words: List[str] = []
+    ignored_languages: List[str] = []
 
 @router.get("/orders", response_model=List[OrderResponse])
 async def get_orders(status: Optional[str] = None, user = Depends(get_current_user)):
@@ -147,7 +151,11 @@ async def get_sales_settings(user = Depends(get_current_user)):
             "payment_reminder_message": "Hello! We haven't received your payment screenshot for Order {order_id}. Please send it when you can. 🙏",
             "payment_reminder_interval_hours": 2,
             "payment_reminder_count": 3,
-            "status_messages": {}
+            "status_messages": {},
+            "system_labels": {},
+            "system_prompts": {},
+            "protected_words": [],
+            "ignored_languages": []
         }
     return dict(row)
 
@@ -162,9 +170,14 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
             disapproved_reminder_message, disapproved_reminder_interval_days,
             disapproved_reminder_interval_hours, disapproved_reminder_interval_minutes,
             disapproved_reminder_count,
-            status_messages, updated_at
+            status_messages,
+            system_labels,
+            system_prompts,
+            protected_words,
+            ignored_languages,
+            updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
         ON CONFLICT (user_id) 
         DO UPDATE SET 
             payment_details = EXCLUDED.payment_details,
@@ -179,6 +192,10 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
             disapproved_reminder_interval_minutes = EXCLUDED.disapproved_reminder_interval_minutes,
             disapproved_reminder_count = EXCLUDED.disapproved_reminder_count,
             status_messages = EXCLUDED.status_messages,
+            system_labels = EXCLUDED.system_labels,
+            system_prompts = EXCLUDED.system_prompts,
+            protected_words = EXCLUDED.protected_words,
+            ignored_languages = EXCLUDED.ignored_languages,
             updated_at = NOW()
         """,
         user.user_id, settings.payment_details, settings.payment_reminder_message,
@@ -187,6 +204,10 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
         settings.disapproved_reminder_message, settings.disapproved_reminder_interval_days,
         settings.disapproved_reminder_interval_hours, settings.disapproved_reminder_interval_minutes,
         settings.disapproved_reminder_count,
-        settings.status_messages
+        settings.status_messages,
+        settings.system_labels,
+        settings.system_prompts,
+        settings.protected_words,
+        settings.ignored_languages
     )
     return {"status": "success"}

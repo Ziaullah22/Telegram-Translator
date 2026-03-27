@@ -21,6 +21,7 @@ import ProfileModal from './components/Modals/ProfileModal';
 import ActiveSessionsModal from './components/Modals/ActiveSessionsModal';
 import CampaignPage from './components/Campaigns/CampaignPage';
 import ProductsPage from './components/Products/ProductsPage';
+import AdvancedSettings from './components/Settings/AdvancedSettings';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
@@ -102,10 +103,12 @@ function App() {
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
   const conversationsRef = useRef<TelegramChat[]>(conversations);
+  const accountsRef = useRef<TelegramAccount[]>(accounts);
 
   useEffect(() => { currentAccountRef.current = currentAccount; }, [currentAccount]);
   useEffect(() => { currentConversationRef.current = currentConversation; }, [currentConversation]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+  useEffect(() => { accountsRef.current = accounts; }, [accounts]);
 
   // Load accounts on mount
   useEffect(() => {
@@ -133,34 +136,50 @@ function App() {
     }
   }, []);
 
+  // Handle deep-link navigation from Orders page
+  const handleNavigateToConversation = useCallback(async (openAccountId: number, openPeerId: number) => {
+    try {
+      const acc = accounts.find(a => Number(a.id) === openAccountId);
+      if (!acc) return;
+      if (!currentAccountRef.current || Number(currentAccountRef.current.id) !== openAccountId) {
+        setCurrentAccount(acc);
+        setMessages([]);
+        setCurrentConversation(null);
+        setConversations([]);
+      }
+      if (acc.isConnected) {
+        const convs = await conversationsAPI.getConversations(openAccountId);
+        setConversations(convs);
+        const target = convs.find((c: any) => Number(c.peer_id) === openPeerId || Number(c.telegram_peer_id) === openPeerId);
+        if (target) { setCurrentConversation(target); loadMessages(target.id); }
+      }
+    } catch(e) { console.error('Failed to navigate to conversation from order:', e); }
+  }, [accounts]);
+
   // Switches the app context (Account and Chat) when a user clicks a notification
   const handleNotificationClick = useCallback(async (accId: number, convId: number) => {
     const acc = accounts.find(a => Number(a.id) === accId);
     if (!acc) return;
 
-    // If the notification belongs to a different account than the one currently viewed
     if (!currentAccountRef.current || Number(currentAccountRef.current.id) !== accId) {
       setCurrentAccount(acc);
       setMessages([]);
       setCurrentConversation(null);
       setConversations([]);
-      if (acc.isConnected) {
-        try {
-          const convs = await conversationsAPI.getConversations(accId);
-          setConversations(convs);
-          const target = convs.find(c => Number(c.id) === convId);
-          if (target) {
-            setCurrentConversation(target);
-            // loadMessages(convId) will be triggered via useEffect in the child or manually
-          }
-        } catch (e) { console.error('Failed to switch context via notification:', e); }
-      }
-    } else {
-      // If we are already on the correct account, just find and open the chat
-      const target = conversationsRef.current.find(c => Number(c.id) === convId);
-      if (target) setCurrentConversation(target);
     }
-    setNotification(null); // Clear the in-app popup
+
+    if (acc.isConnected) {
+      try {
+        const convs = await conversationsAPI.getConversations(accId);
+        setConversations(convs);
+        const target = convs.find(c => Number(c.id) === convId);
+        if (target) {
+          setCurrentConversation(target);
+          loadMessages(convId);
+        }
+      } catch (e) { console.error('Failed to switch context via notification:', e); }
+    }
+    setNotification(null);
   }, [accounts]);
 
   // Triggers a native OS notification if the app is in the background or hidden
@@ -223,8 +242,11 @@ function App() {
 
         // If it's an incoming message (not sent by us)
         if (!data.message.is_outgoing) {
+          const account = accountsRef.current.find(a => Number(a.id) === incomingAccountId);
+          const notificationsEnabled = account ? account.notificationsEnabled : true;
+          
           const isMuted = conversationsRef.current.some(c => Number(c.id) === incomingConversationId && c.is_muted);
-          if (!isMuted) {
+          if (!isMuted && notificationsEnabled) {
             playNotificationSound();
             // Show notifications only if we are NOT already looking at the chat
             if (!isActiveConv) {
@@ -268,12 +290,32 @@ function App() {
           // If the message belongs to the current open chat, append it to the view
           if (activeConversationId === incomingConversationId) {
             setMessages(prev => {
-              // Final check for duplicates via Telegram Message ID
-              const isDuplicate = prev.some(msg => Number(msg.id) === Number(data.message.id) || (Number(msg.telegram_message_id) === Number(data.message.telegram_message_id) && Number(msg.telegram_message_id) !== 0));
+              // Final check for duplicates via Telegram Message ID or Database ID
+              const isDuplicate = prev.some(msg => 
+                (Number(msg.id) > 0 && Number(msg.id) === Number(data.message.id)) || 
+                (Number(msg.telegram_message_id) !== 0 && Number(msg.telegram_message_id) === Number(data.message.telegram_message_id))
+              );
               if (isDuplicate) return prev;
 
-              // If we have a temporary "Sending..." message, replace it with the real one from server
-              const filtered = prev.filter(msg => !(msg.id < 0 && msg.original_text === data.message.original_text));
+              // --- ADVANCED DEDUPLICATION (Ghost Message Fix) ---
+              // If we have a temporary "Sending..." message (negative ID), 
+              // we clear it even if the text changed (due to branding/replacements).
+              // For outgoing messages from the same chat, we clear the OLDEST pending message first.
+              const filtered = prev.filter(msg => {
+                // If it's a real message, keep it.
+                if (msg.id >= 0) return true;
+                
+                // If it's a "Sending..." message for a DIFFERENT chat, keep it.
+                if (Number(msg.conversation_id) !== Number(data.message.conversation_id)) return true;
+                
+                // If the text matches perfectly OR it's been in "sending" for more than 0.5s, 
+                // it is likely the server version of the same message.
+                const isLikelySame = (msg.original_text === data.message.original_text) || 
+                                     (data.message.is_outgoing && msg.id < 0);
+                
+                return !isLikelySame;
+              });
+              
               return [...filtered, data.message];
             });
           }
@@ -549,25 +591,6 @@ function App() {
     );
   }
 
-  const handleNavigateToConversation = useCallback(async (openAccountId: number, openPeerId: number) => {
-    try {
-      const acc = accounts.find(a => Number(a.id) === openAccountId);
-      if (!acc) return;
-      if (!currentAccountRef.current || Number(currentAccountRef.current.id) !== openAccountId) {
-        setCurrentAccount(acc);
-        setMessages([]);
-        setCurrentConversation(null);
-        setConversations([]);
-      }
-      if (acc.isConnected) {
-        const convs = await conversationsAPI.getConversations(openAccountId);
-        setConversations(convs);
-        const target = convs.find((c: any) => Number(c.peer_id) === openPeerId || Number(c.telegram_peer_id) === openPeerId);
-        if (target) { setCurrentConversation(target); loadMessages(target.id); }
-      }
-    } catch(e) { console.error('Failed to navigate to conversation from order:', e); }
-  }, [accounts]);
-
   return (
     <Router>
       <div className="h-screen flex flex-col bg-telegram-side-list-light dark:bg-telegram-side-list-dark transition-colors duration-500 text-gray-900 dark:text-white">
@@ -578,6 +601,12 @@ function App() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/campaigns" element={<CampaignPage />} />
           <Route path="/products" element={<ProductsPage />} />
+          <Route path="/advanced-settings" element={<AdvancedSettings accounts={accounts} onAccountUpdate={(updated) => {
+            setAccounts(prev => prev.map(a => Number(a.id) === Number(updated.id) ? updated : a));
+            if (currentAccount && Number(currentAccount.id) === Number(updated.id)) {
+              setCurrentAccount(updated);
+            }
+          }} />} />
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden">
               <Sidebar

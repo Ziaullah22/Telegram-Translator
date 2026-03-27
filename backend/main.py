@@ -311,35 +311,41 @@ async def lifespan(app: FastAPI):
                     logger.debug(f"Manual deduplication: Skipping storage and broadcast for already-saved message {message_data['message_id']}")
                     return
             
-            message_id = await db.fetchval(
-                """
-                INSERT INTO messages
-                (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-                 source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name,
-                 reply_to_telegram_id, reply_to_text, reply_to_sender, media_thumbnail, media_duration)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-                RETURNING id
-                """,
-                conversation_id,
-                message_data['message_id'],
-                message_data.get('sender_id'),
-                message_data.get('sender_name', 'Unknown'),
-                message_data.get('sender_username') or 'User',
-                msg_type,
-                processed_original,
-                processed_translated,
-                source_lang,
-                account['target_language'],
-                created_at,
-                is_encrypted,
-                message_data.get('is_outgoing', False),
-                message_data.get('media_filename'),
-                reply_to_tg_id,
-                reply_to_text,
-                reply_to_sender,
-                message_data.get('media_thumbnail'),
-                message_data.get('media_duration')
-            )
+            try:
+                message_id = await db.fetchval(
+                    """
+                    INSERT INTO messages
+                    (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
+                     source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name,
+                     reply_to_telegram_id, reply_to_text, reply_to_sender, media_thumbnail, media_duration)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                    RETURNING id
+                    """,
+                    conversation_id,
+                    message_data['message_id'],
+                    message_data.get('sender_id'),
+                    message_data.get('sender_name', 'Unknown'),
+                    message_data.get('sender_username') or 'User',
+                    msg_type,
+                    processed_original,
+                    processed_translated,
+                    source_lang,
+                    account['target_language'],
+                    created_at,
+                    is_encrypted,
+                    message_data.get('is_outgoing', False),
+                    message_data.get('media_filename'),
+                    reply_to_tg_id,
+                    reply_to_text,
+                    reply_to_sender,
+                    message_data.get('media_thumbnail'),
+                    message_data.get('media_duration')
+                )
+            except Exception as e:
+                if "unique constraint" in str(e).lower():
+                    logger.debug(f"DB Deduplication: Message {message_data['message_id']} was just saved by another worker. Skipping.")
+                    return
+                raise e
 
             await db.execute(
                 "UPDATE conversations SET last_message_at = $1 WHERE id = $2",

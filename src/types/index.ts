@@ -18,6 +18,7 @@ export interface TelegramAccount {
   sourceLanguage: string;
   targetLanguage: string;
   isTranslationEnabled: boolean;
+  notificationsEnabled: boolean;
   createdAt: string;
   lastUsed?: string;
   isConnected: boolean;
@@ -281,4 +282,8 @@ export interface SalesSettings {
   disapproved_reminder_interval_minutes?: number;
   disapproved_reminder_count?: number;
   status_messages?: Record<string, string>;
+  system_labels?: Record<string, string>;
+  system_prompts?: Record<string, string>;
+  protected_words?: string[];
+  ignored_languages?: string[];
 }

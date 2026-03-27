@@ -8,6 +8,7 @@ from app.core.encryption import encrypt_message_if_enabled, decrypt_message_if_e
 from models import MessageResponse, MessageSend, MessageReact
 from telethon_service import telethon_service
 from translation_service import translation_service
+from sales_service import sales_service
 from websocket_manager import manager
 import logging
 import os
@@ -155,20 +156,17 @@ async def send_message(
             detail="Conversation not found",
         )
 
-    original_text = message_data.text
+    # Apply global brand replacements to the text FIRST
+    original_text = await sales_service.apply_branded_labels(message_data.text, current_user.user_id)
     translated_text = original_text
-
+    
     if message_data.translate:
-        dest_lang = conversation['source_language']
-        if dest_lang == 'auto':
-            dest_lang = 'en'  # Google cannot translate TO 'auto'
-            
-        translation = await translation_service.translate_text(
+        # Translate the already-branded text
+        translated_text = await sales_service.translate_with_protection(
             original_text,
-            dest_lang,
-            conversation['target_language'],
+            conversation['source_language'] if conversation['source_language'] != 'auto' else 'en',
+            current_user.user_id
         )
-        translated_text = translation['translated_text']
 
     try:
         sent_message = await telethon_service.send_message(
@@ -309,13 +307,13 @@ async def send_media(
             if dest_lang == 'auto':
                 dest_lang = 'en'
                 
-            translation = await translation_service.translate_text(
+            translated_caption = await sales_service.translate_with_protection(
                 caption,
                 dest_lang,
-                conversation['target_language'],
+                current_user.user_id
             )
-            translated_caption = translation['translated_text']
-            source_lang = translation['source_language']
+            # source_lang is actually what dest_lang is (the target)
+            source_lang = dest_lang
         
         # Create uploads directory if it doesn't exist
         os.makedirs("temp/uploads", exist_ok=True)

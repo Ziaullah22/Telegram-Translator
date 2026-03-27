@@ -54,6 +54,7 @@ async def migrate():
                     target_language VARCHAR(16) NOT NULL DEFAULT 'en',
                     translation_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     username VARCHAR(100),
+                    notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     last_used TIMESTAMPTZ
                 );
@@ -125,8 +126,23 @@ async def migrate():
                     reactions JSONB DEFAULT '{}'
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id);
+                
+                -- CLEANUP: Remove duplicates first to avoid migration failure
+                DELETE FROM messages 
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (PARTITION BY conversation_id, telegram_message_id ORDER BY id ASC) as row_num
+                        FROM messages
+                        WHERE telegram_message_id != 0
+                    ) t 
+                    WHERE t.row_num > 1
+                );
+
+                -- Ensure we never save the same Telegram message twice in the same conversation (Race condition fix)
+                ALTER TABLE messages DROP CONSTRAINT IF EXISTS uq_convo_tg_id;
+                ALTER TABLE messages ADD CONSTRAINT uq_convo_tg_id UNIQUE (conversation_id, telegram_message_id);
             """)
-            print("✓ Table: messages")
+            print("✓ Table: messages (with deduplication constraint)")
 
             # --- 2. ADDITIONAL CORE TABLES ---
 
@@ -307,8 +323,15 @@ async def migrate():
                     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     payment_details TEXT,
                     payment_reminder_message TEXT DEFAULT 'Hello! We haven''t received your payment screenshot for Order {order_id}. Please send it when you can. 🙏',
-                    payment_reminder_interval_hours FLOAT DEFAULT 2.0,
+                    payment_reminder_interval_days INTEGER DEFAULT 0,
+                    payment_reminder_interval_hours INTEGER DEFAULT 2,
+                    payment_reminder_interval_minutes INTEGER DEFAULT 0,
                     payment_reminder_count INTEGER DEFAULT 3,
+                    disapproved_reminder_message TEXT DEFAULT 'We are still waiting for your updated screenshot for Order {order_id}. Please send it as soon as possible. 🙏',
+                    disapproved_reminder_interval_days INTEGER DEFAULT 0,
+                    disapproved_reminder_interval_hours INTEGER DEFAULT 2,
+                    disapproved_reminder_interval_minutes INTEGER DEFAULT 0,
+                    disapproved_reminder_count INTEGER DEFAULT 3,
                     status_messages JSONB DEFAULT '{
                         "paid": "✅ Your payment has been verified! We are now preparing your order.",
                         "packed": "📦 Your order has been packed and is ready for shipment!",
@@ -316,6 +339,10 @@ async def migrate():
                         "delivered": "🎁 Order delivered! Thank you for shopping with us.",
                         "disapproved": "❌ Your payment verification was unsuccessful. Reason: {reason}. Please send a new screenshot."
                     }'::jsonb,
+                    system_labels JSONB DEFAULT '{}'::jsonb,
+                    system_prompts JSONB DEFAULT '{}'::jsonb,
+                    protected_words JSONB DEFAULT '[]'::jsonb,
+                    ignored_languages JSONB DEFAULT '[]'::jsonb,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
@@ -477,8 +504,12 @@ async def migrate():
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_interval_hours INTEGER DEFAULT 2;
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_interval_minutes INTEGER DEFAULT 0;
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS disapproved_reminder_count INTEGER DEFAULT 3;
-                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS status_messages JSONB DEFAULT '{}'::jsonb;
-                
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS system_labels JSONB DEFAULT '{}'::jsonb;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS system_prompts JSONB DEFAULT '{}'::jsonb;
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS protected_words JSONB DEFAULT '[]';
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS ignored_languages JSONB DEFAULT '[]';
+                ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE;
+
                 CREATE TABLE IF NOT EXISTS order_proofs (
                     id SERIAL PRIMARY KEY,
                     order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,

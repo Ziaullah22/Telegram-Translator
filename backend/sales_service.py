@@ -16,6 +16,157 @@ class SalesService:
     def __init__(self):
         self.enabled = True
 
+    async def _get_sales_settings(self, user_id: int) -> Dict[str, Any]:
+        try:
+            row = await db.fetchrow("SELECT * FROM sales_settings WHERE user_id = $1", user_id)
+            if row:
+                d = dict(row)
+                for k in ['system_labels', 'system_prompts', 'protected_words', 'ignored_languages']:
+                    val = d.get(k)
+                    if isinstance(val, str):
+                        d[k] = json.loads(val)
+                    elif val is None:
+                        if k in ['protected_words', 'ignored_languages']: d[k] = []
+                        else: d[k] = {}
+                return d
+        except Exception as e:
+            logger.error(f"Error fetching sales settings: {e}")
+        return {'protected_words': [], 'ignored_languages': [], 'system_labels': {}, 'system_prompts': {}}
+
+    async def apply_branded_labels(self, text: str, user_id: int) -> str:
+        """Applies global label replacements to any text (manual or auto)"""
+        if not text: return text
+        settings = await self._get_sales_settings(user_id)
+        labels = settings.get('system_labels', {})
+        if not labels: return text
+        
+        processed_text = text
+        for key, display_val in labels.items():
+            if not key or not display_val: continue
+            
+            # 1. SMART CHECK: Prevent duplicates like "Hello bro bro" when label is "Hello" -> "Hello bro"
+            # We use a negative lookahead to only replace the key if it's NOT followed by the suffix.
+            if display_val.lower().startswith(key.lower()) and len(display_val) > len(key):
+                suffix = display_val[len(key):].strip()
+                if suffix:
+                    # Look for [KEY] followed by [SUFFIX] (case insensitive) and replace with [DISPLAY_VAL]
+                    # This handles "Hello Bro" -> "Hello bro"
+                    smart_pattern = re.compile(
+                        r'\b' + re.escape(key) + r'\s+' + re.escape(suffix) + r'\b', 
+                        re.IGNORECASE
+                    )
+                    processed_text = smart_pattern.sub(display_val, processed_text)
+                    
+                    # 2. General replacement but ONLY if not already followed by the suffix
+                    # This handles "Hello" -> "Hello bro" but skips "Hello bro" (already replaced)
+                    pattern = re.compile(
+                        r'\b' + re.escape(key) + r'\b(?!\s+' + re.escape(suffix) + r'\b)', 
+                        re.IGNORECASE
+                    )
+                    processed_text = pattern.sub(display_val, processed_text)
+                    continue # Skip general replacement as we handled it
+            
+            # 3. Normal replacement for simple keys
+            pattern = re.compile(r'\b' + re.escape(key) + r'\b', re.IGNORECASE)
+            processed_text = pattern.sub(display_val, processed_text)
+            
+        return processed_text
+
+    async def translate_with_protection(self, text: str, target_lang: str, user_id: int) -> str:
+        """Translates text while honoring ignored languages and protected words"""
+        # 0. Apply Branded Replacements FIRST
+        text = await self.apply_branded_labels(text, user_id)
+        
+        settings = await self._get_sales_settings(user_id)
+        
+        # 1. Check Ignored Languages
+        ignored_langs = [l.lower() for l in settings.get('ignored_languages', [])]
+        if target_lang.lower() in ignored_langs:
+            return text
+            
+        protected_words = settings.get('protected_words', [])
+        if not protected_words:
+            res = await translation_service.translate_text(text, target_lang)
+            return res['translated_text']
+            
+        # 2. Tokenize Protected Words
+        tokens = {}
+        processed_text = text
+        for i, word in enumerate(protected_words):
+            if not word: continue
+            # Using __PW_i__ format which most translators leave untouched
+            token = f"__PW_{i}__"
+            # Case insensitive replacement, but preserve token format
+            pattern = re.compile(re.escape(word), re.IGNORECASE)
+            if pattern.search(processed_text):
+                tokens[token] = word
+                processed_text = pattern.sub(token, processed_text)
+                
+        # 3. Translate
+        res = await translation_service.translate_text(processed_text, target_lang)
+        translated = res['translated_text']
+        
+        # 4. Detokenize
+        for token, original_word in tokens.items():
+            # Standard replace
+            translated = translated.replace(token, original_word)
+            
+            # Handle if translator added spaces: "__PW_ 0 __" or similar
+            # Index is inside the token
+            idx = token.split('_')[2]
+            clean_pattern = re.compile(f"__\s*PW\s*_\s*{idx}\s*__", re.IGNORECASE)
+            translated = clean_pattern.sub(original_word, translated)
+            
+            # Final fallback for case-insensitive exact token match
+            translated = re.sub(re.escape(token), original_word, translated, flags=re.IGNORECASE)
+            
+        # 5. Global Branded Replacements (Manual Labels)
+        # MOVED TO START to ensure replacements happen BEFORE translation
+        return translated
+
+    async def _get_system_prompt(self, user_id: int, key: str, default: str, target_lang: Optional[str] = None) -> str:
+        """Fetch branded prompt from sales_settings or fallback to default, trying lang-specific key first"""
+        try:
+            settings_row = await db.fetchrow("SELECT system_prompts FROM sales_settings WHERE user_id = $1", user_id)
+            if settings_row and settings_row['system_prompts']:
+                prompts = settings_row['system_prompts']
+                if isinstance(prompts, str): prompts = json.loads(prompts)
+                # Try specific language key first: KEY_es
+                if target_lang:
+                    lang_key = f"{key}_{target_lang.lower()}"
+                    if lang_key in prompts: return prompts[lang_key]
+                return prompts.get(key, default)
+        except Exception as e:
+            logger.error(f"Error fetching system prompt {key}: {e}")
+        return default
+
+    async def _get_system_label(self, user_id: int, key: str, default: str, target_lang: Optional[str] = None) -> str:
+        """Fetch branded label from sales_settings or fallback to default, trying lang-specific key first"""
+        try:
+            settings = await self._get_sales_settings(user_id)
+            labels = settings.get('system_labels', {})
+            
+            # 1. Try specific language key first: KEY_es
+            if target_lang:
+                lang_key = f"{key}_{target_lang.lower()}"
+                if lang_key in labels: return labels[lang_key]
+            
+            # 2. Try the primary key
+            return labels.get(key, default)
+        except Exception as e:
+            logger.error(f"Error fetching system label {key}: {e}")
+        return default
+
+    async def _get_status_template(self, user_id: int, status: str, default: str) -> str:
+        """Fetch status message template from sales_settings or fallback to default"""
+        try:
+            settings = await self._get_sales_settings(user_id)
+            messages = settings.get('status_messages', {})
+            return messages.get(status, default)
+        except Exception as e:
+            logger.error(f"Error fetching status template {status}: {e}")
+        return default
+
     async def check_and_handle_sales(self, message_data: Dict[str, Any], user_id: int) -> bool:
         """
         Check if message relates to product inquiry, ordering, or confirmation.
@@ -203,25 +354,31 @@ class SalesService:
         )
 
         if delivery_mode == 'both':
-            await self._translate_and_send_reply(account_id, peer_id, "Great! Do you prefer this product to be Mailed to you, or delivered Hand-to-Hand? (Reply 'Mail' or 'Hand')", user_id)
+            prompt = await self._get_system_prompt(user_id, 'DELIVERY_PREF_BOTH', "Great! Do you prefer this product to be Mailed to you, or delivered Hand-to-Hand? (Reply 'Mail' or 'Hand')")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         elif delivery_mode == 'mailing':
             await db.execute("UPDATE sales_states SET delivery_method = 'mailing' WHERE telegram_account_id=$1 AND telegram_peer_id=$2", account_id, peer_id)
-            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your full mailing address.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'ADDRESS_MAILING', "Great! Please provide your full mailing address.")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         elif delivery_mode == 'hand_to_hand':
             await db.execute("UPDATE sales_states SET delivery_method = 'hand_to_hand' WHERE telegram_account_id=$1 AND telegram_peer_id=$2", account_id, peer_id)
-            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your preferred meetup/delivery address.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'ADDRESS_HAND', "Great! Please provide your preferred meetup/delivery address.")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         return True
 
     async def _process_delivery_pref(self, account_id: int, peer_id: int, state: Any, logic_text: str, text: str, user_id: int) -> bool:
         logic_lower = logic_text.lower()
         if 'mail' in logic_lower:
             await db.execute("UPDATE sales_states SET delivery_method = 'mailing', status = 'awaiting_address' WHERE id = $1", state['id'])
-            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your full mailing address.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'ADDRESS_MAILING', "Great! Please provide your full mailing address.")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         elif 'hand' in logic_lower:
             await db.execute("UPDATE sales_states SET delivery_method = 'hand_to_hand', status = 'awaiting_address' WHERE id = $1", state['id'])
-            await self._translate_and_send_reply(account_id, peer_id, "Great! Please provide your preferred meetup/delivery address.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'ADDRESS_HAND', "Great! Please provide your preferred meetup/delivery address.")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         else:
-            await self._translate_and_send_reply(account_id, peer_id, "Please reply with either 'Mail' or 'Hand'.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'INVALID_DELIVERY_PREF', "Please reply with either 'Mail' or 'Hand'.")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         return True
 
     async def _process_address(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
@@ -230,9 +387,11 @@ class SalesService:
         await db.execute("UPDATE sales_states SET delivery_address = $1, status = $2 WHERE id = $3", text, next_status, state['id'])
         
         if method == 'hand_to_hand':
-            await self._translate_and_send_reply(account_id, peer_id, "What is your preferred time slot for the delivery?", user_id)
+            prompt = await self._get_system_prompt(user_id, 'TIME_SLOT', "What is your preferred time slot for the delivery?")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         else:
-            await self._translate_and_send_reply(account_id, peer_id, "Do you have any extra delivery instructions? (Reply 'None' if not)", user_id)
+            prompt = await self._get_system_prompt(user_id, 'INSTRUCTIONS', "Do you have any extra delivery instructions? (Reply 'None' if not)")
+            await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         return True
 
     async def _process_time_slot(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
@@ -264,50 +423,100 @@ class SalesService:
         # Build translated delivery details block
         if translation_enabled and target_lang != 'en':
             try:
+                # Fetch branded labels first
+                l_title = await self._get_system_label(user_id, 'ORDER_SUMMARY_TITLE', "ORDER SUMMARY")
+                l_prod = await self._get_system_label(user_id, 'PRODUCT_LABEL', "Product:")
+                l_qty = await self._get_system_label(user_id, 'QUANTITY_LABEL', "Quantity:")
+                l_price = await self._get_system_label(user_id, 'PRICE_LABEL', "Price:")
+                l_total = await self._get_system_label(user_id, 'TOTAL_LABEL', "Total Amount:")
+                l_reply = await self._get_system_label(user_id, 'INVOICE_FOOTER_REPLY', "Reply")
+                l_to_conf = await self._get_system_label(user_id, 'INVOICE_FOOTER_CONFIRM', "to confirm")
+                l_to_disc = await self._get_system_label(user_id, 'INVOICE_FOOTER_DISCARD', "to discard")
+                l_confirm = await self._get_system_label(user_id, 'CONFIRM_BTN', "CONFIRM")
+                l_cancel = await self._get_system_label(user_id, 'CANCEL_BTN', "CANCEL")
+                l_del_method = await self._get_system_label(user_id, 'DELIVERY_METHOD_LABEL', "Delivery Method:", target_lang)
+                l_address = await self._get_system_label(user_id, 'ADDRESS_LABEL', "Address:", target_lang)
+                l_time_slot = await self._get_system_label(user_id, 'TIME_SLOT_LABEL', "Time Slot:", target_lang)
+                l_instr = await self._get_system_label(user_id, 'INSTRUCTIONS_LABEL', "Instructions:", target_lang)
+
                 tasks = [
-                    translation_service.translate_text("ORDER SUMMARY", target_lang),
-                    translation_service.translate_text("Product:", target_lang),
-                    translation_service.translate_text("Quantity:", target_lang),
-                    translation_service.translate_text("Price:", target_lang),
-                    translation_service.translate_text("Total Amount:", target_lang),
-                    translation_service.translate_text("Reply", target_lang),
-                    translation_service.translate_text("to confirm", target_lang),
-                    translation_service.translate_text("to discard", target_lang),
-                    translation_service.translate_text(product['name'], target_lang),
-                    translation_service.translate_text("CONFIRM", target_lang),
-                    translation_service.translate_text("CANCEL", target_lang),
+                    self.translate_with_protection(l_title, target_lang, user_id),
+                    self.translate_with_protection(l_prod, target_lang, user_id),
+                    self.translate_with_protection(l_qty, target_lang, user_id),
+                    self.translate_with_protection(l_price, target_lang, user_id),
+                    self.translate_with_protection(l_total, target_lang, user_id),
+                    self.translate_with_protection(l_reply, target_lang, user_id),
+                    self.translate_with_protection(l_to_conf, target_lang, user_id),
+                    self.translate_with_protection(l_to_disc, target_lang, user_id),
+                    self.translate_with_protection(product['name'], target_lang, user_id),
+                    self.translate_with_protection(l_confirm, target_lang, user_id),
+                    self.translate_with_protection(l_cancel, target_lang, user_id),
                     # Delivery labels
-                    translation_service.translate_text("Delivery Method:", target_lang),
-                    translation_service.translate_text("Address:", target_lang),
-                    translation_service.translate_text("Time Slot:", target_lang),
-                    translation_service.translate_text("Instructions:", target_lang),
-                    translation_service.translate_text(method.replace('_', ' ').title(), target_lang),
+                    self.translate_with_protection(l_del_method, target_lang, user_id),
+                    self.translate_with_protection(l_address, target_lang, user_id),
+                    self.translate_with_protection(l_time_slot, target_lang, user_id),
+                    self.translate_with_protection(l_instr, target_lang, user_id),
+                    self.translate_with_protection(method.replace('_', ' ').title(), target_lang, user_id),
                 ]
                 results = await asyncio.gather(*tasks)
                 
-                t_title = results[0]['translated_text']
-                t_prod = results[1]['translated_text']
-                t_qty = results[2]['translated_text']
-                t_price = results[3]['translated_text']
-                t_total = results[4]['translated_text']
-                t_reply = results[5]['translated_text']
-                t_to_conf = results[6]['translated_text']
-                t_to_disc = results[7]['translated_text']
-                t_name = results[8]['translated_text']
-                t_confirm = results[9]['translated_text'].upper()
-                t_cancel = results[10]['translated_text'].upper()
-                t_del_method = results[11]['translated_text']
-                t_address = results[12]['translated_text']
-                t_time_slot = results[13]['translated_text']
-                t_instructions = results[14]['translated_text']
-                t_method_val = results[15]['translated_text']
+                t_title = results[0]
+                t_prod = results[1]
+                t_qty = results[2]
+                t_price = results[3]
+                t_total = results[4]
+                t_reply = results[5]
+                t_to_conf = results[6]
+                t_to_disc = results[7]
+                t_name = results[8]
+                t_confirm = results[9].upper()
+                t_cancel = results[10].upper()
+                t_del_method = results[11]
+                t_address = results[12]
+                t_time_slot = results[13]
+                t_instructions = results[14]
+                t_method_val = results[15]
             except:
-                t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
-                t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
+                t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = (
+                    await self._get_system_label(user_id, 'ORDER_SUMMARY_TITLE', "ORDER SUMMARY"),
+                    await self._get_system_label(user_id, 'PRODUCT_LABEL', "Product:"),
+                    await self._get_system_label(user_id, 'QUANTITY_LABEL', "Quantity:"),
+                    await self._get_system_label(user_id, 'PRICE_LABEL', "Price:"),
+                    await self._get_system_label(user_id, 'TOTAL_LABEL', "Total Amount:"),
+                    await self._get_system_label(user_id, 'INVOICE_FOOTER_REPLY', "Reply"),
+                    await self._get_system_label(user_id, 'INVOICE_FOOTER_CONFIRM', "to confirm"),
+                    await self._get_system_label(user_id, 'INVOICE_FOOTER_DISCARD', "to discard"),
+                    product['name'],
+                    await self._get_system_label(user_id, 'CONFIRM_BTN', "CONFIRM"),
+                    await self._get_system_label(user_id, 'CANCEL_BTN', "CANCEL")
+                )
+                t_del_method, t_address, t_time_slot, t_instructions = (
+                    await self._get_system_label(user_id, 'DELIVERY_METHOD_LABEL', "Delivery Method:"),
+                    await self._get_system_label(user_id, 'ADDRESS_LABEL', "Address:"),
+                    await self._get_system_label(user_id, 'TIME_SLOT_LABEL', "Time Slot:"),
+                    await self._get_system_label(user_id, 'INSTRUCTIONS_LABEL', "Instructions:")
+                )
                 t_method_val = method.replace('_', ' ').title()
         else:
-            t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
-            t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
+            t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = (
+                await self._get_system_label(user_id, 'ORDER_SUMMARY_TITLE', "ORDER SUMMARY"),
+                await self._get_system_label(user_id, 'PRODUCT_LABEL', "Product:"),
+                await self._get_system_label(user_id, 'QUANTITY_LABEL', "Quantity:"),
+                await self._get_system_label(user_id, 'PRICE_LABEL', "Price:"),
+                await self._get_system_label(user_id, 'TOTAL_LABEL', "Total Amount:"),
+                await self._get_system_label(user_id, 'INVOICE_FOOTER_REPLY', "Reply"),
+                await self._get_system_label(user_id, 'INVOICE_FOOTER_CONFIRM', "to confirm"),
+                await self._get_system_label(user_id, 'INVOICE_FOOTER_DISCARD', "to discard"),
+                product['name'],
+                await self._get_system_label(user_id, 'CONFIRM_BTN', "CONFIRM"),
+                await self._get_system_label(user_id, 'CANCEL_BTN', "CANCEL")
+            )
+            t_del_method, t_address, t_time_slot, t_instructions = (
+                await self._get_system_label(user_id, 'DELIVERY_METHOD_LABEL', "Delivery Method:"),
+                await self._get_system_label(user_id, 'ADDRESS_LABEL', "Address:"),
+                await self._get_system_label(user_id, 'TIME_SLOT_LABEL', "Time Slot:"),
+                await self._get_system_label(user_id, 'INSTRUCTIONS_LABEL', "Instructions:")
+            )
             t_method_val = method.replace('_', ' ').title()
 
         # Build the (now fully translated) delivery block
@@ -404,18 +613,26 @@ class SalesService:
                 
                 if translation_enabled and target_lang != 'en':
                     tasks = [
-                        translation_service.translate_text("ORDER CONFIRMED!", target_lang),
-                        translation_service.translate_text("Order ID:", target_lang),
-                        translation_service.translate_text("Date:", target_lang),
-                        translation_service.translate_text("Details:", target_lang),
-                        translation_service.translate_text("Payment Instructions:", target_lang),
-                        translation_service.translate_text("Thank you for your business!", target_lang),
-                        translation_service.translate_text(final_data['payment_info'], target_lang),
-                        translation_service.translate_text("Please send a screenshot of your payment for verification.", target_lang),
-                        translation_service.translate_text(final_data['product_name'], target_lang),
+                        self.translate_with_protection("ORDER CONFIRMED!", target_lang, user_id),
+                        self.translate_with_protection("Order ID:", target_lang, user_id),
+                        self.translate_with_protection("Date:", target_lang, user_id),
+                        self.translate_with_protection("Details:", target_lang, user_id),
+                        self.translate_with_protection("Payment Instructions:", target_lang, user_id),
+                        self.translate_with_protection("Thank you for your business!", target_lang, user_id),
+                        self.translate_with_protection(final_data['payment_info'], target_lang, user_id),
+                        self.translate_with_protection("Please send a screenshot of your payment for verification.", target_lang, user_id),
+                        self.translate_with_protection(final_data['product_name'], target_lang, user_id),
                     ]
                     results = await asyncio.gather(*tasks)
-                    h, l_id, l_date, l_det, l_pay, footer, final_pi, l_screenshot, t_product_name = [r['translated_text'] for r in results]
+                    h = results[0]
+                    l_id = results[1]
+                    l_date = results[2]
+                    l_det = results[3]
+                    l_pay = results[4]
+                    footer = results[5]
+                    final_pi = results[6]
+                    l_screenshot = results[7]
+                    t_product_name = results[8]
                 else:
                     h, l_id, l_date, l_det, l_pay, footer, final_pi = ("ORDER CONFIRMED!", "Order ID:", "Date:", "Details:", "Payment Instructions:", "Thank you for your business!", final_data['payment_info'])
                     l_screenshot = "Please send a screenshot of your payment for verification."
@@ -438,9 +655,6 @@ class SalesService:
             return True
 
     async def _send_product_info(self, account_id: int, peer_id: int, product: Any, user_id: int) -> bool:
-        return False
-
-    async def _send_product_info(self, account_id: int, peer_id: int, product: Any, user_id: int) -> bool:
         """Send product details auto-reply with all available images"""
         price = product.get('price', 0.0)
         desc = product.get('description') or 'Quality product'
@@ -454,28 +668,25 @@ class SalesService:
         # Translate COMPLETELY everything (Name, Labels, Description) IF ENABLED
         try:
             if translation_enabled and target_lang != 'en':
-                # Localize Name
-                t_name_data = await translation_service.translate_text(name, target_lang)
-                translated_name = t_name_data['translated_text']
+                # Localize Name & Description & Labels
+                tasks = [
+                    self.translate_with_protection(name, target_lang, user_id),
+                    self.translate_with_protection("Price:", target_lang, user_id),
+                    self.translate_with_protection("Description:", target_lang, user_id),
+                    self.translate_with_protection("To order, please reply:", target_lang, user_id),
+                    self.translate_with_protection(desc, target_lang, user_id),
+                    self.translate_with_protection("Order", target_lang, user_id),
+                    self.translate_with_protection("[quantity]", target_lang, user_id)
+                ]
+                results = await asyncio.gather(*tasks)
                 
-                # Localize Labels
-                t_price_label_data = await translation_service.translate_text("Price:", target_lang)
-                t_desc_label_data = await translation_service.translate_text("Description:", target_lang)
-                t_order_instr_data = await translation_service.translate_text("To order, please reply:", target_lang)
-                
-                t_price_label = t_price_label_data['translated_text'].rstrip(':') + ':'
-                t_desc_label = t_desc_label_data['translated_text'].rstrip(':') + ':'
-                t_order_instr = t_order_instr_data['translated_text']
-                
-                # Localize Description
-                t_desc_data = await translation_service.translate_text(desc, target_lang)
-                translated_desc = t_desc_data['translated_text']
-                
-                # Localize the Command Prefix and Placeholder
-                t_order_cmd_data = await translation_service.translate_text("Order", target_lang)
-                t_qty_placeholder_data = await translation_service.translate_text("[quantity]", target_lang)
-                t_order_cmd = t_order_cmd_data['translated_text']
-                t_qty_placeholder = t_qty_placeholder_data['translated_text']
+                translated_name = results[0]
+                t_price_label = results[1].rstrip(':') + ':'
+                t_desc_label = results[2].rstrip(':') + ':'
+                t_order_instr = results[3]
+                translated_desc = results[4]
+                t_order_cmd = results[5]
+                t_qty_placeholder = results[6]
             else:
                 translated_name = name
                 t_price_label = "Price:"
@@ -675,8 +886,7 @@ class SalesService:
             translation_enabled = account_data['translation_enabled'] if account_data else True
             
             if target_lang != 'en' and translation_enabled:
-                t_data = await translation_service.translate_text(text, target_lang)
-                translated_text = t_data['translated_text']
+                translated_text = await self.translate_with_protection(text, target_lang, user_id)
             else:
                 translated_text = text
         except:
@@ -694,7 +904,7 @@ class SalesService:
                 logger.error(f"Order {order_id} not found")
                 return False
             
-            # 1. Standardized Professional Status Templates
+            # 1. Fetch branded template from DB settings
             status_templates = {
                 "paid": "✅ *Payment Confirmed!*\n\nWe have successfully verified your payment for Order {order_id}. We are now preparing your items for delivery. Thank you! 🙏",
                 "packed": "📦 *Order Packed & Ready!*\n\nGood news! Your order {order_id} has been packed and is ready for pickup/delivery.",
@@ -703,7 +913,12 @@ class SalesService:
                 "disapproved": "❌ *Verification Issue*\n\nWe were unable to verify your payment for Order {order_id}.\n\n*Reason:* {reason}\n\nPlease check your transaction and attach the correct screenshot to this chat. Thank you!"
             }
             
-            template = status_templates.get(status)
+            default_template = status_templates.get(status)
+            if not default_template:
+                logger.warning(f"No status message found for status '{status}'")
+                return False
+                
+            template = await self._get_status_template(user_id, status, default_template)
             if not template:
                 logger.warning(f"No hardcoded template found for status '{status}'")
                 return False
