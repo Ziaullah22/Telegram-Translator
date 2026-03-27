@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { useSocket } from './hooks/useSocket';
 
@@ -39,6 +39,20 @@ import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage }
  * 4. Notifications (Native and In-app)
  * 5. Memory management for chat data
  */
+// Small sub-component inside Router context to detect navigation state from Orders page
+function NavigationHandler({ onNavigate }: { onNavigate: (accountId: number, peerId: number) => void }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const state = location.state as { openAccountId?: number; openPeerId?: number } | null;
+    if (!state?.openAccountId || !state?.openPeerId) return;
+    navigate('/', { replace: true, state: {} });
+    onNavigate(state.openAccountId, state.openPeerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+  return null;
+}
+
 function App() {
   // --- AUTHENTICATION STATE ---
   // Tracks if the user is logged in and if the session is still being checked
@@ -535,10 +549,30 @@ function App() {
     );
   }
 
+  const handleNavigateToConversation = useCallback(async (openAccountId: number, openPeerId: number) => {
+    try {
+      const acc = accounts.find(a => Number(a.id) === openAccountId);
+      if (!acc) return;
+      if (!currentAccountRef.current || Number(currentAccountRef.current.id) !== openAccountId) {
+        setCurrentAccount(acc);
+        setMessages([]);
+        setCurrentConversation(null);
+        setConversations([]);
+      }
+      if (acc.isConnected) {
+        const convs = await conversationsAPI.getConversations(openAccountId);
+        setConversations(convs);
+        const target = convs.find((c: any) => Number(c.peer_id) === openPeerId || Number(c.telegram_peer_id) === openPeerId);
+        if (target) { setCurrentConversation(target); loadMessages(target.id); }
+      }
+    } catch(e) { console.error('Failed to navigate to conversation from order:', e); }
+  }, [accounts]);
+
   return (
     <Router>
       <div className="h-screen flex flex-col bg-telegram-side-list-light dark:bg-telegram-side-list-dark transition-colors duration-500 text-gray-900 dark:text-white">
         <Header onStartTour={() => setShowTour(true)} />
+        <NavigationHandler onNavigate={handleNavigateToConversation} />
         <Routes>
           <Route path="/auto-responder" element={<AutoResponderPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />

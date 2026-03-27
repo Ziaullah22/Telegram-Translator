@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
-  Package, Calendar, User, ShoppingCart, X, ArrowRight,
+  Package, Calendar, User, X, ArrowRight,
   ChevronLeft, ChevronRight, Layers, Hash,
   Filter, Eye, CheckCircle2, AlertCircle, Truck, Box, CheckCircle, Trash2
 } from 'lucide-react';
@@ -13,6 +14,7 @@ const OrderDetailModal: React.FC<{
   onClose: () => void;
   onStatusUpdate: () => void;
 }> = ({ order, onClose, onStatusUpdate }) => {
+  const navigate = useNavigate();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDisapproveDialog, setShowDisapproveDialog] = useState(false);
@@ -186,18 +188,30 @@ const OrderDetailModal: React.FC<{
                   <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                     <User className="w-4 h-4" /> Customer Profile
                   </h3>
-                  <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 border border-gray-100 dark:border-white/5 flex items-center gap-5">
-                    <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-black">
+                  <div 
+                  className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 border border-blue-500/20 flex items-center gap-5 hover:border-blue-500/50 hover:bg-blue-50/40 dark:hover:bg-blue-500/10 cursor-pointer transition-all group shadow-sm hover:shadow-md hover:shadow-blue-500/10"
+                  onClick={() => {
+                    onClose();
+                    navigate('/', { state: { openAccountId: order.telegram_account_id, openPeerId: order.telegram_peer_id } });
+                  }}
+                >
+                    <div className="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-black shadow-lg shadow-blue-600/20 group-hover:scale-105 transition-transform">
                       {order.customer_name?.[0].toUpperCase() || 'U'}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h3 className="text-base font-black text-gray-900 dark:text-white">{order.customer_name || 'Anonymous User'}</h3>
                       <div className="flex items-center gap-2 mt-0.5">
                         {order.customer_username && (
                           <span className="text-xs font-bold text-blue-600">@{order.customer_username}</span>
                         )}
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">ID: TG-{order.telegram_peer_id}</span>
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">TG-{order.telegram_peer_id}</span>
                       </div>
+                      <div className="inline-flex items-center gap-1.5 mt-2 text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                        <ArrowRight className="w-3 h-3" /> Open Chat
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                      <ArrowRight className="w-4 h-4" />
                     </div>
                   </div>
                 </div>
