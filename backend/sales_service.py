@@ -281,6 +281,7 @@ class SalesService:
                     translation_service.translate_text("Address:", target_lang),
                     translation_service.translate_text("Time Slot:", target_lang),
                     translation_service.translate_text("Instructions:", target_lang),
+                    translation_service.translate_text(method.replace('_', ' ').title(), target_lang),
                 ]
                 results = await asyncio.gather(*tasks)
                 
@@ -299,15 +300,18 @@ class SalesService:
                 t_address = results[12]['translated_text']
                 t_time_slot = results[13]['translated_text']
                 t_instructions = results[14]['translated_text']
+                t_method_val = results[15]['translated_text']
             except:
                 t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
                 t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
+                t_method_val = method.replace('_', ' ').title()
         else:
             t_title, t_prod, t_qty, t_price, t_total, t_reply, t_to_conf, t_to_disc, t_name, t_confirm, t_cancel = ("ORDER SUMMARY", "Product:", "Quantity:", "Price:", "Total Amount:", "Reply", "to confirm", "to discard", product['name'], "CONFIRM", "CANCEL")
             t_del_method, t_address, t_time_slot, t_instructions = "Delivery Method:", "Address:", "Time Slot:", "Instructions:"
+            t_method_val = method.replace('_', ' ').title()
 
         # Build the (now fully translated) delivery block
-        delivery_details_text = f"🚚 **{t_del_method}** {method.replace('_', ' ').title()}\n📍 **{t_address}** {address}"
+        delivery_details_text = f"🚚 **{t_del_method}** {t_method_val}\n📍 **{t_address}** {address}"
         if method == 'hand_to_hand':
             delivery_details_text += f"\n⏰ **{t_time_slot}** {time_slot}"
         delivery_details_text += f"\n📝 **{t_instructions}** {instr}"
