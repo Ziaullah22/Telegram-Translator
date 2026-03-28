@@ -170,88 +170,88 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] px-8 pb-8 relative">
+    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-8 pt-0">
       <div className="max-w-5xl mx-auto">
-        
-        {/* Sticky Header with Solid Background protecting the scroll area */}
-        <div className="sticky top-0 z-[60] bg-gray-50 dark:bg-[#0f172a] pt-8 pb-6 mb-6 flex items-start justify-between">
-          <div>
-            <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight flex items-center gap-3">
-              <Settings className="w-8 h-8 text-blue-600" />
-              Advanced Control Center
-            </h2>
-            <p className="text-sm text-gray-500 font-bold uppercase tracking-widest mt-1">
-              Branding, System Voice & Logic
-            </p>
+        {/* Sticky Header and Tabs */}
+        <div className="sticky top-0 z-[60] bg-gray-50/80 dark:bg-[#0f172a]/80 backdrop-blur-md pt-8 pb-4">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight flex items-center gap-3">
+                <Settings className="w-8 h-8 text-blue-600" />
+                Advanced Control Center
+              </h2>
+              <p className="text-sm text-gray-500 font-bold uppercase tracking-widest mt-1">
+                Branding, System Voice & Logic
+              </p>
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all font-black uppercase tracking-widest text-xs shadow-lg ${
+                success 
+                ? 'bg-green-600 text-white shadow-green-600/20' 
+                : hasChanges 
+                  ? 'bg-amber-500 text-white animate-pulse-amber' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
+              }`}
+            >
+              {saving ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white animate-spin rounded-full" />
+              ) : success ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {success ? 'Saved!' : 'Save Progress'}
+            </button>
           </div>
-          
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all font-black uppercase tracking-widest text-xs shadow-2xl ${
-              success 
-              ? 'bg-green-600 text-white shadow-green-600/20' 
-              : hasChanges 
-                ? 'bg-amber-500 text-white animate-pulse-amber' 
-                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
-            }`}
-          >
-            {saving ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white animate-spin rounded-full" />
-            ) : success ? (
-              <Check className="w-4 h-4" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            {success ? 'Saved!' : 'Save Progress'}
-          </button>
-        </div>
 
-        <div className="flex flex-wrap gap-2 mb-8 bg-white/50 dark:bg-white/5 p-1 rounded-2xl border border-gray-100 dark:border-white/5 w-fit clear-none">
-          <button
-            onClick={() => setActiveTab('branding')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-              activeTab === 'branding' 
-              ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-            }`}
-          >
-            <Type className="w-4 h-4" />
-            Branding & Voice
-          </button>
-          <button
-            onClick={() => setActiveTab('notifications')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-              activeTab === 'notifications' 
-              ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-            }`}
-          >
-            <Bell className="w-4 h-4" />
-            Notifications
-          </button>
-          <button
-            onClick={() => setActiveTab('shield')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-              activeTab === 'shield' 
-              ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4" />
-            Translation Shield
-          </button>
-          <button
-            onClick={() => setActiveTab('expert_packs')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-              activeTab === 'expert_packs' 
-              ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-            }`}
-          >
-            <Languages className="w-4 h-4" />
-            Expert Packs
-          </button>
+          <div className="flex flex-wrap gap-2 bg-white/50 dark:bg-white/5 p-1 rounded-2xl border border-gray-100 dark:border-white/5 w-fit">
+            <button
+              onClick={() => setActiveTab('branding')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+                activeTab === 'branding' 
+                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+              }`}
+            >
+              <Type className="w-4 h-4" />
+              Branding & Voice
+            </button>
+            <button
+              onClick={() => setActiveTab('notifications')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+                activeTab === 'notifications' 
+                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+              Notifications
+            </button>
+            <button
+              onClick={() => setActiveTab('shield')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+                activeTab === 'shield' 
+                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4" />
+              Translation Shield
+            </button>
+            <button
+              onClick={() => setActiveTab('expert_packs')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+                activeTab === 'expert_packs' 
+                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+              }`}
+            >
+              <Languages className="w-4 h-4" />
+              Expert Packs
+            </button>
+          </div>
         </div>
 
         {activeTab === 'branding' && (
