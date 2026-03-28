@@ -83,7 +83,24 @@ class SalesService:
         ignored_langs = [l.lower() for l in settings.get('ignored_languages', [])]
         target_lang_code = target_lang.lower()
         expert_packs = settings.get('language_expert_packs', {})
-        target_pack = expert_packs.get(target_lang_code, {})
+        
+        # Smart Language Matching: 
+        # 1. Try exact match (e.g., 'zh-cn')
+        # 2. Try prefix match (e.g., if target is 'zh-cn', try 'zh')
+        # 3. Try reverse prefix match (e.g., if target is 'zh', find first pack starting with 'zh-')
+        target_pack = expert_packs.get(target_lang_code)
+        
+        if not target_pack:
+            base_lang = target_lang_code.split('-')[0]
+            target_pack = expert_packs.get(base_lang)
+            
+            if not target_pack:
+                # Look for ANY pack that belongs to this language family
+                family_pack_key = next((k for k in expert_packs.keys() if k.startswith(base_lang + '-')), None)
+                if family_pack_key:
+                    target_pack = expert_packs.get(family_pack_key)
+        
+        target_pack = target_pack or {}
         
         # Structure for tokens
         tokens = {}
