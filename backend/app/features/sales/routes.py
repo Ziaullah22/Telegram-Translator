@@ -60,6 +60,7 @@ class SalesSettingsSchema(BaseModel):
     system_prompts: dict = {}
     protected_words: List[str] = []
     ignored_languages: List[str] = []
+    language_expert_packs: dict = {}
 
 @router.get("/orders", response_model=List[OrderResponse])
 async def get_orders(status: Optional[str] = None, user = Depends(get_current_user)):
@@ -155,7 +156,8 @@ async def get_sales_settings(user = Depends(get_current_user)):
             "system_labels": {},
             "system_prompts": {},
             "protected_words": [],
-            "ignored_languages": []
+            "ignored_languages": [],
+            "language_expert_packs": {}
         }
     return dict(row)
 
@@ -175,9 +177,10 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
             system_prompts,
             protected_words,
             ignored_languages,
+            language_expert_packs,
             updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
         ON CONFLICT (user_id) 
         DO UPDATE SET 
             payment_details = EXCLUDED.payment_details,
@@ -196,6 +199,7 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
             system_prompts = EXCLUDED.system_prompts,
             protected_words = EXCLUDED.protected_words,
             ignored_languages = EXCLUDED.ignored_languages,
+            language_expert_packs = EXCLUDED.language_expert_packs,
             updated_at = NOW()
         """,
         user.user_id, settings.payment_details, settings.payment_reminder_message,
@@ -208,6 +212,7 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
         settings.system_labels,
         settings.system_prompts,
         settings.protected_words,
-        settings.ignored_languages
+        settings.ignored_languages,
+        settings.language_expert_packs
     )
     return {"status": "success"}

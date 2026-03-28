@@ -343,6 +343,7 @@ async def migrate():
                     system_prompts JSONB DEFAULT '{}'::jsonb,
                     protected_words JSONB DEFAULT '[]'::jsonb,
                     ignored_languages JSONB DEFAULT '[]'::jsonb,
+                    language_expert_packs JSONB DEFAULT '{}'::jsonb,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 

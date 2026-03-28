@@ -15,7 +15,7 @@ import {
   Check,
   X
 } from 'lucide-react';
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { salesAPI, telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -25,6 +25,7 @@ interface AdvancedSettingsData {
   system_prompts: Record<string, string>;
   protected_words: string[];
   ignored_languages: string[];
+  language_expert_packs: Record<string, Record<string, string>>;
 }
 
 export default function AdvancedSettings({ accounts, onAccountUpdate }: { accounts: TelegramAccount[], onAccountUpdate: (acc: TelegramAccount) => void }) {
@@ -35,12 +36,19 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
     system_labels: {},
     system_prompts: {},
     protected_words: [],
-    ignored_languages: []
+    ignored_languages: [],
+    language_expert_packs: {}
   });
 
-  const [activeTab, setActiveTab] = useState<'branding' | 'notifications' | 'logic'>('branding');
+  const [initialSettings, setInitialSettings] = useState<AdvancedSettingsData | null>(null);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'branding' | 'notifications' | 'shield' | 'expert_packs'>('branding');
   const [newProtectedWord, setNewProtectedWord] = useState('');
-  const [newIgnoredLang, setNewIgnoredLang] = useState('');
+  const [newPackLang, setNewPackLang] = useState('');
+  const [activePackLang, setActivePackLang] = useState<string | null>(null);
+  const [newExpertKey, setNewExpertKey] = useState('');
+  const [newExpertVal, setNewExpertVal] = useState('');
 
   // Hardcoded defaults to show in UI if not overridden
   const defaultLabels: Record<string, string> = {
@@ -77,18 +85,28 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
   const loadSettings = async () => {
     try {
       const resp = await salesAPI.getSettings();
-      setSettings({
+      const data = {
         system_labels: resp.system_labels || {},
         system_prompts: resp.system_prompts || {},
         protected_words: resp.protected_words || [],
-        ignored_languages: resp.ignored_languages || []
-      });
+        ignored_languages: resp.ignored_languages || [],
+        language_expert_packs: resp.language_expert_packs || {}
+      };
+      setSettings(data);
+      setInitialSettings(data);
+      setHasChanges(false);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!initialSettings) return;
+    const changed = JSON.stringify(settings) !== JSON.stringify(initialSettings);
+    setHasChanges(changed);
+  }, [settings, initialSettings]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -100,8 +118,11 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
         system_labels: settings.system_labels,
         system_prompts: settings.system_prompts,
         protected_words: settings.protected_words,
-        ignored_languages: settings.ignored_languages
+        ignored_languages: settings.ignored_languages,
+        language_expert_packs: settings.language_expert_packs
       } as any);
+      setInitialSettings(settings);
+      setHasChanges(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
@@ -139,22 +160,6 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
     });
   };
 
-  const addIgnoredLang = () => {
-    if (newIgnoredLang.trim() && !settings.ignored_languages.includes(newIgnoredLang.trim())) {
-      setSettings({
-        ...settings,
-        ignored_languages: [...settings.ignored_languages, newIgnoredLang.trim()]
-      });
-      setNewIgnoredLang('');
-    }
-  };
-
-  const removeIgnoredLang = (lang: string) => {
-    setSettings({
-      ...settings,
-      ignored_languages: settings.ignored_languages.filter(l => l !== lang)
-    });
-  };
 
   if (loading) {
     return (
@@ -165,9 +170,11 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-8">
+    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] px-8 pb-8 relative">
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        
+        {/* Sticky Header with Solid Background protecting the scroll area */}
+        <div className="sticky top-0 z-[60] bg-gray-50 dark:bg-[#0f172a] pt-8 pb-6 mb-6 flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight flex items-center gap-3">
               <Settings className="w-8 h-8 text-blue-600" />
@@ -177,13 +184,16 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
               Branding, System Voice & Logic
             </p>
           </div>
+          
           <button
             onClick={handleSave}
             disabled={saving}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all font-black uppercase tracking-widest text-xs shadow-lg ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all font-black uppercase tracking-widest text-xs shadow-2xl ${
               success 
               ? 'bg-green-600 text-white shadow-green-600/20' 
-              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
+              : hasChanges 
+                ? 'bg-amber-500 text-white animate-pulse-amber' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
             }`}
           >
             {saving ? (
@@ -197,8 +207,7 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
           </button>
         </div>
 
-        {/* Dynamic Tabs */}
-        <div className="flex gap-2 mb-8 bg-white/50 dark:bg-white/5 p-1 rounded-2xl border border-gray-100 dark:border-white/5 w-fit">
+        <div className="flex flex-wrap gap-2 mb-8 bg-white/50 dark:bg-white/5 p-1 rounded-2xl border border-gray-100 dark:border-white/5 w-fit clear-none">
           <button
             onClick={() => setActiveTab('branding')}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
@@ -219,18 +228,29 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
             }`}
           >
             <Bell className="w-4 h-4" />
-            Account Notifications
+            Notifications
           </button>
           <button
-            onClick={() => setActiveTab('logic')}
+            onClick={() => setActiveTab('shield')}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-              activeTab === 'logic' 
+              activeTab === 'shield' 
               ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
               : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
             Translation Shield
+          </button>
+          <button
+            onClick={() => setActiveTab('expert_packs')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+              activeTab === 'expert_packs' 
+              ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
+              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+            }`}
+          >
+            <Languages className="w-4 h-4" />
+            Expert Packs
           </button>
         </div>
 
@@ -440,7 +460,7 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
           </div>
         )}
 
-        {activeTab === 'logic' && (
+        {activeTab === 'shield' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
             {/* Protected Words */}
             <section className="bg-white dark:bg-[#1e293b] rounded-3xl border border-gray-100 dark:border-white/5 shadow-xl overflow-hidden">
@@ -492,51 +512,206 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
               </div>
             </section>
 
-            {/* Ignored Languages */}
+          </div>
+        )}
+
+        {activeTab === 'expert_packs' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+            {/* Multi-Language Expert Packs */}
             <section className="bg-white dark:bg-[#1e293b] rounded-3xl border border-gray-100 dark:border-white/5 shadow-xl overflow-hidden">
               <div className="p-6 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
                 <h3 className="font-black text-xs uppercase tracking-widest text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                  <Languages className="w-4 h-4 text-purple-500" />
-                  Skip Translation for Specific Languages
+                  <Languages className="w-4 h-4 text-blue-500" />
+                  Multi-Language Expert Packs (Human-Perfect Translation)
                 </h3>
               </div>
-              <div className="p-8 space-y-6">
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newIgnoredLang}
-                    onChange={(e) => setNewIgnoredLang(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addIgnoredLang()}
-                    placeholder="Enter language code (e.g. en, zh-cn)"
-                    className="flex-1 bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                  />
-                  <button 
-                    onClick={addIgnoredLang}
-                    className="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-xl transition-all shadow-lg shadow-purple-600/20"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
+              <div className="p-8 space-y-8">
+                {/* Pack Selection Bar */}
+                <div className="bg-blue-500/5 p-6 rounded-2xl border border-blue-500/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-4">
+                    Active Packs
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.keys(settings.language_expert_packs || {}).map(lang => (
+                      <button
+                        key={lang}
+                        onClick={() => setActivePackLang(lang)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all pr-12 relative flex items-center gap-3 ${
+                          activePackLang === lang
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 scale-105'
+                          : 'bg-white dark:bg-black/20 border border-gray-100 dark:border-white/5 text-gray-500 hover:text-blue-500'
+                        }`}
+                      >
+                        {lang.toUpperCase()} Pack
+                        <X 
+                          className="w-3.5 h-3.5 ml-2 absolute right-3 top-1/2 -translate-y-1/2 hover:text-red-300 transition-colors" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newPacks = { ...settings.language_expert_packs };
+                            delete newPacks[lang];
+                            setSettings({ ...settings, language_expert_packs: newPacks });
+                            if (activePackLang === lang) setActivePackLang(null);
+                          }}
+                        />
+                      </button>
+                    ))}
+                    <div className="flex gap-2 items-center ml-2 border-l border-gray-100 dark:border-white/10 pl-4">
+                      <input 
+                        type="text" 
+                        value={newPackLang}
+                        onChange={(e) => setNewPackLang(e.target.value.toLowerCase())}
+                        placeholder="LANG"
+                        className="w-20 bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono"
+                        maxLength={2}
+                      />
+                      <button
+                        onClick={() => {
+                          if (newPackLang && (!settings.language_expert_packs || !settings.language_expert_packs[newPackLang])) {
+                            setSettings({
+                              ...settings,
+                              language_expert_packs: {
+                                ...(settings.language_expert_packs || {}),
+                                [newPackLang]: {}
+                              }
+                            });
+                            setActivePackLang(newPackLang);
+                            setNewPackLang('');
+                          }
+                        }}
+                        className="bg-blue-600/10 text-blue-600 p-2 rounded-xl hover:bg-blue-600/20 transition-all shadow-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {settings.ignored_languages.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">No ignored languages defined yet.</p>
-                  ) : (
-                    settings.ignored_languages.map(lang => (
-                      <span key={lang} className="flex items-center gap-2 bg-purple-100 dark:bg-purple-500/10 px-3 py-1.5 rounded-lg text-xs font-bold text-purple-600 dark:text-purple-400 group border border-purple-500/20">
-                        {lang.toUpperCase()}
-                        <button onClick={() => removeIgnoredLang(lang)} className="text-purple-400 hover:text-red-500 transition-colors">
-                          <X className="w-3 h-3" />
+                {activePackLang && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="font-black text-[11px] text-gray-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        Managing {activePackLang.toUpperCase()} Expert Pack
+                      </h4>
+                      <p className="text-gray-400 font-bold italic tracking-widest text-[9px]">OVERRIDE TERMS: {Object.keys(settings.language_expert_packs[activePackLang] || {}).length}</p>
+                    </div>
+
+                    {/* Add Translation Term */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 bg-gray-50/50 dark:bg-black/20 p-5 rounded-2xl border border-gray-100 dark:border-white/5">
+                      <div className="lg:col-span-2 space-y-1">
+                        <label className="text-[9px] font-black uppercase text-gray-400 ml-1">Standard Phrase (English)</label>
+                        <input 
+                          type="text" 
+                          value={newExpertKey}
+                          onChange={(e) => setNewExpertKey(e.target.value)}
+                          placeholder="Mailing"
+                          className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"
+                        />
+                      </div>
+                      <div className="lg:col-span-2 space-y-1">
+                        <label className="text-[9px] font-black uppercase text-blue-400 ml-1">Expert Translation</label>
+                        <input 
+                          type="text" 
+                          value={newExpertVal}
+                          onChange={(e) => setNewExpertVal(e.target.value)}
+                          placeholder="Envío Postal"
+                          className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          onClick={() => {
+                            if (newExpertKey && newExpertVal && activePackLang) {
+                              setSettings({
+                                ...settings,
+                                language_expert_packs: {
+                                  ...settings.language_expert_packs,
+                                  [activePackLang]: {
+                                    ...settings.language_expert_packs[activePackLang],
+                                    [newExpertKey]: newExpertVal
+                                  }
+                                }
+                              });
+                              setNewExpertKey('');
+                              setNewExpertVal('');
+                            }
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all shadow-lg font-black uppercase text-[10px] tracking-widest h-[44px] shadow-blue-600/20"
+                        >
+                          Add Term
                         </button>
-                      </span>
-                    ))
-                  )}
+                      </div>
+                    </div>
+
+                    {/* Dictionary List */}
+                    <div className="grid grid-cols-1 gap-1 border border-gray-100 dark:border-white/5 rounded-2xl overflow-hidden bg-gray-50/30 dark:bg-black/10">
+                      {Object.keys(settings.language_expert_packs[activePackLang] || {}).length === 0 ? (
+                        <div className="p-12 text-center opacity-40">
+                          <p className="text-xs font-black text-gray-400 uppercase tracking-widest italic">No dictionary terms defined.</p>
+                        </div>
+                      ) : (
+                        Object.entries(settings.language_expert_packs[activePackLang] || {}).map(([key, value]) => (
+                          <div key={key} className="p-4 flex items-center justify-between bg-white dark:bg-[#1e293b] hover:bg-blue-50 dark:hover:bg-blue-500/5 transition-all group">
+                            <div className="grid grid-cols-2 gap-8 flex-1">
+                              <div>
+                                <p className="text-[8px] font-black uppercase text-gray-400 tracking-tighter mb-1">Standard Phrase</p>
+                                <p className="font-bold text-xs text-gray-900 dark:text-white uppercase">{key}</p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] font-black uppercase text-blue-400 tracking-tighter mb-1">Human Translation</p>
+                                <p className="font-black text-xs text-blue-600 dark:text-blue-400 uppercase">{value}</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                if (activePackLang) {
+                                  const newPacks = { ...settings.language_expert_packs };
+                                  const updatedPack = { ...newPacks[activePackLang] };
+                                  delete updatedPack[key];
+                                  newPacks[activePackLang] = updatedPack;
+                                  setSettings({ ...settings, language_expert_packs: newPacks });
+                                }
+                              }}
+                              className="bg-red-500/10 text-red-500 p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-blue-500/5 border border-blue-500/10 p-5 rounded-2xl flex gap-4 mt-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center shrink-0">
+                    <Check className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-black text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-widest">Expert Packs take Priority</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold leading-relaxed mt-0.5">
+                      Terms in your Language Packs skip Google Translate entirely. This gives you total control over how critical business words sound in key markets.
+                    </p>
+                  </div>
                 </div>
               </div>
             </section>
           </div>
         )}
       </div>
+
+      {/* Floating Save Progress Button with Blinking Effect */}
+      <style>{`
+        @keyframes pulse-amber {
+          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); transform: scale(1); }
+          50% { box-shadow: 0 0 0 15px rgba(245, 158, 11, 0); transform: scale(1.05); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); transform: scale(1); }
+        }
+        .animate-pulse-amber {
+          animation: pulse-amber 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+      `}</style>
+
     </div>
   );
 }

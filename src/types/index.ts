@@ -286,4 +286,5 @@ export interface SalesSettings {
   system_prompts?: Record<string, string>;
   protected_words?: string[];
   ignored_languages?: string[];
+  language_expert_packs?: Record<string, Record<string, string>>;
 }

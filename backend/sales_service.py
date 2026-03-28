@@ -21,7 +21,7 @@ class SalesService:
             row = await db.fetchrow("SELECT * FROM sales_settings WHERE user_id = $1", user_id)
             if row:
                 d = dict(row)
-                for k in ['system_labels', 'system_prompts', 'protected_words', 'ignored_languages']:
+                for k in ['system_labels', 'system_prompts', 'protected_words', 'ignored_languages', 'language_expert_packs']:
                     val = d.get(k)
                     if isinstance(val, str):
                         d[k] = json.loads(val)
@@ -31,7 +31,7 @@ class SalesService:
                 return d
         except Exception as e:
             logger.error(f"Error fetching sales settings: {e}")
-        return {'protected_words': [], 'ignored_languages': [], 'system_labels': {}, 'system_prompts': {}}
+        return {'protected_words': [], 'ignored_languages': [], 'system_labels': {}, 'system_prompts': {}, 'language_expert_packs': {}}
 
     async def apply_branded_labels(self, text: str, user_id: int) -> str:
         """Applies global label replacements to any text (manual or auto)"""
@@ -81,48 +81,74 @@ class SalesService:
         
         # 1. Check Ignored Languages
         ignored_langs = [l.lower() for l in settings.get('ignored_languages', [])]
-        if target_lang.lower() in ignored_langs:
-            return text
-            
-        protected_words = settings.get('protected_words', [])
-        if not protected_words:
-            res = await translation_service.translate_text(text, target_lang)
-            return res['translated_text']
-            
-        # 2. Tokenize Protected Words
-        tokens = {}
-        processed_text = text
-        for i, word in enumerate(protected_words):
-            if not word: continue
-            # Using __PW_i__ format which most translators leave untouched
-            token = f"__PW_{i}__"
-            # Case insensitive replacement, but preserve token format
-            pattern = re.compile(re.escape(word), re.IGNORECASE)
-            if pattern.search(processed_text):
-                tokens[token] = word
-                processed_text = pattern.sub(token, processed_text)
-                
-        # 3. Translate
-        res = await translation_service.translate_text(processed_text, target_lang)
-        translated = res['translated_text']
+        target_lang_code = target_lang.lower()
+        expert_packs = settings.get('language_expert_packs', {})
+        target_pack = expert_packs.get(target_lang_code, {})
         
-        # 4. Detokenize
-        for token, original_word in tokens.items():
-            # Standard replace
-            translated = translated.replace(token, original_word)
+        # Structure for tokens
+        tokens = {}
+        token_count = 0
+        processed_text = text
+
+        # 1. Check Expert Pack for this specific language
+        # If we have a human translation for a phrase, we swap it and PROTECT it
+        if target_pack:
+            # Sort keys by length DESC to match longest phrases first
+            sorted_pack_keys = sorted(target_pack.keys(), key=len, reverse=True)
+            for raw_key in sorted_pack_keys:
+                expert_val = target_pack[raw_key]
+                if not raw_key or not expert_val: continue
+                
+                # Check if the word exists in the text
+                pattern = re.compile(r'\b' + re.escape(raw_key) + r'\b', re.IGNORECASE)
+                if pattern.search(processed_text):
+                    # Replace with token and store the EXPERT VALUE as the replacement
+                    token = f"__EXP_{token_count}__"
+                    tokens[token] = expert_val
+                    processed_text = pattern.sub(token, processed_text)
+                    token_count += 1
+
+        # 2. Check General Protected Words (Word Shields)
+        protected_words = settings.get('protected_words', [])
+        for word in protected_words:
+            if not word: continue
+            # Look for word and replace with token
+            pattern = re.compile(r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+            if pattern.search(processed_text):
+                token = f"__PW_{token_count}__"
+                # Store ORIGINAL word to put back later
+                tokens[token] = word 
+                processed_text = pattern.sub(token, processed_text)
+                token_count += 1
+        
+        # 3. Translate the tokenized text (fallback)
+        if not processed_text.strip():
+            return processed_text
+            
+        if target_lang_code not in ignored_langs:
+            try:
+                res = await translation_service.translate_text(processed_text, target_lang)
+                result_text = res['translated_text']
+            except Exception as e:
+                logger.error(f"Expert Pack translation error: {e}")
+                result_text = processed_text # Fallback to tokenized text
+        else:
+            result_text = processed_text
+            
+        # 4. Detokenize: Swap tokens back to their human/protected values
+        for token, replacement in tokens.items():
+            result_text = result_text.replace(token, replacement)
             
             # Handle if translator added spaces: "__PW_ 0 __" or similar
-            # Index is inside the token
-            idx = token.split('_')[2]
-            clean_pattern = re.compile(f"__\s*PW\s*_\s*{idx}\s*__", re.IGNORECASE)
-            translated = clean_pattern.sub(original_word, translated)
-            
-            # Final fallback for case-insensitive exact token match
-            translated = re.sub(re.escape(token), original_word, translated, flags=re.IGNORECASE)
-            
-        # 5. Global Branded Replacements (Manual Labels)
-        # MOVED TO START to ensure replacements happen BEFORE translation
-        return translated
+            # Extract index from token string __EXP_0__ or __PW_0__
+            parts = token.strip('_').split('_')
+            if len(parts) >= 2:
+                prefix = parts[0]
+                idx = parts[1]
+                clean_pattern = re.compile(f"__\s*{prefix}\s*_\s*{idx}\s*__", re.IGNORECASE)
+                result_text = clean_pattern.sub(replacement, result_text)
+
+        return result_text
 
     async def _get_system_prompt(self, user_id: int, key: str, default: str, target_lang: Optional[str] = None) -> str:
         """Fetch branded prompt from sales_settings or fallback to default, trying lang-specific key first"""
