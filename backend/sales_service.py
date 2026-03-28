@@ -251,7 +251,9 @@ class SalesService:
                 )
                 
                 logger.info(f"Payment screenshot detected and linked to Order {order['po_number']}. History updated.")
-                await self._translate_and_send_reply(account_id, peer_id, f"✅ Thank you for the screenshot! We have received it for Order {order['po_number']} and will verify it shortly. 🙏", user_id)
+                prompt = await self._get_system_prompt(user_id, 'SCREENSHOT_RECEIVED', "✅ Thank you for the screenshot! We have received it for Order {order_id} and will verify it shortly. 🙏")
+                msg = prompt.replace("{order_id}", f"#{order['po_number']}")
+                await self._translate_and_send_reply(account_id, peer_id, msg, user_id)
                 return True
             return False
 
@@ -299,42 +301,79 @@ class SalesService:
             elif current_status == 'awaiting_instructions':
                 return await self._process_instructions(account_id, peer_id, state, text, user_id)
             elif current_status == 'awaiting_confirmation':
-                # Handle Confirmation/Cancellation
-                if logic_text_upper == 'CONFIRM' or 'CONFIRM' in logic_text_upper:
+                # GLOBAL MULTILINGUAL CONFIRMATION CHECK
+                confirm_synonyms = {
+                    'confirm', 'confirmar', 'confirmer', 'ok', 'okay', 'yes', 'confirmado', 'confirmé', 'si', 'sí', 'oui', 'ja', 'vov',
+                    'yes', 'confirmed', 'confirming', '确认', '確認', 'نعم', 'جی ہاں', '✅', '1', 'tak', 'da'
+                }
+                # GLOBAL MULTILINGUAL CANCELLATION CHECK
+                cancel_synonyms = {
+                    'cancel', 'cancelar', 'annuler', 'no', 'stop', 'cancelado', 'annulé', 'nein', 'non', 'discard', 'cancelling',
+                    '取消', '❌', '2', 'ne', 'nē', 'rādd', 'khārij'
+                }
+                
+                is_confirm = any(s in logic_text_lower or s in text_lower for s in confirm_synonyms)
+                is_cancel = any(s in logic_text_lower or s in text_lower for s in cancel_synonyms)
+
+                if is_confirm:
                     logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
                     return await self._process_confirmation(account_id, peer_id, state, user_id)
-                elif logic_text_upper == 'CANCEL' or 'CANCEL' in logic_text_upper:
+                elif is_cancel:
                     logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
                     await db.execute(
                         "UPDATE sales_states SET status = 'idle' WHERE id = $1",
                         state['id']
                     )
-                    await self._translate_and_send_reply(account_id, peer_id, "❌ Order cancelled.", user_id)
+                    prompt = await self._get_system_prompt(user_id, 'ORDER_CANCELLED', "❌ Order cancelled.")
+                    await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                     return True
 
-        # 2. Check for "order [product] [quantity]" pattern using logic_text
-        # We use a more flexible regex that matches "order", "command", "request", "buy", "purchase", etc.
-        # This is needed because back-translation of native commands might use these synonyms.
-        cmd_pattern = r'(?i)(order|command|request|buy|purchase|订购|طلب|命令)\s+'
+        # 2. HEURISTIC ORDER INTENT MATCHER (Flexible for all languages)
+        # We look for: [Order Verb] + [Product Match] + [Some Number]
+        order_verbs = {
+            'order', 'ordern', 'orden', 'comando', 'command', 'request', 'buy', 'purchase', 'booking', 'book',
+            '订购', 'طلب', '命令', '买', 'comprar', 'acheter', 'commande', 'pedido', 'pide', 'kauf', 'hacer pedido'
+        }
+        has_order_verb = any(v in logic_text_lower for v in order_verbs)
+        all_nums = re.findall(r'\d+', logic_text)
         
-        # Pattern 1: [Order] [Product] [Quantity]
-        order_match = re.search(cmd_pattern + r'(.+)\s+(\d+)\s*$', logic_text.strip())
-        if not order_match:
-            # Fallback Pattern 2: [Order] [Quantity] [Product]
-            order_match = re.search(cmd_pattern + r'(\d+)\s+(.+)\s*$', logic_text.strip())
-            if order_match:
-                quantity = int(order_match.group(2))
-                product_query = order_match.group(3).strip()
-            else:
+        # 1. Fetch all products to find a match
+        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
+        
+        for product in products:
+            # Check for product name or any of its keywords in the text
+            name_match = product['name'].lower() in logic_text_lower
+            keyword_match = False
+            
+            keywords = product['keywords']
+            if isinstance(keywords, str):
+                try: keywords = json.loads(keywords)
+                except: keywords = [keywords]
+            
+            if isinstance(keywords, list):
+                keyword_match = any(k.lower() in logic_text_lower for k in keywords if k)
+            
+            if name_match or keyword_match:
+                # TRIPLE-STRENGTH CHECK:
+                # We count it as an order if:
+                # A) It contains an order verb
+                # B) It contains a number (quantity) that isn't part of the product name
+                # C) It specifically follows the product info prompt pattern "Product [qty]"
+                
+                prod_name_nums = re.findall(r'\d+', product['name'])
                 quantity = None
-                product_query = None
-        else:
-            product_query = order_match.group(2).strip()
-            quantity = int(order_match.group(3))
-
-        if product_query and quantity:
-            logger.info(f"Order intent detected: {product_query} x {quantity}")
-            return await self._handle_order_intent(account_id, peer_id, product_query, quantity, user_id)
+                for num in all_nums:
+                    if num not in prod_name_nums:
+                        quantity = int(num)
+                        break
+                
+                # Rule: Verb + Product = Order
+                # Rule: Product + New Number = Order (e.g. "USB 1")
+                if has_order_verb or (quantity and quantity > 0):
+                    # Default to quantity 1 if only verb + product mentioned
+                    final_qty = quantity or 1
+                    logger.info(f"Fuzzy Order Intent Detected: '{product['name']}' x {final_qty}")
+                    return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
 
         # 3. Check for product inquiries (Keywords) using logic_text
         products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
@@ -376,11 +415,15 @@ class SalesService:
         )
 
         if not product:
-            await self._translate_and_send_reply(account_id, peer_id, f"Sorry, I couldn't find a product matching '{product_query}'.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'PRODUCT_NOT_FOUND', "Sorry, I couldn't find a product matching '{product_query}'.")
+            msg = prompt.replace("{product_query}", product_query)
+            await self._translate_and_send_reply(account_id, peer_id, msg, user_id)
             return True
 
         if product['stock_quantity'] < 1:
-            await self._translate_and_send_reply(account_id, peer_id, f"Sorry, {product['name']} is currently out of stock.", user_id)
+            prompt = await self._get_system_prompt(user_id, 'OUT_OF_STOCK', "Sorry, {product_name} is currently out of stock.")
+            msg = prompt.replace("{product_name}", product['name'])
+            await self._translate_and_send_reply(account_id, peer_id, msg, user_id)
             return True
 
         delivery_mode = product.get('delivery_mode', 'both')
@@ -411,11 +454,21 @@ class SalesService:
 
     async def _process_delivery_pref(self, account_id: int, peer_id: int, state: Any, logic_text: str, text: str, user_id: int) -> bool:
         logic_lower = logic_text.lower()
-        if 'mail' in logic_lower:
+        text_lower = text.lower()
+        
+        # Check for Mailing Synonyms in both English (logic) and Original (text)
+        mailing_synonyms = {'mail', 'mailing', 'shipping', 'correo', 'correio', 'envi', 'post', '1'}
+        # Check for Hand Synonyms in both English (logic) and Original (text)
+        hand_synonyms = {'hand', 'meetup', 'pickup', 'personal', 'mano', 'mão', 'recojo', '2'}
+        
+        is_mailing = any(s in logic_lower or s in text_lower for s in mailing_synonyms)
+        is_hand = any(s in logic_lower or s in text_lower for s in hand_synonyms)
+        
+        if is_mailing:
             await db.execute("UPDATE sales_states SET delivery_method = 'mailing', status = 'awaiting_address' WHERE id = $1", state['id'])
             prompt = await self._get_system_prompt(user_id, 'ADDRESS_MAILING', "Great! Please provide your full mailing address.")
             await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
-        elif 'hand' in logic_lower:
+        elif is_hand:
             await db.execute("UPDATE sales_states SET delivery_method = 'hand_to_hand', status = 'awaiting_address' WHERE id = $1", state['id'])
             prompt = await self._get_system_prompt(user_id, 'ADDRESS_HAND', "Great! Please provide your preferred meetup/delivery address.")
             await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
@@ -439,7 +492,8 @@ class SalesService:
 
     async def _process_time_slot(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
         await db.execute("UPDATE sales_states SET delivery_time_slot = $1, status = 'awaiting_instructions' WHERE id = $2", text, state['id'])
-        await self._translate_and_send_reply(account_id, peer_id, "Any extra delivery instructions we should know about? (Reply 'None' if not)", user_id)
+        prompt = await self._get_system_prompt(user_id, 'EXTRA_INSTRUCTIONS', "Any extra delivery instructions we should know about? (Reply 'None' if not)")
+        await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         return True
 
     async def _process_instructions(self, account_id: int, peer_id: int, state: Any, text: str, user_id: int) -> bool:
@@ -611,12 +665,14 @@ class SalesService:
                 async with conn.transaction():
                     product = await conn.fetchrow("SELECT id, name, price, stock_quantity FROM products WHERE id = $1 FOR UPDATE", product_id)
                     if not product:
-                        await self._translate_and_send_reply(account_id, peer_id, "Product not found. Order cancelled.", user_id)
+                        prompt = await self._get_system_prompt(user_id, 'PRODUCT_NOT_FOUND_CANCEL', "Product not found. Order cancelled.")
+                        await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                         await conn.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
                         return True
 
                     if product['stock_quantity'] < requested_qty:
-                        await self._translate_and_send_reply(account_id, peer_id, "Insufficient stock. Order cancelled.", user_id)
+                        prompt = await self._get_system_prompt(user_id, 'INSUFFICIENT_STOCK_CANCEL', "Insufficient stock. Order cancelled.")
+                        await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                         await conn.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
                         return True
 
@@ -656,14 +712,14 @@ class SalesService:
                 
                 if translation_enabled and target_lang != 'en':
                     tasks = [
-                        self.translate_with_protection("ORDER CONFIRMED!", target_lang, user_id),
-                        self.translate_with_protection("Order ID:", target_lang, user_id),
-                        self.translate_with_protection("Date:", target_lang, user_id),
-                        self.translate_with_protection("Details:", target_lang, user_id),
-                        self.translate_with_protection("Payment Instructions:", target_lang, user_id),
-                        self.translate_with_protection("Thank you for your business!", target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'ORDER_CONFIRMED_HEADER', "ORDER CONFIRMED!"), target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'ORDER_ID_LABEL', "Order ID:"), target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'DATE_LABEL', "Date:"), target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'DETAILS_LABEL', "Details:"), target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'PAYMENT_INSTRUCTIONS_LABEL', "Payment Instructions:"), target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'THANKS_FOR_BUSINESS', "Thank you for your business! 🙏"), target_lang, user_id),
                         self.translate_with_protection(final_data['payment_info'], target_lang, user_id),
-                        self.translate_with_protection("Please send a screenshot of your payment for verification.", target_lang, user_id),
+                        self.translate_with_protection(await self._get_system_prompt(user_id, 'SEND_SCREENSHOT_PROMPT', "Please send a screenshot of your payment for verification."), target_lang, user_id),
                         self.translate_with_protection(final_data['product_name'], target_lang, user_id),
                     ]
                     results = await asyncio.gather(*tasks)
@@ -710,50 +766,52 @@ class SalesService:
 
         # Translate COMPLETELY everything (Name, Labels, Description) IF ENABLED
         try:
+            # Fetch branded labels
+            l_price = await self._get_system_label(user_id, 'PRICE_LABEL', "Price:")
+            l_desc = await self._get_system_label(user_id, 'DESCRIPTION_LABEL', "Description:")
+            l_instr = await self._get_system_label(user_id, 'ORDER_INSTRUCTION', "To order, please reply:")
+            l_qty_hint = await self._get_system_label(user_id, 'QTY_HINT', "[quantity]")
+
             if translation_enabled and target_lang != 'en':
                 # Localize Name & Description & Labels
                 tasks = [
                     self.translate_with_protection(name, target_lang, user_id),
-                    self.translate_with_protection("Price:", target_lang, user_id),
-                    self.translate_with_protection("Description:", target_lang, user_id),
-                    self.translate_with_protection("To order, please reply:", target_lang, user_id),
+                    self.translate_with_protection(l_price, target_lang, user_id),
+                    self.translate_with_protection(l_desc, target_lang, user_id),
+                    self.translate_with_protection(l_instr, target_lang, user_id),
                     self.translate_with_protection(desc, target_lang, user_id),
-                    self.translate_with_protection("Order", target_lang, user_id),
-                    self.translate_with_protection("[quantity]", target_lang, user_id)
+                    self.translate_with_protection(l_qty_hint, target_lang, user_id)
                 ]
                 results = await asyncio.gather(*tasks)
                 
                 translated_name = results[0]
-                t_price_label = results[1].rstrip(':') + ':'
-                t_desc_label = results[2].rstrip(':') + ':'
+                t_price_label = results[1]
+                t_desc_label = results[2]
                 t_order_instr = results[3]
                 translated_desc = results[4]
-                t_order_cmd = results[5]
-                t_qty_placeholder = results[6]
+                t_qty_placeholder = results[5]
             else:
                 translated_name = name
-                t_price_label = "Price:"
-                t_desc_label = "Description:"
-                t_order_instr = "To order, please reply:"
+                t_price_label = l_price
+                t_desc_label = l_desc
+                t_order_instr = l_instr
                 translated_desc = desc
-                t_order_cmd = "Order"
-                t_qty_placeholder = "[quantity]"
+                t_qty_placeholder = l_qty_hint
         except Exception:
             translated_name = name
             t_price_label = "Price:"
             t_desc_label = "Description:"
             t_order_instr = "To order, please reply:"
             translated_desc = desc
-            t_order_cmd = "Order"
             t_qty_placeholder = "[quantity]"
 
-        # Create the message for the CUSTOMER (100% Translated including COMMAND)
+        # Create the message for the CUSTOMER (Dramatically simplified per User request)
         customer_reply_text = (
             f"📦 **{translated_name}**\n"
             f"💰 **{t_price_label}** ${price:.2f}\n"
             f"📝 **{t_desc_label}** {translated_desc}\n\n"
             f"🛒 {t_order_instr}\n"
-            f"`{t_order_cmd} {translated_name} {t_qty_placeholder}`"
+            f"`{translated_name} {t_qty_placeholder}`"
         )
         
         # Original English text for Admin records
@@ -762,7 +820,7 @@ class SalesService:
             f"💰 **Price:** ${price:.2f}\n"
             f"📝 **Description:** {desc}\n\n"
             f"🛒 To order, please reply:\n"
-            f"`Order {name} [quantity]`"
+            f"`{name} [quantity]`"
         )
         
         # The 'Translated' view in admin will show the full message with the translated description
@@ -929,6 +987,8 @@ class SalesService:
             translation_enabled = account_data['translation_enabled'] if account_data else True
             
             if target_lang != 'en' and translation_enabled:
+                # IMPORTANT: We check if the translated version already exists as a manual override to avoid Google Translate loop
+                # This ensures your "Branded Personality" messages are also localized correctly
                 translated_text = await self.translate_with_protection(text, target_lang, user_id)
             else:
                 translated_text = text

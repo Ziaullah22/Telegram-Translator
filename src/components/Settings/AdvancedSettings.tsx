@@ -56,7 +56,11 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
     'PRODUCT_LABEL': 'Product:',
     'QUANTITY_LABEL': 'Quantity:',
     'PRICE_LABEL': 'Price:',
+    'DESCRIPTION_LABEL': 'Description:',
     'TOTAL_LABEL': 'Total Amount:',
+    'RECEIPT_RECEIVED_LABEL': 'Screenshot Received:',
+    'ORDER_INSTRUCTION': 'To order, please reply:',
+    'QTY_HINT': '[quantity]',
     'INVOICE_FOOTER_REPLY': 'Reply',
     'INVOICE_FOOTER_CONFIRM': 'to confirm',
     'INVOICE_FOOTER_DISCARD': 'to discard',
@@ -69,11 +73,21 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
   };
 
   const defaultPrompts: Record<string, string> = {
-    'DELIVERY_METHOD_PROMPT': "Please choose your delivery method:\n\n1. 📬 Mailing\n2. 🤝 Hand-to-Hand Meetup\n\nReply with '1' or '2'.",
-    'ADDRESS_PROMPT': "Please provide your delivery address:",
-    'TIME_SLOT_PROMPT': "Please provide your preferred time slot for meetup:",
-    'INSTRUCTIONS_PROMPT': "Any special instructions? (Reply 'none' if none):",
+    'DELIVERY_PREF_BOTH': "Great! Do you prefer this product to be Mailed to you, or delivered Hand-to-Hand? (Reply 'Mail' or 'Hand')",
+    'ADDRESS_MAILING': "Great! Please provide your full mailing address.",
+    'ADDRESS_HAND': "Great! Please provide your preferred meetup/delivery address.",
+    'INVALID_DELIVERY_PREF': "Please reply with either 'Mail' or 'Hand'.",
+    'TIME_SLOT': "What is your preferred time slot for the delivery?",
+    'INSTRUCTIONS': "Do you have any extra delivery instructions? (Reply 'None' if not)",
+    'EXTRA_INSTRUCTIONS': "Any extra delivery instructions we should know about? (Reply 'None' if not)",
     'CONFIRMATION_PENDING': "Please review your order summary above and type 'CONFIRM' to proceed or 'CANCEL' to discard.",
+    'SCREENSHOT_RECEIVED': "✅ Thank you for the screenshot! We have received it for Order {order_id} and will verify it shortly. 🙏",
+    'ORDER_CANCELLED': "❌ Order cancelled.",
+    'PRODUCT_NOT_FOUND': "Sorry, I couldn't find a product matching '{product_query}'.",
+    'OUT_OF_STOCK': "Sorry, {product_name} is currently out of stock.",
+    'PRODUCT_NOT_FOUND_CANCEL': "Product not found. Order cancelled.",
+    'INSUFFICIENT_STOCK_CANCEL': "Insufficient stock. Order cancelled.",
+    'THANKS_FOR_BUSINESS': "Thank you for your business! 🙏",
     'HAND_TO_HAND_LABEL': "Hand-to-Hand Meetup",
     'MAILING_LABEL': "Mailing"
   };
@@ -267,12 +281,32 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
               <div className="p-8 space-y-8">
                 {Object.entries(defaultPrompts).map(([key, defValue]) => {
                   const val = settings.system_prompts[key] !== undefined ? settings.system_prompts[key] : defValue;
+                  
+                  // REQUIRED Keywords/Variables for each key
+                  const promptGuides: Record<string, string> = {
+                    'DELIVERY_PREF_BOTH': "Requires: 'Mail' and 'Hand'",
+                    'INVALID_DELIVERY_PREF': "Requires: 'Mail' and 'Hand'",
+                    'INSTRUCTIONS': "Suggested: '(Reply None if not)'",
+                    'EXTRA_INSTRUCTIONS': "Suggested: '(Reply None if not)'",
+                    'CONFIRMATION_PENDING': "Requires: 'CONFIRM' and 'CANCEL'",
+                    'SCREENSHOT_RECEIVED': "Variable: {order_id}",
+                    'PRODUCT_NOT_FOUND': "Variable: {product_query}",
+                    'OUT_OF_STOCK': "Variable: {product_name}",
+                  };
+
                   return (
                     <div key={key} className="space-y-3">
                       <div className="flex justify-between items-center px-1">
-                        <label className="text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                          {key.replace(/_/g, ' ')}
-                        </label>
+                        <div className="flex items-center gap-3">
+                          <label className="text-[11px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                            {key.replace(/_/g, ' ')}
+                          </label>
+                          {promptGuides[key] && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[9px] font-black uppercase tracking-tighter">
+                              {promptGuides[key]}
+                            </span>
+                          )}
+                        </div>
                         <button 
                           onClick={() => {
                             const newPrompts = { ...settings.system_prompts };
