@@ -509,6 +509,7 @@ async def migrate():
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS system_prompts JSONB DEFAULT '{}'::jsonb;
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS protected_words JSONB DEFAULT '[]';
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS ignored_languages JSONB DEFAULT '[]';
+                ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS language_expert_packs JSONB DEFAULT '{}';
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE;
 
                 CREATE TABLE IF NOT EXISTS order_proofs (
