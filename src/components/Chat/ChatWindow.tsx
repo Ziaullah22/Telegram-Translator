@@ -1731,8 +1731,8 @@ export default function ChatWindow({
                                       isOutgoing ? 'text-gray-800 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'
                                     }`}>
                                       {isOutgoing 
-                                        ? (message.target_language || targetLanguage || 'EN').toUpperCase()
-                                        : message.source_language.toUpperCase()
+                                        ? message.source_language.toUpperCase()
+                                        : (message.target_language || targetLanguage || 'EN').toUpperCase()
                                       }
                                     </span>
                                     
@@ -1747,8 +1747,8 @@ export default function ChatWindow({
                                       isOutgoing ? 'text-gray-800 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'
                                     }`}>
                                       {isOutgoing 
-                                        ? message.source_language.toUpperCase()
-                                        : (message.target_language || targetLanguage || 'EN').toUpperCase()
+                                        ? (message.target_language || targetLanguage || 'EN').toUpperCase()
+                                        : message.source_language.toUpperCase()
                                       }
                                     </span>
                                   </div>
