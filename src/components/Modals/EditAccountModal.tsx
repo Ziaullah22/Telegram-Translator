@@ -96,7 +96,7 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Source</label>
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Outgoing</label>
               <select
                 {...register('sourceLanguage')}
                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
@@ -113,7 +113,7 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Target</label>
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Incoming</label>
               <select
                 {...register('targetLanguage')}
                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
