@@ -285,40 +285,7 @@ class SalesService:
         logic_text_lower = logic_text.lower()
         text_lower = text.lower()
 
-        # 1. HEURISTIC ORDER INTENT MATCHER (Flexible for all languages)
-        # Priority: If user says "Order X 1", we start a new order even if they had an old conversation state
-        order_verbs = {
-            'order', 'ordern', 'orden', 'comando', 'command', 'request', 'buy', 'purchase', 'booking', 'book',
-            '订购', 'طلب', '命令', '买', 'comprar', 'acheter', 'commande', 'pedido', 'pide', 'kauf', 'hacer pedido'
-        }
-        has_order_verb = any(v in logic_text_lower for v in order_verbs)
-        all_nums = re.findall(r'\d+', logic_text)
-        
-        # Check for direct order intent FIRST
-        products_list = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
-        for product in products_list:
-            name_match = product['name'].lower() in logic_text_lower
-            keywords = product['keywords']
-            if isinstance(keywords, str):
-                try: keywords = json.loads(keywords)
-                except: keywords = [keywords]
-            keyword_match = any(k.lower() in logic_text_lower for k in keywords if k) if isinstance(keywords, list) else False
-            
-            if name_match or keyword_match:
-                prod_name_nums = re.findall(r'\d+', product['name'])
-                quantity = None
-                for num in all_nums:
-                    if num not in prod_name_nums:
-                        quantity = int(num)
-                        break
-                
-                # Rule: Clear Intent to start a NEW order
-                if has_order_verb or (quantity and quantity > 0):
-                    final_qty = quantity or 1
-                    logger.info(f"New Order Intent Priority: '{product['name']}' x {final_qty}")
-                    return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
-
-        # 2. Check current conversation state (if not a new order intent)
+        # 1. Check current conversation state using logic_text
         state = await db.fetchrow(
             "SELECT * FROM sales_states WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
             account_id, peer_id
@@ -338,46 +305,97 @@ class SalesService:
                 # GLOBAL MULTILINGUAL CONFIRMATION CHECK
                 confirm_synonyms = {
                     'confirm', 'confirmar', 'confirmer', 'ok', 'okay', 'yes', 'confirmado', 'confirmé', 'si', 'sí', 'oui', 'ja', 'vov',
-                    'yes', 'confirmed', 'confirming', '确认', '確認', 'نعم', 'جی ہاں', '✅', 'tak', 'da'
+                    'yes', 'confirmed', 'confirming', '确认', '確認', 'نعم', 'جی ہاں', '✅', '1', 'tak', 'da'
                 }
+                # GLOBAL MULTILINGUAL CANCELLATION CHECK
                 cancel_synonyms = {
                     'cancel', 'cancelar', 'annuler', 'no', 'stop', 'cancelado', 'annulé', 'nein', 'non', 'discard', 'cancelling',
-                    '取消', '❌', 'ne', 'nē', 'rādd', 'khārij'
+                    '取消', '❌', '2', 'ne', 'nē', 'rādd', 'khārij'
                 }
                 
-                # Numeric shortcuts only if they are the primary content
-                is_numeric_confirm = logic_text.strip() == '1' or text.strip() == '1'
-                is_numeric_cancel = logic_text.strip() == '2' or text.strip() == '2'
-                
-                is_confirm = is_numeric_confirm or any(s in logic_text_lower or s in text_lower for s in confirm_synonyms)
-                is_cancel = is_numeric_cancel or any(s in logic_text_lower or s in text_lower for s in cancel_synonyms)
+                is_confirm = any(s in logic_text_lower or s in text_lower for s in confirm_synonyms)
+                is_cancel = any(s in logic_text_lower or s in text_lower for s in cancel_synonyms)
 
                 if is_confirm:
                     logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
                     return await self._process_confirmation(account_id, peer_id, state, user_id)
                 elif is_cancel:
                     logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
-                    await db.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
+                    await db.execute(
+                        "UPDATE sales_states SET status = 'idle' WHERE id = $1",
+                        state['id']
+                    )
                     prompt = await self._get_system_prompt(user_id, 'ORDER_CANCELLED', "❌ Order cancelled.")
                     await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                     return True
 
-        # 3. Check for product inquiries (Keywords)
-        # Matches both translated text (e.g. Chinese "价格" -> "price") and raw text (e.g. "case")
-        matches = []
-        for product in products_list:
+        # 2. HEURISTIC ORDER INTENT MATCHER (Flexible for all languages)
+        # We look for: [Order Verb] + [Product Match] + [Some Number]
+        order_verbs = {
+            'order', 'ordern', 'orden', 'comando', 'command', 'request', 'buy', 'purchase', 'booking', 'book',
+            '订购', 'طلب', '命令', '买', 'comprar', 'acheter', 'commande', 'pedido', 'pide', 'kauf', 'hacer pedido'
+        }
+        has_order_verb = any(v in logic_text_lower for v in order_verbs)
+        all_nums = re.findall(r'\d+', logic_text)
+        
+        # 1. Fetch all products to find a match
+        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
+        
+        for product in products:
+            # Check for product name or any of its keywords in the text
+            name_match = product['name'].lower() in logic_text_lower
+            keyword_match = False
+            
             keywords = product['keywords']
             if isinstance(keywords, str):
                 try: keywords = json.loads(keywords)
                 except: keywords = [keywords]
             
             if isinstance(keywords, list):
-                # Check both translated (logic) and original (text) for maximum hit rate
-                if any(k.lower() in logic_text_lower or k.lower() in text_lower for k in keywords if k):
-                    matches.append(product)
+                keyword_match = any(k.lower() in logic_text_lower for k in keywords if k)
+            
+            if name_match or keyword_match:
+                # TRIPLE-STRENGTH CHECK:
+                # We count it as an order if:
+                # A) It contains an order verb
+                # B) It contains a number (quantity) that isn't part of the product name
+                # C) It specifically follows the product info prompt pattern "Product [qty]"
+                
+                prod_name_nums = re.findall(r'\d+', product['name'])
+                quantity = None
+                for num in all_nums:
+                    if num not in prod_name_nums:
+                        quantity = int(num)
+                        break
+                
+                # Rule: Verb + Product = Order
+                # Rule: Product + New Number = Order (e.g. "USB 1")
+                if has_order_verb or (quantity and quantity > 0):
+                    # Default to quantity 1 if only verb + product mentioned
+                    final_qty = quantity or 1
+                    logger.info(f"Fuzzy Order Intent Detected: '{product['name']}' x {final_qty}")
+                    return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
+
+        # 3. Check for product inquiries (Keywords) using logic_text
+        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
+        # We use logic_text_lower here so Chinese "价格是多少" -> "how much is it" matches keywords like "price"
+        matches = []
+        for product in products:
+            keywords = product['keywords']
+            if isinstance(keywords, str):
+                try:
+                    keywords = json.loads(keywords)
+                except:
+                    keywords = [keywords]
+            
+            if not isinstance(keywords, list):
+                keywords = []
+
+            if any(k.lower() in logic_text_lower for k in keywords if k):
+                matches.append(product)
 
         if matches:
-            logger.info(f"Product inquiry detected: {len(matches)} matching")
+            logger.info(f"Product inquiry detected: {len(matches)} matching in: {text}")
             for product in matches:
                 await self._send_product_info(account_id, peer_id, product, user_id)
             return True
