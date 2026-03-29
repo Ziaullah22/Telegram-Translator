@@ -96,13 +96,12 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Outgoing</label>
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Incoming</label>
               <select
-                {...register('sourceLanguage')}
+                {...register('targetLanguage')}
                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
-                <option value="auto">Auto-detect</option>
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
                 <option value="fr">French</option>
@@ -113,12 +112,13 @@ export default function EditAccountModal({ isOpen, account, onClose, onSuccess }
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Incoming</label>
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">Outgoing</label>
               <select
-                {...register('targetLanguage')}
+                {...register('sourceLanguage')}
                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm appearance-none cursor-pointer"
                 disabled={loading}
               >
+                <option value="auto">Auto-detect</option>
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
                 <option value="fr">French</option>
