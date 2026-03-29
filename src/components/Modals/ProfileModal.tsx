@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Camera, Loader2, Check } from 'lucide-react';
+import { X, Camera, Loader2, Check, Bell, BellOff } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -18,15 +18,16 @@ interface ProfileModalProps {
     isOpen: boolean;
     account: TelegramAccount | null;
     onClose: () => void;
+    onAccountUpdate?: (updated: TelegramAccount) => void;
 }
 
-export default function ProfileModal({ isOpen, account, onClose }: ProfileModalProps) {
+export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate }: ProfileModalProps) {
     const [profile, setProfile] = useState<ProfileData | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState('');
     const [error, setError] = useState('');
-    const [activeTab, setActiveTab] = useState<'info' | 'privacy' | '2fa'>('info');
+    const [activeTab, setActiveTab] = useState<'info' | 'privacy' | '2fa' | 'notifications'>('info');
 
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
@@ -141,6 +142,24 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
         }
     };
 
+    const toggleNotification = async () => {
+        if (!account) return;
+        setSaving(true);
+        setError('');
+        try {
+            const updated = await telegramAPI.updateAccount(account.id, {
+                notifications_enabled: !account.notificationsEnabled
+            });
+            if (onAccountUpdate) onAccountUpdate(updated);
+            setSuccess(updated.notificationsEnabled ? 'Notifications enabled' : 'Notifications muted');
+            setTimeout(() => setSuccess(''), 3000);
+        } catch (e: any) {
+            setError(e.response?.data?.detail || 'Failed to toggle notifications.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -158,7 +177,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
 
                 {/* Tabs */}
                 <div className="flex px-2 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
-                    {(['info', 'privacy', '2fa'] as const).map(tab => (
+                    {(['info', 'privacy', '2fa', 'notifications'] as const).map(tab => (
                         <button
                             key={tab}
                             id={`profile-tab-${tab}`}
@@ -168,7 +187,7 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-white'
                                 }`}
                         >
-                            {tab === 'info' ? 'Info' : tab === 'privacy' ? 'Privacy' : '2FA Security'}
+                            {tab === 'info' ? 'Info' : tab === 'privacy' ? 'Privacy' : tab === '2fa' ? '2FA' : 'Notifications'}
                             {activeTab === tab && (
                                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3390ec] rounded-t-full" />
                             )}
@@ -376,6 +395,40 @@ export default function ProfileModal({ isOpen, account, onClose }: ProfileModalP
                                 </button>
                             </div>
                         </form>
+                    )}
+
+                    {/* Notifications Tab */}
+                    {activeTab === 'notifications' && (
+                        <div className="space-y-6">
+                            <div className="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10 flex items-center gap-4">
+                                <div className={`p-3 rounded-xl ${account?.notificationsEnabled ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-white/10 text-gray-400'}`}>
+                                    {account?.notificationsEnabled ? <Bell className="w-6 h-6" /> : <BellOff className="w-6 h-6" />}
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-gray-900 dark:text-white">Account Notifications</h4>
+                                    <p className="text-sm text-gray-500">Enable or disable alerts for this specific session</p>
+                                </div>
+                                <button
+                                    onClick={toggleNotification}
+                                    disabled={saving}
+                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        account?.notificationsEnabled ? 'bg-[#3390ec]' : 'bg-gray-200 dark:bg-gray-700'
+                                    }`}
+                                >
+                                    <span
+                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                            account?.notificationsEnabled ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-100 dark:border-white/5">
+                                <p className="text-xs text-center text-gray-400">
+                                    When muted, you won't receive sound or native notifications for new messages on this account.
+                                </p>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

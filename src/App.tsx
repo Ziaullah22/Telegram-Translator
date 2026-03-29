@@ -601,12 +601,7 @@ function App() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/campaigns" element={<CampaignPage />} />
           <Route path="/products" element={<ProductsPage />} />
-          <Route path="/advanced-settings" element={<AdvancedSettings accounts={accounts} onAccountUpdate={(updated) => {
-            setAccounts(prev => prev.map(a => Number(a.id) === Number(updated.id) ? updated : a));
-            if (currentAccount && Number(currentAccount.id) === Number(updated.id)) {
-              setCurrentAccount(updated);
-            }
-          }} />} />
+          <Route path="/advanced-settings" element={<AdvancedSettings />} />
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden">
               <Sidebar
@@ -681,7 +676,18 @@ function App() {
 
         <AddAccountModal isOpen={showAddAccountModal} onClose={() => setShowAddAccountModal(false)} onSuccess={loadAccounts} />
         <EditAccountModal isOpen={showEditAccountModal} account={editingAccount} onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }} onSuccess={loadAccounts} />
-        <ProfileModal isOpen={showProfileModal} account={profileAccount} onClose={() => { setShowProfileModal(false); setProfileAccount(null); }} />
+        <ProfileModal 
+          isOpen={showProfileModal} 
+          account={profileAccount} 
+          onClose={() => { setShowProfileModal(false); setProfileAccount(null); }} 
+          onAccountUpdate={(updated) => {
+            setAccounts(prev => prev.map(a => Number(a.id) === Number(updated.id) ? updated : a));
+            if (currentAccount && Number(currentAccount.id) === Number(updated.id)) {
+              setCurrentAccount(updated);
+            }
+            setProfileAccount(updated);
+          }}
+        />
         <ActiveSessionsModal isOpen={showSessionsModal} account={sessionsAccount} onClose={() => { setShowSessionsModal(false); setSessionsAccount(null); }} />
         <ConfirmModal
           isOpen={!!accountToDelete}

@@ -284,8 +284,66 @@ class SalesService:
         logic_text_upper = logic_text.upper()
         logic_text_lower = logic_text.lower()
         text_lower = text.lower()
+        stripped_logic = logic_text_lower.strip()
+        stripped_text = text_lower.strip()
 
-        # 1. Check current conversation state using logic_text
+        # ---------------------------------------------------------
+        # 1. HEURISTIC ORDER INTENT MATCHER (Flexible for all languages)
+        # ---------------------------------------------------------
+        # We look for: [Order Verb] + [Product Match] + [Some Number]
+        # We handle this BEFORE state processing so a user can always start a new order.
+        order_verbs = {
+            'order', 'ordern', 'orden', 'comando', 'command', 'request', 'buy', 'purchase', 'booking', 'book',
+            '订购', 'طلب', '命令', '买', 'comprar', 'acheter', 'commande', 'pedido', 'pide', 'kauf', 'hacer pedido'
+        }
+        has_order_verb = any(v in logic_text_lower for v in order_verbs)
+        all_nums = re.findall(r'\d+', logic_text)
+        
+        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
+        for product in products:
+            name_match = product['name'].lower() in logic_text_lower
+            keyword_match = False
+            keywords = product['keywords']
+            if isinstance(keywords, str):
+                try: keywords = json.loads(keywords)
+                except: keywords = [keywords]
+            if isinstance(keywords, list):
+                keyword_match = any(k.lower() in logic_text_lower for k in keywords if k)
+            
+            if name_match or keyword_match:
+                prod_name_nums = re.findall(r'\d+', product['name'])
+                quantity = None
+                for num in all_nums:
+                    if num not in prod_name_nums:
+                        quantity = int(num)
+                        break
+                if has_order_verb or (quantity and quantity > 0):
+                    final_qty = quantity or 1
+                    logger.info(f"Fuzzy Order Intent Detected: '{product['name']}' x {final_qty}")
+                    return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
+
+        # ---------------------------------------------------------
+        # 2. Check for product inquiries (Keywords) using logic_text
+        # ---------------------------------------------------------
+        # We check this before state because keyword inquiry is a global intent.
+        matches = []
+        for product in products:
+            keywords = product['keywords']
+            if isinstance(keywords, str):
+                try: keywords = json.loads(keywords)
+                except: keywords = [keywords]
+            if isinstance(keywords, list) and any(k.lower() in logic_text_lower for k in keywords if k):
+                matches.append(product)
+
+        if matches:
+            logger.info(f"Product inquiry detected: {len(matches)} matching in: {text}")
+            for product in matches:
+                await self._send_product_info(account_id, peer_id, product, user_id)
+            return True
+
+        # ---------------------------------------------------------
+        # 3. Check current conversation state using logic_text
+        # ---------------------------------------------------------
         state = await db.fetchrow(
             "SELECT * FROM sales_states WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
             account_id, peer_id
@@ -303,102 +361,30 @@ class SalesService:
                 return await self._process_instructions(account_id, peer_id, state, text, user_id)
             elif current_status == 'awaiting_confirmation':
                 # GLOBAL MULTILINGUAL CONFIRMATION CHECK
-                confirm_synonyms = {
+                confirm_words = {
                     'confirm', 'confirmar', 'confirmer', 'ok', 'okay', 'yes', 'confirmado', 'confirmé', 'si', 'sí', 'oui', 'ja', 'vov',
-                    'yes', 'confirmed', 'confirming', '确认', '確認', 'نعم', 'جی ہاں', '✅', '1', 'tak', 'da'
+                    'yes', 'confirmed', 'confirming', '确认', '確認', 'نعم', 'جی ہاں', '✅', 'tak', 'da'
                 }
-                # GLOBAL MULTILINGUAL CANCELLATION CHECK
-                cancel_synonyms = {
+                # Shortcut check - strictly exact
+                is_confirm = any(s in logic_text_lower or s in text_lower for s in confirm_words) or \
+                             stripped_logic == '1' or stripped_text == '1'
+                             
+                cancel_words = {
                     'cancel', 'cancelar', 'annuler', 'no', 'stop', 'cancelado', 'annulé', 'nein', 'non', 'discard', 'cancelling',
-                    '取消', '❌', '2', 'ne', 'nē', 'rādd', 'khārij'
+                    '取消', '❌', 'ne', 'nē', 'rādd', 'khārij'
                 }
-                
-                is_confirm = any(s in logic_text_lower or s in text_lower for s in confirm_synonyms)
-                is_cancel = any(s in logic_text_lower or s in text_lower for s in cancel_synonyms)
+                is_cancel = any(s in logic_text_lower or s in text_lower for s in cancel_words) or \
+                            stripped_logic == '2' or stripped_text == '2'
 
                 if is_confirm:
                     logger.info(f"Confirmed order for account {account_id}, peer {peer_id}")
                     return await self._process_confirmation(account_id, peer_id, state, user_id)
                 elif is_cancel:
                     logger.info(f"Cancelled order for account {account_id}, peer {peer_id}")
-                    await db.execute(
-                        "UPDATE sales_states SET status = 'idle' WHERE id = $1",
-                        state['id']
-                    )
+                    await db.execute("UPDATE sales_states SET status = 'idle' WHERE id = $1", state['id'])
                     prompt = await self._get_system_prompt(user_id, 'ORDER_CANCELLED', "❌ Order cancelled.")
                     await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                     return True
-
-        # 2. HEURISTIC ORDER INTENT MATCHER (Flexible for all languages)
-        # We look for: [Order Verb] + [Product Match] + [Some Number]
-        order_verbs = {
-            'order', 'ordern', 'orden', 'comando', 'command', 'request', 'buy', 'purchase', 'booking', 'book',
-            '订购', 'طلب', '命令', '买', 'comprar', 'acheter', 'commande', 'pedido', 'pide', 'kauf', 'hacer pedido'
-        }
-        has_order_verb = any(v in logic_text_lower for v in order_verbs)
-        all_nums = re.findall(r'\d+', logic_text)
-        
-        # 1. Fetch all products to find a match
-        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
-        
-        for product in products:
-            # Check for product name or any of its keywords in the text
-            name_match = product['name'].lower() in logic_text_lower
-            keyword_match = False
-            
-            keywords = product['keywords']
-            if isinstance(keywords, str):
-                try: keywords = json.loads(keywords)
-                except: keywords = [keywords]
-            
-            if isinstance(keywords, list):
-                keyword_match = any(k.lower() in logic_text_lower for k in keywords if k)
-            
-            if name_match or keyword_match:
-                # TRIPLE-STRENGTH CHECK:
-                # We count it as an order if:
-                # A) It contains an order verb
-                # B) It contains a number (quantity) that isn't part of the product name
-                # C) It specifically follows the product info prompt pattern "Product [qty]"
-                
-                prod_name_nums = re.findall(r'\d+', product['name'])
-                quantity = None
-                for num in all_nums:
-                    if num not in prod_name_nums:
-                        quantity = int(num)
-                        break
-                
-                # Rule: Verb + Product = Order
-                # Rule: Product + New Number = Order (e.g. "USB 1")
-                if has_order_verb or (quantity and quantity > 0):
-                    # Default to quantity 1 if only verb + product mentioned
-                    final_qty = quantity or 1
-                    logger.info(f"Fuzzy Order Intent Detected: '{product['name']}' x {final_qty}")
-                    return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
-
-        # 3. Check for product inquiries (Keywords) using logic_text
-        products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
-        # We use logic_text_lower here so Chinese "价格是多少" -> "how much is it" matches keywords like "price"
-        matches = []
-        for product in products:
-            keywords = product['keywords']
-            if isinstance(keywords, str):
-                try:
-                    keywords = json.loads(keywords)
-                except:
-                    keywords = [keywords]
-            
-            if not isinstance(keywords, list):
-                keywords = []
-
-            if any(k.lower() in logic_text_lower for k in keywords if k):
-                matches.append(product)
-
-        if matches:
-            logger.info(f"Product inquiry detected: {len(matches)} matching in: {text}")
-            for product in matches:
-                await self._send_product_info(account_id, peer_id, product, user_id)
-            return True
 
         return False
 
@@ -617,18 +603,26 @@ class SalesService:
             )
             t_method_val = method.replace('_', ' ').title()
 
-        # Build the (now fully translated) delivery block for the customer
-        delivery_details_text = f"🚚 **{t_del_method}** {t_method_val}\n📍 **{t_address}** {address}"
+        # 1. BUILD ENGLISH DELIVERY BLOCK (For Admin/Records)
+        # We fetch the branded English labels first to ensure overrides are used in records
+        l_del_method_label = await self._get_system_label(user_id, 'DELIVERY_METHOD_LABEL', "Delivery Method:")
+        l_address_label = await self._get_system_label(user_id, 'ADDRESS_LABEL', "Address:")
+        l_time_slot_label = await self._get_system_label(user_id, 'TIME_SLOT_LABEL', "Time Slot:")
+        l_instructions_label = await self._get_system_label(user_id, 'INSTRUCTIONS_LABEL', "Instructions:")
+        
+        eng_method_val = method.replace('_', ' ').title()
+        eng_delivery_block = f"🚚 **{l_del_method_label}** {eng_method_val}\n📍 **{l_address_label}** {address}"
         if method == 'hand_to_hand':
-            delivery_details_text += f"\n⏰ **{t_time_slot}** {time_slot}"
-        delivery_details_text += f"\n📝 **{t_instructions}** {instr}"
+            eng_delivery_block += f"\n⏰ **{l_time_slot_label}** {time_slot}"
+        eng_delivery_block += f"\n📝 **{l_instructions_label}** {instr}"
 
-        # Build a PURE English delivery block for the Admin Record (EN view)
-        eng_delivery_details = f"🚚 **Delivery Method:** {t_method_val}\n📍 **Address:** {address}"
+        # 2. BUILD TRANSLATED DELIVERY BLOCK (For Customer)
+        translated_delivery_block = f"🚚 **{t_del_method}** {t_method_val}\n📍 **{t_address}** {address}"
         if method == 'hand_to_hand':
-            eng_delivery_details += f"\n⏰ **Time Slot:** {time_slot}"
-        eng_delivery_details += f"\n📝 **Instructions:** {instr}"
+            translated_delivery_block += f"\n⏰ **{t_time_slot}** {time_slot}"
+        translated_delivery_block += f"\n📝 **{t_instructions}** {instr}"
 
+        # 3. BUILD CUSTOMER INVOICE (Translated)
         invoice_msg = (
             f"🛍️ **{t_title}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -636,14 +630,14 @@ class SalesService:
             f"🔹 **{t_qty}** {quantity}\n"
             f"🔹 **{t_price}** ${product['price']:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"{delivery_details_text}\n"
+            f"{translated_delivery_block}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **{t_total} ${total:.2f}**\n\n"
             f"✅ {t_reply} {t_to_conf}: **{t_confirm}**\n"
             f"❌ {t_reply} {t_to_disc}: **{t_cancel}**"
         )
         
-        # Original English text for Admin records (EN View)
+        # 4. BUILD ADMIN AUDIT MESSAGE (Clean English)
         eng_msg = (
             f"🛍️ **ORDER SUMMARY**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -651,7 +645,7 @@ class SalesService:
             f"🔹 **Quantity:** {quantity}\n"
             f"🔹 **Price:** ${product['price']:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"{eng_delivery_details}\n"
+            f"{eng_delivery_block}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **Total Amount: ${total:.2f}**\n\n"
             f"✅ Reply **CONFIRM** | ❌ Reply **CANCEL**"

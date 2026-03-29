@@ -445,6 +445,7 @@ export default function ChatWindow({
   scheduledMessages,
   setScheduledMessages,
   conversations,
+  targetLanguage,
   isTranslationEnabled,
 }: ChatWindowProps): JSX.Element {
   // --- UI & INTERACTION STATE ---
@@ -1717,14 +1718,40 @@ export default function ChatWindow({
                             </div>
                           )}
 
-                          {/* Caption/Text */}
                           {message.original_text && (
                             <div className="mb-2">
                               {message.source_language && (
-                                <div className="mb-1">
-                                  <span className="text-[10px] font-bold text-blue-500/60 dark:text-blue-400/60 uppercase tracking-wider bg-blue-500/5 px-1.5 py-0.5 rounded">
-                                    {message.source_language.toUpperCase()}
-                                  </span>
+                                <div className={`flex items-center gap-1.5 mb-1.5 px-0.5 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`inline-flex items-center gap-2 rounded-lg px-2.5 py-1 shadow-sm border ${
+                                    isOutgoing 
+                                      ? 'bg-black/5 border-black/5 dark:bg-white/5 dark:border-white/5' 
+                                      : 'bg-black/5 border-black/5 dark:bg-white/5 dark:border-white/5'
+                                  }`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-widest leading-none ${
+                                      isOutgoing ? 'text-gray-800 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'
+                                    }`}>
+                                      {isOutgoing 
+                                        ? (message.target_language || targetLanguage || 'EN').toUpperCase()
+                                        : message.source_language.toUpperCase()
+                                      }
+                                    </span>
+                                    
+                                    <div className={`flex items-center opacity-60 ${isOutgoing ? 'text-gray-500 dark:text-white/70' : 'text-gray-400'}`}>
+                                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M20 17H4L8 21" />
+                                        <path d="M4 7H20L16 3" />
+                                      </svg>
+                                    </div>
+
+                                    <span className={`text-[10px] font-black uppercase tracking-widest leading-none ${
+                                      isOutgoing ? 'text-gray-800 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'
+                                    }`}>
+                                      {isOutgoing 
+                                        ? message.source_language.toUpperCase()
+                                        : (message.target_language || targetLanguage || 'EN').toUpperCase()
+                                      }
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                               <div className="text-[14.5px] leading-relaxed break-words whitespace-pre-wrap max-w-[280px]">

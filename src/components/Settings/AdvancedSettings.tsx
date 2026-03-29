@@ -8,16 +8,12 @@ import {
   Save, 
   RotateCcw,
   Plus,
-  Smartphone,
   AlertCircle,
-  BellOff,
-  Bell,
   Check,
   X
 } from 'lucide-react';
 import { useRef } from 'react';
-import { salesAPI, telegramAPI } from '../../services/api';
-import type { TelegramAccount } from '../../types';
+import { salesAPI } from '../../services/api';
 
 
 interface AdvancedSettingsData {
@@ -28,7 +24,7 @@ interface AdvancedSettingsData {
   language_expert_packs: Record<string, Record<string, string>>;
 }
 
-export default function AdvancedSettings({ accounts, onAccountUpdate }: { accounts: TelegramAccount[], onAccountUpdate: (acc: TelegramAccount) => void }) {
+export default function AdvancedSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -43,7 +39,7 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
   const [initialSettings, setInitialSettings] = useState<AdvancedSettingsData | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'branding' | 'notifications' | 'shield' | 'expert_packs'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'shield' | 'expert_packs'>('branding');
   const [newProtectedWord, setNewProtectedWord] = useState('');
   const [newPackLang, setNewPackLang] = useState('');
   const [activePackLang, setActivePackLang] = useState<string | null>(null);
@@ -146,17 +142,6 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
     }
   };
 
-  const toggleNotification = async (account: TelegramAccount) => {
-    try {
-      const updated = await telegramAPI.updateAccount(account.id, {
-        notifications_enabled: !account.notificationsEnabled
-      });
-      onAccountUpdate(updated);
-    } catch (err) {
-      console.error('Failed to toggle notifications:', err);
-    }
-  };
-
   const addProtectedWord = () => {
     if (newProtectedWord.trim() && !settings.protected_words.includes(newProtectedWord.trim())) {
       setSettings({
@@ -233,44 +218,33 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
               Branding & Voice
             </button>
             <button
-              onClick={() => setActiveTab('notifications')}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-                activeTab === 'notifications' 
-                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-              }`}
-            >
-              <Bell className="w-4 h-4" />
-              Notifications
-            </button>
-            <button
               onClick={() => setActiveTab('shield')}
               className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
                 activeTab === 'shield' 
-                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                  ? 'bg-white dark:bg-[#1e293b] text-blue-600 shadow-sm ring-1 ring-gray-100 dark:ring-white/5' 
+                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              Translation Shield
+              Privacy Shield
             </button>
+
             <button
               onClick={() => setActiveTab('expert_packs')}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${
                 activeTab === 'expert_packs' 
-                ? 'bg-white dark:bg-white/10 text-blue-600 dark:text-blue-500 shadow-sm' 
-                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                  ? 'bg-white dark:bg-[#1e293b] text-blue-600 shadow-sm ring-1 ring-gray-100 dark:ring-white/5' 
+                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               <Languages className="w-4 h-4" />
-              Expert Packs
+              Expert Overrides
             </button>
           </div>
         </div>
 
         {activeTab === 'branding' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-            {/* System Message Templates */}
             <section className="bg-white dark:bg-[#1e293b] rounded-3xl border border-gray-100 dark:border-white/5 shadow-xl overflow-hidden">
               <div className="p-6 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
                 <h3 className="font-black text-xs uppercase tracking-widest text-gray-500 dark:text-gray-400 flex items-center gap-2">
@@ -440,60 +414,6 @@ export default function AdvancedSettings({ accounts, onAccountUpdate }: { accoun
             </section>
           </div>
         )}
-
-        {activeTab === 'notifications' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4">
-            <section className="bg-white dark:bg-[#1e293b] rounded-3xl border border-gray-100 dark:border-white/5 shadow-xl overflow-hidden">
-              <div className="p-6 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
-                <h3 className="font-black text-xs uppercase tracking-widest text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-blue-500" />
-                  Telegram Account Notification Center
-                </h3>
-              </div>
-              <div className="p-0 divide-y divide-gray-100 dark:divide-white/5">
-                {accounts.map((account) => (
-                  <div key={account.id} className="p-6 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${account.isConnected ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
-                        <Smartphone className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-black text-sm text-gray-900 dark:text-white uppercase tracking-tight">
-                          {account.displayName || account.accountName}
-                        </h4>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">
-                          {account.accountName} • {account.isConnected ? 'Active & Connected' : 'Offline'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => toggleNotification(account)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${
-                        account.notificationsEnabled === false
-                        ? 'bg-red-500/10 text-red-600 hover:bg-red-500/20'
-                        : 'bg-green-500/10 text-green-600 hover:bg-green-500/20'
-                      }`}
-                    >
-                      {account.notificationsEnabled === false ? (
-                        <>
-                          <BellOff className="w-3.5 h-3.5" />
-                          Notifications Disabled
-                        </>
-                      ) : (
-                        <>
-                          <Bell className="w-3.5 h-3.5" />
-                          Notifications Enabled
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
-
         {activeTab === 'shield' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
             {/* Protected Words */}
