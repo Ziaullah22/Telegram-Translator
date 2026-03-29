@@ -362,24 +362,25 @@ class SalesService:
                     await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
                     return True
 
-        # 3. Check for product inquiries (Keywords) using logic_text
-        # Matches Chinese/Native inquiries like "价格是多少"
+        # 3. Check for product inquiries (Keywords)
+        # Matches both translated text (e.g. Chinese "价格" -> "price") and raw text (e.g. "case")
         matches = []
         for product in products_list:
             keywords = product['keywords']
             if isinstance(keywords, str):
                 try: keywords = json.loads(keywords)
                 except: keywords = [keywords]
-            if isinstance(keywords, list) and any(k.lower() in logic_text_lower for k in keywords if k):
-                matches.append(product)
+            
+            if isinstance(keywords, list):
+                # Check both translated (logic) and original (text) for maximum hit rate
+                if any(k.lower() in logic_text_lower or k.lower() in text_lower for k in keywords if k):
+                    matches.append(product)
 
         if matches:
             logger.info(f"Product inquiry detected: {len(matches)} matching")
             for product in matches:
                 await self._send_product_info(account_id, peer_id, product, user_id)
             return True
-
-        return False
 
         return False
 
