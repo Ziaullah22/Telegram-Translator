@@ -116,8 +116,12 @@ class SalesService:
                 expert_val = target_pack[raw_key]
                 if not raw_key or not expert_val: continue
                 
-                # Check if the word exists in the text
-                pattern = re.compile(r'\b' + re.escape(raw_key) + r'\b', re.IGNORECASE)
+                # SMART MATCHING: Only use word boundaries (\b) if the key starts/ends with word characters.
+                # This allows matching "This work?" precisely while still allowing "Sale" to not match "Salesman".
+                start_boundary = r'\b' if re.match(r'^\w', raw_key) else ''
+                end_boundary = r'\b' if re.search(r'\w$', raw_key) else ''
+                
+                pattern = re.compile(start_boundary + re.escape(raw_key) + end_boundary, re.IGNORECASE)
                 if pattern.search(processed_text):
                     # Replace with token and store the EXPERT VALUE as the replacement
                     token = f"__EXP_{token_count}__"
