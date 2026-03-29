@@ -617,11 +617,17 @@ class SalesService:
             )
             t_method_val = method.replace('_', ' ').title()
 
-        # Build the (now fully translated) delivery block
+        # Build the (now fully translated) delivery block for the customer
         delivery_details_text = f"🚚 **{t_del_method}** {t_method_val}\n📍 **{t_address}** {address}"
         if method == 'hand_to_hand':
             delivery_details_text += f"\n⏰ **{t_time_slot}** {time_slot}"
         delivery_details_text += f"\n📝 **{t_instructions}** {instr}"
+
+        # Build a PURE English delivery block for the Admin Record (EN view)
+        eng_delivery_details = f"🚚 **Delivery Method:** {t_method_val}\n📍 **Address:** {address}"
+        if method == 'hand_to_hand':
+            eng_delivery_details += f"\n⏰ **Time Slot:** {time_slot}"
+        eng_delivery_details += f"\n📝 **Instructions:** {instr}"
 
         invoice_msg = (
             f"🛍️ **{t_title}**\n"
@@ -637,7 +643,7 @@ class SalesService:
             f"❌ {t_reply} {t_to_disc}: **{t_cancel}**"
         )
         
-        # Original English text for Admin records
+        # Original English text for Admin records (EN View)
         eng_msg = (
             f"🛍️ **ORDER SUMMARY**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -645,7 +651,7 @@ class SalesService:
             f"🔹 **Quantity:** {quantity}\n"
             f"🔹 **Price:** ${product['price']:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"{delivery_details_text}\n"
+            f"{eng_delivery_details}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 **Total Amount: ${total:.2f}**\n\n"
             f"✅ Reply **CONFIRM** | ❌ Reply **CANCEL**"
