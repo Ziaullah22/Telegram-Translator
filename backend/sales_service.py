@@ -283,6 +283,7 @@ class SalesService:
         # Use logic_text for ALL intent detection below
         logic_text_upper = logic_text.upper()
         logic_text_lower = logic_text.lower()
+        text_lower = text.lower()
 
         # 1. Check current conversation state using logic_text
         state = await db.fetchrow(
