@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Languages } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield } from 'lucide-react';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -196,10 +196,20 @@ export default function Sidebar({
                         <p className={`${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'} truncate`}>{account.accountName}</p>
                       )}
                       <div className="flex justify-between items-center">
-                        <span className={`flex items-center gap-1.5 ${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                          <Languages className="w-3.5 h-3.5" />
-                          <span>{account.sourceLanguage} → {account.targetLanguage}</span>
-                        </span>
+                        <div className={`inline-flex items-center gap-1 rounded-lg px-1.5 py-0 shadow-sm border bg-black/5 border-black/5 dark:bg-white/5 dark:border-white/5`}>
+                          <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${currentAccount?.id === account.id ? 'text-gray-900 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'}`}>
+                            {account.targetLanguage.toUpperCase()}
+                          </span>
+                          <div className={`flex items-center opacity-60 ${currentAccount?.id === account.id ? 'text-gray-500 dark:text-white/70' : 'text-gray-400'}`}>
+                            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 17H4L8 21" />
+                              <path d="M4 7H20L16 3" />
+                            </svg>
+                          </div>
+                          <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${currentAccount?.id === account.id ? 'text-gray-900 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'}`}>
+                            {account.sourceLanguage.toUpperCase()}
+                          </span>
+                        </div>
                         <div className="flex gap-1">
                           {account.notificationsEnabled === false && (
                             <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-1">

@@ -6,12 +6,15 @@ interface ProductDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: Product | null;
+  allProducts: Product[];
 }
 
-const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClose, product }) => {
+const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClose, product, allProducts }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   if (!isOpen || !product) return null;
+
+  const upsellProduct = product.upsell_product_id ? allProducts.find(p => p.id === product.upsell_product_id) : null;
 
   const photos = product.photo_urls && product.photo_urls.length > 0 
     ? product.photo_urls 
@@ -154,6 +157,18 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
                 </div>
 
                 <div className="bg-white dark:bg-[#1e293b] rounded-[32px] p-8 border border-gray-100 dark:border-white/5 shadow-sm space-y-6">
+                  {upsellProduct && (
+                    <div className="space-y-4 pb-6 border-b border-gray-100 dark:border-white/5">
+                      <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                        <Package className="w-4 h-4 text-orange-500" /> Recommended Upsell
+                      </h3>
+                      <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-2xl border border-gray-100 dark:border-white/10 group cursor-default">
+                        <p className="text-sm font-black text-gray-900 dark:text-white truncate">{upsellProduct.name}</p>
+                        <p className="text-lg font-black text-orange-500 mt-1">${upsellProduct.price.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                       <Hash className="w-4 h-4" /> Keywords

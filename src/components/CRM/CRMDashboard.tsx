@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { User, Search, Filter, Tag as TagIcon, Building2, Phone, Calendar, Trash2 } from 'lucide-react';
 import { contactsAPI } from '../../services/api';
 import ConfirmModal from '../Modals/ConfirmModal';
+import CRMLeadDetailModal from './CRMLeadDetailModal';
 import type { ContactInfo } from '../../types';
 
 export default function CRMDashboard() {
@@ -13,6 +14,7 @@ export default function CRMDashboard() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [selectedTag, setSelectedTag] = useState<string>('All');
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [selectedContact, setSelectedContact] = useState<ContactInfo | null>(null);
 
   // Load Data
   useEffect(() => {
@@ -193,7 +195,7 @@ export default function CRMDashboard() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-white/5">
                   {filteredContacts.map(contact => (
-                    <tr key={contact.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors group">
+                    <tr key={contact.id} onClick={() => setSelectedContact(contact)} className="hover:bg-blue-500/5 dark:hover:bg-blue-500/5 transition-colors group cursor-pointer">
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900/40 dark:to-blue-800/40 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-lg border border-white dark:border-gray-800 shadow-sm">
@@ -241,7 +243,7 @@ export default function CRMDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
-                          onClick={() => handleDeleteContact(contact.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteContact(contact.id); }}
                           className="p-2 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Contact"
                         >
@@ -258,6 +260,11 @@ export default function CRMDashboard() {
       </div>
     </div>
     
+    <CRMLeadDetailModal
+      isOpen={selectedContact !== null}
+      onClose={() => setSelectedContact(null)}
+      contact={selectedContact}
+    />
     <ConfirmModal 
       isOpen={deleteConfirmId !== null}
       onClose={() => setDeleteConfirmId(null)}

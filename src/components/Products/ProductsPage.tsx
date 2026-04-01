@@ -305,6 +305,7 @@ const ProductsPage: React.FC = () => {
         isOpen={!!viewProduct}
         onClose={() => setViewProduct(null)}
         product={viewProduct}
+        allProducts={products}
       />
     </div>
   );
