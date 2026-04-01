@@ -17,4 +17,5 @@ pydantic==2.9.1
 pydantic-settings==2.5.2
 aiofiles==24.1.0
 rarfile==4.2
-
+httpx==0.28.1
+PyYAML==6.0.3
