@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Package, Layers, Hash, PackageCheck, PackageX, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { X, Package, Layers, Hash, PackageCheck, PackageX, ChevronLeft, ChevronRight, Image as ImageIcon, Truck, MapPin } from 'lucide-react';
 import type { Product } from '../../types';
 
 interface ProductDetailsModalProps {
@@ -168,6 +168,27 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
                       </div>
                     </div>
                   )}
+
+                  <div className="space-y-4 pb-6 border-b border-gray-100 dark:border-white/5">
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                      <Truck className="w-4 h-4" /> Delivery Mode
+                    </h3>
+                    <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-2xl border border-gray-100 dark:border-white/10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
+                          {product.delivery_mode === 'mailing' ? <Truck className="w-4 h-4" /> : 
+                           product.delivery_mode === 'hand_to_hand' ? <MapPin className="w-4 h-4" /> : 
+                           <Package className="w-4 h-4" />}
+                        </div>
+                        <p className="text-sm font-bold text-gray-900 dark:text-white capitalize">
+                          {product.delivery_mode === 'both' ? 'Both (Mailing & Hand-to-Hand)' : 
+                           product.delivery_mode === 'mailing' ? 'Mailing Only' : 
+                           product.delivery_mode === 'hand_to_hand' ? 'Hand-to-Hand Only' : 
+                           'Standard Delivery'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="space-y-4">
                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
