@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Languages } from 'lucide-react';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -196,8 +196,9 @@ export default function Sidebar({
                         <p className={`${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'} truncate`}>{account.accountName}</p>
                       )}
                       <div className="flex justify-between items-center">
-                        <span className={`${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                          {account.sourceLanguage} → {account.targetLanguage}
+                        <span className={`flex items-center gap-1.5 ${currentAccount?.id === account.id ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                          <Languages className="w-3.5 h-3.5" />
+                          <span>{account.sourceLanguage} → {account.targetLanguage}</span>
                         </span>
                         <div className="flex gap-1">
                           {account.notificationsEnabled === false && (
