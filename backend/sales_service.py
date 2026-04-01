@@ -475,6 +475,8 @@ class SalesService:
         delivery_mode_raw = product.get('delivery_mode')
         delivery_mode = (str(delivery_mode_raw).strip().lower()) if delivery_mode_raw else 'both'
         
+        logger.info(f"DEBUG - Product '{product['name']}' raw delivery_mode from DB: {delivery_mode_raw} -> Evaluated to: {delivery_mode}")
+        
         # CRITICAL FIX: Ensure we use the SPECIFIC product's delivery mode safely
         if delivery_mode == 'mailing' or delivery_mode == 'mailing_only':
             initial_status = 'awaiting_address'
@@ -485,6 +487,8 @@ class SalesService:
         else:
             initial_status = 'awaiting_delivery_pref'
             delivery_mode = 'both'
+            
+        logger.info(f"DEBUG - Final Delivery Path Chosen: {delivery_mode}")
             
         await db.execute(
             """
