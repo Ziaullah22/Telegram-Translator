@@ -97,11 +97,15 @@ const OrderDetailModal: React.FC<{
             
             <div className="bg-white dark:bg-[#1e293b] rounded-[32px] p-2 border border-gray-100 dark:border-white/5 shadow-sm">
               <div className="h-[300px] md:h-[400px] relative rounded-[28px] bg-gray-100 dark:bg-black/30 overflow-hidden group flex items-center justify-center">
-                <img 
-                  src={photos[currentImageIndex]} 
-                  alt={`${order.product_name} - ${currentImageIndex + 1}`} 
-                  className="w-full h-full object-contain transition-opacity duration-300"
-                />
+                {photos[currentImageIndex] !== '/placeholder-product.png' ? (
+                  <img 
+                    src={photos[currentImageIndex]} 
+                    alt={`${order.product_name} - ${currentImageIndex + 1}`} 
+                    className="w-full h-full object-contain transition-opacity duration-300"
+                  />
+                ) : (
+                  <Package className="w-24 h-24 text-gray-300 dark:text-gray-600" />
+                )}
                 {photos.length > 1 && (
                   <>
                     <button 
@@ -525,12 +529,16 @@ const OrdersTab: React.FC = () => {
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 scale-y-0 group-hover:scale-y-100 transition-transform origin-top" />
             
             <div className="flex items-center gap-6 flex-1 w-full sm:w-auto">
-              <div className="relative shrink-0 overflow-hidden shadow-lg w-16 h-16 rounded-2xl bg-gray-50 dark:bg-black/20">
-                <img 
-                  src={(order.photo_urls && order.photo_urls.length > 0) ? order.photo_urls[0] : '/placeholder-product.png'} 
-                  alt=""
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                />
+              <div className="relative shrink-0 overflow-hidden shadow-lg w-16 h-16 rounded-2xl bg-gray-50 dark:bg-black/20 flex items-center justify-center">
+                {(order.photo_urls && order.photo_urls.length > 0) ? (
+                  <img 
+                    src={order.photo_urls[0]} 
+                    alt=""
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                ) : (
+                  <Package className="w-8 h-8 text-gray-300 dark:text-gray-600 group-hover:scale-110 transition-transform duration-500" />
+                )}
               </div>
 
               <div className="flex-1 min-w-0">

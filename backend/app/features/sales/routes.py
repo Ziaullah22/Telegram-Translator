@@ -29,7 +29,7 @@ class OrderResponse(BaseModel):
     id: int
     po_number: str
     product_id: Optional[int]
-    product_name: str
+    product_name: Optional[str] = "Deleted Product"
     photo_urls: Optional[List[str]] = []
     product_description: Optional[str] = None
     telegram_account_id: Optional[int]
@@ -80,7 +80,7 @@ async def get_orders(status: Optional[str] = None, user = Depends(get_current_us
     query = """
         SELECT 
             o.*, 
-            p.name as product_name,
+            COALESCE(p.name, 'Deleted Product') as product_name,
             p.photo_urls,
             p.description as product_description,
             c.title as customer_name, 
@@ -99,8 +99,20 @@ async def get_orders(status: Optional[str] = None, user = Depends(get_current_us
         
     query += " ORDER BY o.created_at DESC"
     
+    import json
     rows = await db.fetch(query, *params)
-    return [dict(row) for row in rows]
+    mapped_rows = []
+    for row in rows:
+        d = dict(row)
+        if isinstance(d.get('photo_urls'), str):
+            try: d['photo_urls'] = json.loads(d['photo_urls'])
+            except: d['photo_urls'] = []
+        if isinstance(d.get('proof_history'), str):
+            # ARRAY_AGG might return string from some postgres versions or drivers? Actually it's an asyncpg list.
+            pass
+        mapped_rows.append(d)
+        
+    return mapped_rows
 
 @router.patch("/orders/{order_id}/status")
 async def update_order_status(order_id: int, payload: OrderStatusUpdate, user = Depends(get_current_user)):
