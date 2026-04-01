@@ -133,6 +133,8 @@ export interface ContactInfo {
   payment_method?: string;
   delivery_method?: string;
   note?: string;
+  tags?: string[];
+  pipeline_stage?: string;
   created_at: string;
   updated_at: string;
 }
@@ -220,6 +222,7 @@ export interface Product {
   stock_quantity: number;
   keywords: string[];
   delivery_mode: string;
+  upsell_product_id?: number;
   photo_url?: string;
   photo_urls: string[];
   created_at: string;

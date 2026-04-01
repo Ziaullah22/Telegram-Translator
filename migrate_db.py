@@ -186,6 +186,8 @@ async def migrate():
                     payment_method VARCHAR(100),
                     delivery_method VARCHAR(100),
                     note TEXT,
+                    tags TEXT[] DEFAULT '{}',
+                    pipeline_stage VARCHAR(50) DEFAULT 'Lead',
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
@@ -314,6 +316,7 @@ async def migrate():
                     photo_url TEXT,
                     photo_urls JSONB DEFAULT '[]'::jsonb,
                     delivery_mode VARCHAR(20) DEFAULT 'both',
+                    upsell_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
@@ -372,21 +375,27 @@ async def migrate():
                 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_po ON orders(po_number);
 
-                CREATE TABLE IF NOT EXISTS sales_states (
+                CREATE TABLE IF NOT EXISTS ab_tests (
                     id BIGSERIAL PRIMARY KEY,
-                    telegram_account_id BIGINT NOT NULL,
-                    telegram_peer_id BIGINT NOT NULL,
-                    status VARCHAR(50) NOT NULL DEFAULT 'idle',
-                    pending_product_id BIGINT,
-                    pending_quantity INTEGER,
-                    delivery_mode VARCHAR(20),
-                    delivery_method VARCHAR(20),
-                    delivery_address TEXT,
-                    delivery_time_slot VARCHAR(100),
-                    delivery_instructions TEXT,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    UNIQUE(telegram_account_id, telegram_peer_id)
+                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    variant_a_text TEXT NOT NULL,
+                    variant_b_text TEXT NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
+
+                CREATE TABLE IF NOT EXISTS ab_test_results (
+                    id BIGSERIAL PRIMARY KEY,
+                    test_id BIGINT NOT NULL REFERENCES ab_tests(id) ON DELETE CASCADE,
+                    telegram_peer_id BIGINT NOT NULL,
+                    variant_assigned CHAR(1) NOT NULL,
+                    is_converted BOOLEAN NOT NULL DEFAULT FALSE,
+                    order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_ab_results_test ON ab_test_results(test_id);
             """)
             print("✓ Tables: products, orders, sales_settings")
 
@@ -428,6 +437,10 @@ async def migrate():
                 -- ID tracking for bulletproof reply detection
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS restarted_at TIMESTAMP WITH TIME ZONE;
+                
+                -- Contact CRM Additions
+                ALTER TABLE contact_info ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+                ALTER TABLE contact_info ADD COLUMN IF NOT EXISTS pipeline_stage VARCHAR(50) DEFAULT 'Lead';
 
                 -- Milestone 5: Sequence Builder & Kill Switch & Auto Replies
                 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS negative_keywords JSONB DEFAULT '[]';
@@ -443,6 +456,7 @@ async def migrate():
                 -- Milestone: Inventory Updates
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_url TEXT;
                 ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20) DEFAULT 'both';
+                ALTER TABLE products ADD COLUMN IF NOT EXISTS upsell_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL;
                 
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20);
                 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
@@ -511,6 +525,14 @@ async def migrate():
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS ignored_languages JSONB DEFAULT '[]';
                 ALTER TABLE sales_settings ADD COLUMN IF NOT EXISTS language_expert_packs JSONB DEFAULT '{}';
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE;
+
+                -- A/B Test Results: add missing columns
+                ALTER TABLE ab_test_results ADD COLUMN IF NOT EXISTS telegram_account_id BIGINT;
+                ALTER TABLE ab_test_results ADD COLUMN IF NOT EXISTS variant CHAR(1);
+                ALTER TABLE ab_test_results ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ;
+
+                -- Back-fill variant from variant_assigned if it exists
+                UPDATE ab_test_results SET variant = variant_assigned WHERE variant IS NULL AND variant_assigned IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS order_proofs (
                     id SERIAL PRIMARY KEY,

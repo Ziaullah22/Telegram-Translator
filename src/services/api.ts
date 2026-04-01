@@ -489,6 +489,12 @@ export const scheduledMessagesAPI = {
 // --- CONTACT CRM SERVICES ---
 // Manages detailed lead/contact information linked to conversations
 export const contactsAPI = {
+  // Fetch all contacts for the user
+  getAllContacts: async (): Promise<ContactInfo[]> => {
+    const response = await api.get('/contacts');
+    return response.data;
+  },
+
   // Fetch profile/leadsheet for a specific conversation
   getContactInfo: async (conversationId: number): Promise<ContactInfo | null> => {
     const response = await api.get(`/contacts/conversation/${conversationId}`);
@@ -787,5 +793,14 @@ export const salesAPI = {
 
   updateSettings: async (settings: SalesSettings): Promise<void> => {
     await api.post('/sales/settings', settings);
+  },
+
+  getABTests: async (): Promise<any[]> => {
+    const response = await api.get('/sales/ab-tests');
+    return response.data;
+  },
+
+  updateABTest: async (data: any): Promise<void> => {
+    await api.post('/sales/ab-tests', data);
   },
 };

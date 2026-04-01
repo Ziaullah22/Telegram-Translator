@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Package, Layers, DollarSign, Edit2, Trash2, 
   Search, ShoppingBag, AlertCircle, Info, PackageCheck, PackageX, Hash,
-  ShoppingCart, CreditCard
+  ShoppingCart, CreditCard, Beaker
 } from 'lucide-react';
 import { productsAPI } from '../../services/api';
 import type { Product } from '../../types';
@@ -11,10 +11,11 @@ import ProductDetailsModal from './ProductDetailsModal';
 import ConfirmModal from '../Common/ConfirmModal';
 import OrdersTab from './OrdersTab';
 import SettingsTab from './SettingsTab';
+import ABTestingTab from './ABTestingTab';
 
 
 const ProductsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'orders' | 'settings'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'orders' | 'settings' | 'ab-testing'>('catalog');
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -120,10 +121,11 @@ const ProductsPage: React.FC = () => {
             { id: 'catalog', label: 'Product Catalog', icon: <Package className="w-4 h-4" /> },
             { id: 'orders', label: 'Order Managment', icon: <ShoppingCart className="w-4 h-4" /> },
             { id: 'settings', label: 'Sales Settings', icon: <CreditCard className="w-4 h-4" /> },
-          ].map((tab) => (
+            { id: 'ab-testing', label: 'A/B Testing', icon: <Beaker className="w-4 h-4" /> },
+          ].map((tab: any) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-6 py-4 text-xs font-black uppercase tracking-widest transition-all border-b-2 ${
                 activeTab === tab.id
                   ? 'border-blue-600 text-blue-600'
@@ -272,9 +274,13 @@ const ProductsPage: React.FC = () => {
            <div className="animate-fade-in">
               <OrdersTab />
            </div>
-        ) : (
+        ) : activeTab === 'settings' ? (
            <div className="animate-fade-in">
               <SettingsTab />
+           </div>
+        ) : (
+           <div className="animate-fade-in">
+              <ABTestingTab />
            </div>
         )}
       </div>

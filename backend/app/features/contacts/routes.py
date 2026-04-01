@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import logging
 
@@ -9,6 +9,50 @@ from models import ContactInfoCreate, ContactInfoUpdate, ContactInfoResponse, To
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 logger = logging.getLogger(__name__)
+
+# Retrieve all contact profiles for the current user
+@router.get("", response_model=List[ContactInfoResponse])
+async def get_all_contacts(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get all contact info records across all conversations for the user"""
+    try:
+        contacts = await db.fetch(
+            """
+            SELECT 
+                ci.id,
+                ci.conversation_id,
+                COALESCE(ci.name, c.title) as name,
+                ci.address,
+                ci.telephone,
+                COALESCE(ci.telegram_id, c.username) as telegram_id,
+                ci.telegram_id2,
+                ci.signal_id,
+                ci.signal_id2,
+                ci.product_interest,
+                ci.sales_volume,
+                ci.ready_for_sample,
+                ci.sample_recipient_info,
+                ci.sample_feedback,
+                ci.payment_method,
+                ci.delivery_method,
+                ci.note,
+                ci.tags,
+                ci.pipeline_stage,
+                ci.created_at,
+                ci.updated_at
+            FROM contact_info ci
+            JOIN conversations c ON ci.conversation_id = c.id
+            JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+            WHERE ta.user_id = $1
+            ORDER BY ci.updated_at DESC
+            """,
+            current_user.user_id
+        )
+        return [ContactInfoResponse(**dict(c)) for c in contacts]
+    except Exception as e:
+        logger.error(f"Failed to get all contacts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get all contacts: {str(e)}")
 
 # Retrieve the contact profile associated with a specific conversation thread
 @router.get("/conversation/{conversation_id}", response_model=Optional[ContactInfoResponse])
@@ -87,8 +131,9 @@ async def create_contact_info(
             INSERT INTO contact_info
             (conversation_id, name, address, telephone, telegram_id, telegram_id2, 
              signal_id, signal_id2, product_interest, sales_volume, ready_for_sample,
-             sample_recipient_info, sample_feedback, payment_method, delivery_method, note)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+             sample_recipient_info, sample_feedback, payment_method, delivery_method, 
+             note, tags, pipeline_stage)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING *
             """,
             contact_info.conversation_id,
@@ -106,7 +151,9 @@ async def create_contact_info(
             contact_info.sample_feedback,
             contact_info.payment_method,
             contact_info.delivery_method,
-            contact_info.note
+            contact_info.note,
+            contact_info.tags,
+            contact_info.pipeline_stage
         )
         
         return ContactInfoResponse(**dict(row))

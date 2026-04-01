@@ -33,6 +33,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               { path: '/', label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" /> },
               { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
               { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
+              { path: '/crm', label: 'CRM / Leads', icon: <User className="w-3.5 h-3.5 text-green-500" />, id: 'nav-crm' },
               { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
               { path: '/products', label: 'Store', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
               { path: '/advanced-settings', label: 'Advanced', icon: <Settings className="w-3.5 h-3.5 text-blue-600" /> },

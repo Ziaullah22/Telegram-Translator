@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Package, Upload, Loader2, AlertCircle } from 'lucide-react';
+import { X, Package, Upload, Loader2, AlertCircle, Search } from 'lucide-react';
 import { productsAPI } from '../../services/api';
 import type { Product } from '../../types';
 
@@ -20,8 +20,24 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
   const [retainedPhotoUrls, setRetainedPhotoUrls] = useState<string[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [deliveryMode, setDeliveryMode] = useState('both');
+  const [upsellProductId, setUpsellProductId] = useState<number | null>(null);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAllProducts = async () => {
+      try {
+        const data = await productsAPI.getProducts();
+        setAllProducts(data.filter(p => !product || p.id !== product.id));
+      } catch (err) {
+        console.error('Failed to fetch products for upsell:', err);
+      }
+    };
+    if (isOpen) {
+      fetchAllProducts();
+    }
+  }, [isOpen, product]);
 
   useEffect(() => {
     if (product) {
@@ -37,6 +53,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       setRetainedPhotoUrls(urls);
       setImagePreviews(urls);
       setDeliveryMode(product.delivery_mode || 'both');
+      setUpsellProductId(product.upsell_product_id || null);
     } else {
       setName('');
       setDescription('');
@@ -47,6 +64,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       setImagePreviews([]);
       setRetainedPhotoUrls([]);
       setDeliveryMode('both');
+      setUpsellProductId(null);
     }
     setError(null);
   }, [product, isOpen]);
@@ -92,6 +110,11 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       formData.append('price', price.toString());
       formData.append('stock_quantity', stock.toString());
       formData.append('delivery_mode', deliveryMode);
+      if (upsellProductId) {
+        formData.append('upsell_product_id', upsellProductId.toString());
+      } else {
+        formData.append('upsell_product_id', 'null');
+      }
 
       const keywordArray = keywords.split(',').map(k => k.trim()).filter(k => k);
       formData.append('keywords', JSON.stringify(keywordArray));
@@ -227,10 +250,31 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                     >
                       <option value="both">Both (Mailing & Hand-to-Hand)</option>
                       <option value="mailing">Mailing Only</option>
-                      <option value="hand_to_hand">Hand-to-Hand Only</option>
-                    </select>
+                        <option value="hand_to_hand">Hand-to-Hand Only</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                         Recommended Upsell
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={upsellProductId || ''}
+                          onChange={(e) => setUpsellProductId(e.target.value ? parseInt(e.target.value) : null)}
+                          className="w-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:border-blue-500 transition-all outline-none appearance-none"
+                        >
+                          <option value="">No recommendation</option>
+                          {allProducts.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} - ${p.price}</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                          <Package className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
                 <div className="flex flex-col gap-3">
                   <label className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">

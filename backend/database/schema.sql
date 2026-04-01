@@ -137,6 +137,8 @@ CREATE TABLE IF NOT EXISTS contact_info (
   payment_method VARCHAR(100),
   delivery_method VARCHAR(100),
   note TEXT,
+  tags TEXT[] DEFAULT '{}',
+  pipeline_stage VARCHAR(50) DEFAULT 'Lead',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

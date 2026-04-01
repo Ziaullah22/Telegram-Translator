@@ -196,6 +196,8 @@ class ContactInfoCreate(BaseModel):
     payment_method: Optional[str] = None
     delivery_method: Optional[str] = None
     note: Optional[str] = None
+    tags: Optional[List[str]] = Field(default_factory=list)
+    pipeline_stage: Optional[str] = "Lead"
 
 class ContactInfoUpdate(BaseModel):
     name: Optional[str] = None
@@ -213,6 +215,8 @@ class ContactInfoUpdate(BaseModel):
     payment_method: Optional[str] = None
     delivery_method: Optional[str] = None
     note: Optional[str] = None
+    tags: Optional[List[str]] = None
+    pipeline_stage: Optional[str] = None
 
 # --- Auto Responder Models ---
 # Schema for creating a new keyword-based auto-reply rule
@@ -273,8 +277,10 @@ class ContactInfoResponse(BaseModel):
     sample_recipient_info: Optional[str]
     sample_feedback: Optional[str]
     payment_method: Optional[str]
-    delivery_method: Optional[str]
-    note: Optional[str]
+    delivery_method: Optional[str] = None
+    note: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    pipeline_stage: str = "Lead"
     created_at: datetime
     updated_at: datetime
 
@@ -413,6 +419,7 @@ class ProductCreate(BaseModel):
     stock_quantity: int = Field(..., ge=0)
     keywords: List[str] = Field(default_factory=list)
     delivery_mode: str = "both" # mailing, hand_to_hand, both
+    upsell_product_id: Optional[int] = None
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -421,6 +428,7 @@ class ProductUpdate(BaseModel):
     stock_quantity: Optional[int] = None
     keywords: Optional[List[str]] = None
     delivery_mode: Optional[str] = None
+    upsell_product_id: Optional[int] = None
 
 class ProductResponse(BaseModel):
     id: int
@@ -431,6 +439,7 @@ class ProductResponse(BaseModel):
     stock_quantity: int
     keywords: List[str]
     delivery_mode: str = "both"
+    upsell_product_id: Optional[int] = None
     photo_url: Optional[str] = None
     photo_urls: List[str] = Field(default_factory=list)
     created_at: datetime

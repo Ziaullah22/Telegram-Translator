@@ -28,10 +28,14 @@ class SalesService:
                     elif val is None:
                         if k in ['protected_words', 'ignored_languages']: d[k] = []
                         else: d[k] = {}
+                # Fetch active A/B test if exists
+                ab_test = await db.fetchrow("SELECT * FROM ab_tests WHERE user_id = $1 AND is_active = TRUE LIMIT 1", user_id)
+                d['active_ab_test'] = dict(ab_test) if ab_test else None
+                
                 return d
         except Exception as e:
             logger.error(f"Error fetching sales settings: {e}")
-        return {'protected_words': [], 'ignored_languages': [], 'system_labels': {}, 'system_prompts': {}, 'language_expert_packs': {}}
+        return {'protected_words': [], 'ignored_languages': [], 'system_labels': {}, 'system_prompts': {}, 'language_expert_packs': {}, 'active_ab_test': None}
 
     async def apply_branded_labels(self, text: str, user_id: int) -> str:
         """Applies global label replacements to any text (manual or auto)"""
@@ -303,6 +307,13 @@ class SalesService:
         has_order_verb = any(v in logic_text_lower for v in order_verbs)
         all_nums = re.findall(r'\d+', logic_text)
         
+        # A/B TEST TRACKING: If this is an order intent, check if user was part of a test
+        async def track_conversion():
+            await db.execute(
+                "UPDATE ab_test_results SET is_converted = TRUE, converted_at = NOW() WHERE telegram_account_id = $1 AND telegram_peer_id = $2 AND is_converted = FALSE",
+                account_id, peer_id
+            )
+
         products = await db.fetch("SELECT * FROM products WHERE user_id = $1", user_id)
         for product in products:
             name_match = product['name'].lower() in logic_text_lower
@@ -316,14 +327,28 @@ class SalesService:
             
             if name_match or keyword_match:
                 prod_name_nums = re.findall(r'\d+', product['name'])
-                quantity = None
-                for num in all_nums:
-                    if num not in prod_name_nums:
-                        quantity = int(num)
-                        break
-                if has_order_verb or (quantity and quantity > 0):
-                    final_qty = quantity or 1
+                if has_order_verb or (len(all_nums) > 0):
+                    # We pick the LAST number because product names (like iPhone 11) 
+                    # often have numbers at the start/middle.
+                    final_qty = 1
+                    if all_nums:
+                        try:
+                            # Filter out numbers that are part of the product name
+                            potential_qtys = [int(n) for n in all_nums if n not in prod_name_nums]
+                            if potential_qtys:
+                                final_qty = potential_qtys[-1] # Take the last one (usually at the end of message)
+                            else:
+                                # If no other numbers, maybe they just said "iphone 11 case 1" 
+                                # and we already filtered the '1' if it was part of '11'? 
+                                # Let's be safer: if the last number in message is a likely quantity
+                                last_num = int(all_nums[-1])
+                                if last_num < 100: # Heuristic: unlikely to order 100+ of something vs product model
+                                    final_qty = last_num
+                        except:
+                            final_qty = 1
+                            
                     logger.info(f"Fuzzy Order Intent Detected: '{product['name']}' x {final_qty}")
+                    await track_conversion()
                     return await self._handle_order_intent(account_id, peer_id, product['name'], final_qty, user_id)
 
         # ---------------------------------------------------------
@@ -341,6 +366,36 @@ class SalesService:
 
         if matches:
             logger.info(f"Product inquiry detected: {len(matches)} matching in: {text}")
+            
+            # A/B TEST ASSIGNMENT: If user inquiries and isn't in a test yet, assign them
+            settings = await self._get_sales_settings(user_id)
+            active_test = settings.get('active_ab_test')
+            
+            if active_test:
+                # Check if already assigned
+                existing = await db.fetchrow(
+                    "SELECT variant FROM ab_test_results WHERE test_id = $1 AND telegram_account_id = $2 AND telegram_peer_id = $3",
+                    active_test['id'], account_id, peer_id
+                )
+                
+                variant = None
+                if not existing:
+                    import random
+                    variant = random.choice(['A', 'B'])
+                    await db.execute(
+                        "INSERT INTO ab_test_results (test_id, telegram_account_id, telegram_peer_id, variant, variant_assigned) VALUES ($1, $2, $3, $4, $4)",
+                        active_test['id'], account_id, peer_id, variant
+                    )
+                else:
+                    variant = existing['variant']
+                
+                # If variant B is assigned, send Pitch B FIRST, then let normal product info follow
+                if variant == 'B' and active_test['variant_b_text']:
+                    await self._send_simple_reply(account_id, peer_id, active_test['variant_b_text'], user_id)
+                elif variant == 'A' and active_test['variant_a_text']:
+                    await self._send_simple_reply(account_id, peer_id, active_test['variant_a_text'], user_id)
+                # Fall through to send normal product info below
+
             for product in matches:
                 await self._send_product_info(account_id, peer_id, product, user_id)
             return True
@@ -418,8 +473,14 @@ class SalesService:
             return True
 
         delivery_mode = product.get('delivery_mode', 'both')
-        initial_status = 'awaiting_delivery_pref' if delivery_mode == 'both' else 'awaiting_address'
-        
+        # CRITICAL FIX: Ensure we use the SPECIFIC product's delivery mode
+        if delivery_mode == 'mailing':
+            initial_status = 'awaiting_address'
+        elif delivery_mode == 'hand_to_hand':
+            initial_status = 'awaiting_address'
+        else:
+            initial_status = 'awaiting_delivery_pref'
+            
         await db.execute(
             """
             INSERT INTO sales_states (telegram_account_id, telegram_peer_id, status, pending_product_id, pending_quantity, delivery_mode, updated_at)
@@ -704,10 +765,39 @@ class SalesService:
                     final_data = {
                         "po_number": po_number,
                         "product_name": product['name'],
+                        "product_id": product['id'], # Store ID for upsell lookup
                         "qty": requested_qty,
                         "total": total_price,
                         "payment_info": payment_info
                     }
+                    
+                    # --- CRM LINK: Update Contact Info with Product Interest and Pipeline Stage ---
+                    try:
+                        # Find the conversation linked to this order
+                        conv = await conn.fetchrow(
+                            "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                            account_id, peer_id
+                        )
+                        if conv:
+                            # Update or Insert into contact_info
+                            await conn.execute(
+                                """
+                                INSERT INTO contact_info (conversation_id, name, product_interest, pipeline_stage, updated_at)
+                                VALUES ($1, $2, $3, 'Closing', NOW())
+                                ON CONFLICT (conversation_id) 
+                                DO UPDATE SET 
+                                    product_interest = CASE 
+                                        WHEN contact_info.product_interest IS NULL OR contact_info.product_interest = '' THEN EXCLUDED.product_interest
+                                        WHEN contact_info.product_interest NOT LIKE '%' || EXCLUDED.product_interest || '%' THEN contact_info.product_interest || ', ' || EXCLUDED.product_interest
+                                        ELSE contact_info.product_interest
+                                    END,
+                                    pipeline_stage = 'Closing',
+                                    updated_at = NOW()
+                                """,
+                                conv['id'], final_data['product_name'], final_data['product_name']
+                            )
+                    except Exception as crm_err:
+                        logger.error(f"Failed to update CRM for order: {crm_err}")
 
             # PHASE 2: TRANSLATE & BROADCAST (Outside transaction)
             try:
@@ -750,6 +840,31 @@ class SalesService:
             eng_msg = f"🎉 **ORDER CONFIRMED!**\nOrder ID: `{final_data['po_number']}`\nDate: {datetime.now().strftime('%d %B %Y')}\n\n📦 **Details:**\n{final_data['product_name']} × {final_data['qty']} = **${final_data['total']:.2f}**\n\n💳 **Payment Instructions:**\n{final_data['payment_info']}\n\n📸 Please send a screenshot of your payment for verification.\n\nThank you for your business! 🙏"
             
             await self._send_simple_reply(account_id, peer_id, conf_msg, user_id, original_text=eng_msg)
+            
+            # --- PHASE 3: AUTOMATED UPSELL ---
+            try:
+                # Refresh product data to get latest upsell_product_id from the original purchased product
+                target_pid = final_data.get('product_id')
+                prod_row = await db.fetchrow("SELECT upsell_product_id FROM products WHERE id = $1", target_pid)
+                if prod_row and prod_row['upsell_product_id']:
+                    upsell_id = prod_row['upsell_product_id']
+                    upsell_product = await db.fetchrow("SELECT * FROM products WHERE id = $1 AND stock_quantity > 0", upsell_id)
+                    
+                    if upsell_product:
+                        # Wait a bit so the messages don't overlap too much
+                        await asyncio.sleep(3)
+                        
+                        # Fetch recommendation prompt
+                        rec_prompt = await self._get_system_prompt(user_id, 'UPSELL_RECOMMENDATION', "Based on your purchase, you might also like this:")
+                        await self._translate_and_send_reply(account_id, peer_id, rec_prompt, user_id)
+                        
+                        # Wait 1s and send the product details
+                        await asyncio.sleep(1.5)
+                        await self._send_product_info(account_id, peer_id, upsell_product, user_id)
+                        logger.info(f"Automated upsell triggered for Order {final_data['po_number']}: Product {upsell_id}")
+            except Exception as upsell_err:
+                logger.error(f"Error triggering upsell: {upsell_err}")
+
             await manager.send_personal_message({"type": "order_confirmed", **final_data}, user_id)
             return True
         except Exception as e:

@@ -62,6 +62,7 @@ async def create_product(
     stock_quantity: int = Form(...),
     keywords: str = Form("[]"), # JSON string of list
     delivery_mode: str = Form("both"),
+    upsell_product_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     current_user: TokenData = Depends(get_current_user)
@@ -94,10 +95,18 @@ async def create_product(
     photo_url = photo_urls[0] if photo_urls else None
 
     query = """
-        INSERT INTO products (user_id, name, description, price, stock_quantity, keywords, photo_url, photo_urls, delivery_mode)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO products (user_id, name, description, price, stock_quantity, keywords, photo_url, photo_urls, delivery_mode, upsell_product_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
     """
+    
+    upsell_id = None
+    if upsell_product_id and upsell_product_id.lower() != 'null':
+        try:
+            upsell_id = int(upsell_product_id)
+        except:
+            pass
+
     row = await db.fetchrow(
         query, 
         current_user.user_id, 
@@ -108,7 +117,8 @@ async def create_product(
         keywords_list, 
         photo_url,
         photo_urls,
-        delivery_mode
+        delivery_mode,
+        upsell_id
     )
     return map_product_row(row)
 
@@ -121,6 +131,7 @@ async def update_product(
     stock_quantity: Optional[int] = Form(None),
     keywords: Optional[str] = Form(None),
     delivery_mode: Optional[str] = Form(None),
+    upsell_product_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     retained_photo_urls: str = Form("[]"),
@@ -176,10 +187,22 @@ async def update_product(
             photo_url = $6,
             photo_urls = $7,
             delivery_mode = COALESCE($8, delivery_mode),
+            upsell_product_id = $9,
             updated_at = NOW()
-        WHERE id = $9 AND user_id = $10
+        WHERE id = $10 AND user_id = $11
         RETURNING *
     """
+    
+    upsell_id = existing["upsell_product_id"]
+    if upsell_product_id is not None:
+        if upsell_product_id.lower() == 'null':
+            upsell_id = None
+        else:
+            try:
+                upsell_id = int(upsell_product_id)
+            except:
+                pass
+
     row = await db.fetchrow(
         query, 
         name, 
@@ -190,6 +213,7 @@ async def update_product(
         photo_url,
         photo_urls,
         delivery_mode,
+        upsell_id,
         product_id,
         current_user.user_id
     )

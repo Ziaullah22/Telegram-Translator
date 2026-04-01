@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Tag, Plus, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { contactsAPI } from '../../services/api';
 import type { ContactInfo } from '../../types';
 import PeerAvatar from '../Common/PeerAvatar';
@@ -13,6 +13,8 @@ interface ContactInfoModalProps {
   contactName?: string;
   onSaved?: () => void;
 }
+
+const PIPELINE_STAGES = ['Lead', 'Qualified', 'Negotiating', 'Ordered', 'Won', 'Lost'];
 
 export default function ContactInfoModal({
   isOpen,
@@ -29,6 +31,7 @@ export default function ContactInfoModal({
   const [existingId, setExistingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState('');
 
 
   useEffect(() => {
@@ -44,10 +47,14 @@ export default function ContactInfoModal({
       setLoading(true);
       const data = await contactsAPI.getContactInfo(conversationId);
       if (data) {
-        setContactInfo(data);
+        setContactInfo({
+          ...data,
+          tags: data.tags || [],
+          pipeline_stage: data.pipeline_stage || 'Lead'
+        });
         setExistingId(data.id);
       } else {
-        setContactInfo({ ready_for_sample: false });
+        setContactInfo({ ready_for_sample: false, tags: [], pipeline_stage: 'Lead' });
         setExistingId(null);
       }
     } catch (err) {
@@ -92,6 +99,21 @@ export default function ContactInfoModal({
 
   const handleChange = (field: keyof ContactInfo, value: any) => {
     setContactInfo(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddTag = () => {
+    const trimmed = tagInput.trim();
+    if (!trimmed) return;
+    
+    const currentTags = contactInfo.tags || [];
+    if (!currentTags.includes(trimmed)) {
+      handleChange('tags', [...currentTags, trimmed]);
+    }
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    handleChange('tags', (contactInfo.tags || []).filter(t => t !== tagToRemove));
   };
 
   const handleClose = () => {
@@ -140,6 +162,85 @@ export default function ContactInfoModal({
           )}
 
           <div className="space-y-6">
+            {/* --- SECTION: Pipeline Status --- */}
+            <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-100 dark:border-white/5 shadow-inner">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[13px] font-bold text-blue-500 uppercase tracking-widest flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Sales Pipeline Status
+                </h4>
+                <span className="text-[10px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
+                  Current: {contactInfo.pipeline_stage || 'Lead'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {PIPELINE_STAGES.map((stage) => {
+                  const isActive = (contactInfo.pipeline_stage || 'Lead') === stage;
+                  return (
+                    <button
+                      key={stage}
+                      onClick={() => handleChange('pipeline_stage', stage)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                        isActive
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-105'
+                          : 'bg-white dark:bg-[#2b3d4f] text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-blue-400 dark:hover:border-blue-500/50'
+                      }`}
+                    >
+                      {isActive ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5 opacity-30" />}
+                      {stage}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* --- SECTION: Tags --- */}
+            <div className="space-y-4">
+              <h4 className="text-[13px] font-medium text-[#3390ec] uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Tag className="w-4 h-4" />
+                Customer Tags
+              </h4>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(contactInfo.tags || []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500/10 dark:bg-green-500/20 text-green-600 dark:text-green-400 rounded-full text-xs font-black border border-green-500/20 animate-fade-in"
+                  >
+                    #{tag}
+                    <button
+                      onClick={() => handleRemoveTag(tag)}
+                      className="hover:text-red-500 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {(contactInfo.tags || []).length === 0 && (
+                  <p className="text-xs text-gray-400 italic py-1">No tags added yet...</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-1 focus:ring-[#3390ec]"
+                    placeholder="Type a tag (e.g. VIP, HighVolume) and press Enter"
+                  />
+                  <Tag className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
+                </div>
+                <button
+                  onClick={handleAddTag}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all flex items-center gap-1.5 text-sm font-bold shadow-lg shadow-blue-600/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add
+                </button>
+              </div>
+            </div>
+
             {/* --- SECTION: Personal Information --- */}
             <div className="space-y-4" id="crm-personal-section">
               <h4 className="text-[13px] font-medium text-[#3390ec] uppercase tracking-wider mb-3">Personal Information</h4>

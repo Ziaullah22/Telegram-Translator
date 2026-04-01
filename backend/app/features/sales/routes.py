@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import db
 from auth import get_current_user
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 import logging
 from app.core.config import settings
@@ -11,6 +11,19 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sales", tags=["Sales"])
+
+class ABTestSchema(BaseModel):
+    name: str
+    variant_a_text: str
+    variant_b_text: str
+    is_active: bool = True
+
+class ABTestResultResponse(BaseModel):
+    variant: str
+    conversions: int
+    participants: int
+    conversion_rate: float
+
 
 class OrderResponse(BaseModel):
     id: int
@@ -113,7 +126,30 @@ async def update_order_status(order_id: int, payload: OrderStatusUpdate, user = 
             
         logger.info(f"DB updated for order {order_id}")
         
-        # Trigger status message via sales_service
+        # --- CRM SYNC: Update Lead Stage based on Order Status ---
+        try:
+            # Determine new stage
+            new_stage = None
+            if payload.status == 'delivered':
+                new_stage = 'Won'
+            elif payload.status in ['paid', 'packed', 'shipped']:
+                new_stage = 'Closing'
+            elif payload.status == 'cancelled':
+                new_stage = 'Lost'
+
+            if new_stage:
+                await db.execute(
+                    """
+                    UPDATE contact_info SET pipeline_stage = $1, updated_at = NOW()
+                    WHERE conversation_id = (
+                        SELECT id FROM conversations 
+                        WHERE telegram_account_id = $2 AND telegram_peer_id = $3
+                    )
+                    """,
+                    new_stage, order['telegram_account_id'], order['telegram_peer_id']
+                )
+        except Exception as crm_err:
+            logger.error(f"Failed to sync CRM stage on status update: {crm_err}")
         logger.info(f"Triggering automated message for order {order_id} with status {payload.status}")
         from sales_service import sales_service
         # Send automated status update message using the central service
@@ -216,3 +252,46 @@ async def update_sales_settings(settings: SalesSettingsSchema, user = Depends(ge
         settings.language_expert_packs
     )
     return {"status": "success"}
+
+@router.get("/ab-tests")
+async def get_ab_tests(user = Depends(get_current_user)):
+    # Fetch tests and calculate per-variant stats
+    query = """
+        SELECT 
+            t.*,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id) as total_participants,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id AND is_converted = TRUE) as total_conversions,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id AND variant = 'A') as variant_a_participants,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id AND variant = 'A' AND is_converted = TRUE) as variant_a_conversions,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id AND variant = 'B') as variant_b_participants,
+            (SELECT COUNT(*) FROM ab_test_results WHERE test_id = t.id AND variant = 'B' AND is_converted = TRUE) as variant_b_conversions
+        FROM ab_tests t
+        WHERE t.user_id = $1
+        ORDER BY t.created_at DESC
+    """
+    rows = await db.fetch(query, user.user_id)
+    return [dict(row) for row in rows]
+
+
+@router.post("/ab-tests")
+async def update_ab_test(payload: ABTestSchema, user = Depends(get_current_user)):
+    # For now, we only support one active test at a time for simplicity
+    # Deactivate others if this one is active
+    if payload.is_active:
+        await db.execute("UPDATE ab_tests SET is_active = FALSE WHERE user_id = $1", user.user_id)
+    
+    await db.execute(
+        """
+        INSERT INTO ab_tests (user_id, name, variant_a_text, variant_b_text, is_active, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            variant_a_text = EXCLUDED.variant_a_text,
+            variant_b_text = EXCLUDED.variant_b_text,
+            is_active = EXCLUDED.is_active,
+            updated_at = NOW()
+        """,
+        user.user_id, payload.name, payload.variant_a_text, payload.variant_b_text, payload.is_active
+    )
+    return {"status": "success"}
+
