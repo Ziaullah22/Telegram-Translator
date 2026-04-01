@@ -472,14 +472,19 @@ class SalesService:
             await self._translate_and_send_reply(account_id, peer_id, msg, user_id)
             return True
 
-        delivery_mode = product.get('delivery_mode') or 'both'
-        # CRITICAL FIX: Ensure we use the SPECIFIC product's delivery mode
-        if delivery_mode == 'mailing':
+        delivery_mode_raw = product.get('delivery_mode')
+        delivery_mode = (str(delivery_mode_raw).strip().lower()) if delivery_mode_raw else 'both'
+        
+        # CRITICAL FIX: Ensure we use the SPECIFIC product's delivery mode safely
+        if delivery_mode == 'mailing' or delivery_mode == 'mailing_only':
             initial_status = 'awaiting_address'
-        elif delivery_mode == 'hand_to_hand':
+            delivery_mode = 'mailing'
+        elif delivery_mode == 'hand_to_hand' or delivery_mode == 'hand_only':
             initial_status = 'awaiting_address'
+            delivery_mode = 'hand_to_hand'
         else:
             initial_status = 'awaiting_delivery_pref'
+            delivery_mode = 'both'
             
         await db.execute(
             """
@@ -491,7 +496,7 @@ class SalesService:
             account_id, peer_id, initial_status, product['id'], quantity, delivery_mode
         )
 
-        if delivery_mode == 'both' or not delivery_mode:
+        if delivery_mode == 'both':
             prompt = await self._get_system_prompt(user_id, 'DELIVERY_PREF_BOTH', "Great! Do you prefer this product to be Mailed to you, or delivered Hand-to-Hand? (Reply 'Mail' or 'Hand')")
             await self._translate_and_send_reply(account_id, peer_id, prompt, user_id)
         elif delivery_mode == 'mailing':
