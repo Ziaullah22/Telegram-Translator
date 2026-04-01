@@ -11,8 +11,8 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2 } from 'lucide-react';
-import { templatesAPI, scheduledMessagesAPI } from '../../services/api';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag } from 'lucide-react';
+import { templatesAPI, scheduledMessagesAPI, contactsAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
@@ -560,6 +560,7 @@ export default function ChatWindow({
   const [showContactModal, setShowContactModal] = useState(false);
   const [showChatProfileModal, setShowChatProfileModal] = useState(false);
   const [contactSaveAlert, setContactSaveAlert] = useState(false);
+  const [contactTags, setContactTags] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -670,9 +671,11 @@ export default function ChatWindow({
   useEffect(() => {
     if (conversationId) {
       loadScheduledMessages();
+      loadContactTags();
     } else {
       // Clear scheduled messages when no conversation is selected
       setScheduledMessages([]);
+      setContactTags([]);
     }
   }, [conversationId]);
 
@@ -726,6 +729,16 @@ export default function ChatWindow({
     }
   };
 
+  const loadContactTags = async () => {
+    if (!conversationId) return;
+    try {
+      const data = await contactsAPI.getContactInfo(conversationId);
+      setContactTags(data?.tags || []);
+    } catch (err) {
+      setContactTags([]);
+    }
+  };
+
   const loadScheduledMessages = async () => {
     if (!conversationId) return;
     try {
@@ -756,11 +769,6 @@ export default function ChatWindow({
         }
       }
     });
-  };
-
-  const handleContactSaved = () => {
-    setContactSaveAlert(true);
-    setTimeout(() => setContactSaveAlert(false), 3000);
   };
 
   // --- FILE ATTACHMENT HANDLERS ---
@@ -1325,10 +1333,19 @@ export default function ChatWindow({
                       ? `@${currentConversation.username}`
                       : (currentConversation?.title || 'Translation Chat')}
                   </h2>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
                     {currentConversation?.username && currentConversation.title && !currentConversation.title.startsWith('+') && (
                       <span className="text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
                     )}
+                    {contactTags.map(tag => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-500/15 text-green-600 dark:text-green-400 rounded-full text-[10px] font-black border border-green-500/20 leading-none"
+                      >
+                        <Tag className="w-2.5 h-2.5" />
+                        {tag}
+                      </span>
+                    ))}
                   </div>
                 </div>
                 {/* Compact display of pending tasks for this chat */}
@@ -2129,7 +2146,11 @@ export default function ChatWindow({
         accountId={currentAccount?.id}
         peerId={currentConversation?.telegram_peer_id || currentConversation?.id}
         contactName={currentConversation?.title || 'Unknown'}
-        onSaved={handleContactSaved}
+        onSaved={() => {
+          loadContactTags();
+          setContactSaveAlert(true);
+          setTimeout(() => setContactSaveAlert(false), 3000);
+        }}
       />
       <ConfirmModal
         isOpen={confirmModal.isOpen}
