@@ -390,10 +390,10 @@ class SalesService:
                     variant = existing['variant']
                 
                 # If variant B is assigned, send Pitch B FIRST, then let normal product info follow
-                if variant == 'B' and active_test['variant_b_text']:
-                    await self._send_simple_reply(account_id, peer_id, active_test['variant_b_text'], user_id)
-                elif variant == 'A' and active_test['variant_a_text']:
-                    await self._send_simple_reply(account_id, peer_id, active_test['variant_a_text'], user_id)
+                if variant == 'B' and active_test.get('variant_b_text'):
+                    await self._translate_and_send_reply(account_id, peer_id, active_test['variant_b_text'], user_id)
+                elif variant == 'A' and active_test.get('variant_a_text'):
+                    await self._translate_and_send_reply(account_id, peer_id, active_test['variant_a_text'], user_id)
                 # Fall through to send normal product info below
 
             for product in matches:
@@ -558,8 +558,8 @@ class SalesService:
         quantity = state['pending_quantity']
         
         # Fetch target language and toggle
-        account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
-        target_lang = account_data['target_language'] if account_data else 'en'
+        account_data = await db.fetchrow("SELECT source_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
+        target_lang = account_data['source_language'] if account_data else 'en'
         translation_enabled = account_data['translation_enabled'] if account_data else True
 
         total = product['price'] * quantity
@@ -573,16 +573,16 @@ class SalesService:
         if translation_enabled and target_lang != 'en':
             try:
                 # Fetch branded labels first
-                l_title = await self._get_system_label(user_id, 'ORDER_SUMMARY_TITLE', "ORDER SUMMARY")
-                l_prod = await self._get_system_label(user_id, 'PRODUCT_LABEL', "Product:")
-                l_qty = await self._get_system_label(user_id, 'QUANTITY_LABEL', "Quantity:")
-                l_price = await self._get_system_label(user_id, 'PRICE_LABEL', "Price:")
-                l_total = await self._get_system_label(user_id, 'TOTAL_LABEL', "Total Amount:")
-                l_reply = await self._get_system_label(user_id, 'INVOICE_FOOTER_REPLY', "Reply")
-                l_to_conf = await self._get_system_label(user_id, 'INVOICE_FOOTER_CONFIRM', "to confirm")
-                l_to_disc = await self._get_system_label(user_id, 'INVOICE_FOOTER_DISCARD', "to discard")
-                l_confirm = await self._get_system_label(user_id, 'CONFIRM_BTN', "CONFIRM")
-                l_cancel = await self._get_system_label(user_id, 'CANCEL_BTN', "CANCEL")
+                l_title = await self._get_system_label(user_id, 'ORDER_SUMMARY_TITLE', "ORDER SUMMARY", target_lang)
+                l_prod = await self._get_system_label(user_id, 'PRODUCT_LABEL', "Product:", target_lang)
+                l_qty = await self._get_system_label(user_id, 'QUANTITY_LABEL', "Quantity:", target_lang)
+                l_price = await self._get_system_label(user_id, 'PRICE_LABEL', "Price:", target_lang)
+                l_total = await self._get_system_label(user_id, 'TOTAL_LABEL', "Total Amount:", target_lang)
+                l_reply = await self._get_system_label(user_id, 'INVOICE_FOOTER_REPLY', "Reply", target_lang)
+                l_to_conf = await self._get_system_label(user_id, 'INVOICE_FOOTER_CONFIRM', "to confirm", target_lang)
+                l_to_disc = await self._get_system_label(user_id, 'INVOICE_FOOTER_DISCARD', "to discard", target_lang)
+                l_confirm = await self._get_system_label(user_id, 'CONFIRM_BTN', "CONFIRM", target_lang)
+                l_cancel = await self._get_system_label(user_id, 'CANCEL_BTN', "CANCEL", target_lang)
                 l_del_method = await self._get_system_label(user_id, 'DELIVERY_METHOD_LABEL', "Delivery Method:", target_lang)
                 l_address = await self._get_system_label(user_id, 'ADDRESS_LABEL', "Address:", target_lang)
                 l_time_slot = await self._get_system_label(user_id, 'TIME_SLOT_LABEL', "Time Slot:", target_lang)
@@ -801,8 +801,8 @@ class SalesService:
 
             # PHASE 2: TRANSLATE & BROADCAST (Outside transaction)
             try:
-                account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
-                target_lang = account_data['target_language'] if account_data else 'en'
+                account_data = await db.fetchrow("SELECT source_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
+                target_lang = account_data['source_language'] if account_data else 'en'
                 translation_enabled = account_data['translation_enabled'] if account_data else True
                 
                 if translation_enabled and target_lang != 'en':
@@ -880,8 +880,8 @@ class SalesService:
         name = product.get('name', 'Product')
 
         # Fetch target language and toggle for the account to provide pre-translation
-        account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
-        target_lang = account_data['target_language'] if account_data else 'en'
+        account_data = await db.fetchrow("SELECT source_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
+        target_lang = account_data['source_language'] if account_data else 'en'
         translation_enabled = account_data['translation_enabled'] if account_data else True
 
         # Translate COMPLETELY everything (Name, Labels, Description) IF ENABLED
@@ -1102,8 +1102,8 @@ class SalesService:
     async def _translate_and_send_reply(self, account_id: int, peer_id: int, text: str, user_id: int):
         """Fetch target lang, translate, and send"""
         try:
-            account_data = await db.fetchrow("SELECT target_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
-            target_lang = account_data['target_language'] if account_data else 'en'
+            account_data = await db.fetchrow("SELECT source_language, translation_enabled FROM telegram_accounts WHERE id = $1", account_id)
+            target_lang = account_data['source_language'] if account_data else 'en'
             translation_enabled = account_data['translation_enabled'] if account_data else True
             
             if target_lang != 'en' and translation_enabled:
