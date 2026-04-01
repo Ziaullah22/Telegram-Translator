@@ -381,7 +381,17 @@ class SalesService:
                 variant = None
                 if not existing:
                     import random
-                    variant = random.choice(['A', 'B'])
+                    # Balanced assignment logic
+                    count_a = await db.fetchval("SELECT COUNT(*) FROM ab_test_results WHERE test_id = $1 AND variant = 'A'", active_test['id'])
+                    count_b = await db.fetchval("SELECT COUNT(*) FROM ab_test_results WHERE test_id = $1 AND variant = 'B'", active_test['id'])
+                    
+                    if count_a < count_b:
+                        variant = 'A'
+                    elif count_b < count_a:
+                        variant = 'B'
+                    else:
+                        variant = random.choice(['A', 'B'])
+                        
                     await db.execute(
                         "INSERT INTO ab_test_results (test_id, telegram_account_id, telegram_peer_id, variant, variant_assigned) VALUES ($1, $2, $3, $4, $4)",
                         active_test['id'], account_id, peer_id, variant
