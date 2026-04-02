@@ -54,6 +54,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id: int = payload.get("user_id")
         username: str = payload.get("username")
+        impersonated_by: Optional[str] = payload.get("impersonated_by")
 
         if user_id is None or username is None:
             raise credentials_exception
@@ -70,7 +71,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not user['is_active']:
             raise deactivated_exception
 
-        token_data = TokenData(user_id=user_id, username=username)
+        token_data = TokenData(user_id=user_id, username=username, impersonated_by=impersonated_by)
         return token_data
     except JWTError:
         raise credentials_exception

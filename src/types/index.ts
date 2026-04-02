@@ -8,6 +8,7 @@ export interface User {
   username: string;
   email?: string;
   createdAt: string;
+  impersonated_by?: string;
 }
 
 export interface TelegramAccount {

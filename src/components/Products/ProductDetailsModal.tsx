@@ -16,8 +16,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
 
   const upsellProduct = product.upsell_product_id ? allProducts.find(p => p.id === product.upsell_product_id) : null;
 
-  const photos = product.photo_urls && product.photo_urls.length > 0 
-    ? product.photo_urls 
+  const photos = product.photo_urls && product.photo_urls.length > 0
+    ? product.photo_urls
     : (product.photo_url ? [product.photo_url] : []);
 
   const nextImage = (e: React.MouseEvent) => {
@@ -33,7 +33,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
   return (
     <div className="fixed inset-x-0 bottom-0 top-[73px] z-[10000] flex items-center justify-center p-0">
       <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={onClose} />
-      
+
       <div className="relative w-full h-full flex flex-col bg-white dark:bg-[#1a222c] overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
@@ -52,8 +52,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
               </div>
             </div>
             <div className="flex items-center justify-end">
-              <button 
-                onClick={onClose} 
+              <button
+                onClick={onClose}
                 className="w-10 h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-gray-400 hover:text-red-500"
               >
                 <X className="w-6 h-6" />
@@ -65,26 +65,26 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-transparent">
           <div className="max-w-6xl mx-auto px-6 py-8 md:py-12 space-y-8">
-            
+
             {/* Image Gallery */}
             <div className="bg-white dark:bg-[#1e293b] rounded-[32px] p-2 border border-gray-100 dark:border-white/5 shadow-sm">
               <div className="h-[300px] md:h-[400px] relative rounded-[28px] bg-gray-100 dark:bg-black/30 overflow-hidden group flex items-center justify-center">
                 {photos.length > 0 ? (
                   <>
-                    <img 
-                      src={photos[currentImageIndex]} 
-                      alt={`${product.name} - ${currentImageIndex + 1}`} 
+                    <img
+                      src={photos[currentImageIndex]}
+                      alt={`${product.name} - ${currentImageIndex + 1}`}
                       className="w-full h-full object-contain transition-opacity duration-300"
                     />
                     {photos.length > 1 && (
                       <>
-                        <button 
+                        <button
                           onClick={prevImage}
                           className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/70 backdrop-blur-md transition-all opacity-0 group-hover:opacity-100"
                         >
                           <ChevronLeft className="w-6 h-6 ml-[-2px]" />
                         </button>
-                        <button 
+                        <button
                           onClick={nextImage}
                           className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/70 backdrop-blur-md transition-all opacity-0 group-hover:opacity-100"
                         >
@@ -93,7 +93,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
 
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 z-10 bg-black/30 backdrop-blur-md px-3 py-2 rounded-full">
                           {photos.map((_, idx) => (
-                            <button 
+                            <button
                               key={idx}
                               onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(idx); }}
                               className={`w-2 h-2 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/80'}`}
@@ -116,7 +116,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
 
             {/* Product Details Card - Split Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-              
+
               <div className="lg:col-span-2 bg-white dark:bg-[#1e293b] rounded-[32px] p-10 border border-gray-100 dark:border-white/5 shadow-sm space-y-8">
                 <div className="space-y-2">
                   <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight leading-tight">
@@ -176,15 +176,15 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen, onClo
                     <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-2xl border border-gray-100 dark:border-white/10">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
-                          {product.delivery_mode === 'mailing' ? <Truck className="w-4 h-4" /> : 
-                           product.delivery_mode === 'hand_to_hand' ? <MapPin className="w-4 h-4" /> : 
-                           <Package className="w-4 h-4" />}
+                          {product.delivery_mode === 'mailing' ? <Truck className="w-4 h-4" /> :
+                            product.delivery_mode === 'hand_to_hand' ? <MapPin className="w-4 h-4" /> :
+                              <Package className="w-4 h-4" />}
                         </div>
                         <p className="text-sm font-bold text-gray-900 dark:text-white capitalize">
-                          {product.delivery_mode === 'both' ? 'Both (Mailing & Hand-to-Hand)' : 
-                           product.delivery_mode === 'mailing' ? 'Mailing Only' : 
-                           product.delivery_mode === 'hand_to_hand' ? 'Hand-to-Hand Only' : 
-                           'Standard Delivery'}
+                          {product.delivery_mode === 'both' ? 'Both (Mailing & Hand-to-Hand)' :
+                            product.delivery_mode === 'mailing' ? 'Mailing Only' :
+                              product.delivery_mode === 'hand_to_hand' ? 'Hand-to-Hand Only' :
+                                'Standard Delivery'}
                         </p>
                       </div>
                     </div>

@@ -130,6 +130,7 @@ async def get_me(current_user = Depends(get_current_user)):
         "email": user['email'],
         "is_active": user['is_active'],
         "created_at": user['created_at'],
+        "impersonated_by": getattr(current_user, 'impersonated_by', None)
     }
 
 

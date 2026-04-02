@@ -63,6 +63,7 @@ export const adminApi = {
   deleteColleague: (id: number) => api.delete(`/admin/colleagues/${id}`),
   resetColleaguePassword: (id: number, password: string) =>
     api.post(`/admin/colleagues/${id}/reset-password`, { password }),
+  impersonateColleague: (id: number) => api.post(`/admin/colleagues/${id}/impersonate`),
 
   // --- GROUP 3: MESSAGE AUDIT & REVIEW ---
   // Monitor traffic across all accounts for compliance and monitoring.

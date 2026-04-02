@@ -9,7 +9,7 @@
  * 4. Search colleagues by username or email
  */
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Search, CheckCircle, XCircle, Power } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, CheckCircle, XCircle, Power, Shield } from 'lucide-react';
 import { adminApi } from '../services/api';
 import { ColleagueWithAccounts } from '../types';
 import ColleagueModal from '../components/ColleagueModal';
@@ -192,6 +192,27 @@ const ColleagueManagement = () => {
                     title={colleague.is_active ? 'Deactivate' : 'Activate'}
                   >
                     <Power className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await adminApi.impersonateColleague(colleague.id);
+                        const { access_token } = response.data;
+                        // Set the token for the MAIN app
+                        const Cookies = (await import('js-cookie')).default;
+                        Cookies.set('auth_token', access_token, { expires: 1, path: '/' });
+                        // Redirect to main app (assuming localhost:5173 or relative)
+                        const userAppUrl = window.location.origin.replace(':5174', ':5173');
+                        window.open(userAppUrl, '_blank');
+                      } catch (error) {
+                        console.error('Impersonation failed:', error);
+                        alert('Failed to login as colleague');
+                      }
+                    }}
+                    className="text-purple-600 hover:text-purple-900 mr-3"
+                    title="Login As Colleague"
+                  >
+                    <Shield className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleEdit(colleague)}

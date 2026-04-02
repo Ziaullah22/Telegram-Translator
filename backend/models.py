@@ -22,6 +22,7 @@ class UserResponse(BaseModel):
     email: Optional[str]
     is_active: bool
     created_at: datetime
+    impersonated_by: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str

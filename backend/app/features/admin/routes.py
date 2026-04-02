@@ -214,25 +214,42 @@ async def delete_colleague(colleague_id: int, admin = Depends(get_current_admin)
     await db.execute("DELETE FROM users WHERE id = $1", colleague_id)
     return {"message": "Colleague deleted successfully"}
 
-@router.post("/colleagues/{colleague_id}/reset-password")
-async def reset_colleague_password(
-    colleague_id: int,
-    data: PasswordReset,
-    admin = Depends(get_current_admin)
-):
-    """Reset colleague password"""
-    colleague = await db.fetchrow("SELECT id FROM users WHERE id = $1", colleague_id)
+    return {"message": "Password reset successfully"}
+
+@router.post("/colleagues/{colleague_id}/impersonate")
+async def impersonate_colleague(colleague_id: int, admin = Depends(get_current_admin)):
+    """Allow admin to get an access token for any colleague (impersonation)"""
+    colleague = await db.fetchrow("SELECT id, username, is_active FROM users WHERE id = $1", colleague_id)
     if not colleague:
         raise HTTPException(status_code=404, detail="Colleague not found")
     
-    password_hash = get_password_hash(data.password)
-    await db.execute(
-        "UPDATE users SET password_hash = $1 WHERE id = $2",
-        password_hash,
-        colleague_id
+    if not colleague['is_active']:
+        raise HTTPException(status_code=403, detail="Cannot impersonate a deactivated account")
+    
+    from auth import create_access_token
+    from datetime import timedelta
+    from app.core.config import settings
+    
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={
+            "user_id": colleague['id'], 
+            "username": colleague['username'],
+            "impersonated_by": "admin"
+        },
+        expires_delta=access_token_expires,
     )
     
-    return {"message": "Password reset successfully"}
+    logger.info(f"Admin impersonated colleague: {colleague['username']} (ID: {colleague['id']})")
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": colleague['id'],
+            "username": colleague['username']
+        }
+    }
 
 # Message Review Routes
 @router.get("/conversations")

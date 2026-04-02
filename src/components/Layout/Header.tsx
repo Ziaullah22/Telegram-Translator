@@ -1,4 +1,4 @@
-import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings } from 'lucide-react';
+import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -14,7 +14,22 @@ export default function Header({ onStartTour }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="bg-[#f0f9ff] dark:bg-[#0f172a] border-b border-blue-100 dark:border-white/5 px-8 py-4 sticky top-0 z-[50] transition-colors duration-300 shadow-sm">
+    <>
+      {user?.impersonated_by && (
+        <div className="bg-purple-600 text-white px-8 py-2 flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-4 h-4" />
+            <span>⚠️ Admin Shadow Mode: You are currently logged in as <span className="underline decoration-2 underline-offset-4">{user.username}</span></span>
+          </div>
+          <button 
+            onClick={() => logout()}
+            className="bg-white/20 hover:bg-white/30 px-4 py-1 rounded-full transition-all border border-white/20"
+          >
+            Stop Shadow Mode
+          </button>
+        </div>
+      )}
+      <header className="bg-[#f0f9ff] dark:bg-[#0f172a] border-b border-blue-100 dark:border-white/5 px-8 py-4 sticky top-0 z-[50] transition-colors duration-300 shadow-sm">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-10">
           <div id="app-logo" className="flex items-center space-x-3 cursor-pointer group" onClick={() => navigate('/')}>
@@ -102,5 +117,6 @@ export default function Header({ onStartTour }: HeaderProps) {
         </div>
       </div>
     </header>
+  </>
   );
 }
