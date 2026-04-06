@@ -42,6 +42,9 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showProxyModal, setShowProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
+    const [previewTab, setPreviewTab] = useState<'posts' | 'followers' | 'following'>('posts');
+    const [networkList, setNetworkList] = useState<any[]>([]);
+    const [isFetchingNetwork, setIsFetchingNetwork] = useState(false);
     
     // Form States
     const [keywords, setKeywords] = useState('');
@@ -517,9 +520,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className="flex flex-col">
-                                                            <span className="text-xs font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
-                                                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Followers</span>
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-xs font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Followers</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 border-t border-gray-100 dark:border-white/5 pt-1">
+                                                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Following</span>
+                                                            </div>
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
@@ -906,21 +915,21 @@ const InstagramLeadGenerator: React.FC = () => {
                 </div>
             )}
 
-            {/* Post Preview Modal */}
+            {/* Enhanced Post & Network Preview Modal */}
             {showPreviewModal && selectedLead && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
                     <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300">
                         <div className="p-8">
-                            <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center justify-between mb-6">
                                 <div className="flex items-center gap-4">
                                     <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl">
-                                        <LayoutGrid className="w-6 h-6 text-indigo-600" />
+                                        <Users className="w-6 h-6 text-indigo-600" />
                                     </div>
                                     <div>
                                         <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
                                             @{selectedLead.instagram_username || selectedLead.username}
                                         </h2>
-                                        <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">Recent Post Archive</p>
+                                        <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">In-Depth Lead Intelligence 🛰️</p>
                                     </div>
                                 </div>
                                 <button 
@@ -931,31 +940,90 @@ const InstagramLeadGenerator: React.FC = () => {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-4">
-                                {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
-                                    selectedLead.recent_posts.map((post: any, idx: number) => {
-                                        const imageUrl = typeof post === 'string' ? post : post.display_url;
-                                        return (
-                                            <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
-                                                <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                                <a 
-                                                    href={post.url || '#'} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
-                                                >
-                                                    <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
-                                                </a>
+                            {/* Network Navigation Tabs */}
+                            <div className="flex border-b border-gray-100 dark:border-white/5 mb-6">
+                                {[
+                                    { id: 'posts', label: 'Post Archive', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+                                    { id: 'followers', label: `Followers`, icon: <Users className="w-3.5 h-3.5" /> },
+                                    { id: 'following', label: `Following`, icon: <Users className="w-3.5 h-3.5" /> },
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => {
+                                            setPreviewTab(tab.id as any);
+                                            if (tab.id !== 'posts') {
+                                                setIsFetchingNetwork(true);
+                                                instagramAPI.getLeadNetwork(selectedLead.id, tab.id as any)
+                                                    .then(setNetworkList)
+                                                    .finally(() => setIsFetchingNetwork(false));
+                                            }
+                                        }}
+                                        className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border-b-2 transition-all ${
+                                            previewTab === tab.id 
+                                            ? 'border-indigo-500 text-indigo-500' 
+                                            : 'border-transparent text-gray-400 hover:text-gray-600'
+                                        }`}
+                                    >
+                                        {tab.icon} {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                                {previewTab === 'posts' && (
+                                    <div className="grid grid-cols-3 gap-4">
+                                        {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
+                                            selectedLead.recent_posts.map((post: any, idx: number) => {
+                                                const imageUrl = typeof post === 'string' ? post : post.display_url;
+                                                return (
+                                                    <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
+                                                        <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                                        <a 
+                                                            href={post.url || '#'} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
+                                                        >
+                                                            <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
+                                                        </a>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="col-span-3 py-10 text-center flex flex-col items-center">
+                                                <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
+                                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
                                             </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="col-span-3 py-20 text-center flex flex-col items-center">
-                                        <div className="w-16 h-16 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4">
-                                            <AlertCircle className="w-8 h-8 text-gray-300" />
-                                        </div>
-                                        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No posts captured for this lead yet</p>
-                                        <p className="text-gray-500 text-[10px] mt-2">Wait for Stage 2 Analysis to complete.</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {(previewTab === 'followers' || previewTab === 'following') && (
+                                    <div className="space-y-2">
+                                        {isFetchingNetwork ? (
+                                            <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin text-indigo-500 mx-auto" /></div>
+                                        ) : networkList.length > 0 ? (
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {networkList.map((net, i) => (
+                                                    <a 
+                                                        key={i} 
+                                                        href={`https://instagram.com/${net.network_username}`} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 hover:bg-indigo-500/10 rounded-xl group transition-all"
+                                                    >
+                                                        <span className="text-[11px] font-bold text-gray-600 dark:text-gray-300">@{net.network_username}</span>
+                                                        <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-indigo-500" />
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="py-10 text-center flex flex-col items-center">
+                                                <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><Users className="w-6 h-6 text-gray-300" /></div>
+                                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">No network discovered yet</p>
+                                                <p className="text-gray-500 text-[9px] mt-1 italic">Click 'Scythe' to analyze this lead first.</p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -963,9 +1031,9 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="mt-8 flex justify-center">
                                 <button 
                                     onClick={() => setShowPreviewModal(false)}
-                                    className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-200 dark:shadow-none"
+                                    className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
                                 >
-                                    Close Preview
+                                    Finish Inspection
                                 </button>
                             </div>
                         </div>

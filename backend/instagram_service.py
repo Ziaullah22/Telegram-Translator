@@ -103,9 +103,9 @@ class InstagramService:
     
     # --- Universal Qualification Engine ---
     
-    async def _qualify_and_update(self, lead_id: int, user_id: int, bio: str, followers: int, full_name: str = "", recent_posts: list = None):
-        """Standardizes the qualification logic and saves ALL lead data."""
-        logger.info(f"🛡️ Qualifying Lead {lead_id} (Followers: {followers}, Bio: '{bio[:30]}...')")
+    async def _qualify_and_update(self, lead_id: int, user_id: int, bio: str, followers: int, following: int, full_name: str, recent_posts: List[dict]):
+        """Internal worker to analyze profile data and update lead status."""
+        logger.info(f"📊 Analyzing @Lead {lead_id} (Followers: {followers}, Following: {following}), Bio: '{bio[:30]}...')")
         
         # 🏎️ SAFETY CHECK
         if not bio and followers == 0:
@@ -180,9 +180,9 @@ class InstagramService:
         posts_json = json.dumps(recent_posts or [])
         await db.execute("""
             UPDATE instagram_leads 
-            SET status = $1, bio = $2, follower_count = $3, full_name = $4, recent_posts = $5, updated_at = NOW() 
-            WHERE id = $6
-        """, new_status, bio, followers, full_name, posts_json, lead_id)
+            SET status = $1, bio = $2, follower_count = $3, following_count = $4, full_name = $5, recent_posts = $6, updated_at = NOW() 
+            WHERE id = $7
+        """, new_status, bio, followers, following, full_name, posts_json, lead_id)
         
         logger.info(f"✨ Lead {lead_id} fully saved as: {new_status.upper()}")
         return new_status
@@ -288,8 +288,49 @@ class InstagramService:
                 await self._qualify_and_update(lead_id, user_id, 
                                              profile.biography or "", 
                                              profile.followers, 
+                                             profile.followees, 
                                              profile.full_name or "", 
                                              posts)
+
+                # 🕸️ Network Harvester: Scrape Followers + Following lists (up to 200 each)
+                try:
+                    logger.info(f"🕸️ Network Harvester: Scraping followers & following for @{username}...")
+                    
+                    # Scrape FOLLOWERS (people who follow this lead)
+                    follower_count = 0
+                    try:
+                        for follower in profile.get_followers():
+                            if follower.username:
+                                await db.execute("""
+                                    INSERT INTO instagram_lead_network (lead_id, direction, network_username)
+                                    VALUES ($1, 'follower', $2)
+                                    ON CONFLICT (lead_id, direction, network_username) DO NOTHING
+                                """, lead_id, follower.username.lower())
+                                follower_count += 1
+                            if follower_count >= 200: break
+                        logger.info(f"✅ Harvested {follower_count} followers for @{username}")
+                    except Exception as fe:
+                        logger.warning(f"⚠️ Follower harvest partial: {fe}")
+
+                    # Scrape FOLLOWING (people this lead follows)
+                    following_count = 0
+                    try:
+                        for followee in profile.get_followees():
+                            if followee.username:
+                                await db.execute("""
+                                    INSERT INTO instagram_lead_network (lead_id, direction, network_username)
+                                    VALUES ($1, 'following', $2)
+                                    ON CONFLICT (lead_id, direction, network_username) DO NOTHING
+                                """, lead_id, followee.username.lower())
+                                following_count += 1
+                            if following_count >= 200: break
+                        logger.info(f"✅ Harvested {following_count} following for @{username}")
+                    except Exception as fwe:
+                        logger.warning(f"⚠️ Following harvest partial: {fwe}")
+
+                except Exception as net_err:
+                    logger.warning(f"⚠️ Network Harvester error: {net_err}")
+
                 return {"success": True, "method": f"ghost (@{account['username']})"}
 
             except Exception as e:
@@ -379,6 +420,22 @@ class InstagramService:
                 d['recent_posts'] = []
             leads.append(d)
         return leads
+
+    async def get_lead_network(self, user_id: int, lead_id: int, direction: str = None):
+        """Returns the scraped followers/following usernames for a specific lead."""
+        # Security check: Verify this lead belongs to the requesting user
+        lead = await db.fetchrow("SELECT id FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        if not lead:
+            return {"error": "Lead not found"}
+        
+        query = "SELECT direction, network_username, discovered_at FROM instagram_lead_network WHERE lead_id = $1"
+        params = [lead_id]
+        if direction in ('follower', 'following'):
+            params.append(direction)
+            query += f" AND direction = ${len(params)}"
+        query += " ORDER BY discovered_at DESC LIMIT 500"
+        rows = await db.fetch(query, *params)
+        return [dict(row) for row in rows]
 
     async def get_stats(self, user_id: int):
         stats = await db.fetchrow("""

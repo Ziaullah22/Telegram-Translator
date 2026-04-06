@@ -822,6 +822,11 @@ export const instagramAPI = {
     await api.delete(`/instagram/leads/${leadId}`);
   },
 
+  getLeadNetwork: async (leadId: number, direction?: 'follower' | 'following'): Promise<{direction: string; network_username: string; discovered_at: string}[]> => {
+    const response = await api.get(`/instagram/leads/${leadId}/network`, { params: direction ? { direction } : {} });
+    return response.data;
+  },
+
   clearLeads: async (): Promise<void> => {
     await api.delete('/instagram/leads/clear');
   },

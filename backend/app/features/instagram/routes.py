@@ -108,6 +108,15 @@ async def manual_analyze_lead(
     """Stage 2: Manually analyze a single lead (Bio + Followers + Visuals)."""
     return await instagram_service.analyze_lead(current_user.user_id, lead_id)
 
+@router.get("/leads/{lead_id}/network")
+async def get_lead_network(
+    lead_id: int,
+    direction: Optional[str] = Query(None),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get the scraped followers/following list for a specific lead."""
+    return await instagram_service.get_lead_network(current_user.user_id, lead_id, direction)
+
 @router.post("/auto-analyze/start")
 async def start_auto_pilot(current_user: TokenData = Depends(get_current_user)):
     """🏎️ START AUTO-PILOT: Scan all discovered leads in the background."""

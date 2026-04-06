@@ -644,6 +644,20 @@ async def migrate():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS sample_hashes JSONB DEFAULT '[]';
+
+                -- Following Count + Network Lists (Follower/Following Scraping)
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
+
+                CREATE TABLE IF NOT EXISTS instagram_lead_network (
+                    id BIGSERIAL PRIMARY KEY,
+                    lead_id BIGINT NOT NULL REFERENCES instagram_leads(id) ON DELETE CASCADE,
+                    direction VARCHAR(10) NOT NULL CHECK (direction IN ('follower', 'following')),
+                    network_username VARCHAR(100) NOT NULL,
+                    discovered_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (lead_id, direction, network_username)
+                );
+                CREATE INDEX IF NOT EXISTS idx_lead_network_lead ON instagram_lead_network(lead_id);
+                CREATE INDEX IF NOT EXISTS idx_lead_network_username ON instagram_lead_network(network_username);
             """)
             print("✓ Incremental updates applied.")
 
