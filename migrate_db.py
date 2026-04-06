@@ -398,8 +398,71 @@ async def migrate():
                 CREATE INDEX IF NOT EXISTS idx_ab_results_test ON ab_test_results(test_id);
             """)
             print("✓ Tables: products, orders, sales_settings")
+            
+            # --- 5. INSTAGRAM LEAD GENERATION TABLES ---
 
-            # --- 5. SCHEMA UPDATES (Incremental fixes) ---
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS instagram_proxies (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    host TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    username TEXT,
+                    password TEXT,
+                    proxy_type TEXT DEFAULT 'http',
+                    is_working BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_accounts (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    proxy_id BIGINT REFERENCES instagram_proxies(id) ON DELETE SET NULL,
+                    status TEXT DEFAULT 'active',
+                    last_used TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_leads (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    instagram_username TEXT NOT NULL,
+                    full_name TEXT,
+                    bio TEXT,
+                    follower_count INTEGER,
+                    following_count INTEGER,
+                    is_private BOOLEAN DEFAULT FALSE,
+                    is_verified BOOLEAN DEFAULT FALSE,
+                    status TEXT DEFAULT 'discovered',
+                    discovery_keyword TEXT,
+                    data_audit_json JSONB,
+                    recent_posts JSONB DEFAULT '[]',
+                    score INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(user_id, instagram_username)
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_filter_settings (
+                    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    bio_keywords TEXT DEFAULT '',
+                    min_followers INTEGER DEFAULT 0,
+                    max_followers INTEGER DEFAULT 0,
+                    sample_hashes JSONB DEFAULT '[]',
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                -- Index for searching leads by keyword and status
+                CREATE INDEX IF NOT EXISTS idx_insta_leads_keyword ON instagram_leads(discovery_keyword);
+                CREATE INDEX IF NOT EXISTS idx_insta_leads_status ON instagram_leads(status);
+                CREATE INDEX IF NOT EXISTS idx_insta_leads_user ON instagram_leads(user_id);
+            """)
+            print("✓ Tables: instagram_leads, accounts, proxies")
+
+            # --- 6. SCHEMA UPDATES (Incremental fixes) ---
+
             
             # Ensure latest columns exist if tables were created via old scripts
             await conn.execute("""
@@ -561,6 +624,26 @@ async def migrate():
                         FOREIGN KEY (lead_id) REFERENCES campaign_leads(id) ON DELETE SET NULL;
 
                 END $$;
+
+                -- Instagram Accounts: Support for sessions, 2FA, and extra data
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS session_id TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS user_id_cookie TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS two_factor_secret TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS email TEXT;
+
+                -- Instagram Filter & Scoring Additions
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS recent_posts JSONB DEFAULT '[]';
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
+
+                CREATE TABLE IF NOT EXISTS instagram_filter_settings (
+                    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    bio_keywords TEXT DEFAULT '',
+                    min_followers INTEGER DEFAULT 0,
+                    max_followers INTEGER DEFAULT 0,
+                    sample_hashes JSONB DEFAULT '[]',
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS sample_hashes JSONB DEFAULT '[]';
             """)
             print("✓ Incremental updates applied.")
 

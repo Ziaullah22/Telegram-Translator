@@ -27,6 +27,7 @@ from app.features.analytics.routes import router as analytics_router
 from app.features.campaign.routes import router as campaign_router
 from app.features.products.routes import router as products_router
 from app.features.sales.routes import router as sales_router
+from app.features.instagram.routes import router as instagram_router
 from auth import get_current_user
 from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
@@ -46,6 +47,14 @@ async def lifespan(app: FastAPI):
 
     await db.connect()
     logger.info("Database connected")
+
+    # Initialize Instagram filter settings table
+    try:
+        from instagram_service import instagram_service
+        await instagram_service._ensure_settings_table()
+        logger.info("✅ Instagram filter settings table ready.")
+    except Exception as e:
+        logger.warning(f"Instagram settings table init skipped: {e}")
 
     # Run migration for reply support
     try:
@@ -112,6 +121,10 @@ async def lifespan(app: FastAPI):
         ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
         ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS auto_replies JSONB DEFAULT '[]';
 
+
+        -- Instagram Leads Enhancement
+        ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS recent_posts TEXT DEFAULT '[]';
+        ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
 
         -- Milestone 2: Sales & Inventory Automation
         CREATE TABLE IF NOT EXISTS sales_states (
@@ -630,6 +643,7 @@ app.include_router(analytics_router)
 app.include_router(campaign_router)
 app.include_router(products_router)
 app.include_router(sales_router)
+app.include_router(instagram_router)
 
 # Health check endpoint for monitoring application status
 @app.get("/api/health")

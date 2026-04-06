@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Union, Any
 from datetime import datetime
 from enum import Enum
 
@@ -31,6 +31,7 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: Optional[int] = None
     username: Optional[str] = None
+    impersonated_by: Optional[str] = None
 
 # --- Telegram Account Models ---
 # Schema for defining a new Telegram account connection
@@ -445,3 +446,76 @@ class ProductResponse(BaseModel):
     photo_urls: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+# --- Instagram Lead Generation Models ---
+class InstagramAccountStatus(str, Enum):
+    active = "active"
+    banned = "banned"
+    error = "error"
+    pending = "pending"
+
+class InstagramAccountCreate(BaseModel):
+    username: str
+    password: str
+    proxy_id: Optional[Union[int, str]] = None
+    session_id: Optional[str] = None
+    user_id_cookie: Optional[str] = None
+    two_factor_secret: Optional[str] = None
+    email: Optional[str] = None
+
+class InstagramAccountResponse(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    status: InstagramAccountStatus
+    proxy_id: Optional[int] = None
+    session_id: Optional[str] = None
+    two_factor_secret: Optional[str] = None
+    email: Optional[str] = None
+    last_used: Optional[datetime] = None
+    created_at: datetime
+
+class InstagramProxyCreate(BaseModel):
+    host: str
+    port: int
+    username: Optional[str] = None
+    password: Optional[str] = None
+    proxy_type: str = "http" # http, socks5
+
+class InstagramProxyResponse(BaseModel):
+    id: int
+    user_id: int
+    host: str
+    port: int
+    username: Optional[str] = None
+    proxy_type: str
+    is_working: bool = True
+    created_at: datetime
+
+class InstagramLeadStatus(str, Enum):
+    discovered = "discovered"
+    analyzed = "analyzed"
+    contacted = "contacted"
+    converted = "converted"
+    rejected = "rejected"
+
+class InstagramLeadResponse(BaseModel):
+    id: int
+    user_id: int
+    instagram_username: str
+    full_name: Optional[str] = None
+    bio: Optional[str] = None
+    follower_count: Optional[int] = None
+    following_count: Optional[int] = None
+    is_private: bool = False
+    is_verified: bool = False
+    status: InstagramLeadStatus
+    discovery_keyword: Optional[str] = None
+    data_audit_json: Optional[dict] = None
+    created_at: datetime
+    updated_at: datetime
+
+class InstagramDiscoveryRequest(BaseModel):
+    keywords: List[str]
+    limit_per_keyword: int = 50
+

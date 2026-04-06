@@ -1,0 +1,801 @@
+import io
+import PIL.Image
+import imagehash
+import httpx
+import re
+import json
+import logging
+import asyncio
+import random
+from urllib.parse import quote
+from typing import List, Optional
+from database import db
+
+# 🚨 SMART TELEMETRY: Force Python to print logs to the terminal so the user can see them!
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:     %(message)s')
+logger = logging.getLogger(__name__)
+
+class InstagramService:
+    # --- Stage 1: Discovery ---
+
+    async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 50):
+        discovery_results = []
+        new_count = 0
+        proxies_list = await self.get_proxies(user_id)
+        
+        # 🕵️ Random Agents for stealth
+        agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ]
+        
+        for idx, keyword in enumerate(keywords):
+            # Rotate proxy per keyword
+            p_url = None
+            if proxies_list:
+                p = proxies_list[idx % len(proxies_list)]
+                p_auth = f"{p['username']}:{p['password']}@" if p['username'] else ""
+                p_url = f"{p['proxy_type']}://{p_auth}{p['host']}:{p['port']}"
+
+            # 🛠️ Direct Username Detection (If it's a single word with _ or .)
+            kw_clean = keyword.strip().lstrip('@')
+            if ' ' not in kw_clean and len(kw_clean) > 3:
+                logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
+                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                if status == "INSERT 0 1": new_count += 1
+
+            # 🛠️ Multi-Search Engine Engine (DuckDuckGo + Google Fallback)
+            mirrors = [
+                f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{keyword}\"')}",
+                f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}"
+            ]
+
+            for search_url in mirrors:
+                # 🛠️ ATTEMPT 1: With Proxy
+                success = False
+                try:
+                    headers = {"User-Agent": agents[idx % len(agents)], "Accept-Language": "en-US,en;q=0.9"}
+                    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0, proxy=p_url) as client:
+                        res = await client.get(search_url)
+                        if res.status_code == 200:
+                            # 🔍 Enhanced extraction (Catches redirects and direct links)
+                            raw_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
+                            # Also look for google-style redirects: /url?q=...instagram.com/ziaullah_khaan/
+                            redirect_matches = re.findall(r'instagram\.com%2F([a-zA-Z0-9._]{3,30})', res.text)
+                            
+                            all_matches = list(set(raw_matches + redirect_matches))
+                            logger.info(f"Scan found {len(all_matches)} leads on {search_url}")
+                            
+                            for u in all_matches:
+                                u_clean = u.lower().strip('./_ ')
+                                if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 'p.photos'}:
+                                    if len(u_clean) > 2:
+                                        logger.info(f"✅ Saving: @{u_clean}")
+                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u_clean, keyword)
+                                        if status == "INSERT 0 1": new_count += 1
+                            success = True
+                except Exception as e:
+                    logger.warning(f"Proxy failed on {search_url}, attempting Smart Bypass (Local IP)...")
+
+                # 💡 ATTEMPT 2: Smart Bypass (Local IP)
+                if not success:
+                    try:
+                        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as client:
+                            res = await client.get(search_url)
+                            if res.status_code == 200:
+                                matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
+                                for u in matches:
+                                    u_clean = u.lower().strip('./_ ')
+                                    if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories'}:
+                                        if len(u_clean) > 2:
+                                            logger.info(f"✅ Extracted & Saving (Bypass): @{u_clean}")
+                                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u_clean, keyword)
+                                            if status == "INSERT 0 1": new_count += 1
+                    except Exception as e:
+                        logger.error(f"Discovery total failure on {search_url}: {e}")
+        
+        return new_count
+
+    # --- Stage 2: Analysis ---
+
+    # --- Data Utils ---
+    
+    # --- Universal Qualification Engine ---
+    
+    async def _qualify_and_update(self, lead_id: int, user_id: int, bio: str, followers: int, full_name: str = "", recent_posts: list = None):
+        """Standardizes the qualification logic and saves ALL lead data."""
+        logger.info(f"🛡️ Qualifying Lead {lead_id} (Followers: {followers}, Bio: '{bio[:30]}...')")
+        
+        # 🏎️ SAFETY CHECK
+        if not bio and followers == 0:
+            logger.warning(f"⚠️ Lead {lead_id} has NO data. Marking as 'failed' for retry.")
+            await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+            return "failed"
+
+        settings = await self.get_filter_settings(user_id)
+        is_qualified = True
+        
+        # 1. Follower Count Match
+        if settings['min_followers'] > 0 and followers < settings['min_followers']: is_qualified = False
+        if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']: is_qualified = False
+            
+        # 2. Bio Keyword Match
+        if is_qualified and not self._check_bio_keywords(bio, settings['bio_keywords']):
+            is_qualified = False
+
+        # 3. Picture Visual Match (Using the uploaded target hash)
+        target_hashes = settings.get('sample_hashes', [])
+        if is_qualified and target_hashes:
+            if not recent_posts:
+                logger.info("❌ Visual Scanner rejected lead: Lead has NO photos to scan.")
+                is_qualified = False
+            else:
+                logger.info("🔍 Visual Scanner Enabled: Checking recent photos against target picture...")
+                image_matched = False
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        for post in recent_posts:
+                            try:
+                                res = await client.get(post['display_url'])
+                                if res.status_code == 200:
+                                    post_hash = await asyncio.get_event_loop().run_in_executor(None, self._get_image_hash, res.content)
+                                    if post_hash:
+                                        import imagehash
+                                        p_hashes = post_hash.split('|')
+                                        for target_hash in target_hashes:
+                                            t_hashes = target_hash.split('|')
+                                            
+                                            # Backwards compatibility check
+                                            if len(p_hashes) == 2 and len(t_hashes) == 2:
+                                                p_obj1, p_obj2 = imagehash.hex_to_hash(p_hashes[0]), imagehash.hex_to_hash(p_hashes[1])
+                                                t_obj1, t_obj2 = imagehash.hex_to_hash(t_hashes[0]), imagehash.hex_to_hash(t_hashes[1])
+                                                diff1, diff2 = p_obj1 - t_obj1, p_obj2 - t_obj2
+                                                
+                                                logger.info(f"📐 Multi-Dimensional AI: pHash={diff1}/64, dHash={diff2}/64")
+                                                # Both dimensions must pass structural checks
+                                                if diff1 <= 32 and diff2 <= 38: # 🧠 Increased breathing room: allow lighting changes, still block smooth faces.
+                                                    image_matched = True
+                                                    logger.info(f"✅ Visual Scanner: Perfect Multi-Dimensional Match!")
+                                                    break
+                                            else:
+                                                # Legacy fallback
+                                                diff = imagehash.hex_to_hash(p_hashes[0]) - imagehash.hex_to_hash(t_hashes[0])
+                                                if diff <= 26:
+                                                    image_matched = True
+                                                    break
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to scan picture: {e}")
+                            if image_matched: break
+                except Exception as e:
+                    logger.warning(f"⚠️ Visual Scanner failed: {e}")
+                    
+                if not image_matched:
+                    logger.info("❌ Visual Scanner rejected lead: No photos matched the mathematical standard.")
+                    is_qualified = False
+
+        new_status = 'qualified' if is_qualified else 'rejected'
+        
+        # 🏎️ SAVE EVERYTHING: Full Name, Bio, Followers, Posts
+        posts_json = json.dumps(recent_posts or [])
+        await db.execute("""
+            UPDATE instagram_leads 
+            SET status = $1, bio = $2, follower_count = $3, full_name = $4, recent_posts = $5, updated_at = NOW() 
+            WHERE id = $6
+        """, new_status, bio, followers, full_name, posts_json, lead_id)
+        
+        logger.info(f"✨ Lead {lead_id} fully saved as: {new_status.upper()}")
+        return new_status
+
+    def _parse_account_str(self, a_str: str):
+        """Parses username|password|2fa|session|uid|email bundle."""
+        if not a_str: return None
+        # Clean from tabs (if copied from table)
+        a_str = a_str.split('\t')[0].strip()
+        parts = [p.strip() for p in a_str.split('|')]
+        data = {
+            "username": parts[0],
+            "password": parts[1] if len(parts) > 1 else "",
+            "two_factor_secret": parts[2] if len(parts) > 2 else None,
+            "session_id": None,
+            "user_id_cookie": None,
+            "email": parts[4] if len(parts) > 4 else None
+        }
+        # Parse cookies if present
+        if len(parts) > 3:
+            cookies = parts[3]
+            # Common formats: ds_user_id=...;sessionid=...;
+            sid = re.search(r'sessionid=([^; ]+)', cookies)
+            uid = re.search(r'ds_user_id=([^; ]+)', cookies)
+            if sid: data["session_id"] = sid.group(1)
+            if uid: data["user_id_cookie"] = uid.group(1)
+        return data
+
+    async def analyze_lead(self, user_id: int, lead_id: int):
+        lead = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        if not lead: return {"error": "Lead not found"}
+        username = lead['instagram_username']
+
+        # 1. Strategy 1: Ghost Pool Teamwork (Multi-Account Retries)
+        last_error = "Ghost Pool exhausted"
+        ghost_attempts = 0
+        used_account_ids = []
+        proxy_url = None
+
+        while ghost_attempts < 3:
+            ghost_attempts += 1
+            account = await db.fetchrow(f"""
+                SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+                FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
+                WHERE a.user_id = $1 AND a.status = 'active'
+                {"AND a.id NOT IN (" + ",".join(map(str, used_account_ids)) + ")" if used_account_ids else ""}
+                ORDER BY RANDOM() LIMIT 1
+            """, user_id)
+
+            if not account: break
+            used_account_ids.append(account['id'])
+            sender = account['username']
+
+            try:
+                import instaloader
+                await asyncio.sleep(random.uniform(2, 5))
+                
+                L = instaloader.Instaloader(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                
+                # Apply Proxy
+                if account['host']:
+                    p_auth = f"{account['p_user']}:{account['p_pass']}@" if account['p_user'] else ""
+                    proxy_url = f"{account['proxy_type']}://{p_auth}{account['host']}:{account['port']}"
+                    L.context._session.proxies = {'http': proxy_url, 'https': proxy_url}
+
+                # Inject Session
+                if account['session_id']:
+                    try:
+                        L.context._session.cookies.set('sessionid', account['session_id'])
+                        if account['user_id_cookie']:
+                            L.context._session.cookies.set('ds_user_id', account['user_id_cookie'])
+                            L.context.username = account['username']
+                    except: pass
+
+                logger.info(f"🛰️ Ghost Pool (Attempt {ghost_attempts}): Using @{sender} for @{username}")
+                # 🚨 SMART TELEMETRY: Record exactly when this account was deployed!
+                await db.execute("UPDATE instagram_accounts SET last_used_at = NOW() WHERE id = $1", account['id'])
+                
+                profile = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: instaloader.Profile.from_username(L.context, username)
+                )
+
+                # ✨ SUCCESS: Save FULL results and qualify
+                logger.info(f"✨ Ghost Account @{account['username']} scraped {username} successfully!")
+                
+                # Fetch recent posts (Limit to 3 for User Success)
+                posts = []
+                try:
+                    logger.info(f"📸 Attempting to capture grid for @{username}...")
+                    for post in profile.get_posts():
+                        # 🏎️ Direct Proxy (weserv.nl) to pull the actual image JPEG immediately
+                        p_url = f"https://images.weserv.nl/?url={quote(post.url)}&w=300&h=300&fit=cover"
+                        posts.append({
+                            "url": f"https://instagram.com/p/{post.shortcode}",
+                            "display_url": p_url,
+                            "caption": post.caption or ""
+                        })
+                        if len(posts) >= 3: break
+                    logger.info(f"✅ Success: Captured {len(posts)} posts for @{username}.")
+                except Exception as post_err:
+                    logger.warning(f"⚠️ Post capture failed for @{username}: {post_err}")
+
+                await self._qualify_and_update(lead_id, user_id, 
+                                             profile.biography or "", 
+                                             profile.followers, 
+                                             profile.full_name or "", 
+                                             posts)
+                return {"success": True, "method": f"ghost (@{account['username']})"}
+
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"⚠️ Ghost account @{sender} failed: {e}. Retrying pool...")
+                
+                # 🚨 SMART TELEMETRY: Catch rate limits and auto-tag the specific account
+                err_str = last_error.lower()
+                if any(x in err_str for x in ["429", "login", "unauthorized", "rate", "limit", "checkpoint", "challenge", "bad request", "json query", "expecting value"]):
+                    logger.error(f"🚨 Block Detected for @{sender}! Auto-Tagging as 'rate_limited'.")
+                    await db.execute("UPDATE instagram_accounts SET status = 'rate_limited' WHERE id = $1", account['id'])
+                
+                continue
+
+        # 2. Strategy 2: Stealth Mirror Fallbacks (Picuki/Imginn)
+        stealth_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+        mirrors = [
+            (f"https://imginn.com/{username}/", r'<p>(.*?)</p>'),
+            (f"https://www.picuki.com/profile/{username}", r'profile_description">(.*?)</div>'),
+            (f"https://dumpor.io/v/{username}", r'user-description">(.*?)</div>')
+        ]
+        
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=stealth_headers, proxy=proxy_url) as client:
+            for url, bio_rgx in mirrors:
+                try:
+                    res = await client.get(url)
+                    if res.status_code == 200:
+                        # 1. Capture Bio
+                        bi = re.search(bio_rgx, res.text, re.S | re.I)
+                        f_bio = re.sub(r'<[^>]+>', ' ', bi.group(1)).strip() if bi else ""
+                        
+                        # 2. Capture Grid (Mirror Mode - Enhanced Regex for Lazy-Loading)
+                        mirror_posts = []
+                        # Look for cdninstagram URLs in any attribute (src, data-src, content, etc)
+                        img_matches = re.findall(r'(?:src|data-src|content)="(https://[^"]*?cdninstagram\.com[^"]*?)"', res.text)
+                        # Filter for high-res grid patterns and unique ones
+                        unique_imgs = list(set(img_matches))
+                        for img_c in unique_imgs[:3]:
+                            mirror_posts.append({
+                                "url": f"https://instagram.com/{username}",
+                                "display_url": f"https://images.weserv.nl/?url={quote(img_c)}&w=300&h=300&fit=cover",
+                                "caption": "Metadata capture successful 🛰️"
+                            })
+                        
+                        logger.info(f"✨ Mirror Discovery found bio and {len(mirror_posts)} posts for @{username} (Lazy-Load Bypass Engaged!)")
+                        
+                        # 3. Qualify & Save
+                        new_status = await self._qualify_and_update(lead_id, user_id, 
+                                                                  f_bio, 0, 
+                                                                  f"{username}_mirror",
+                                                                  mirror_posts)
+                        return {"success": True, "new_status": new_status, "source": "mirror_stealth"}
+                except: continue
+
+        # 3. Strategy 3: Search Snippet Fallback
+        try:
+            search_url = f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{username}\"')}"
+            async with httpx.AsyncClient(headers=stealth_headers, timeout=12.0) as client:
+                res = await client.get(search_url)
+                if res.status_code == 200:
+                    snippet_mx = re.search(r'Instagram photos and videos \. (.*?) - Instagram', res.text, re.I)
+                    if snippet_mx:
+                        f_bio = snippet_mx.group(1).strip()
+                        await db.execute("UPDATE instagram_leads SET bio = $1, updated_at = NOW() WHERE id = $2", f_bio, lead_id)
+                        new_status = await self._qualify_and_update(lead_id, user_id, f_bio, 0, 0)
+                        return {"status": "success", "source": "search_snippet"}
+        except: pass
+
+        return {"error": f"All strategies failed: {last_error}"}
+
+    # --- Data Utils ---
+
+    async def get_leads(self, user_id: int, status: str = None, keyword: str = None, limit: int = 100, offset: int = 0):
+        query = "SELECT * FROM instagram_leads WHERE user_id = $1"
+        params = [user_id]
+        if status: params.append(status); query += f" AND status = ${len(params)}"
+        if keyword: params.append(f"%{keyword}%"); query += f" AND (discovery_keyword ILIKE ${len(params)} OR instagram_username ILIKE ${len(params)})"
+        query += f" ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
+        rows = await db.fetch(query, *params)
+        leads = []
+        for row in rows:
+            d = dict(row)
+            # Parse recent_posts JSON
+            try:
+                d['recent_posts'] = json.loads(d.get('recent_posts') or '[]')
+            except:
+                d['recent_posts'] = []
+            leads.append(d)
+        return leads
+
+    async def get_stats(self, user_id: int):
+        stats = await db.fetchrow("""
+            SELECT 
+                COUNT(*) as total, 
+                COUNT(*) FILTER (WHERE status = 'discovered') as discovered, 
+                COUNT(*) FILTER (WHERE status = 'qualified') as analyzed,
+                COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+                COUNT(*) FILTER (WHERE status = 'contacted') as contacted,
+                COUNT(*) FILTER (WHERE status = 'converted') as converted
+            FROM instagram_leads WHERE user_id = $1
+        """, user_id)
+        return dict(stats) if stats else {"total": 0, "discovered": 0, "analyzed": 0, "rejected": 0, "contacted": 0, "converted": 0}
+
+    async def get_proxies(self, user_id: int):
+        rows = await db.fetch("SELECT * FROM instagram_proxies WHERE user_id = $1", user_id)
+        return [dict(row) for row in rows]
+
+    async def add_proxy(self, user_id: int, proxy):
+        # Support bundle string in 'host' field
+        is_bundle = isinstance(proxy.host, str) and (':' in proxy.host or '|' in proxy.host)
+        
+        if is_bundle:
+            p_data = self._parse_proxy_str(proxy.host)
+            if p_data:
+                await db.execute("""
+                    INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type) 
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                """, user_id, p_data['host'], p_data['port'], p_data['user'], p_data['pass'], proxy.proxy_type or 'http')
+                return {"status": "success"}
+        
+        # Standard Insert
+        await db.execute("INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type) VALUES ($1, $2, $3, $4, $5, $6)", user_id, proxy.host, proxy.port, proxy.username, proxy.password, proxy.proxy_type)
+        return {"status": "success"}
+
+    async def delete_proxy(self, user_id: int, proxy_id: int):
+        await db.execute("UPDATE instagram_accounts SET proxy_id = NULL WHERE proxy_id = $1", proxy_id)
+        await db.execute("DELETE FROM instagram_proxies WHERE id = $1", proxy_id)
+        return {"status": "success"}
+
+    async def get_accounts(self, user_id: int):
+        rows = await db.fetch("SELECT i.*, p.host as proxy_host FROM instagram_accounts i LEFT JOIN instagram_proxies p ON i.proxy_id = p.id WHERE i.user_id = $1", user_id)
+        return [dict(row) for row in rows]
+
+    def _parse_proxy_str(self, p_str: str):
+        """Parses a raw proxy string (user:pass:host:port or host:port:user:pass)"""
+        if not p_str or ':' not in str(p_str): return None
+        
+        # Super-Robust Cleaning: Ignore trailing talk/tabs from table copy-pastes
+        p_str = str(p_str).replace('\t', ' ').strip()
+        words = p_str.split(' ')
+        proxy_candidate = ""
+        for word in words:
+            if word.count(':') >= 1:
+                proxy_candidate = word
+                break
+        
+        if not proxy_candidate: return None
+        
+        # Remove any leading protocol (e.g. http://)
+        proxy_candidate = re.sub(r'^https?://', '', proxy_candidate)
+        parts = [p.strip() for p in proxy_candidate.split(':')]
+        
+        # Case 1: user:pass:host:port (4 parts)
+        if len(parts) == 4:
+            # Check if 3rd part is host-like (contains dots or is IP-like)
+            if '.' in parts[2]:
+                try:
+                    return {
+                        "user": parts[0], 
+                        "pass": parts[1], 
+                        "host": parts[2], 
+                        "port": int(re.sub(r'[^0-9]', '', parts[3]))
+                    }
+                except: pass
+            
+            # Fallback to host:port:user:pass
+            try:
+                return {
+                    "host": parts[0], 
+                    "port": int(re.sub(r'[^0-9]', '', parts[1])), 
+                    "user": parts[2], 
+                    "pass": parts[3]
+                }
+            except: pass
+            
+        # Case 2: host:port (2 parts)
+        elif len(parts) == 2:
+            try:
+                return {
+                    "host": parts[0], 
+                    "port": int(re.sub(r'[^0-9]', '', parts[1])), 
+                    "user": "", 
+                    "pass": ""
+                }
+            except: pass
+            
+        return None
+
+    async def add_account(self, user_id: int, account_data):
+        proxy_id = account_data.proxy_id
+        
+        # 🛡️ Cast proxy_id if it's a string from the frontend
+        if isinstance(proxy_id, str):
+            if ':' in proxy_id:
+                logger.info(f"Detected raw proxy string for new account: {proxy_id}")
+                p_data = self._parse_proxy_str(proxy_id)
+                if p_data:
+                    res = await db.fetchrow("""
+                        INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type) 
+                        VALUES ($1, $2, $3, $4, $5, 'http') RETURNING id
+                    """, user_id, p_data['host'], p_data['port'], p_data['user'], p_data['pass'])
+                    proxy_id = res['id']
+            elif proxy_id.isdigit():
+                proxy_id = int(proxy_id)
+            else:
+                proxy_id = None
+
+        # 🧪 Check if username is actually a raw bundle
+        bundle = self._parse_account_str(account_data.username)
+        if bundle:
+            await db.execute("""
+                INSERT INTO instagram_accounts (user_id, username, password, proxy_id, status, session_id, user_id_cookie, two_factor_secret, email)
+                VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)
+            """, user_id, bundle['username'], bundle['password'], proxy_id, 
+                bundle['session_id'], bundle['user_id_cookie'], bundle['two_factor_secret'], bundle['email'])
+        else:
+            await db.execute("INSERT INTO instagram_accounts (user_id, username, password, proxy_id, status) VALUES ($1, $2, $3, $4, 'active')", 
+                             user_id, account_data.username, account_data.password, proxy_id)
+        return {"status": "success"}
+
+    async def delete_account(self, user_id: int, account_id: int):
+        await db.execute("DELETE FROM instagram_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
+        return {"status": "success"}
+
+    async def delete_lead(self, user_id: int, lead_id: int):
+        await db.execute("DELETE FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        return {"status": "success"}
+
+    async def clear_all_leads(self, user_id: int):
+        await db.execute("DELETE FROM instagram_leads WHERE user_id = $1", user_id)
+        return {"status": "success"}
+
+    def __init__(self):
+        self.workers = {} # user_id: bool
+
+    async def _ensure_settings_table(self):
+        try:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS instagram_filter_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    bio_keywords TEXT DEFAULT '',
+                    min_followers INTEGER DEFAULT 0,
+                    max_followers INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            await db.execute("""
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP;
+            """)
+        except Exception as e:
+            logger.warning(f"Settings table init: {e}")
+
+    async def get_filter_settings(self, user_id: int):
+        row = await db.fetchrow("SELECT * FROM instagram_filter_settings WHERE user_id = $1", user_id)
+        if row:
+            res = dict(row)
+            res['sample_hashes'] = json.loads(res.get('sample_hashes') or '[]')
+            return res
+        return {"user_id": user_id, "bio_keywords": "", "min_followers": 0, "max_followers": 0, "sample_hashes": []}
+
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None):
+        h_json = json.dumps(sample_hashes or [])
+        await db.execute("""
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json)
+        return {"status": "saved"}
+
+    def _get_image_hash(self, img_content: bytes) -> str:
+        """Generates a Visual Hash for a photo."""
+        try:
+            img = PIL.Image.open(io.BytesIO(img_content))
+            import imagehash
+            # 🧠 Upgraded: Generate both Perceptual and Gradient Hashes!
+            p = str(imagehash.phash(img))
+            d = str(imagehash.dhash(img))
+            return f"{p}|{d}"
+        except: return None
+
+    async def generate_sample_hash(self, base64_img: str) -> str:
+        """Utility for frontend to generate a hash from a file."""
+        import base64
+        if ',' in base64_img:
+            base64_img = base64_img.split(',')[1]
+        content = base64.b64decode(base64_img)
+        return self._get_image_hash(content)
+
+    def _check_bio_keywords(self, bio: str, keywords_raw: str) -> bool:
+        """Returns True if lead passes keyword filter (or no filter set)."""
+        if not keywords_raw or not keywords_raw.strip():
+            return True  # No filter set = everyone passes
+        if not bio:
+            return False  # Filter is set but lead has no bio = reject
+        keywords = [k.strip().lower() for k in keywords_raw.split(',') if k.strip()]
+        bio_lower = bio.lower()
+        return any(kw in bio_lower for kw in keywords)
+
+    def _check_follower_range(self, followers: int, min_f: int, max_f: int) -> bool:
+        """Returns True if follower count is within range (0 = no limit)."""
+        if min_f > 0 and followers < min_f:
+            return False
+        if max_f > 0 and followers > max_f:
+            return False
+        return True
+
+    async def _analysis_worker(self, user_id: int):
+        """🚀 THE AUTO-PILOT WORKER: Scans leads and applies bio/follower filters"""
+        logger.info(f"Auto-Pilot Analysis Worker started for User {user_id}")
+        self.workers[user_id] = True
+        
+        try:
+            while self.workers.get(user_id):
+                # 1. Fetch filter settings for this user
+                settings = await self.get_filter_settings(user_id)
+
+                # 🚀 SELF-HEALING: Auto-Reset rate limits after a 12-hour cool-down!
+                await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE user_id = $1 AND status = 'rate_limited' AND last_used_at < NOW() - INTERVAL '12 hours'", user_id)
+
+                # 2. Peek for the NEXT discovered lead
+                lead = await db.fetchrow("""
+                    SELECT id FROM instagram_leads 
+                    WHERE user_id = $1 AND status = 'discovered' 
+                    LIMIT 1
+                """, user_id)
+                
+                if not lead:
+                    logger.info(f"No more leads to analyze for User {user_id}. Auto-Pilot Resting. 😴")
+                    break
+                
+                # 3. PERFORM DEEP ANALYSIS
+                logger.info(f"Auto-Pilot Analysis: Processing Lead ID {lead['id']}...")
+                try:
+                    # analyze_lead now handles EVERYTHING: Info, Visuals, and Qualification rules.
+                    result = await self.analyze_lead(user_id, lead['id'])
+                    
+                    if "error" in result:
+                        logger.error(f"Auto-Pilot Lead {lead['id']} failed: {result['error']}. Skipping...")
+                        # 🛡️ PROTECT THE QUEUE: Move failed leads to 'failed' status so they don't block the worker!
+                        await db.execute("UPDATE instagram_leads SET status = 'failed' WHERE id = $1", lead['id'])
+                    else:
+                        status = result.get("new_status", "analyzed")
+                        logger.info(f"✨ Lead {lead['id']} finished with status: {status.upper()}")
+
+                except Exception as e:
+                    logger.error(f"Auto-Pilot error on Lead {lead['id']}: {e}")
+                
+                # 4. FAST SLEEP (Turbo Mode Enabled)
+                delay = random.uniform(3.0, 5.0)
+                logger.info(f"Auto-Pilot Waiting {delay:.1f}s for next target...")
+                await asyncio.sleep(delay)
+                
+        except Exception as e:
+            logger.error(f"Critical Auto-Pilot Worker failure: {e}")
+        finally:
+            self.workers[user_id] = False
+            logger.info(f"Auto-Pilot Analysis Worker stopped for User {user_id}")
+
+    async def start_auto_analysis(self, user_id: int):
+        if self.workers.get(user_id):
+            return {"status": "already_running"}
+        
+        self.workers[user_id] = True
+        asyncio.create_task(self._analysis_worker(user_id))
+        return {"status": "started"}
+
+    async def stop_auto_analysis(self, user_id: int):
+        self.workers[user_id] = False
+        return {"status": "stopped"}
+
+    async def get_worker_status(self, user_id: int):
+        return {"is_running": self.workers.get(user_id, False)}
+
+    # --- Stage 4: Outreach ---
+    
+    _campaign_tasks = {}
+    _insta_clients = {}  # Cache logged-in clients for speed
+
+    async def fix_account_statuses(self, user_id: int):
+        """Quick fix: Set all accounts without a status to 'active'."""
+        await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE (status IS NULL OR status = '') AND user_id = $1", user_id)
+        return {"status": "fixed"}
+
+    async def _get_insta_client(self, account_row):
+        username = account_row['username']
+        if username in self._insta_clients:
+            return self._insta_clients[username]
+        
+        from instagrapi import Client
+        cl = Client()
+        cl.delay_range = [2, 5]
+        
+        # Proxy Support
+        if account_row.get('host'):
+            p_auth = f"{account_row['p_user']}:{account_row['p_pass']}@" if account_row.get('p_user') else ""
+            p_url = f"{account_row['proxy_type']}://{p_auth}{account_row['host']}:{account_row['port']}"
+            cl.set_proxy(p_url)
+            
+        try:
+            session_id = account_row.get('session_id')
+            if session_id and isinstance(session_id, str) and len(session_id) > 5:
+                # Use sessionid cookie login (safest method)
+                logger.info(f"Session login for @{username}...")
+                cl.login_by_sessionid(session_id)
+            else:
+                # Fallback: password login
+                logger.info(f"Password login for @{username}...")
+                cl.login(username, account_row['password'])
+            
+            self._insta_clients[username] = cl
+            logger.info(f"✅ Ghost @{username} logged in successfully.")
+            return cl
+        except Exception as e:
+            logger.error(f"Login failed for @{username}: {e}")
+            return None
+
+    async def start_campaign(self, user_id: int, message_template: str):
+        if user_id in self._campaign_tasks:
+            return {"status": "already_running"}
+        
+        task = asyncio.create_task(self._campaign_worker(user_id, message_template))
+        self._campaign_tasks[user_id] = task
+        logger.info(f"🚀 Outreach Campaign STARTED for user {user_id}")
+        return {"status": "started"}
+
+    async def stop_campaign(self, user_id: int):
+        task = self._campaign_tasks.pop(user_id, None)
+        if task:
+            task.cancel()
+            logger.info(f"🛑 Outreach Campaign STOPPED for user {user_id}")
+            return {"status": "stopped"}
+        return {"status": "not_running"}
+
+    async def get_campaign_status(self, user_id: int):
+        return {"is_running": user_id in self._campaign_tasks}
+
+    async def _campaign_worker(self, user_id: int, template: str):
+        import random
+        try:
+            while True:
+                # 1. Fetch next Ready lead
+                lead = await db.fetchrow("""
+                    SELECT * FROM instagram_leads 
+                    WHERE user_id = $1 AND status IN ('analyzed', 'qualified') 
+                    ORDER BY id ASC LIMIT 1
+                """, user_id)
+                
+                if not lead:
+                    logger.info("🏁 Campaign Complete: No more qualified leads found.")
+                    break
+                
+                # 2. Pick a random Ghost Account with full details
+                account = await db.fetchrow("""
+                    SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+                    FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
+                    WHERE a.user_id = $1 AND a.status = 'active'
+                    ORDER BY RANDOM() LIMIT 1
+                """, user_id)
+                
+                if not account:
+                    logger.warning("⚠️ Campaign Paused: No active ghost accounts found. Add accounts to continue.")
+                    await asyncio.sleep(60)
+                    continue
+
+                cl = await self._get_insta_client(account)
+                if not cl:
+                    # Account might be flagged, try another in next loop
+                    await asyncio.sleep(10)
+                    continue
+
+                username = lead['instagram_username']
+                sender = account['username']
+                
+                # 3. Personalize Message
+                personalized_msg = template.replace("[username]", f"@{username}")
+                
+                # 4. Human Jitter (Safe delay)
+                delay = random.uniform(15, 30)
+                logger.info(f"📤 Outreach Pilot: Sending DM to @{username} via ghost @{sender}. Jitter: {delay:.1f}s")
+                await asyncio.sleep(delay)
+
+                # 🚀 DM DELIVERY
+                try:
+                    loop = asyncio.get_event_loop()
+                    user_id_to_dm = await loop.run_in_executor(
+                        None, cl.user_id_from_username, username
+                    )
+                    await loop.run_in_executor(
+                        None, cl.direct_send, personalized_msg, [int(user_id_to_dm)]
+                    )
+                    await db.execute(
+                        "UPDATE instagram_leads SET status = 'contacted' WHERE id = $1",
+                        lead['id']
+                    )
+                    logger.info(f"✅ DM SENT to @{username} via @{sender}.")
+                except Exception as dm_error:
+                    logger.error(f"❌ DM failed for @{username}: {dm_error}")
+                    # Mark as analyzed so it's retried, not stuck
+                    await asyncio.sleep(20)
+
+        except asyncio.CancelledError:
+            logger.info("Campaign worker cancelled.")
+        except Exception as e:
+            logger.error(f"Campaign worker encountered error: {e}")
+        finally:
+            self._campaign_tasks.pop(user_id, None)
+
+instagram_service = InstagramService()

@@ -804,3 +804,116 @@ export const salesAPI = {
     await api.post('/sales/ab-tests', data);
   },
 };
+
+// --- INSTAGRAM LEAD GENERATION SERVICES ---
+export const instagramAPI = {
+  discoverLeads: async (keywords: string[], limit_per_keyword: number = 50): Promise<{ status: string; new_leads_found: number }> => {
+    // 🌀 Pro Mode: Discovery can take several minutes with proxies/bypasses
+    const response = await api.post('/instagram/discover', { keywords, limit_per_keyword }, { timeout: 300000 });
+    return response.data;
+  },
+
+  getLeads: async (params: { status?: string; keyword?: string; limit?: number; offset?: number }): Promise<any[]> => {
+    const response = await api.get('/instagram/leads', { params });
+    return response.data;
+  },
+  
+  deleteLead: async (leadId: number): Promise<void> => {
+    await api.delete(`/instagram/leads/${leadId}`);
+  },
+
+  clearLeads: async (): Promise<void> => {
+    await api.delete('/instagram/leads/clear');
+  },
+
+  getStats: async (): Promise<{ total: number; discovered: number; analyzed: number; rejected: number; contacted: number; converted: number }> => {
+    const response = await api.get('/instagram/stats');
+    return response.data;
+  },
+
+  // Proxies
+  getProxies: async (): Promise<any[]> => {
+    const response = await api.get('/instagram/proxies');
+    return response.data;
+  },
+  addProxy: async (proxyData: any): Promise<any> => {
+    const response = await api.post('/instagram/proxies', proxyData);
+    return response.data;
+  },
+  deleteProxy: async (proxyId: number): Promise<any> => {
+    const response = await api.delete(`/instagram/proxies/${proxyId}`);
+    return response.data;
+  },
+
+  // Accounts
+  getAccounts: async (): Promise<any[]> => {
+    const response = await api.get('/instagram/accounts');
+    return response.data;
+  },
+  addAccount: async (accountData: any): Promise<any> => {
+    const response = await api.post('/instagram/accounts', accountData);
+    return response.data;
+  },
+  deleteAccount: async (accountId: number): Promise<any> => {
+    const response = await api.delete(`/instagram/accounts/${accountId}`);
+    return response.data;
+  },
+  
+  // Analysis
+  analyzeLead: async (leadId: number): Promise<any> => {
+    // Stage 2 analysis can be slow due to external scraping
+    const response = await api.post(`/instagram/leads/${leadId}/analyze`, {}, { timeout: 60000 });
+    return response.data;
+  },
+
+  startAutoPilot: async (): Promise<any> => {
+    const response = await api.post('/instagram/auto-analyze/start');
+    return response.data;
+  },
+
+  stopAutoPilot: async (): Promise<any> => {
+    const response = await api.post('/instagram/auto-analyze/stop');
+    return response.data;
+  },
+
+  getAutoPilotStatus: async (): Promise<{ is_running: boolean }> => {
+    const response = await api.get('/instagram/auto-analyze/status');
+    return response.data;
+  },
+
+  // --- Stage 4: Outreach ---
+  startCampaign: async (template: string): Promise<any> => {
+    const response = await api.post('/instagram/campaign/start', { template });
+    return response.data;
+  },
+
+  stopCampaign: async (): Promise<any> => {
+    const response = await api.post('/instagram/campaign/stop');
+    return response.data;
+  },
+
+  getCampaignStatus: async (): Promise<{ is_running: boolean }> => {
+    const response = await api.get('/instagram/campaign/status');
+    return response.data;
+  },
+
+  fixAccountStatuses: async (): Promise<any> => {
+    const response = await api.post('/instagram/campaign/fix-accounts');
+    return response.data;
+  },
+
+  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[] }> => {
+    const response = await api.get('/instagram/filters/settings');
+    return response.data;
+  },
+
+  saveFilterSettings: async (settings: { bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[] }): Promise<any> => {
+    const response = await api.post('/instagram/filters/settings', settings);
+    return response.data;
+  },
+
+  generateImageHash: async (imageBase64: string): Promise<{ hash: string }> => {
+    const response = await api.post('/instagram/filters/generate-hash', { image_base64: imageBase64 });
+    return response.data;
+  }
+};
