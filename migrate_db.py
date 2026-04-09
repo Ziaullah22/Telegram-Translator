@@ -630,6 +630,7 @@ async def migrate():
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS user_id_cookie TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS two_factor_secret TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS email TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS verification_code TEXT;
 
                 -- Instagram Filter & Scoring Additions
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS recent_posts JSONB DEFAULT '[]';
@@ -647,6 +648,20 @@ async def migrate():
 
                 -- Following Count + Network Lists (Follower/Following Scraping)
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'google';
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS profile_pic_url TEXT;
+
+                -- Force uniqueness on instagram handles to allow ON CONFLICT logic
+                -- 🧹 Step 1: Remove existing duplicates so the constraint doesn't fail
+                DELETE FROM instagram_leads a USING instagram_leads b 
+                WHERE a.id < b.id AND a.instagram_username = b.instagram_username;
+
+                -- 🛡️ Step 2: Apply the Unique Constraint
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_instagram_leads_username') THEN
+                        ALTER TABLE instagram_leads ADD CONSTRAINT uq_instagram_leads_username UNIQUE (instagram_username);
+                    END IF;
+                END $$;
 
                 CREATE TABLE IF NOT EXISTS instagram_lead_network (
                     id BIGSERIAL PRIMARY KEY,

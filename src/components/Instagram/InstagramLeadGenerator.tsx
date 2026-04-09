@@ -3,9 +3,10 @@ import {
     Instagram, Search, Trash2, Play,
     Zap, Target, Plus, Globe, Filter,
     RefreshCw, ExternalLink, UserCheck, CheckCircle2,
-    Server, Users, AlertCircle, Loader2, X, Eye, LayoutGrid
+    Server, Users, AlertCircle, Loader2, X, Eye, EyeOff, Clock
 } from 'lucide-react';
 import { instagramAPI } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 
 // 🕒 Time Formatter Helper for Ghost Accounts
 const timeAgo = (dateStr?: string) => {
@@ -34,6 +35,8 @@ const InstagramLeadGenerator: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+    const [harvestingId, setHarvestingId] = useState<number | null>(null);
+    const [autoAnalyzingId, setAutoAnalyzingId] = useState<number | null>(null);
     const [isAutoPilotRunning, setIsAutoPilotRunning] = useState(false);
     
     // Modals
@@ -42,17 +45,37 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showProxyModal, setShowProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
-    const [previewTab, setPreviewTab] = useState<'posts' | 'followers' | 'following'>('posts');
-    const [networkList, setNetworkList] = useState<any[]>([]);
-    const [isFetchingNetwork, setIsFetchingNetwork] = useState(false);
     
     // Form States
     const [keywords, setKeywords] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [notification, setNotification] = useState<{msg: string, type: 'success' | 'alert'} | null>(null);
-    const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', bundle: '' });
+    const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', bundle: '', verification_code: '', session_id: '' });
+    const [needs2FA, setNeeds2FA] = useState(false);
     const [newProxy, setNewProxy] = useState({ host: '', port: '', username: '', password: '', proxy_type: 'http', bundle: '' });
+    
+    // 🔗 Real-time Scout Sync
+    const [isAuthorizing, setIsAuthorizing] = useState(false);
+    const [showPass, setShowPass] = useState(false);
+    const { onMessage: socketOnMessage } = useSocket();
+    useEffect(() => {
+        return socketOnMessage((data: any) => {
+            if (data.topic === 'harvest_status') {
+                if (data.status === 'completed' || data.status === 'error') {
+                    setNotification({ 
+                        msg: data.status === 'completed' ? '🏁 Scout Report Complete! ✨' : `❌ Scout Error: ${data.message}`, 
+                        type: data.status === 'completed' ? 'success' : 'alert' 
+                    });
+                    setHarvestingId(null);
+                    fetchData();
+                }
+            } else if (data.type === 'auto_analyze_stopped') {
+                setIsAutoPilotRunning(false);
+                setNotification({ msg: data.message || '🏁 Mission Complete: Auto-Pilot Finished!', type: 'success' });
+            }
+        });
+    }, [socketOnMessage]);
 
     const fetchData = async () => {
         try {
@@ -76,6 +99,25 @@ const InstagramLeadGenerator: React.FC = () => {
             setIsLoading(false);
         }
     };
+
+    const { onMessage } = useSocket();
+
+    useEffect(() => {
+        const unsubscribe = onMessage((message: any) => {
+            if (message.type === 'error_notification') {
+                setNotification({ msg: message.message, type: 'alert' });
+            } else if (message.type === 'instagram_lead_updated' || message.type === 'new_lead_discovered') {
+                // 🛰️ INSTANT SYNC: Leads pop into the table the millisecond they are found!
+                fetchData();
+            } else if (message.type === 'auto_analyze_started') {
+                setAutoAnalyzingId(message.lead_id);
+            } else if (message.type === 'auto_analyze_finished') {
+                setAutoAnalyzingId(null);
+                fetchData(); // Refresh to show the new 'qualified/vetted' status immediately!
+            }
+        });
+        return unsubscribe;
+    }, [onMessage]);
 
     useEffect(() => {
         if (notification) {
@@ -115,7 +157,8 @@ const InstagramLeadGenerator: React.FC = () => {
 
     useEffect(() => {
         let pollInterval: any;
-        if (isDiscovering || isAutoPilotRunning || isCampaignRunning) {
+        // 🏎️💨 HEARTBEAT: Pulse every 3s if ANYTHING is working! (Auto-Pilot OR Manual Analysis OR Harvest)
+        if (isDiscovering || isAutoPilotRunning || isCampaignRunning || analyzingId !== null || harvestingId !== null) {
             pollInterval = setInterval(async () => {
                 fetchData();
                 if (isCampaignRunning) {
@@ -130,7 +173,7 @@ const InstagramLeadGenerator: React.FC = () => {
             }, 3000);
         }
         return () => clearInterval(pollInterval);
-    }, [isDiscovering, isAutoPilotRunning, isCampaignRunning]);
+    }, [isDiscovering, isAutoPilotRunning, isCampaignRunning, analyzingId, harvestingId]);
 
     const handleToggleAutoPilot = async () => {
         try {
@@ -226,15 +269,67 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
-    const handleAddAccount = async () => {
+    const handleHarvest = async (leadId: number) => {
+        if (harvestingId !== null) {
+            setNotification({ msg: '⚠️ Scraper Busy: Please wait for the current harvest to finish!', type: 'alert' });
+            return;
+        }
+        
+        setHarvestingId(leadId);
         try {
-            const data = { username: newAccount.bundle, password: '', proxy_id: newAccount.proxy_id || null };
-            await instagramAPI.addAccount(data);
-            setShowAccountModal(false);
-            setNewAccount({ username: '', password: '', proxy_id: '', bundle: '' });
+            // 🔥 BACKGROUND ACTION: Trigger the surge and wait for the signal!
+            await instagramAPI.harvestNetwork(leadId);
+            setNotification({ msg: '🕸️ Follower Surge Started! 🚀', type: 'success' });
+        } catch (error: any) {
+            console.error('Harvest failed:', error);
+            setNotification({ msg: 'Harvest failed. 🛑', type: 'alert' });
+            setHarvestingId(null);
+        }
+    };
+
+    const handleUpdateStatus = async (leadId: number, newStatus: string) => {
+        try {
+            await instagramAPI.updateLeadStatus(leadId, newStatus);
+            setNotification({ msg: `Lead marked as ${newStatus}. ✅`, type: 'success' });
             fetchData();
         } catch (error) {
+            console.error('Failed to update status:', error);
+        }
+    };
+
+    const handleAddAccount = async () => {
+        try {
+            setIsAuthorizing(true);
+            const data = { 
+                username: newAccount.username, 
+                password: newAccount.password, 
+                proxy_id: newAccount.proxy_id || null, 
+                verification_code: newAccount.verification_code || undefined,
+                session_id: newAccount.session_id || undefined
+            };
+            const res = await instagramAPI.addAccount(data);
+            
+            if (res.status === '2fa_required') {
+                setNeeds2FA(true);
+                setNotification({ msg: res.message || '🔐 2FA Required: Enter your code.', type: 'alert' });
+                return;
+            }
+
+            if (res.status === 'error') {
+                setNotification({ msg: `❌ ${res.message}`, type: 'alert' });
+                return;
+            }
+
+            setShowAccountModal(false);
+            setNeeds2FA(false);
+            setNewAccount({ username: '', password: '', proxy_id: '', bundle: '', verification_code: '', session_id: '' });
+            setNotification({ msg: '✅ Account Authorized successfully!', type: 'success' });
+            fetchData();
+        } catch (error: any) {
             console.error('Failed to add account:', error);
+            setNotification({ msg: '❌ Auth Failed: Check logs/proxy.', type: 'alert' });
+        } finally {
+            setIsAuthorizing(false);
         }
     };
 
@@ -315,6 +410,7 @@ const InstagramLeadGenerator: React.FC = () => {
             case 'analyzed': case 'qualified': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
             case 'contacted': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
             case 'converted': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+            case 'queued': return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
             default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
         }
     };
@@ -418,6 +514,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                 ))}
                             </div>
                         </div>
+
                         {/* Stats Panel */}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             {[
@@ -441,14 +538,14 @@ const InstagramLeadGenerator: React.FC = () => {
                         <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-                                    <thead className="bg-gray-50/50 dark:bg-gray-800/20 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
+                                    <thead className="bg-gray-50/50 dark:bg-gray-800/20 text-[9px] font-black text-gray-400 uppercase tracking-tight border-b border-gray-100 dark:border-white/5">
                                         <tr>
-                                            <th className="px-6 py-4">Lead Handle</th>
-                                            <th className="px-6 py-4">Status</th>
-                                            <th className="px-6 py-4">Strategic Bio</th>
-                                            <th className="px-6 py-4 text-center">Post Archive</th>
-                                            <th className="px-6 py-4">Influence</th>
-                                            <th className="px-6 py-4 text-right">Actions</th>
+                                            <th className="px-4 py-3">Lead Handle</th>
+                                            <th className="px-4 py-3">Status / Origin</th>
+                                            <th className="px-4 py-3">Strategic Bio</th>
+                                            <th className="px-4 py-3 text-center">Archive</th>
+                                            <th className="px-4 py-3">Influence</th>
+                                            <th className="px-4 py-3 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 dark:divide-white/5">
@@ -456,41 +553,61 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <tr><td colSpan={6} className="px-6 py-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">No leads found.</td></tr>
                                         ) : (
                                             leads.map(lead => (
-                                                <tr key={lead.id} className="group hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 border-2 border-white dark:border-gray-800">
-                                                                {lead.profile_pic_url ? <img src={lead.profile_pic_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400"><Instagram className="w-4 h-4" /></div>}
+                                                <tr 
+                                                    key={lead.id} 
+                                                    className={`group transition-all duration-700 ${
+                                                        autoAnalyzingId === lead.id 
+                                                        ? 'bg-blue-500/10 dark:bg-blue-500/15 shadow-[inset_0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20' 
+                                                        : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
+                                                    }`}
+                                                >
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-white dark:border-gray-800">
+                                                                {lead.profile_pic_url ? <img src={lead.profile_pic_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400"><Instagram className="w-3.5 h-3.5" /></div>}
                                                             </div>
                                                             <div className="flex flex-col">
+                                                                 <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
                                                                 <div className="flex items-center gap-1">
-                                                                    <span className="font-black text-gray-900 dark:text-white text-sm tracking-tight">@{lead.instagram_username || lead.username || 'unknown'}</span>
-                                                                    {lead.is_verified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 fill-blue-500/10" />}
+                                                                    <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
+                                                                    {autoAnalyzingId === lead.id && (
+                                                                        <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 uppercase animate-pulse">
+                                                                            <Loader2 className="w-2 h-2 animate-spin" /> Analyzing ⚙️
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                <span className="text-[10px] text-gray-400 font-bold lowercase truncate max-w-[100px]">{lead.full_name || 'Personal'}</span>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${getStatusStyle(lead.status)}`}>{lead.status}</span>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tight text-center ${getStatusStyle(lead.status)}`}>{lead.status}</span>
+                                                            <div className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tighter inline-flex items-center justify-center gap-1 ${
+                                                                lead.source === 'network_expansion' 
+                                                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 border border-purple-200 dark:border-purple-500/20' 
+                                                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 border border-blue-200 dark:border-blue-500/20'
+                                                            }`}>
+                                                                {lead.source === 'network_expansion' ? 'Follower' : 'Search'}
+                                                            </div>
+                                                        </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="max-w-[200px]">
+                                                    <td className="px-4 py-3">
+                                                        <div className="max-w-[140px]">
                                                             {lead.bio ? (
-                                                                <p className="text-[10px] text-gray-600 dark:text-gray-400 line-clamp-2 italic leading-relaxed">
+                                                                <p className="text-[9px] text-gray-600 dark:text-gray-400 line-clamp-2 italic leading-tight">
                                                                     {lead.bio}
                                                                 </p>
                                                             ) : (
                                                                 lead.status === 'discovered' ? (
-                                                                    <span className="text-[10px] text-gray-300 dark:text-gray-600 block animate-pulse">Waiting Stage 2... ⏳</span>
+                                                                    <span className="text-[8px] text-gray-300 dark:text-gray-600 block animate-pulse">Wait Stage 2..🏎️💨</span>
                                                                 ) : (
-                                                                    <span className="text-[10px] text-gray-400/50 italic capitalize">No bio for this user 🧐</span>
+                                                                    <span className="text-[8px] text-gray-400/50 italic">No bio 🧐</span>
                                                                 )
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex -space-x-2 isolate">
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex -space-x-1.5 isolate justify-center">
                                                             {lead.recent_posts && lead.recent_posts.length > 0 ? (
                                                                 <>
                                                                     {lead.recent_posts.map((post: any, idx: number) => {
@@ -498,7 +615,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         return (
                                                                             <div 
                                                                                 key={idx} 
-                                                                                className="w-8 h-8 rounded-full border-2 border-white dark:border-[#1e293b] overflow-hidden bg-gray-100 shadow-sm"
+                                                                                className="w-7 h-7 rounded-full border border-white dark:border-[#1e293b] overflow-hidden bg-gray-100 shadow-sm"
                                                                             >
                                                                                 <img src={imageUrl} alt="" className="w-full h-full object-cover" />
                                                                             </div>
@@ -509,33 +626,82 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                             setSelectedLead(lead);
                                                                             setShowPreviewModal(true);
                                                                         }}
-                                                                        className="w-8 h-8 rounded-full border-2 border-white dark:border-[#1e293b] bg-gray-100 dark:bg-gray-800 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors z-10"
+                                                                        className="w-7 h-7 rounded-full border border-white dark:border-[#1e293b] bg-gray-100 dark:bg-gray-800 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors z-10"
                                                                     >
-                                                                        <Eye className="w-3.5 h-3.5 text-gray-400" />
+                                                                        <Eye className="w-3 text-gray-400" />
                                                                     </button>
                                                                 </>
                                                             ) : (
-                                                                <span className="text-[10px] text-gray-400 italic">No posts</span>
+                                                                <span className="text-[8px] text-gray-400 italic">No posts</span>
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="text-xs font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
-                                                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Followers</span>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-1">
+                                                                <span className="text-[11px] font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[8px] text-gray-400 font-bold uppercase">Fol</span>
                                                             </div>
-                                                            <div className="flex items-center gap-1.5 border-t border-gray-100 dark:border-white/5 pt-1">
-                                                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
-                                                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">Following</span>
+                                                            <div className="flex items-center gap-1 border-t border-gray-100 dark:border-white/5">
+                                                                <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[8px] text-gray-400 font-bold uppercase">Wng</span>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <div className="flex items-center justify-end gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                                                    <td className="px-4 py-3 text-right">
+                                                        <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
-                                                            <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-blue-500/10 text-blue-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`}>{analyzingId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}</button>
-                                                            <button onClick={() => handleDeleteLead(lead.id)} className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 className="w-4 h-4" /></button>
+                                                            {lead.status === 'rejected' ? (
+                                                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 font-black text-[9px] uppercase tracking-widest border border-red-500/20">
+                                                                    <X className="w-3 h-3" /> Discarded 🗑️
+                                                                </div>
+                                                            ) : lead.status === 'discovered' ? (
+                                                                <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-blue-500/10 text-blue-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`} title="Identify Profile">
+                                                                    {analyzingId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
+                                                                </button>
+                                                            ) : (
+                                                                <>
+                                                                    {lead.is_private ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-500/10 text-orange-500 font-black text-[9px] uppercase tracking-widest border border-orange-500/20">
+                                                                            <AlertCircle className="w-3 h-3" /> Private Profile 🔒
+                                                                        </div>
+                                                                    ) : (lead.status === 'vetted' || lead.status === 'harvested') ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 font-black text-[9px] uppercase tracking-widest border border-emerald-500/20">
+                                                                            <CheckCircle2 className="w-3 h-3" /> Scrape Complete ✨
+                                                                        </div>
+                                                                    ) : lead.status === 'queued' ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-500 font-black text-[9px] uppercase tracking-widest border border-indigo-500/20 animate-pulse">
+                                                                            <Clock className="w-3 h-3" /> In Queue ⏰
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button 
+                                                                            onClick={() => handleHarvest(lead.id)} 
+                                                                            disabled={harvestingId === lead.id} 
+                                                                            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all ${
+                                                                                harvestingId === lead.id 
+                                                                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' 
+                                                                                : 'bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20'
+                                                                            }`}
+                                                                        >
+                                                                            {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
+                                                                            {harvestingId === lead.id ? "Scraping..." : "Approve & Scrape"}
+                                                                        </button>
+                                                                    )}
+                                                                    <button 
+                                                                        onClick={() => handleUpdateStatus(lead.id, 'rejected')} 
+                                                                        className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95"
+                                                                        title="DISCARD 🗑️❌"
+                                                                    >
+                                                                        <X className="w-4 h-4" />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                            <button 
+                                                                onClick={() => handleDeleteLead(lead.id)} 
+                                                                className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -845,15 +1011,72 @@ const InstagramLeadGenerator: React.FC = () => {
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Authorize via Bundle String 🛰️</p>
                             
                             <div className="space-y-4">
-                                <div className="space-y-3">
-                                    <textarea 
-                                        placeholder="username|password|session_id|..." 
-                                        className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-2xl p-4 text-xs font-mono text-gray-600 dark:text-gray-300 min-h-[120px] focus:border-pink-500/50 outline-none transition-all"
-                                        value={newAccount.bundle}
-                                        onChange={e => setNewAccount({...newAccount, bundle: e.target.value})}
-                                    />
-                                    <p className="text-[10px] text-gray-400 font-medium">✨ Extraction: {newAccount.bundle ? 'Account detected. Ready to authorize.' : 'Waiting for Ghost Bundle...'}</p>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Ghost Identity 👤</p>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Instagram Username" 
+                                            className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 text-sm font-bold text-gray-900 dark:text-white focus:border-pink-500/50 outline-none transition-all"
+                                            value={newAccount.username}
+                                            onChange={e => setNewAccount({...newAccount, username: e.target.value})}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Access Key 🔒</p>
+                                        <div className="relative">
+                                            <input 
+                                                type={showPass ? "text" : "password"} 
+                                                placeholder="Account Password" 
+                                                className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 pr-12 text-sm font-bold text-gray-900 dark:text-white focus:border-pink-500/50 outline-none transition-all"
+                                                value={newAccount.password}
+                                                onChange={e => setNewAccount({...newAccount, password: e.target.value})}
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowPass(!showPass)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                                            >
+                                                {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 font-medium pl-1">✨ Standard authorization flow. Pro-identity encryption active.</p>
+
+                                    <div className="pt-4 border-t border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest pl-1 mb-3 flex items-center gap-2">
+                                            <Globe className="w-3 h-3" />
+                                            Manual Session Bypass (SECRET TUNNEL)
+                                        </p>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Paste 'sessionid' from browser cookies" 
+                                            className="w-full bg-indigo-50/30 dark:bg-indigo-900/10 border-2 border-indigo-100 dark:border-indigo-500/20 rounded-2xl p-4 text-[10px] font-mono text-indigo-600 dark:text-indigo-300 focus:border-indigo-500 outline-none transition-all"
+                                            value={newAccount.session_id}
+                                            onChange={e => setNewAccount({...newAccount, session_id: e.target.value})}
+                                        />
+                                        <p className="text-[9px] text-gray-400 mt-2 italic px-1">💡 Pro Tip: Bypasses "Incorrect Password" IP blocks by using your trusted browser session.</p>
+                                    </div>
                                 </div>
+
+                                {needs2FA && (
+                                    <div className="pt-2 animate-in slide-in-from-top-4 duration-300">
+                                        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                                            Verification Code / 2FA (REQUIRED)
+                                        </p>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Enter 6-Digit Code" 
+                                            className="w-full bg-indigo-50/50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-500/40 rounded-xl p-4 text-sm font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500 shadow-inner transition-all"
+                                            value={newAccount.verification_code}
+                                            onChange={e => setNewAccount({...newAccount, verification_code: e.target.value})}
+                                            autoFocus
+                                        />
+                                        <p className="text-[9px] text-gray-400 mt-2 font-medium">🛡️ Enter the code from your app to satisfy the security challenge.</p>
+                                    </div>
+                                )}
                                 
                                 <div className="pt-2">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Assign Proxy Shield (Optional)</p>
@@ -868,10 +1091,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <button onClick={() => setShowAccountModal(false)} className="px-6 py-3 font-bold text-sm text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
                                 <button 
                                     onClick={handleAddAccount} 
-                                    disabled={!newAccount.bundle}
+                                    disabled={!newAccount.username || !newAccount.password || (needs2FA && !newAccount.verification_code) || isAuthorizing}
                                     className="flex-1 bg-gradient-to-tr from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-pink-500/20 disabled:opacity-50 transition-all active:scale-95"
                                 >
-                                    Authorize Account 🚀
+                                    {isAuthorizing ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Authorizing...</span>
+                                        </div>
+                                    ) : 'Authorize Account 🚀'}
                                 </button>
                             </div>
                         </div>
@@ -940,92 +1168,44 @@ const InstagramLeadGenerator: React.FC = () => {
                                 </button>
                             </div>
 
-                            {/* Network Navigation Tabs */}
-                            <div className="flex border-b border-gray-100 dark:border-white/5 mb-6">
-                                {[
-                                    { id: 'posts', label: 'Post Archive', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
-                                    { id: 'followers', label: `Followers`, icon: <Users className="w-3.5 h-3.5" /> },
-                                    { id: 'following', label: `Following`, icon: <Users className="w-3.5 h-3.5" /> },
-                                ].map(tab => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => {
-                                            setPreviewTab(tab.id as any);
-                                            if (tab.id !== 'posts') {
-                                                setIsFetchingNetwork(true);
-                                                instagramAPI.getLeadNetwork(selectedLead.id, tab.id as any)
-                                                    .then(setNetworkList)
-                                                    .finally(() => setIsFetchingNetwork(false));
-                                            }
-                                        }}
-                                        className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border-b-2 transition-all ${
-                                            previewTab === tab.id 
-                                            ? 'border-indigo-500 text-indigo-500' 
-                                            : 'border-transparent text-gray-400 hover:text-gray-600'
-                                        }`}
-                                    >
-                                        {tab.icon} {tab.label}
-                                    </button>
-                                ))}
+                            <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-white/5">
+                                <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3">Professional Biography 🛰️</h3>
+                                {selectedLead.bio ? (
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed italic">
+                                        "{selectedLead.bio}"
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic">No biography available for this profile.</p>
+                                )}
                             </div>
 
                             <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-                                {previewTab === 'posts' && (
-                                    <div className="grid grid-cols-3 gap-4">
-                                        {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
-                                            selectedLead.recent_posts.map((post: any, idx: number) => {
-                                                const imageUrl = typeof post === 'string' ? post : post.display_url;
-                                                return (
-                                                    <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
-                                                        <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                                        <a 
-                                                            href={post.url || '#'} 
-                                                            target="_blank" 
-                                                            rel="noopener noreferrer"
-                                                            className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
-                                                        >
-                                                            <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
-                                                        </a>
-                                                    </div>
-                                                );
-                                            })
-                                        ) : (
-                                            <div className="col-span-3 py-10 text-center flex flex-col items-center">
-                                                <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
-                                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {(previewTab === 'followers' || previewTab === 'following') && (
-                                    <div className="space-y-2">
-                                        {isFetchingNetwork ? (
-                                            <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin text-indigo-500 mx-auto" /></div>
-                                        ) : networkList.length > 0 ? (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                {networkList.map((net, i) => (
+                                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Content Archive 📸</h3>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
+                                        selectedLead.recent_posts.map((post: any, idx: number) => {
+                                            const imageUrl = typeof post === 'string' ? post : post.display_url;
+                                            return (
+                                                <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
+                                                    <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                                     <a 
-                                                        key={i} 
-                                                        href={`https://instagram.com/${net.network_username}`} 
+                                                        href={post.url || '#'} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
-                                                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 hover:bg-indigo-500/10 rounded-xl group transition-all"
+                                                        className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
                                                     >
-                                                        <span className="text-[11px] font-bold text-gray-600 dark:text-gray-300">@{net.network_username}</span>
-                                                        <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-indigo-500" />
+                                                        <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
                                                     </a>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="py-10 text-center flex flex-col items-center">
-                                                <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><Users className="w-6 h-6 text-gray-300" /></div>
-                                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">No network discovered yet</p>
-                                                <p className="text-gray-500 text-[9px] mt-1 italic">Click 'Scythe' to analyze this lead first.</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="col-span-3 py-10 text-center flex flex-col items-center">
+                                            <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
+                                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="mt-8 flex justify-center">

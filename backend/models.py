@@ -462,6 +462,7 @@ class InstagramAccountCreate(BaseModel):
     user_id_cookie: Optional[str] = None
     two_factor_secret: Optional[str] = None
     email: Optional[str] = None
+    verification_code: Optional[str] = None
 
 class InstagramAccountResponse(BaseModel):
     id: int
@@ -470,8 +471,10 @@ class InstagramAccountResponse(BaseModel):
     status: InstagramAccountStatus
     proxy_id: Optional[int] = None
     session_id: Optional[str] = None
+    user_id_cookie: Optional[str] = None
     two_factor_secret: Optional[str] = None
     email: Optional[str] = None
+    verification_code: Optional[str] = None
     last_used: Optional[datetime] = None
     created_at: datetime
 

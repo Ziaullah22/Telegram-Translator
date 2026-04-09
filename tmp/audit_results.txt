@@ -1,0 +1,34 @@
+﻿
+--- Auditing: Proxy 1 | 94.241.179.82 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLOCKED (HTTP 429)
+
+--- Auditing: Proxy 2 | 94.241.179.214 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLOCKED (HTTP 429)
+
+--- Auditing: Proxy 3 | 94.241.181.139 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLOCKED (HTTP 429)
+
+--- Auditing: Proxy 4 | 94.241.182.245 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLOCKED (HTTP 429)
+
+--- Auditing: Proxy 5 | 94.241.183.41 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLOCKED (HTTP 429)
+
+--- Auditing: Proxy 6 | 66.9.107.156 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLACKLISTED / CHALLENGED
+
+--- Auditing: Proxy 7 | 159.197.228.197 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLACKLISTED / CHALLENGED
+
+--- Auditing: Proxy 8 | 74.124.205.39 ---
+  Connection: SUCCESS (Status: 200)
+  Instagram:  BLACKLISTED / CHALLENGED
+
+--- Audit Complete ---

@@ -864,10 +864,20 @@ export const instagramAPI = {
     return response.data;
   },
   
-  // Analysis
   analyzeLead: async (leadId: number): Promise<any> => {
     // Stage 2 analysis can be slow due to external scraping
     const response = await api.post(`/instagram/leads/${leadId}/analyze`, {}, { timeout: 60000 });
+    return response.data;
+  },
+
+  harvestNetwork: async (leadId: number): Promise<any> => {
+    // Network expansion harvest (Stage 2 Network)
+    const response = await api.post(`/instagram/leads/${leadId}/harvest`);
+    return response.data;
+  },
+
+  updateLeadStatus: async (leadId: number, status: string): Promise<any> => {
+    const response = await api.post(`/instagram/leads/${leadId}/status`, {}, { params: { status } });
     return response.data;
   },
 

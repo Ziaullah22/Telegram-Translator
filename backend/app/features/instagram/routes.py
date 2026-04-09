@@ -25,7 +25,7 @@ async def discover_leads(
 async def get_leads(
     status: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
-    limit: int = 50,
+    limit: int = 10000,
     offset: int = 0,
     current_user: TokenData = Depends(get_current_user)
 ):
@@ -90,15 +90,29 @@ async def clear_all_leads(current_user: TokenData = Depends(get_current_user)):
     """Wipe all Instagram leads for the user."""
     return await instagram_service.clear_all_leads(current_user.user_id)
 
-@router.delete("/leads/{lead_id}")
-async def delete_lead(
+@router.post("/leads/{lead_id}/harvest")
+async def harvest_lead_network(
     lead_id: int,
+    background_tasks: BackgroundTasks,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Delete a single Instagram lead."""
-    return await instagram_service.delete_lead(current_user.user_id, lead_id)
+    """Explicitly trigger network harvesting (Followers/Following) for a vetted lead."""
+    # 🏎️💨 Background: Don't make the user wait for the 2-minute scrape!
+    background_tasks.add_task(instagram_service.harvest_lead_network, current_user.user_id, lead_id)
+    return {"status": "success", "message": "💎 Harvest started in background! New leads will appear in your table shortly."}
+
+@router.delete("/leads/{lead_id}")
 
 # --- Analysis ---
+
+@router.post("/leads/{lead_id}/status")
+async def update_lead_status(
+    lead_id: int,
+    status: str = Query(...),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Explicitly update lead status (e.g. mark as approved/rejected manually)."""
+    return await instagram_service.update_lead_status(current_user.user_id, lead_id, status)
 
 @router.post("/leads/{lead_id}/analyze")
 async def manual_analyze_lead(
