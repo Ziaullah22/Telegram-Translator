@@ -74,6 +74,7 @@ class InstagramService:
                                 if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 'p.photos'}:
                                     if len(u_clean) > 2:
                                         logger.info(f"✅ Saving: @{u_clean}")
+                                        discovery_results.append(u_clean)
                                         status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u_clean, keyword)
                                         if status == "INSERT 0 1": new_count += 1
                                 
@@ -106,10 +107,13 @@ class InstagramService:
                                                     status = 'discovered',
                                                     updated_at = NOW()
                                             """, user_id, u_clean, keyword)
+                                            discovery_results.append(u_clean)
                                             new_count += 1
                     except Exception as e:
                         logger.error(f"Discovery total failure on {search_url}: {e}")
         
+        # 🏁 RETURN SUMMARY: Show total matches vs actually new
+        logger.info(f"📊 Mission Summary: Found {len(discovery_results)} total matches, {new_count} were NEW leads.")
         return new_count
 
     # --- Stage 2: Analysis ---
@@ -272,6 +276,30 @@ class InstagramService:
                 # 🚨 SMART TELEMETRY: Record deployment
                 await db.execute("UPDATE instagram_accounts SET last_used_at = NOW() WHERE id = $1", account['id'])
                 
+                # 🎭 HUMANOID PROFILE VISIT: Open the page as a browser-guest first
+                try:
+                    visit_headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.9"
+                    }
+                    async with httpx.AsyncClient(headers=visit_headers, follow_redirects=True, timeout=12.0, proxy=proxy_url) as client:
+                        await client.get(f"https://www.instagram.com/{username}/")
+                        reading_pause = random.uniform(7.2, 13.5)
+                        logger.info(f"--- 📖 Human Reading Simulated: Looking at @{username} for {reading_pause:.1f}s... ---")
+                        await asyncio.sleep(reading_pause)
+                except: pass
+
+                # 🔍 1. SEARCH BAR SIMULATION (Mimic typing into IG App)
+                # 🛑 INDUSTRIAL DELAY: Datacenter proxies need more "thinking time"
+                search_pause = random.uniform(8.5, 15.2)
+                logger.info(f"--- 🔍 Human Search Simulation: Typing '@{username}' into Search Bar and waiting {search_pause:.1f}s... ---")
+                try:
+                    await asyncio.get_event_loop().run_in_executor(None, lambda: cl.search_users(username))
+                except Exception as search_ex:
+                    logger.warning(f"Search simulation skipped (non-critical): {search_ex}")
+                await asyncio.sleep(search_pause)
+
                 # ✨ FETCH PROFILE (Private API Handshake)
                 user_info = await asyncio.get_event_loop().run_in_executor(
                     None, lambda: cl.user_info_by_username(username)
@@ -302,7 +330,7 @@ class InstagramService:
                 except Exception as post_err:
                     logger.warning(f"⚠️ Post capture failed for @{username}: {post_err}")
 
-                # 🚀 PHASE 1: Complete Identification
+                # 🚀 PHASE 1: Complete Identification & Assign Account
                 await self._qualify_and_update(lead_id, user_id, 
                                              user_info.biography or "", 
                                              user_info.follower_count, 
@@ -311,7 +339,12 @@ class InstagramService:
                                              posts,
                                              is_private=user_info.is_private)
                 
-                logger.info(f"🚀 Phase 1 Complete: '@{username}' identified. Awaiting Manual Approval Surge...")
+                # 🔒 LOCK ASSIGNMENT: This lead now "belongs" to this account for consistent human history
+                try:
+                   await db.execute("UPDATE instagram_leads SET assigned_account_id = $1, assigned_account_name = $2 WHERE id = $3", account['id'], account['username'], lead_id)
+                except: pass
+
+                logger.info(f"🚀 Phase 1 Complete: '@{username}' identified and assigned to @{account['username']}.")
                 return {"success": True, "method": f"ghost (@{account['username']})"}
 
             except Exception as e:
@@ -454,20 +487,33 @@ class InstagramService:
         # 🏗️ REGISTER TASK LOCK
         self._harvest_tasks[user_id] = lead_id
         
-        # 🔒 GHOST POOL RETRY LOOP — try ALL active accounts, not just one
+        # 🔒 ASSIGNMENT CHECK: Use the same account that analyzed this lead (Human Consistency)
+        account = None
+        assigned = await db.fetchrow("SELECT assigned_account_id FROM instagram_leads WHERE id = $1", lead_id)
+        if assigned and assigned['assigned_account_id']:
+            account = await db.fetchrow(f"""
+                SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+                FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
+                WHERE a.id = $1 AND a.status = 'active' LIMIT 1
+            """, assigned['assigned_account_id'])
+            if account:
+                logger.info(f"🎯 Human Consistency: Using assigned account @{account['username']} for @{username}")
+
         used_account_ids = []
         harvest_success = False
         count = 0
         
+        # If no assigned account (or it's banned), pick a new one from the pool
         for ghost_attempt in range(3):
-            # Pick the least-recently-used active account not already tried
-            id_exclusion = f"AND a.id NOT IN ({','.join(map(str, used_account_ids))})" if used_account_ids else ""
-            account = await db.fetchrow(f"""
-                SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
-                FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
-                WHERE a.user_id = $1 AND a.status = 'active' {id_exclusion}
-                ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
-            """, user_id)
+            if not account:
+                # Pick the least-recently-used active account not already tried
+                id_exclusion = f"AND a.id NOT IN ({','.join(map(str, used_account_ids))})" if used_account_ids else ""
+                account = await db.fetchrow(f"""
+                    SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+                    FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
+                    WHERE a.user_id = $1 AND a.status = 'active' {id_exclusion}
+                    ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
+                """, user_id)
             
             if not account:
                 logger.error("🛑 Ghost Pool Exhausted: No more active accounts to try.")
@@ -498,11 +544,31 @@ class InstagramService:
                 logger.info(f"--- 🧘‍♂️ Human Meditation Active: Waiting {meditation_pause:.1f}s to build session trust... ---")
                 await asyncio.sleep(meditation_pause)
 
-                # 🛠️ CAPTURE FOLLOWERS
-                logger.info(f"👥 Scoping 150 Followers for @{username} (Mobile Data Stream Active 🛰️)")
-                followers_dict = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: cl.user_followers(user_info.pk, amount=150)
-                )
+                # 🛠️ CAPTURE FOLLOWERS (Manual Thumb Pagination)
+                logger.info(f"👥 Scoping 150 Followers for @{username} using Manual Thumb Pagination...")
+                followers_dict = {}
+                next_max_id = ""
+                
+                for chunk_idx in range(3):  # 3 pages of 50 = 150
+                    logger.info(f"--- 📡 Fetching followers page {chunk_idx + 1}/3... ---")
+                    try:
+                        chunk_users, next_max_id = await asyncio.get_event_loop().run_in_executor(
+                            None, lambda max_id=next_max_id: cl.user_followers_v1_chunk(user_info.pk, max_amount=50, max_id=max_id)
+                        )
+                        for u in chunk_users:
+                            followers_dict[u.pk] = u
+                    except Exception as chunk_ex:
+                        logger.warning(f"⚠️ Thumb scroll page {chunk_idx + 1} incomplete: {chunk_ex}")
+                        break
+                    
+                    if not next_max_id or len(followers_dict) >= 150:
+                        break
+                        
+                    # 🧘‍♂️ MANUAL THUMB SCROLL DELAY
+                    if chunk_idx < 2:
+                        scroll_pause = random.uniform(10.5, 16.2)
+                        logger.info(f"--- 🧘‍♂️ Human Thumb Scrolled: Reading names and waiting {scroll_pause:.1f}s for next page... ---")
+                        await asyncio.sleep(scroll_pause)
                 
                 for f_id, f_user in followers_dict.items():
                     try:
@@ -652,56 +718,39 @@ class InstagramService:
         return [dict(row) for row in rows]
 
     def _parse_proxy_str(self, p_str: str):
-        """Parses a raw proxy string (user:pass:host:port or host:port:user:pass)"""
-        if not p_str or ':' not in str(p_str): return None
+        """🚀 INDUSTRIAL PARSER: Supports host:port:user:pass, user:pass@host:port, etc."""
+        if not p_str: return None
         
-        # Super-Robust Cleaning: Ignore trailing talk/tabs from table copy-pastes
+        # 1. Clean string (remove tabs, spaces, protocols)
         p_str = str(p_str).replace('\t', ' ').strip()
-        words = p_str.split(' ')
-        proxy_candidate = ""
-        for word in words:
-            if word.count(':') >= 1:
-                proxy_candidate = word
-                break
+        p_str = re.sub(r'^https?://', '', p_str.split(' ')[0])
         
-        if not proxy_candidate: return None
-        
-        # Remove any leading protocol (e.g. http://)
-        proxy_candidate = re.sub(r'^https?://', '', proxy_candidate)
-        parts = [p.strip() for p in proxy_candidate.split(':')]
-        
-        # Case 1: user:pass:host:port (4 parts)
-        if len(parts) == 4:
-            # Check if 3rd part is host-like (contains dots or is IP-like)
-            if '.' in parts[2]:
-                try:
-                    return {
-                        "user": parts[0], 
-                        "pass": parts[1], 
-                        "host": parts[2], 
-                        "port": int(re.sub(r'[^0-9]', '', parts[3]))
-                    }
-                except: pass
-            
-            # Fallback to host:port:user:pass
+        # 2. Handle user:pass@host:port format
+        if '@' in p_str:
             try:
-                return {
-                    "host": parts[0], 
-                    "port": int(re.sub(r'[^0-9]', '', parts[1])), 
-                    "user": parts[2], 
-                    "pass": parts[3]
-                }
+                auth, server = p_str.split('@', 1)
+                user, pw = auth.split(':', 1)
+                host, port = server.split(':', 1)
+                return {"host": host, "port": int(port), "user": user, "pass": pw}
+            except: pass
+
+        # 3. Handle colon-separated formats
+        parts = [p.strip() for p in p_str.split(':')]
+        
+        # Case: host:port:user:pass
+        if len(parts) == 4:
+            try:
+                # If first part is host-like
+                if '.' in parts[0] or parts[0].isdigit():
+                    return {"host": parts[0], "port": int(parts[1]), "user": parts[2], "pass": parts[3]}
+                # Otherwise assume user:pass:host:port
+                return {"host": parts[2], "port": int(parts[3]), "user": parts[0], "pass": parts[1]}
             except: pass
             
-        # Case 2: host:port (2 parts)
+        # Case: host:port
         elif len(parts) == 2:
             try:
-                return {
-                    "host": parts[0], 
-                    "port": int(re.sub(r'[^0-9]', '', parts[1])), 
-                    "user": "", 
-                    "pass": ""
-                }
+                return {"host": parts[0], "port": int(parts[1]), "user": "", "pass": ""}
             except: pass
             
         return None
@@ -992,9 +1041,19 @@ class InstagramService:
                         }, user_id)
                     except: pass
                 
-                # 4. FAST SLEEP (Turbo Mode Enabled)
-                delay = random.uniform(3.0, 5.0)
-                logger.info(f"Auto-Pilot Waiting {delay:.1f}s for next target...")
+                # 4. SLOW HUMAN SLEEP (Anti-Detect Mode Enabled)
+                # 🛑 INDUSTRIAL DELAY: Mandatory cooling period for Datacenter IPs
+                delay = random.uniform(120.5, 185.0)
+                logger.info(f"Auto-Pilot Waiting {delay:.1f}s to mimic natural human breaks before next target...")
+                
+                # 🛰️ FEEDBACK SYNC: Tell the UI we are resting
+                try:
+                    await manager.send_personal_message({
+                        "type": "auto_analyze_resting",
+                        "duration": int(delay)
+                    }, user_id)
+                except: pass
+                
                 await asyncio.sleep(delay)
                 
         except Exception as e:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
     Instagram, Search, Trash2, Play,
     Zap, Target, Plus, Globe, Filter,
     RefreshCw, ExternalLink, UserCheck, CheckCircle2,
@@ -28,33 +28,34 @@ const InstagramLeadGenerator: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'campaign' | 'filters'>('leads');
     const [messageTemplate, setMessageTemplate] = useState('Hello [username], I saw your profile and loved your content! We help brands like yours grow. Would you be open to a quick chat?');
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
-    const [filterSettings, setFilterSettings] = useState<{bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[]}>({ bio_keywords: '', min_followers: 0, max_followers: 0, sample_hashes: [] });
+    const [filterSettings, setFilterSettings] = useState<{ bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[] }>({ bio_keywords: '', min_followers: 0, max_followers: 0, sample_hashes: [] });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
-    
+
     const [isLoading, setIsLoading] = useState(true);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [analyzingId, setAnalyzingId] = useState<number | null>(null);
     const [harvestingId, setHarvestingId] = useState<number | null>(null);
     const [autoAnalyzingId, setAutoAnalyzingId] = useState<number | null>(null);
     const [isAutoPilotRunning, setIsAutoPilotRunning] = useState(false);
-    
+    const [restTimer, setRestTimer] = useState<number | null>(null);
+
     // Modals
     const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
     const [showAccountModal, setShowAccountModal] = useState(false);
     const [showProxyModal, setShowProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
-    
+
     // Form States
     const [keywords, setKeywords] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const [notification, setNotification] = useState<{msg: string, type: 'success' | 'alert'} | null>(null);
+    const [notification, setNotification] = useState<{ msg: string, type: 'success' | 'alert' } | null>(null);
     const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', bundle: '', verification_code: '', session_id: '' });
     const [needs2FA, setNeeds2FA] = useState(false);
     const [newProxy, setNewProxy] = useState({ host: '', port: '', username: '', password: '', proxy_type: 'http', bundle: '' });
-    
+
     // 🔗 Real-time Scout Sync
     const [isAuthorizing, setIsAuthorizing] = useState(false);
     const [showPass, setShowPass] = useState(false);
@@ -63,9 +64,9 @@ const InstagramLeadGenerator: React.FC = () => {
         return socketOnMessage((data: any) => {
             if (data.topic === 'harvest_status') {
                 if (data.status === 'completed' || data.status === 'error') {
-                    setNotification({ 
-                        msg: data.status === 'completed' ? '🏁 Scout Report Complete! ✨' : `❌ Scout Error: ${data.message}`, 
-                        type: data.status === 'completed' ? 'success' : 'alert' 
+                    setNotification({
+                        msg: data.status === 'completed' ? '🏁 Scout Report Complete! ✨' : `❌ Scout Error: ${data.message}`,
+                        type: data.status === 'completed' ? 'success' : 'alert'
                     });
                     setHarvestingId(null);
                     fetchData();
@@ -81,7 +82,7 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             setIsLoading(true);
             const [leadsData, statsData, accountsData, proxiesData] = await Promise.all([
-                instagramAPI.getLeads({ 
+                instagramAPI.getLeads({
                     status: filterStatus === 'all' ? undefined : filterStatus,
                     keyword: searchQuery || undefined
                 }),
@@ -111,9 +112,13 @@ const InstagramLeadGenerator: React.FC = () => {
                 fetchData();
             } else if (message.type === 'auto_analyze_started') {
                 setAutoAnalyzingId(message.lead_id);
+                setRestTimer(null);
             } else if (message.type === 'auto_analyze_finished') {
                 setAutoAnalyzingId(null);
                 fetchData(); // Refresh to show the new 'qualified/vetted' status immediately!
+            } else if (message.type === 'auto_analyze_resting') {
+                setRestTimer(message.duration);
+                setAutoAnalyzingId(null);
             }
         });
         return unsubscribe;
@@ -136,7 +141,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 max_followers: s.max_followers || 0,
                 sample_hashes: s.sample_hashes || []
             }))
-            .catch(() => {});
+            .catch(() => { });
     }, [filterStatus, searchQuery]);
 
     useEffect(() => {
@@ -235,6 +240,32 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    // Timer effect for Auto-Pilot Resting
+    useEffect(() => {
+        let interval: any;
+        if (restTimer !== null && restTimer > 0) {
+            interval = setInterval(() => {
+                setRestTimer(prev => (prev !== null && prev > 0) ? prev - 1 : null);
+            }, 1000);
+        } else if (restTimer === 0) {
+            setRestTimer(null);
+        }
+        return () => clearInterval(interval);
+    }, [restTimer]);
+
+    // Timer effect for Auto-Pilot Resting
+    useEffect(() => {
+        let interval: any;
+        if (restTimer !== null && restTimer > 0) {
+            interval = setInterval(() => {
+                setRestTimer(prev => (prev !== null && prev > 0) ? prev - 1 : null);
+            }, 1000);
+        } else if (restTimer === 0) {
+            setRestTimer(null);
+        }
+        return () => clearInterval(interval);
+    }, [restTimer]);
+
     const handleDiscover = async () => {
         if (!keywords.trim()) return;
         setIsDiscovering(true);
@@ -274,7 +305,7 @@ const InstagramLeadGenerator: React.FC = () => {
             setNotification({ msg: '⚠️ Scraper Busy: Please wait for the current harvest to finish!', type: 'alert' });
             return;
         }
-        
+
         setHarvestingId(leadId);
         try {
             // 🔥 BACKGROUND ACTION: Trigger the surge and wait for the signal!
@@ -319,15 +350,15 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleAddAccount = async () => {
         try {
             setIsAuthorizing(true);
-            const data = { 
-                username: newAccount.username, 
-                password: newAccount.password, 
-                proxy_id: newAccount.proxy_id || null, 
+            const data = {
+                username: newAccount.username,
+                password: newAccount.password,
+                proxy_id: newAccount.proxy_id || null,
                 verification_code: newAccount.verification_code || undefined,
                 session_id: newAccount.session_id || undefined
             };
             const res = await instagramAPI.addAccount(data);
-            
+
             if (res.status === '2fa_required') {
                 setNeeds2FA(true);
                 setNotification({ msg: res.message || '🔐 2FA Required: Enter your code.', type: 'alert' });
@@ -379,7 +410,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
+
         setIsUploadingImage(true);
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -438,9 +469,8 @@ const InstagramLeadGenerator: React.FC = () => {
         <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-6 lg:p-8 relative">
             {notification && (
                 <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-md border ${
-                        notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400/20' : 'bg-red-500/90 text-white border-red-400/20'
-                    }`}>
+                    <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-md border ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400/20' : 'bg-red-500/90 text-white border-red-400/20'
+                        }`}>
                         {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                         <p className="font-bold text-sm tracking-tight">{notification.msg}</p>
                     </div>
@@ -463,14 +493,23 @@ const InstagramLeadGenerator: React.FC = () => {
                         <button onClick={fetchData} className="p-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all">
                             <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
                         </button>
-                        <button 
+                        <button
                             onClick={handleToggleAutoPilot}
                             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${
-                                isAutoPilotRunning ? 'bg-green-500 text-white shadow-lg shadow-green-500/25' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-green-500'
+                                isAutoPilotRunning
+                                    ? restTimer !== null
+                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
+                                        : 'bg-green-500 text-white shadow-lg shadow-green-500/25'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-green-500'
                             }`}
                         >
                             <Play className={`w-4 h-4 ${isAutoPilotRunning ? 'fill-current' : 'group-hover:fill-green-500'}`} />
-                            {isAutoPilotRunning ? 'Auto-Pilot Running' : 'Auto-Pilot Mode'}
+                            {isAutoPilotRunning
+                                ? restTimer !== null
+                                    ? `Ghost Nap... ${restTimer}s`
+                                    : 'Scanning...'
+                                : 'Auto-Pilot Mode'
+                            }
                         </button>
                         <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
                             <Trash2 className="w-4 h-4" /> Clear All
@@ -493,9 +532,8 @@ const InstagramLeadGenerator: React.FC = () => {
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                activeTab === tab.id ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                            }`}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                                }`}
                         >
                             {tab.icon} {tab.label}
                         </button>
@@ -508,9 +546,9 @@ const InstagramLeadGenerator: React.FC = () => {
                         <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
                             <div className="flex-1 min-w-[300px] relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input 
-                                    type="text" 
-                                    placeholder="Search by username or industry keyword..." 
+                                <input
+                                    type="text"
+                                    placeholder="Search by username or industry keyword..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full bg-gray-50 dark:bg-black/20 border-none rounded-xl pl-11 pr-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-pink-500/20"
@@ -522,11 +560,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <button
                                         key={status}
                                         onClick={() => setFilterStatus(status)}
-                                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                            filterStatus === status 
-                                            ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/20' 
-                                            : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-                                        }`}
+                                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterStatus === status
+                                                ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/20'
+                                                : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                                            }`}
                                     >
                                         {status}
                                     </button>
@@ -563,7 +600,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <th className="px-4 py-3">Status / Origin</th>
                                             <th className="px-4 py-3">Strategic Bio</th>
                                             <th className="px-4 py-3 text-center">Archive</th>
-                                            <th className="px-4 py-3">Influence</th>
+                                            <th className="px-4 py-3">Influence / Agent</th>
                                             <th className="px-4 py-3 text-right">Actions</th>
                                         </tr>
                                     </thead>
@@ -572,13 +609,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <tr><td colSpan={6} className="px-6 py-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">No leads found.</td></tr>
                                         ) : (
                                             leads.map(lead => (
-                                                <tr 
-                                                    key={lead.id} 
-                                                    className={`group transition-all duration-700 ${
-                                                        autoAnalyzingId === lead.id 
-                                                        ? 'bg-blue-500/10 dark:bg-blue-500/15 shadow-[inset_0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20' 
-                                                        : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
-                                                    }`}
+                                                <tr
+                                                    key={lead.id}
+                                                    className={`group transition-all duration-700 ${autoAnalyzingId === lead.id
+                                                            ? 'bg-blue-500/10 dark:bg-blue-500/15 shadow-[inset_0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20'
+                                                            : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
+                                                        }`}
                                                 >
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-2">
@@ -586,7 +622,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 {lead.profile_pic_url ? <img src={lead.profile_pic_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400"><Instagram className="w-3.5 h-3.5" /></div>}
                                                             </div>
                                                             <div className="flex flex-col">
-                                                                 <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
+                                                                <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
                                                                 <div className="flex items-center gap-1">
                                                                     <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
                                                                     {autoAnalyzingId === lead.id && (
@@ -601,11 +637,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-col gap-1">
                                                             <span className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tight text-center ${getStatusStyle(lead.status)}`}>{lead.status}</span>
-                                                            <div className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tighter inline-flex items-center justify-center gap-1 ${
-                                                                lead.source === 'network_expansion' 
-                                                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 border border-purple-200 dark:border-purple-500/20' 
-                                                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 border border-blue-200 dark:border-blue-500/20'
-                                                            }`}>
+                                                            <div className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tighter inline-flex items-center justify-center gap-1 ${lead.source === 'network_expansion'
+                                                                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 border border-purple-200 dark:border-purple-500/20'
+                                                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 border border-blue-200 dark:border-blue-500/20'
+                                                                }`}>
                                                                 {lead.source === 'network_expansion' ? 'Follower' : 'Search'}
                                                             </div>
                                                         </div>
@@ -632,15 +667,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                     {lead.recent_posts.map((post: any, idx: number) => {
                                                                         const imageUrl = typeof post === 'string' ? post : post.display_url;
                                                                         return (
-                                                                            <div 
-                                                                                key={idx} 
+                                                                            <div
+                                                                                key={idx}
                                                                                 className="w-7 h-7 rounded-full border border-white dark:border-[#1e293b] overflow-hidden bg-gray-100 shadow-sm"
                                                                             >
                                                                                 <img src={imageUrl} alt="" className="w-full h-full object-cover" />
                                                                             </div>
                                                                         );
                                                                     })}
-                                                                    <button 
+                                                                    <button
                                                                         onClick={() => {
                                                                             setSelectedLead(lead);
                                                                             setShowPreviewModal(true);
@@ -662,9 +697,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 <span className="text-[8px] text-gray-400 font-bold uppercase">Fol</span>
                                                             </div>
                                                             <div className="flex items-center gap-1 border-t border-gray-100 dark:border-white/5">
-                                                                <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[9px] text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
                                                                 <span className="text-[8px] text-gray-400 font-bold uppercase">Wng</span>
                                                             </div>
+                                                            {lead.assigned_account_name && (
+                                                                <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-500/20">
+                                                                    <Users className="w-2.5 h-2.5 text-blue-500" />
+                                                                    <span className="text-[7px] font-black text-blue-600 uppercase truncate max-w-[50px]">@{lead.assigned_account_name}</span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3 text-right">
@@ -679,11 +720,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                     <button
                                                                         onClick={() => handleForceHarvest(lead.id)}
                                                                         disabled={harvestingId === lead.id}
-                                                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight transition-all ${
-                                                                            harvestingId === lead.id
-                                                                            ? 'bg-orange-500 text-white animate-pulse'
-                                                                            : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-orange-500/20'
-                                                                        }`}
+                                                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight transition-all ${harvestingId === lead.id
+                                                                                ? 'bg-orange-500 text-white animate-pulse'
+                                                                                : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-orange-500/20'
+                                                                            }`}
                                                                         title="Force Scrape — harvest data but keep rejected status"
                                                                     >
                                                                         {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
@@ -716,21 +756,20 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                             <Clock className="w-3 h-3" /> In Queue ⏰
                                                                         </div>
                                                                     ) : (
-                                                                        <button 
-                                                                            onClick={() => handleHarvest(lead.id)} 
-                                                                            disabled={harvestingId === lead.id} 
-                                                                            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all ${
-                                                                                harvestingId === lead.id 
-                                                                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' 
-                                                                                : 'bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20'
-                                                                            }`}
+                                                                        <button
+                                                                            onClick={() => handleHarvest(lead.id)}
+                                                                            disabled={harvestingId === lead.id}
+                                                                            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all ${harvestingId === lead.id
+                                                                                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                                                                                    : 'bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20'
+                                                                                }`}
                                                                         >
                                                                             {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
                                                                             {harvestingId === lead.id ? "Scraping..." : "Approve & Scrape"}
                                                                         </button>
                                                                     )}
-                                                                    <button 
-                                                                        onClick={() => handleUpdateStatus(lead.id, 'rejected')} 
+                                                                    <button
+                                                                        onClick={() => handleUpdateStatus(lead.id, 'rejected')}
                                                                         className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95"
                                                                         title="DISCARD 🗑️❌"
                                                                     >
@@ -738,8 +777,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                     </button>
                                                                 </>
                                                             )}
-                                                            <button 
-                                                                onClick={() => handleDeleteLead(lead.id)} 
+                                                            <button
+                                                                onClick={() => handleDeleteLead(lead.id)}
                                                                 className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
@@ -793,8 +832,8 @@ const InstagramLeadGenerator: React.FC = () => {
 
                                             </div>
                                         </div>
-                                        <button 
-                                            onClick={() => handleDeleteAccount(acc.id)} 
+                                        <button
+                                            onClick={() => handleDeleteAccount(acc.id)}
                                             className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100"
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
@@ -838,9 +877,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                         Outreach Script Management
                                     </h3>
                                     <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 font-medium">Draft your campaign message. Use the <span className="text-pink-500 font-bold">[username]</span> tag to personalize every message 🪄</p>
-                                    
+
                                     <div className="relative">
-                                        <textarea 
+                                        <textarea
                                             value={messageTemplate}
                                             onChange={(e) => setMessageTemplate(e.target.value)}
                                             className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-6 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-4 focus:ring-pink-500/10 focus:border-pink-500/50 outline-none min-h-[200px] transition-all"
@@ -856,13 +895,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <h4 className="font-black text-pink-600 text-sm uppercase tracking-widest mb-1">Campaign Status</h4>
                                             <p className="text-xs text-gray-500 font-medium italic">Ready to engage {leads.filter(l => l.status === 'qualified' || l.status === 'analyzed').length} qualified leads.</p>
                                         </div>
-                                        <button 
+                                        <button
                                             onClick={handleToggleCampaign}
-                                            className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-sm tracking-tight transition-all shadow-xl active:scale-95 ${
-                                                isCampaignRunning 
-                                                ? 'bg-red-500 text-white shadow-red-500/20' 
-                                                : 'bg-pink-500 text-white shadow-pink-500/25 hover:bg-pink-600'
-                                            }`}
+                                            className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-sm tracking-tight transition-all shadow-xl active:scale-95 ${isCampaignRunning
+                                                    ? 'bg-red-500 text-white shadow-red-500/20'
+                                                    : 'bg-pink-500 text-white shadow-pink-500/25 hover:bg-pink-600'
+                                                }`}
                                         >
                                             {isCampaignRunning ? (
                                                 <><RefreshCw className="w-4 h-4 animate-spin" /> Stop outreach</>
@@ -880,7 +918,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Ready to engage</h4>
                                     <p className="text-4xl font-black tracking-tighter mb-4">{leads.filter(l => l.status === 'qualified' || l.status === 'analyzed').length}</p>
                                     <p className="text-xs font-medium opacity-80 leading-relaxed italic">The Stage 4 Engine will rotate through your {accounts.length} ghost accounts to deliver these messages safely.</p>
-                                    
+
                                     <div className="mt-8 h-2 bg-white/20 rounded-full overflow-hidden">
                                         <div className="h-full bg-white animate-pulse" style={{ width: '100%' }}></div>
                                     </div>
@@ -947,14 +985,14 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <Instagram className="w-5 h-5 text-pink-500" /> Visual Target Samples
                                     </h3>
                                     <p className="text-sm text-gray-500 mb-6">Upload photos of products, logos, or styles you want to find. We'll find leads posting similar content.</p>
-                                    
+
                                     <div className="flex flex-wrap gap-4 mb-6">
                                         {(filterSettings.sample_hashes || []).map((h, i) => (
                                             <div key={i} className="relative group">
                                                 <div className="w-20 h-20 bg-gray-100 dark:bg-black/40 rounded-2xl flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-white/10 overflow-hidden">
-                                                    <div className="text-[10px] font-mono text-gray-400 opacity-50 select-none">#{h.substring(0,6)}</div>
+                                                    <div className="text-[10px] font-mono text-gray-400 opacity-50 select-none">#{h.substring(0, 6)}</div>
                                                 </div>
-                                                <button 
+                                                <button
                                                     onClick={() => setFilterSettings(p => ({ ...p, sample_hashes: p.sample_hashes.filter((_, idx) => idx !== i) }))}
                                                     className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-lg"
                                                 >
@@ -1051,31 +1089,31 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <h2 className="text-xl font-black text-gray-900 dark:text-white">Add Ghost Account</h2>
                             </div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Authorize via Bundle String 🛰️</p>
-                            
+
                             <div className="space-y-4">
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Ghost Identity 👤</p>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Instagram Username" 
+                                        <input
+                                            type="text"
+                                            placeholder="Instagram Username"
                                             className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 text-sm font-bold text-gray-900 dark:text-white focus:border-pink-500/50 outline-none transition-all"
                                             value={newAccount.username}
-                                            onChange={e => setNewAccount({...newAccount, username: e.target.value})}
+                                            onChange={e => setNewAccount({ ...newAccount, username: e.target.value })}
                                         />
                                     </div>
 
                                     <div className="space-y-2">
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Access Key 🔒</p>
                                         <div className="relative">
-                                            <input 
-                                                type={showPass ? "text" : "password"} 
-                                                placeholder="Account Password" 
+                                            <input
+                                                type={showPass ? "text" : "password"}
+                                                placeholder="Account Password"
                                                 className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 pr-12 text-sm font-bold text-gray-900 dark:text-white focus:border-pink-500/50 outline-none transition-all"
                                                 value={newAccount.password}
-                                                onChange={e => setNewAccount({...newAccount, password: e.target.value})}
+                                                onChange={e => setNewAccount({ ...newAccount, password: e.target.value })}
                                             />
-                                            <button 
+                                            <button
                                                 type="button"
                                                 onClick={() => setShowPass(!showPass)}
                                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
@@ -1091,12 +1129,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <Globe className="w-3 h-3" />
                                             Manual Session Bypass (SECRET TUNNEL)
                                         </p>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Paste 'sessionid' from browser cookies" 
+                                        <input
+                                            type="text"
+                                            placeholder="Paste 'sessionid' from browser cookies"
                                             className="w-full bg-indigo-50/30 dark:bg-indigo-900/10 border-2 border-indigo-100 dark:border-indigo-500/20 rounded-2xl p-4 text-[10px] font-mono text-indigo-600 dark:text-indigo-300 focus:border-indigo-500 outline-none transition-all"
                                             value={newAccount.session_id}
-                                            onChange={e => setNewAccount({...newAccount, session_id: e.target.value})}
+                                            onChange={e => setNewAccount({ ...newAccount, session_id: e.target.value })}
                                         />
                                         <p className="text-[9px] text-gray-400 mt-2 italic px-1">💡 Pro Tip: Bypasses "Incorrect Password" IP blocks by using your trusted browser session.</p>
                                     </div>
@@ -1108,31 +1146,31 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
                                             Verification Code / 2FA (REQUIRED)
                                         </p>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Enter 6-Digit Code" 
+                                        <input
+                                            type="text"
+                                            placeholder="Enter 6-Digit Code"
                                             className="w-full bg-indigo-50/50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-500/40 rounded-xl p-4 text-sm font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500 shadow-inner transition-all"
                                             value={newAccount.verification_code}
-                                            onChange={e => setNewAccount({...newAccount, verification_code: e.target.value})}
+                                            onChange={e => setNewAccount({ ...newAccount, verification_code: e.target.value })}
                                             autoFocus
                                         />
                                         <p className="text-[9px] text-gray-400 mt-2 font-medium">🛡️ Enter the code from your app to satisfy the security challenge.</p>
                                     </div>
                                 )}
-                                
+
                                 <div className="pt-2">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Assign Proxy Shield (Optional)</p>
-                                    <select className="w-full bg-gray-50 dark:bg-gray-800/50 border-none rounded-xl p-4 text-sm text-gray-500 font-bold" value={newAccount.proxy_id} onChange={e => setNewAccount({...newAccount, proxy_id: e.target.value})}>
+                                    <select className="w-full bg-gray-50 dark:bg-gray-800/50 border-none rounded-xl p-4 text-sm text-gray-500 font-bold" value={newAccount.proxy_id} onChange={e => setNewAccount({ ...newAccount, proxy_id: e.target.value })}>
                                         <option value="">No Proxy (Local IP)</option>
                                         {proxies.map(p => <option key={p.id} value={p.id.toString()}>{p.host}:{p.port}</option>)}
                                     </select>
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center gap-3 mt-8">
                                 <button onClick={() => setShowAccountModal(false)} className="px-6 py-3 font-bold text-sm text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
-                                <button 
-                                    onClick={handleAddAccount} 
+                                <button
+                                    onClick={handleAddAccount}
                                     disabled={!newAccount.username || !newAccount.password || (needs2FA && !newAccount.verification_code) || isAuthorizing}
                                     className="flex-1 bg-gradient-to-tr from-pink-600 to-orange-500 hover:from-pink-700 hover:to-orange-600 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-pink-500/20 disabled:opacity-50 transition-all active:scale-95"
                                 >
@@ -1157,23 +1195,23 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <h2 className="text-xl font-black text-gray-900 dark:text-white">Add Proxy Shield</h2>
                             </div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Activate Shield via String 🌐</p>
-                            
+
                             <div className="space-y-4">
                                 <div className="space-y-3">
-                                    <textarea 
-                                        placeholder="user:pass:ip:port or ip:port:user:pass" 
+                                    <textarea
+                                        placeholder="user:pass:ip:port or ip:port:user:pass"
                                         className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-2xl p-4 text-xs font-mono text-gray-600 dark:text-gray-300 min-h-[100px] focus:border-pink-500/50 outline-none transition-all"
                                         value={newProxy.bundle}
-                                        onChange={e => setNewProxy({...newProxy, bundle: e.target.value})}
+                                        onChange={e => setNewProxy({ ...newProxy, bundle: e.target.value })}
                                     />
                                     <p className="text-[10px] text-gray-400 font-medium">✨ System extraction ready. All protocols supported.</p>
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center gap-3 mt-8">
                                 <button onClick={() => setShowProxyModal(false)} className="px-6 py-3 font-bold text-sm text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
-                                <button 
-                                    onClick={handleAddProxy} 
+                                <button
+                                    onClick={handleAddProxy}
                                     disabled={!newProxy.bundle}
                                     className="flex-1 bg-gradient-to-tr from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50 transition-all"
                                 >
@@ -1202,7 +1240,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">In-Depth Lead Intelligence 🛰️</p>
                                     </div>
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => setShowPreviewModal(false)}
                                     className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
                                 >
@@ -1230,9 +1268,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                             return (
                                                 <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
                                                     <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                                    <a 
-                                                        href={post.url || '#'} 
-                                                        target="_blank" 
+                                                    <a
+                                                        href={post.url || '#'}
+                                                        target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
                                                     >
@@ -1251,7 +1289,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             </div>
 
                             <div className="mt-8 flex justify-center">
-                                <button 
+                                <button
                                     onClick={() => setShowPreviewModal(false)}
                                     className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
                                 >
