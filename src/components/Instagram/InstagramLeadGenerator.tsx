@@ -297,6 +297,25 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    // Force scrape a rejected lead — harvest it but keep status as 'rejected'
+    const handleForceHarvest = async (leadId: number) => {
+        if (harvestingId !== null) {
+            setNotification({ msg: '⚠️ Scraper Busy: Please wait for the current harvest to finish!', type: 'alert' });
+            return;
+        }
+        setHarvestingId(leadId);
+        try {
+            await instagramAPI.harvestNetwork(leadId);
+            // After harvest is queued, restore rejected status so the lead stays filtered
+            await instagramAPI.updateLeadStatus(leadId, 'rejected');
+            setNotification({ msg: '🕸️ Force Scrape Started! Lead stays rejected. 📊', type: 'success' });
+        } catch (error: any) {
+            console.error('Force harvest failed:', error);
+            setNotification({ msg: 'Force Scrape failed. 🛑', type: 'alert' });
+            setHarvestingId(null);
+        }
+    };
+
     const handleAddAccount = async () => {
         try {
             setIsAuthorizing(true);
@@ -406,11 +425,11 @@ const InstagramLeadGenerator: React.FC = () => {
 
     const getStatusStyle = (status: string) => {
         switch (status) {
-            case 'discovered': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
-            case 'analyzed': case 'qualified': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+            case 'discovered': case 'queued': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+            case 'analyzed': case 'qualified': case 'vetted': case 'harvested': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+            case 'rejected': case 'discarded': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
             case 'contacted': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
             case 'converted': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-            case 'queued': return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
             default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
         }
     };
@@ -651,9 +670,32 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <td className="px-4 py-3 text-right">
                                                         <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
-                                                            {lead.status === 'rejected' ? (
+                                                            {lead.status === 'discarded' ? (
                                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 font-black text-[9px] uppercase tracking-widest border border-red-500/20">
                                                                     <X className="w-3 h-3" /> Discarded 🗑️
+                                                                </div>
+                                                            ) : lead.status === 'rejected' ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <button
+                                                                        onClick={() => handleForceHarvest(lead.id)}
+                                                                        disabled={harvestingId === lead.id}
+                                                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight transition-all ${
+                                                                            harvestingId === lead.id
+                                                                            ? 'bg-orange-500 text-white animate-pulse'
+                                                                            : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-orange-500/20'
+                                                                        }`}
+                                                                        title="Force Scrape — harvest data but keep rejected status"
+                                                                    >
+                                                                        {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
+                                                                        {harvestingId === lead.id ? 'Scraping...' : 'Force Scrape'}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleUpdateStatus(lead.id, 'discarded')}
+                                                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20 transition-all"
+                                                                        title="Discard permanently"
+                                                                    >
+                                                                        <X className="w-3 h-3" /> Discard
+                                                                    </button>
                                                                 </div>
                                                             ) : lead.status === 'discovered' ? (
                                                                 <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-blue-500/10 text-blue-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`} title="Identify Profile">

@@ -38,7 +38,7 @@ async def migrate():
                 );
                 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
             """)
-            print("✓ Table: users")
+            print("[OK] Table: users")
 
             # Telegram accounts
             await conn.execute("""
@@ -60,7 +60,7 @@ async def migrate():
                 );
                 CREATE INDEX IF NOT EXISTS idx_telegram_accounts_user ON telegram_accounts(user_id);
             """)
-            print("✓ Table: telegram_accounts")
+            print("[OK] Table: telegram_accounts")
 
             # Conversation type enum and table
             await conn.execute("""
@@ -85,7 +85,7 @@ async def migrate():
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_account_peer ON conversations(telegram_account_id, telegram_peer_id);
             """)
-            print("✓ Table: conversations")
+            print("[OK] Table: conversations")
 
             # Message type enum and table
             await conn.execute("""
@@ -142,7 +142,7 @@ async def migrate():
                 ALTER TABLE messages DROP CONSTRAINT IF EXISTS uq_convo_tg_id;
                 ALTER TABLE messages ADD CONSTRAINT uq_convo_tg_id UNIQUE (conversation_id, telegram_message_id);
             """)
-            print("✓ Table: messages (with deduplication constraint)")
+            print("[OK] Table: messages (with deduplication constraint)")
 
             # --- 2. ADDITIONAL CORE TABLES ---
 
@@ -192,7 +192,7 @@ async def migrate():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
             """)
-            print("✓ Tables: templates, scheduled, contact_info")
+            print("[OK] Tables: templates, scheduled, contact_info")
 
             # Auto Responder
             await conn.execute("""
@@ -221,7 +221,7 @@ async def migrate():
                     triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
             """)
-            print("✓ Tables: auto_responder")
+            print("[OK] Tables: auto_responder")
 
             # System Settings
             await conn.execute("""
@@ -238,7 +238,7 @@ async def migrate():
                 VALUES (1, FALSE)
                 ON CONFLICT (id) DO NOTHING;
             """)
-            print("✓ Table: system_settings")
+            print("[OK] Table: system_settings")
 
             # --- 3. CAMPAIGN TABLES ---
 
@@ -300,7 +300,7 @@ async def migrate():
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            print("✓ Tables: campaigns, steps, leads, logs")
+            print("[OK] Tables: campaigns, steps, leads, logs")
 
             # --- 4. SALES & INVENTORY TABLES ---
 
@@ -397,7 +397,7 @@ async def migrate():
                 );
                 CREATE INDEX IF NOT EXISTS idx_ab_results_test ON ab_test_results(test_id);
             """)
-            print("✓ Tables: products, orders, sales_settings")
+            print("[OK] Tables: products, orders, sales_settings")
             
             # --- 5. INSTAGRAM LEAD GENERATION TABLES ---
 
@@ -459,7 +459,7 @@ async def migrate():
                 CREATE INDEX IF NOT EXISTS idx_insta_leads_status ON instagram_leads(status);
                 CREATE INDEX IF NOT EXISTS idx_insta_leads_user ON instagram_leads(user_id);
             """)
-            print("✓ Tables: instagram_leads, accounts, proxies")
+            print("[OK] Tables: instagram_leads, accounts, proxies")
 
             # --- 6. SCHEMA UPDATES (Incremental fixes) ---
 
@@ -651,15 +651,19 @@ async def migrate():
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'google';
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS profile_pic_url TEXT;
 
-                -- Force uniqueness on instagram handles to allow ON CONFLICT logic
+                -- Force uniqueness on instagram handles to allow ON CONFLICT logic (USER-SCOPED)
                 -- 🧹 Step 1: Remove existing duplicates so the constraint doesn't fail
                 DELETE FROM instagram_leads a USING instagram_leads b 
-                WHERE a.id < b.id AND a.instagram_username = b.instagram_username;
+                WHERE a.id < b.id AND a.instagram_username = b.instagram_username AND a.user_id = b.user_id;
 
-                -- 🛡️ Step 2: Apply the Unique Constraint
+                -- 🛡️ Step 2: Apply the User-Scoped Unique Constraint
                 DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_instagram_leads_username') THEN
-                        ALTER TABLE instagram_leads ADD CONSTRAINT uq_instagram_leads_username UNIQUE (instagram_username);
+                    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_instagram_leads_username') THEN
+                        ALTER TABLE instagram_leads DROP CONSTRAINT uq_instagram_leads_username;
+                    END IF;
+                    
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_instagram_leads_user_handle') THEN
+                        ALTER TABLE instagram_leads ADD CONSTRAINT uq_instagram_leads_user_handle UNIQUE (user_id, instagram_username);
                     END IF;
                 END $$;
 
@@ -674,7 +678,7 @@ async def migrate():
                 CREATE INDEX IF NOT EXISTS idx_lead_network_lead ON instagram_lead_network(lead_id);
                 CREATE INDEX IF NOT EXISTS idx_lead_network_username ON instagram_lead_network(network_username);
             """)
-            print("✓ Incremental updates applied.")
+            print("[OK] Incremental updates applied.")
 
             print("\nDatabase initialization/synchronization completed successfully.")
             

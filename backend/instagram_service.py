@@ -98,8 +98,15 @@ class InstagramService:
                                     if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories'}:
                                         if len(u_clean) > 2:
                                             logger.info(f"✅ Extracted & Saving (Bypass): @{u_clean}")
-                                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u_clean, keyword)
-                                            if status == "INSERT 0 1": new_count += 1
+                                            await db.execute("""
+                                                INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) 
+                                                VALUES ($1, $2, $3, 'discovered') 
+                                                ON CONFLICT (user_id, instagram_username) DO UPDATE SET 
+                                                    discovery_keyword = EXCLUDED.discovery_keyword,
+                                                    status = 'discovered',
+                                                    updated_at = NOW()
+                                            """, user_id, u_clean, keyword)
+                                            new_count += 1
                     except Exception as e:
                         logger.error(f"Discovery total failure on {search_url}: {e}")
         
@@ -382,7 +389,20 @@ class InstagramService:
         """Retrieve Instagram leads with filtering and VIP sorting."""
         query = "SELECT * FROM instagram_leads WHERE user_id = $1"
         params = [user_id]
-        if status: params.append(status); query += f" AND status = ${len(params)}"
+        if status:
+            if status == 'qualified':
+                query += " AND status IN ('qualified', 'analyzed', 'vetted', 'harvested')"
+            elif status == 'rejected':
+                query += " AND status IN ('rejected', 'discarded')"
+            elif status == 'discovered':
+                query += " AND status IN ('discovered', 'queued')"
+            else:
+                params.append(status)
+                query += f" AND status = ${len(params)}"
+        else:
+            # Exclude discarded from 'all' view to keep it clean, unless explicitly asked for rejected
+            query += " AND status != 'discarded'"
+            
         if keyword: params.append(f"%{keyword}%"); query += f" AND (discovery_keyword ILIKE ${len(params)} OR instagram_username ILIKE ${len(params)})"
         # 🏆 ACTION-FIRST INDUSTRIAL SEQUENCE:
         # 0. Waiting Approval (Approve & Scrape) -> ABSOLUTE TOP (0)
@@ -426,141 +446,151 @@ class InstagramService:
             except: pass
             return
 
-        lead = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        lead = await db.fetchrow("SELECT instagram_username, status as original_status FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
         if not lead: return
         username = lead['instagram_username']
+        original_status = lead['original_status']  # Remember original status to restore if rejected
         
         # 🏗️ REGISTER TASK LOCK
         self._harvest_tasks[user_id] = lead_id
         
-        # 1. Pick a Fresh, ACTIVE Ghost Account (Respecting Rate Limits)
-        account = await db.fetchrow("""
-            SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
-            FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
-            WHERE a.user_id = $1 AND a.status = 'active'
-            ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
-        """, user_id)
+        # 🔒 GHOST POOL RETRY LOOP — try ALL active accounts, not just one
+        used_account_ids = []
+        harvest_success = False
+        count = 0
         
-        if not account:
-            logger.error("🛑 Harvest Failed: No active ghost accounts found. Add more accounts!")
-            return
+        for ghost_attempt in range(3):
+            # Pick the least-recently-used active account not already tried
+            id_exclusion = f"AND a.id NOT IN ({','.join(map(str, used_account_ids))})" if used_account_ids else ""
+            account = await db.fetchrow(f"""
+                SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+                FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
+                WHERE a.user_id = $1 AND a.status = 'active' {id_exclusion}
+                ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
+            """, user_id)
+            
+            if not account:
+                logger.error("🛑 Ghost Pool Exhausted: No more active accounts to try.")
+                break
 
-        sender = account['username']
-        logger.info(f"🕸️ Viral Harvest: Using @{sender} to expand @{username}'s network...")
+            sender = account['username']
+            used_account_ids.append(account['id'])
+            logger.info(f"🕸️ Viral Harvest (Attempt {ghost_attempt+1}): Using @{sender} to expand @{username}'s network...")
         
-        try:
-            cl = await self._get_insta_client(account)
-            if not cl:
-                logger.error(f"❌ Handshake Failed: Could not initialize Ghost @{sender}")
-                return
-
-            # 🏎️ UPDATE LAST USED
-            await db.execute("UPDATE instagram_accounts SET last_used_at = NOW() WHERE id = $1", account['id'])
-            
-            # ✨ FETCH TARGET INFO (Private API)
-            user_info = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: cl.user_info_by_username(username)
-            )
-
-            # 🧘‍♂️ PRE-SURGE MEDITATION: The "Human Trust" Handshake 🏁🏎️🏁
-            meditation_pause = random.uniform(22.5, 38.3)
-            logger.info(f"--- 🧘‍♂️ Human Meditation Active: Waiting {meditation_pause:.1f}s to build session trust... ---")
-            await asyncio.sleep(meditation_pause)
-
-            # 🛠️ CAPTURE FOLLOWERS (Limit 150 - HUMAN-MIMICKING SURGE 🏎️💨)
-            logger.info(f"👥 Scoping 150 Followers for @{username} (Mobile Data Stream Active 🛰️)")
-            
-            # --- WAVE SCRAPE LOGIC (Hardened with Private API Handshake) ---
-            followers_dict = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: cl.user_followers(user_info.pk, amount=150)
-            )
-            
-            count = 0
-            for f_id, f_user in followers_dict.items():
-                try:
-                    await db.execute("""
-                        INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
-                        VALUES ($1, $2, $3, 'network_expansion', 'discovered') ON CONFLICT DO NOTHING
-                    """, user_id, f_user.username, f"follower_of_{username}")
-                    count += 1
-                    
-                    # 🛰️ INSTANT SYNC: Tell the dashboard to show this lead NOW!
-                    try:
-                        await manager.send_personal_message({
-                            "type": "new_lead_discovered",
-                            "username": f_user.username
-                        }, user_id)
-                    except: pass
-                    
-                except Exception as loop_e:
-                    logger.warning(f"⚠️ Skip profile during harvest: {loop_e}")
+            try:
+                cl = await self._get_insta_client(account)
+                if not cl:
+                    logger.warning(f"⚠️ Handshake Failed for @{sender}. Trying next ghost...")
+                    # Evict broken client from cache
+                    self._insta_clients.pop(sender, None)
                     continue
-            
-            logger.info(f"✅ Follower Surge Complete for @{username}! {count} new potential leads added with 100% Private-API Stability.")
 
-        except Exception as e:
-            err_str = str(e).lower()
-            logger.error(f"❌ Harvest Phase failed for @{sender}: {e}")
-            if any(x in err_str for x in ["429", "login", "unauthorized", "rate", "limit", "checkpoint", "challenge", "json query", "expecting value", "graphql", "char 0"]):
-                await db.execute("UPDATE instagram_accounts SET status = 'rate_limited' WHERE id = $1", account['id'])
-            
-            # 🕵️ AGENTIC RESILIENCE: Drift to Search/Mirror Fallback (Ghost-less Mode) 🛰️🏎️💨
-            logger.info(f"--- 🛰️ RESILIENT FALLBACK: Log-in failed for @{username}. Attempting Ghost-less Search Surge... ---")
-            count = 0
-            # 🕵️ MIRROR MAPPING: Try Picuki and DuckDuckGo as bypass nodes
+                # 🏎️ UPDATE LAST USED
+                await db.execute("UPDATE instagram_accounts SET last_used_at = NOW() WHERE id = $1", account['id'])
+                
+                # ✨ FETCH TARGET INFO (Private API)
+                user_info = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: cl.user_info_by_username(username)
+                )
+
+                # 🧘‍♂️ PRE-SURGE MEDITATION
+                meditation_pause = random.uniform(22.5, 38.3)
+                logger.info(f"--- 🧘‍♂️ Human Meditation Active: Waiting {meditation_pause:.1f}s to build session trust... ---")
+                await asyncio.sleep(meditation_pause)
+
+                # 🛠️ CAPTURE FOLLOWERS
+                logger.info(f"👥 Scoping 150 Followers for @{username} (Mobile Data Stream Active 🛰️)")
+                followers_dict = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: cl.user_followers(user_info.pk, amount=150)
+                )
+                
+                for f_id, f_user in followers_dict.items():
+                    try:
+                        # Safe insert — works whether or not the constraint exists
+                        try:
+                            await db.execute("""
+                                INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
+                                VALUES ($1, $2, $3, 'network_expansion', 'discovered') 
+                                ON CONFLICT (user_id, instagram_username) DO UPDATE SET
+                                    status = 'discovered', updated_at = NOW()
+                            """, user_id, f_user.username, f"follower_of_{username}")
+                        except Exception:
+                            # Fallback: plain insert ignoring any conflict
+                            await db.execute("""
+                                INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
+                                VALUES ($1, $2, $3, 'network_expansion', 'discovered') ON CONFLICT DO NOTHING
+                            """, user_id, f_user.username, f"follower_of_{username}")
+                        count += 1
+                        try:
+                            await manager.send_personal_message({"type": "new_lead_discovered", "username": f_user.username}, user_id)
+                        except: pass
+                    except Exception as loop_e:
+                        logger.warning(f"⚠️ Skip profile during harvest: {loop_e}")
+                        continue
+                
+                harvest_success = True
+                logger.info(f"✅ Follower Surge Complete for @{username}! {count} leads added.")
+                break  # Mission accomplished — exit the retry loop
+
+            except Exception as e:
+                err_str = str(e).lower()
+                logger.error(f"❌ Harvest Phase failed for @{sender}: {e}")
+                # Mark this account as rate-limited/dead and evict from cache
+                if any(x in err_str for x in ["429", "login", "logout", "unauthorized", "rate", "limit", "checkpoint", "challenge"]):
+                    await db.execute("UPDATE instagram_accounts SET status = 'rate_limited' WHERE id = $1", account['id'])
+                self._insta_clients.pop(sender, None)
+                logger.info(f"🔄 Retrying with next ghost account...")
+                continue
+
+        # 🕵️ If ALL ghost accounts failed, try Ghost-less fallback
+        if not harvest_success:
+            logger.info(f"--- 🛰️ RESILIENT FALLBACK: All ghosts failed for @{username}. Attempting Ghost-less Search Surge... ---")
             fallback_mirrors = [
                 f"https://www.picuki.com/profile/{username}",
                 f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"follower of {username}\"')}"
             ]
-            
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}) as client:
                 for url in fallback_mirrors:
                     try:
                         res = await client.get(url)
                         if res.status_code == 200:
-                            # Extract followers from MIRROR links
                             m_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
                             for m_user in set(m_matches):
                                 if m_user.lower() not in {username.lower(), 'reels', 'about', 'legal', 'terms', 'privacy'}:
-                                    await db.execute("""
-                                        INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
-                                        VALUES ($1, $2, $3, 'network_expansion', 'discovered') ON CONFLICT DO NOTHING
-                                    """, user_id, m_user, f"search_surge_{username}")
-                                    count += 1
+                                    try:
+                                        await db.execute("""
+                                            INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
+                                            VALUES ($1, $2, $3, 'network_expansion', 'discovered') ON CONFLICT DO NOTHING
+                                        """, user_id, m_user, f"search_surge_{username}")
+                                        count += 1
+                                    except: pass
                                     if count >= 30: break
                             if count > 0:
-                                logger.info(f"✨ Resilient Fallback found {count} leads without an account! 🏁🏎️🏁")
+                                logger.info(f"✨ Resilient Fallback found {count} leads!")
                                 break
                     except: continue
 
-        finally:
-            # 🔓 RELEASE LOCK
-            self._harvest_tasks.pop(user_id, None)
+        # 🔓 RELEASE LOCK + FINAL UI SYNC
+        self._harvest_tasks.pop(user_id, None)
+        try:
+            # If lead was originally REJECTED, keep it rejected (Force Scrape mode)
+            # Otherwise upgrade to 'harvested' to signal completion
+            final_status = original_status if original_status == 'rejected' else 'harvested'
+            await db.execute("UPDATE instagram_leads SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", final_status, lead_id, user_id)
+            await manager.send_personal_message({"type": "instagram_lead_updated", "lead_id": lead_id, "status": final_status}, user_id)
+            logger.info(f"🛰️ Signal Sent: Lead {lead_id} marked as '{final_status}' for user {user_id}")
             
-            # 🏁 MISSION ACCOMPLISHED: Final status update and UI sync
-            try:
-                # Upgrading to 'harvested' lets the UI know the surge is over!
-                await db.execute("UPDATE instagram_leads SET status = 'harvested', updated_at = NOW() WHERE id = $1 AND user_id = $2", lead_id, user_id)
-                await manager.send_personal_message({
-                    "type": "instagram_lead_updated",
-                    "lead_id": lead_id,
-                    "status": "harvested"
-                }, user_id)
-                logger.info(f"🛰️ Signal Sent: Lead {lead_id} marked as 'harvested' for user {user_id}")
-                
-                # 🏎️ NEXT IN LINE: Automatically trigger the next queued lead!
-                next_in_queue = await db.fetchrow("""
-                    SELECT id FROM instagram_leads 
-                    WHERE user_id = $1 AND status = 'queued' 
-                    ORDER BY updated_at ASC LIMIT 1
-                """, user_id)
-                
-                if next_in_queue:
-                    logger.info(f"🚀 SUCCESSION: Triggering next queued lead: {next_in_queue['id']}")
-                    # Trigger the next one in the background
-                    asyncio.create_task(self.harvest_lead_network(user_id, next_in_queue['id']))
-            except Exception as se:
-                logger.warning(f"⚠️ Status/Queue sync failed: {se}")
+            # 🏎️ NEXT IN LINE: Auto-trigger next queued lead
+            next_in_queue = await db.fetchrow("""
+                SELECT id FROM instagram_leads 
+                WHERE user_id = $1 AND status = 'queued' 
+                ORDER BY updated_at ASC LIMIT 1
+            """, user_id)
+            if next_in_queue:
+                logger.info(f"🚀 SUCCESSION: Triggering next queued lead: {next_in_queue['id']}")
+                asyncio.create_task(self.harvest_lead_network(user_id, next_in_queue['id']))
+        except Exception as se:
+            logger.warning(f"⚠️ Status/Queue sync failed: {se}")
 
     async def get_lead_network(self, user_id: int, lead_id: int, direction: str = None):
         """Returns the scraped followers/following usernames for a specific lead."""
@@ -581,10 +611,10 @@ class InstagramService:
     async def get_stats(self, user_id: int):
         stats = await db.fetchrow("""
             SELECT 
-                COUNT(*) as total, 
-                COUNT(*) FILTER (WHERE status = 'discovered') as discovered, 
-                COUNT(*) FILTER (WHERE status = 'qualified') as analyzed,
-                COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+                COUNT(*) FILTER (WHERE status != 'discarded') as total, 
+                COUNT(*) FILTER (WHERE status IN ('discovered', 'queued')) as discovered, 
+                COUNT(*) FILTER (WHERE status IN ('qualified', 'analyzed', 'vetted', 'harvested')) as analyzed,
+                COUNT(*) FILTER (WHERE status IN ('rejected', 'discarded')) as rejected,
                 COUNT(*) FILTER (WHERE status = 'contacted') as contacted,
                 COUNT(*) FILTER (WHERE status = 'converted') as converted
             FROM instagram_leads WHERE user_id = $1
@@ -758,6 +788,14 @@ class InstagramService:
             await db.execute("""
                 INSERT INTO instagram_accounts (user_id, username, password, proxy_id, status, session_id, verification_code, last_used_at)
                 VALUES ($1, $2, $3, $4, 'active', $5, $6, NOW())
+                ON CONFLICT (username) DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    password = EXCLUDED.password,
+                    proxy_id = EXCLUDED.proxy_id,
+                    status = 'active',
+                    session_id = EXCLUDED.session_id,
+                    verification_code = EXCLUDED.verification_code,
+                    last_used_at = NOW()
             """, user_id, username, password, db_proxy_id, session_id, v_code)
             
             logger.info(f"✅ Ghost @{username} AUTHORIZED via Tunnel.")
@@ -987,9 +1025,17 @@ class InstagramService:
     _insta_clients = {}  # Cache logged-in clients for speed
 
     async def fix_account_statuses(self, user_id: int):
-        """Quick fix: Set all accounts without a status to 'active'."""
-        await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE (status IS NULL OR status = '') AND user_id = $1", user_id)
-        return {"status": "fixed"}
+        """🚀 INDUSTRIAL RESET: Revives all non-banned accounts and purges the memory cache."""
+        # 1. Database Revival
+        await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE status != 'banned' AND user_id = $1", user_id)
+        
+        # 2. Cache Purge: Force the engine to re-handshake every ghost
+        accounts = await db.fetch("SELECT username FROM instagram_accounts WHERE user_id = $1", user_id)
+        for acc in accounts:
+            self._insta_clients.pop(acc['username'], None)
+            
+        logger.info(f"♻️ Global Ghost Reset Mission Complete for User {user_id}. All caches purged! ✨")
+        return {"status": "fixed", "message": "All accounts reactivated and caches cleared! 🛸"}
 
     async def _get_insta_client(self, account_row):
         username = account_row['username']
@@ -1000,6 +1046,16 @@ class InstagramService:
         cl = Client()
         cl.delay_range = [2, 5]
         
+        # 🧪 STABILITY INJECTION: Use Web-Identity to bypass mobile parsing bugs!
+        cl.set_device({
+            "app_version": "385.0.0.47.74",
+            "manufacturer": "Instagram",
+            "model": "Web",
+            "device": "Web",
+        })
+        cl.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        cl.public_api_key = "936619743392459" 
+        
         # Proxy Support
         if account_row.get('host'):
             p_auth = f"{account_row['p_user']}:{account_row['p_pass']}@" if account_row.get('p_user') else ""
@@ -1009,9 +1065,14 @@ class InstagramService:
         try:
             session_id = account_row.get('session_id')
             if session_id and isinstance(session_id, str) and len(session_id) > 5:
-                # Use sessionid cookie login (safest method)
-                logger.info(f"Session login for @{username}...")
-                cl.login_by_sessionid(session_id)
+                try:
+                    # Use sessionid cookie login (safest method)
+                    logger.info(f"Session login for @{username}...")
+                    cl.login_by_sessionid(session_id)
+                except Exception as sess_err:
+                    logger.warning(f"⚠️ Session Login failed for @{username} ({sess_err}). Falling back to fresh Auth...")
+                    # Fallback Logic: Password login
+                    cl.login(username, account_row['password'])
             else:
                 # Fallback: password login with manual 2FA support
                 v_code = account_row.get('verification_code')

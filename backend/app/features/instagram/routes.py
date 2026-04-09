@@ -85,6 +85,14 @@ async def delete_proxy(
 ):
     return await instagram_service.delete_proxy(current_user.user_id, proxy_id)
 
+@router.delete("/leads/{lead_id}")
+async def delete_lead(
+    lead_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Delete a single Instagram lead by ID."""
+    return await instagram_service.delete_lead(current_user.user_id, lead_id)
+
 @router.delete("/leads/clear")
 async def clear_all_leads(current_user: TokenData = Depends(get_current_user)):
     """Wipe all Instagram leads for the user."""
