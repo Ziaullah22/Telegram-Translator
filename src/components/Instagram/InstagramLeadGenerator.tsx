@@ -110,6 +110,15 @@ const InstagramLeadGenerator: React.FC = () => {
             } else if (message.type === 'instagram_lead_updated' || message.type === 'new_lead_discovered') {
                 // 🛰️ INSTANT SYNC: Leads pop into the table the millisecond they are found!
                 fetchData();
+                // If the updated lead is the one we are harvesting, clear the stuck state
+                if (message.type === 'instagram_lead_updated') {
+                    setHarvestingId((currentHarvestingId) => {
+                        if (currentHarvestingId === message.lead_id) {
+                            return null;
+                        }
+                        return currentHarvestingId;
+                    });
+                }
             } else if (message.type === 'auto_analyze_started') {
                 setAutoAnalyzingId(message.lead_id);
                 setRestTimer(null);
@@ -743,7 +752,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 </button>
                                                             ) : (
                                                                 <>
-                                                                    {lead.is_private ? (
+                                                                    {lead.status === 'failed' ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-500/10 text-gray-500 font-black text-[9px] uppercase tracking-widest border border-gray-500/20" title="Account unavailable or blocked">
+                                                                            <AlertCircle className="w-3 h-3" /> FAILED ❌
+                                                                        </div>
+                                                                    ) : lead.is_private ? (
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-500/10 text-orange-500 font-black text-[9px] uppercase tracking-widest border border-orange-500/20">
                                                                             <AlertCircle className="w-3 h-3" /> Private Profile 🔒
                                                                         </div>
