@@ -728,8 +728,12 @@ class TelegramSession:
             
             me = await self.client.get_me()
             now = datetime.now()
+            
+            # Generate a pseudo-unique ID for the secret message to prevent DB unique constraint violations
+            pseudo_msg_id = int(now.timestamp() * 1000) % 1000000000
+            
             return {
-                "message_id": 0, # Secret messages don't have standard IDs
+                "message_id": pseudo_msg_id, # Secret messages don't have standard IDs
                 "text": text,
                 "date": now,
                 "is_outgoing": True,

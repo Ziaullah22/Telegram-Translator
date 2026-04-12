@@ -1473,7 +1473,9 @@ export default function ChatWindow({
               data={listItems}
               className="h-full custom-scrollbar"
               initialTopMostItemIndex={999999}
-              followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
+              followOutput="auto"
+              alignToBottom={true}
+              atBottomThreshold={150}
               increaseViewportBy={300}
               atBottomStateChange={(atBottom) => {
                 isAtBottomRef.current = atBottom;
@@ -1496,7 +1498,8 @@ export default function ChatWindow({
                       <span>Loading older messages...</span>
                     </div>
                   </div>
-                ) : null
+                ) : null,
+                Footer: () => <div style={{ height: 12, flexShrink: 0 }} />
               }}
               itemContent={(_, item) => {
                 if (item.type === 'date') {
