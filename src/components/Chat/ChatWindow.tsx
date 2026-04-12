@@ -698,6 +698,17 @@ export default function ChatWindow({
     }
   }, [conversationId]);
 
+  // Stabilize scroll when Focus Mode toggles
+  useEffect(() => {
+    if (listItems.length > 0 && isAtBottomRef.current) {
+      // Use a slight delay to allow Virtuoso to finish recalculating item heights
+      const timer = setTimeout(() => {
+        scrollToBottom('auto');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [hideOriginal, listItems.length]);
+
   // FORCE SCROLL TO BOTTOM ON NEW MESSAGES
   useEffect(() => {
     const lastItem = listItems[listItems.length - 1];
@@ -1377,8 +1388,8 @@ export default function ChatWindow({
               </div>
             </div>
             
-            {/* Conversation Settings Menu (Delete/Leave) */}
-            {currentConversation && (
+            {/* Conversation Settings Menu (Delete/Leave) - Hidden for private/secret chats per user request */}
+            {currentConversation && currentConversation.type !== 'private' && currentConversation.type !== 'secret' && (
               <div className="relative ml-2">
                 <button
                   onClick={() => setShowChatMenu(p => !p)}
@@ -1391,26 +1402,6 @@ export default function ChatWindow({
                 </button>
                 {showChatMenu && (
                   <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] z-50 w-52 py-1 animate-scale-in">
-                    {/* Private Chat Options: Allows full deletion */}
-                    {currentConversation.type === 'private' && onDeleteConversation && (
-                      <button
-                        onClick={() => {
-                          setShowChatMenu(false);
-                          setConfirmModal({
-                            isOpen: true,
-                            title: 'Delete Chat',
-                            message: 'Are you sure you want to delete this chat? This will remove it from your list and delete all messages.',
-                            type: 'danger',
-                            onConfirm: () => onDeleteConversation(currentConversation.id)
-                          });
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-[#ff595a] hover:bg-red-50 dark:hover:bg-red-500/10 font-medium flex items-center space-x-2 transition-colors"
-                      >
-                        <Trash2 className="w-[18px] h-[18px]" />
-                        <span className="text-[15px]">Delete chat</span>
-                      </button>
-                    )}
-
                     {/* Group/Channel Options: Allows leaving */}
                     {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
                       <button
