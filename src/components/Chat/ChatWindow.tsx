@@ -698,6 +698,14 @@ export default function ChatWindow({
     }
   }, [conversationId]);
 
+  // FORCE SCROLL TO BOTTOM ON NEW MESSAGES
+  useEffect(() => {
+    const lastItem = listItems[listItems.length - 1];
+    if (listItems.length > 0 && (isAtBottomRef.current || (lastItem?.type === 'message' && lastItem.data.is_outgoing))) {
+      scrollToBottom('auto');
+    }
+  }, [listItems.length]);
+
   // Handle data arrival and initial scroll
   useEffect(() => {
     if (conversationId && listItems.length > 0 && initialScrollAnchorRef.current) {
@@ -1471,11 +1479,11 @@ export default function ChatWindow({
               key={conversationId || 'empty'}
               ref={virtuosoRef}
               data={listItems}
-              className="h-full custom-scrollbar"
+              className="h-full custom-scrollbar !pb-10"
               initialTopMostItemIndex={999999}
               followOutput="auto"
               alignToBottom={true}
-              atBottomThreshold={150}
+              atBottomThreshold={100}
               increaseViewportBy={300}
               atBottomStateChange={(atBottom) => {
                 isAtBottomRef.current = atBottom;
@@ -1499,7 +1507,7 @@ export default function ChatWindow({
                     </div>
                   </div>
                 ) : null,
-                Footer: () => <div style={{ height: 12, flexShrink: 0 }} />
+                Footer: () => <div className="h-6 w-full" />
               }}
               itemContent={(_, item) => {
                 if (item.type === 'date') {
