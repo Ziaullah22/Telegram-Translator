@@ -405,6 +405,13 @@ export const messagesAPI = {
     const response = await api.post(`/messages/conversations/${conversationId}/read`);
     return response.data;
   },
+
+  startSecretChat: async (accountId: number, peerId: number) => {
+    const response = await api.post('/messages/secret/start', null, {
+      params: { account_id: accountId, peer_id: peerId }
+    });
+    return response.data;
+  },
 };
 
 // --- HEALTH & STATUS SERVICES ---
@@ -631,9 +638,9 @@ export const campaignsAPI = {
   },
 
   // Create a new campaign with a name and opening message
-  createCampaign: async (data: { 
-    name: string; 
-    initial_message: string; 
+  createCampaign: async (data: {
+    name: string;
+    initial_message: string;
     negative_keywords?: string[];
     kill_switch_enabled?: boolean;
     auto_replies?: AutoReplyPair[];
@@ -817,12 +824,12 @@ export const instagramAPI = {
     const response = await api.get('/instagram/leads', { params });
     return response.data;
   },
-  
+
   deleteLead: async (leadId: number): Promise<void> => {
     await api.delete(`/instagram/leads/${leadId}`);
   },
 
-  getLeadNetwork: async (leadId: number, direction?: 'follower' | 'following'): Promise<{direction: string; network_username: string; discovered_at: string}[]> => {
+  getLeadNetwork: async (leadId: number, direction?: 'follower' | 'following'): Promise<{ direction: string; network_username: string; discovered_at: string }[]> => {
     const response = await api.get(`/instagram/leads/${leadId}/network`, { params: direction ? { direction } : {} });
     return response.data;
   },
@@ -863,7 +870,7 @@ export const instagramAPI = {
     const response = await api.delete(`/instagram/accounts/${accountId}`);
     return response.data;
   },
-  
+
   analyzeLead: async (leadId: number): Promise<any> => {
     // Stage 2 analysis can be slow due to external scraping
     const response = await api.post(`/instagram/leads/${leadId}/analyze`, {}, { timeout: 60000 });

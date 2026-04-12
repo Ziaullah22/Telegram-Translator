@@ -89,6 +89,15 @@ function App() {
   const [sessionsAccount, setSessionsAccount] = useState<TelegramAccount | null>(null); // Target account for session management
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]); // Local state for pending scheduled messages
   const [accountToDelete, setAccountToDelete] = useState<TelegramAccount | null>(null); // Confirmation ref for account deletion
+  const [hideOriginal, setHideOriginal] = useState<boolean>(() => {
+    const saved = localStorage.getItem('focusMode');
+    return saved ? JSON.parse(saved) : false;
+  }); // Global toggle to hide foreign languages
+
+  useEffect(() => {
+    localStorage.setItem('focusMode', JSON.stringify(hideOriginal));
+  }, [hideOriginal]);
+
 
   // --- REFS FOR STABLE STATE ACCESS ---
   // These refs are used inside callbacks/effects that need the most up-to-date state
@@ -355,6 +364,15 @@ function App() {
         const delIds = data.message_ids as number[];
         if (currentConversationRef.current?.id === delId) setMessages(prev => prev.filter(msg => !delIds.includes(msg.id)));
       }
+
+      // HANDLE: New conversation (e.g. secret chat handshake accepted)
+      if (data?.type === 'new_conversation' && data.conversation) {
+        setConversations(prev => {
+          const exists = prev.some(c => Number(c.id) === Number(data.conversation.id));
+          if (exists) return prev;
+          return [data.conversation, ...prev];
+        });
+      }
     });
     return unsubscribe;
   }, [onMessage, playNotificationSound, showNativeNotification]);
@@ -620,6 +638,8 @@ function App() {
                 onProfile={(account) => { setProfileAccount(account); setShowProfileModal(true); }}
                 onSessions={(account) => { setSessionsAccount(account); setShowSessionsModal(true); }}
                 unreadCounts={unreadCounts}
+                hideOriginal={hideOriginal}
+                onToggleHideOriginal={() => setHideOriginal(!hideOriginal)}
               />
 
               {currentAccount && (
@@ -633,6 +653,7 @@ function App() {
                   accountId={currentAccount.id}
                   onConversationCreated={() => loadConversations(currentAccount.id)}
                   isTranslationEnabled={currentAccount.isTranslationEnabled}
+                  hideOriginal={hideOriginal}
                 />
               )}
 
@@ -673,6 +694,7 @@ function App() {
                 setScheduledMessages={setScheduledMessages}
                 conversations={conversations}
                 isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
+                hideOriginal={hideOriginal}
               />
             </div>
           } />

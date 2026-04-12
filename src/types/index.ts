@@ -57,7 +57,7 @@ export interface TelegramChat {
   telegram_peer_id?: number;
   title?: string;
   username?: string;
-  type: 'private' | 'group' | 'supergroup' | 'channel';
+  type: 'private' | 'group' | 'supergroup' | 'channel' | 'secret';
   participantCount?: number;
   lastMessage?: TelegramMessage;
   unreadCount?: number;

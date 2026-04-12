@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI, contactsAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -424,6 +424,7 @@ interface ChatWindowProps {
   setScheduledMessages: React.Dispatch<React.SetStateAction<ScheduledMessage[]>>;
   conversations: TelegramChat[];
   isTranslationEnabled: boolean;
+  hideOriginal: boolean;
 }
 
 export default function ChatWindow({
@@ -447,6 +448,7 @@ export default function ChatWindow({
   conversations,
   targetLanguage,
   isTranslationEnabled,
+  hideOriginal,
 }: ChatWindowProps): JSX.Element {
   // --- UI & INTERACTION STATE ---
   const [showChatMenu, setShowChatMenu] = useState(false);
@@ -1214,8 +1216,14 @@ export default function ChatWindow({
             {/* Copy Text */}
             <button
               onClick={() => {
-                const text = isTranslationEnabled ? (contextMenu.message.translated_text || contextMenu.message.original_text || '') : (contextMenu.message.original_text || '');
-                navigator.clipboard.writeText(text).catch(() => { });
+                const isOutgoing = isMessageOutgoing(contextMenu.message);
+                let text = '';
+                if (hideOriginal) {
+                  text = isOutgoing ? contextMenu.message.original_text : (contextMenu.message.translated_text || contextMenu.message.original_text);
+                } else {
+                  text = isTranslationEnabled ? (contextMenu.message.translated_text || contextMenu.message.original_text) : contextMenu.message.original_text;
+                }
+                navigator.clipboard.writeText(text || '').catch(() => { });
                 setContextMenu(null);
               }}
               className="w-full px-4 py-2.5 flex items-center space-x-4 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
@@ -1328,7 +1336,8 @@ export default function ChatWindow({
                 <div className="flex-1 min-w-0">
                   {/* [FEATURE: Advanced Username Handling] 
                       Automatically display the @username in the chat header if the conversation title is just a phone number. */}
-                  <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white truncate">
+                  <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white truncate flex items-center gap-2">
+                    {currentConversation?.type === 'secret' && <Lock className="w-4 h-4 text-green-500" />}
                     {currentConversation?.username && (!currentConversation?.title || currentConversation?.title.startsWith('+'))
                       ? `@${currentConversation.username}`
                       : (currentConversation?.title || 'Translation Chat')}
@@ -1611,7 +1620,14 @@ export default function ChatWindow({
                       {isOnlyEmoji(isTranslationEnabled ? (message.translated_text || message.original_text) : message.original_text) ? (
                         <div className="py-1 px-1 inline-block">
                           <span style={{ fontSize: '96px', lineHeight: '1.1' }} className="select-none block">
-                            {isTranslationEnabled ? (message.translated_text || message.original_text) : message.original_text}
+                            {(() => {
+                              const isOutgoing = isMessageOutgoing(message);
+                              if (hideOriginal) {
+                                if (isOutgoing) return message.original_text;
+                                return message.translated_text || message.original_text;
+                              }
+                              return isTranslationEnabled ? (message.translated_text || message.original_text) : message.original_text;
+                            })()}
                           </span>
                           <div className="flex items-center justify-end mt-1 space-x-1">
                             <div className="flex items-center space-x-1 bg-black/40 dark:bg-black/50 rounded-full px-2 py-0.5">
@@ -1735,7 +1751,8 @@ export default function ChatWindow({
                             </div>
                           )}
 
-                          {message.original_text && (
+                          {/* Original Text - Hidden if Focus Mode is ON for incoming messages */}
+                          {message.original_text && (!hideOriginal || isOutgoing) && (
                             <div className="mb-2">
                               {message.source_language && (
                                 <div className={`flex items-center gap-1.5 mb-1.5 px-0.5 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
@@ -1777,8 +1794,8 @@ export default function ChatWindow({
                             </div>
                           )}
 
-                          {/* Translated caption/message */}
-                          {message.translated_text && isTranslationEnabled && (
+                          {/* Translated caption/message - Hidden if Focus Mode is ON for outgoing messages */}
+                          {message.translated_text && isTranslationEnabled && (!hideOriginal || !isOutgoing) && (
                             <div className={`border-t pt-2 mt-2 ${isOutgoing ? 'border-gray-900/10 dark:border-white/10' : 'border-gray-100 dark:border-gray-700'}`}>
                               <div className={`text-[14.5px] font-bold leading-relaxed break-words whitespace-pre-wrap max-w-[280px] ${isOutgoing ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-gray-100'}`}>
                                 {renderFormattedText(message.translated_text)}

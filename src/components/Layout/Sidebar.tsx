@@ -24,6 +24,8 @@ interface SidebarProps {
   onProfile: (account: TelegramAccount) => void;
   onSessions: (account: TelegramAccount) => void;
   unreadCounts: Record<number, Record<number, number>>; // accountId -> { conversationId: count }
+  hideOriginal: boolean;
+  onToggleHideOriginal: () => void;
 }
 
 export default function Sidebar({
@@ -38,6 +40,8 @@ export default function Sidebar({
   onProfile,
   onSessions,
   unreadCounts,
+  hideOriginal,
+  onToggleHideOriginal,
 }: SidebarProps) {
   // Natural sort function that handles numbers correctly (1,2,3,11,23 instead of 1,11,2,23,3)
   const naturalSort = (a: string, b: string): number => {
@@ -234,6 +238,32 @@ export default function Sidebar({
             )}
           </div>
         </div>
+      </div>
+      
+      {/* --- ADDED FEATURE: FOCUS MODE TOGGLE --- */}
+      <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
+        <label className="flex items-center justify-between cursor-pointer group">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-black uppercase tracking-tight text-gray-700 dark:text-gray-200 group-hover:text-blue-500 transition-colors">
+              Focus Mode
+            </span>
+            <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-0.5">
+              Hide Foreign Text
+            </span>
+          </div>
+          <div 
+            onClick={onToggleHideOriginal}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+              hideOriginal ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                hideOriginal ? 'translate-x-[1.2rem]' : 'translate-x-[0.2rem]'
+              }`}
+            />
+          </div>
+        </label>
       </div>
     </div>
   );

@@ -169,14 +169,21 @@ async def send_message(
         )
 
     try:
-        sent_message = await telethon_service.send_message(
-            conversation['telegram_account_id'],
-            conversation['telegram_peer_id'],
-            translated_text,
-            reply_to=message_data.reply_to_message_id
-        )
+        # Check if this is a Secret Chat
+        if conversation['type'] == 'secret':
+            sent_message = await telethon_service.sessions[conversation['telegram_account_id']].send_secret_message(
+                conversation['telegram_peer_id'],
+                translated_text
+            )
+        else:
+            sent_message = await telethon_service.send_message(
+                conversation['telegram_account_id'],
+                conversation['telegram_peer_id'],
+                translated_text,
+                reply_to=message_data.reply_to_message_id
+            )
 
-        # Encrypt message if encryption is enabled
+        # Encrypt message if encryption is enabled (Standard database encryption, non-E2EE)
         processed_original, processed_translated, is_encrypted = await encrypt_message_if_enabled(
             db, original_text, translated_text
         )
@@ -814,3 +821,61 @@ async def react_to_message(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to react: {str(e)}",
         )
+
+@router.post("/secret/start")
+async def start_secret_chat(
+    account_id: int,
+    peer_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Initiate a secret chat handshake with a peer"""
+    # Verify account ownership
+    account = await db.fetchrow(
+        "SELECT id, user_id FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Telegram account not found")
+
+    try:
+        # Check for active session
+        session = await telethon_service.get_session(account_id)
+        if not session:
+            raise HTTPException(status_code=400, detail="Telegram account is not connected")
+
+        # Initiate handshake — this creates the conversation in DB and returns its info
+        result = await session.initiate_secret_chat(peer_id)
+
+        # Fetch the newly created conversation row so we can broadcast it
+        conv = await db.fetchrow(
+            """
+            SELECT c.id, c.telegram_peer_id, c.title, c.type, c.username, c.is_muted
+            FROM conversations c
+            WHERE c.telegram_account_id = $1 AND c.type = 'secret' AND c.telegram_peer_id = $2
+            """,
+            account_id, result.get("secret_chat_id", peer_id)
+        )
+
+        if conv:
+            from websocket_manager import manager
+            await manager.send_personal_message(
+                {
+                    "type": "new_conversation",
+                    "conversation": {
+                        "id": conv["id"],
+                        "telegram_peer_id": conv["telegram_peer_id"],
+                        "title": conv["title"],
+                        "type": conv["type"],
+                        "username": conv["username"],
+                        "is_muted": conv["is_muted"] or False,
+                        "unreadCount": 0,
+                        "lastMessage": None,
+                    },
+                },
+                current_user.user_id,
+            )
+
+        return result
+    except Exception as e:
+        logger.error(f"Failed to start secret chat: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

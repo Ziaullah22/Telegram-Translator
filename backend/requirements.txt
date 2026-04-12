@@ -58,6 +58,7 @@ soupsieve==2.8.3
 SQLAlchemy==2.0.47
 starlette==0.52.1
 Telethon==1.42.0
+telethon-secret-chat==0.2.4
 tqdm==4.67.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0

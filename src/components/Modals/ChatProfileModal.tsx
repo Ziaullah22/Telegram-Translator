@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, BellOff, Bell, Phone, LogOut, Users, Trash } from 'lucide-react';
+import { X, MessageCircle, BellOff, Bell, Phone, LogOut, Users, Trash, Lock, CheckCircle2 } from 'lucide-react';
 import PeerAvatar from '../Common/PeerAvatar';
 import ConfirmModal from './ConfirmModal';
 import type { TelegramChat } from '../../types';
-import { telegramAPI } from '../../services/api';
+import { telegramAPI, messagesAPI } from '../../services/api';
 
 interface PeerProfile {
   phone?: string;
@@ -31,6 +31,7 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
   const [isMuted, setIsMuted] = useState(chat?.is_muted || false);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -139,6 +140,28 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
             onClick={handleToggleMute} 
           />
           
+          {chat.type === 'private' && (
+            <ActionBtn 
+              icon={<Lock className="w-6 h-6 text-green-500" />} 
+              label="Secret" 
+              onClick={async () => {
+                if (!accountId) return;
+                try {
+                  await messagesAPI.startSecretChat(accountId, peerId);
+                  setSuccessMessage("Secret chat created successfully!");
+                  setTimeout(() => {
+                    setSuccessMessage(null);
+                    onClose();
+                  }, 2000);
+                } catch (e: any) {
+                  console.error(e);
+                  const msg = e?.response?.data?.detail || e?.message || "Failed to start secret chat.";
+                  alert(`❌ ${msg}`);
+                }
+              }} 
+            />
+          )}
+          
           {chat.type === 'private' ? (
             <ActionBtn icon={<Phone className="w-6 h-6" />} label="Call" disabled />
           ) : (
@@ -243,6 +266,18 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
       message={`Are you sure you want to delete this chat with ${name}?`}
       confirmText="Delete"
     />
+      {/* Success Modal Overlay */}
+      {successMessage && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#1e2c3a] rounded-2xl p-8 max-w-sm w-full mx-auto shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200 border border-gray-100 dark:border-white/10">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-500/20 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle2 className="w-8 h-8 text-green-500" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Success</h3>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{successMessage}</p>
+          </div>
+        </div>
+      )}
     </>
   );
 }

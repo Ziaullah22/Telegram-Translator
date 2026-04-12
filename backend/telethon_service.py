@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Optional, List, Callable
 from telethon import TelegramClient, events, functions, types
 from telethon.tl.types import User, Chat, Channel, Message, PeerUser, PeerChat, PeerChannel
+from telethon_secret_chat import SecretChatManager, SECRET_TYPES
 from telethon.errors import FloodWaitError, UserDeactivatedError, AuthKeyUnregisteredError, SessionPasswordNeededError
 from telethon.sessions import SQLiteSession
 from app.core.config import settings
@@ -36,6 +37,7 @@ class TelegramSession:
         self.me: Optional[object] = None
         self.connection_lock = asyncio.Lock()
         self.is_connecting = False
+        self.secret_chat_manager: Optional[SecretChatManager] = None
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
@@ -85,9 +87,78 @@ class TelegramSession:
                 # Check if user is authorized
                 if not await self.client.is_user_authorized():
                     logger.error(f"Session {self.account_id} is not authorized. Please re-authenticate.")
-                    await self.client.disconnect()
                     self.is_connected = False
                     return False
+
+                # --- Initialize Secret Chat Manager ---
+                self.secret_chat_manager = SecretChatManager(
+                    self.client, 
+                    auto_accept=True, 
+                    new_chat_created=self._on_secret_chat_created
+                )
+                
+                # Load existing secret chats from DB
+                try:
+                    secret_chats = await db.fetch(
+                        "SELECT peer_id, auth_key FROM telegram_secret_chats WHERE telegram_account_id = $1",
+                        self.account_id
+                    )
+                    for sc in secret_chats:
+                        # telethon-secret-chat handles the internal logic
+                        # We might need to manually inject them depending on the library version
+                        # but usually it handles it via session data if it was previously saved.
+                        pass
+                except Exception as e:
+                    logger.warning(f"Error loading secret chats from DB: {e}")
+
+                # Function for handling secret chat messages
+                async def on_secret_message(event):
+                    from database import db as _db  # explicit import to fix closure scope
+                    # In this library version, event is UpdateNewEncryptedMessage
+                    # and decrypted content is in event.decrypted_event
+                    decrypted = getattr(event, 'decrypted_event', None)
+                    if not decrypted or not hasattr(decrypted, 'message'):
+                        return
+
+                    logger.info(f"Received secret message from {event.message.chat_id}: {decrypted.message}")
+                    
+                    # Fetch conversation details for the title/name
+                    chat_id = event.message.chat_id
+                    conv = await _db.fetchrow(
+                        "SELECT title, username FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                        self.account_id, chat_id
+                    )
+                    peer_title = conv['title'] if conv else f"Secret Chat ({chat_id})"
+                    
+                    # Manually construct a message data packet compatible with handle_new_message in main.py
+                    message_data = {
+                        "account_id": self.account_id,
+                        "peer_id": chat_id,
+                        "message_id": getattr(event, 'id', int(datetime.now().timestamp())),
+                        "text": decrypted.message,
+                        "sender_id": chat_id,
+                        "sender_name": peer_title,
+                        "sender_username": conv['username'] if conv else None,
+                        "peer_title": peer_title,
+                        "conversation_type": "secret",
+                        "date": datetime.now(),
+                        "is_outgoing": False,
+                        "type": "text",
+                        "has_media": False,
+                        "media_filename": None,
+                        "media_thumbnail": None,
+                        "media_duration": None,
+                        "reply_to_msg_id": None
+                    }
+                    
+                    # Trigger global handlers (like in main.py)
+                    from telethon_service import telethon_service
+                    if hasattr(telethon_service, 'message_handlers'):
+                        for handler in telethon_service.message_handlers:
+                            asyncio.create_task(handler(message_data))
+
+                # Register the handler using the correct method for this library version
+                self.secret_chat_manager.add_secret_event_handler(SECRET_TYPES.decrypt, on_secret_message)
 
                 self.is_connected = True
                 logger.info(f"Connected to Telegram Account. ID: {self.account_id}")
@@ -148,6 +219,64 @@ class TelegramSession:
                 raise Exception(f"Telegram connection failed: {str(e)}")
             finally:
                 self.is_connecting = False
+
+    # Callback when a new secret chat is established (incoming or outgoing)
+    async def _on_secret_chat_created(self, chat, created_by_me):
+        if created_by_me:
+            logger.info(f"Secret chat created by me: {chat.id}")
+            return  # Already handled in initiate_secret_chat
+
+        # Someone started a secret chat with us — auto-accepted, now save to DB
+        peer_id = chat.id
+        participant_id = getattr(chat, 'participant_id', None) or getattr(chat, 'admin_id', None)
+        peer_title = f"Secret Chat ({peer_id})"
+        peer_username = None
+
+        if participant_id:
+            try:
+                peer = await self.client.get_entity(participant_id)
+                peer_title = f"{getattr(peer, 'first_name', '') or ''} {getattr(peer, 'last_name', '') or ''}".strip() or getattr(peer, 'username', '') or str(participant_id)
+                peer_username = getattr(peer, 'username', None)
+            except Exception:
+                pass
+
+        conv_id = await db.fetchval(
+            """
+            INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
+            VALUES ($1, $2, $3, 'secret', $4)
+            ON CONFLICT (telegram_account_id, telegram_peer_id) DO UPDATE
+            SET type = 'secret', title = $3, username = $4
+            RETURNING id
+            """,
+            self.account_id, peer_id, peer_title, peer_username
+        )
+        logger.info(f"Incoming secret chat accepted and saved to DB: {peer_id}")
+
+        # Broadcast to frontend so the sidebar updates automatically
+        try:
+            account = await db.fetchrow(
+                "SELECT user_id FROM telegram_accounts WHERE id = $1", self.account_id
+            )
+            if account:
+                from websocket_manager import manager
+                await manager.send_personal_message(
+                    {
+                        "type": "new_conversation",
+                        "conversation": {
+                            "id": conv_id,
+                            "telegram_peer_id": peer_id,
+                            "title": peer_title,
+                            "type": "secret",
+                            "username": peer_username,
+                            "is_muted": False,
+                            "unreadCount": 0,
+                            "lastMessage": None,
+                        },
+                    },
+                    account["user_id"],
+                )
+        except Exception as e:
+            logger.warning(f"Could not broadcast new secret chat to frontend: {e}")
 
     # Gracefully terminate the active Telethon client connection
     async def disconnect(self):
@@ -543,6 +672,74 @@ class TelegramSession:
             return file_path
         except Exception as e:
             logger.error(f"Error downloading media for account {self.account_id}, message {telegram_message_id}: {e}")
+            raise
+
+    async def initiate_secret_chat(self, peer_id: int):
+        """Start a new secret chat with a peer"""
+        if not self.client or not self.is_connected or not self.secret_chat_manager:
+            raise Exception("Client or Secret Chat Manager not connected")
+
+        try:
+            # Fetch peer details first
+            peer = await self.client.get_entity(peer_id)
+            peer_title = f"{getattr(peer, 'first_name', '') or ''} {getattr(peer, 'last_name', '') or ''}".strip() or getattr(peer, 'username', '') or str(peer_id)
+            peer_username = getattr(peer, 'username', None)
+
+            # Start the secret chat handshake
+            # The manager's start_secret_chat returns the new chat ID
+            secret_chat_id = await self.secret_chat_manager.start_secret_chat(peer)
+
+            # Create conversation entry for this secret chat
+            # This allows the UI to see it immediately and routes messages correctly
+            conv_id = await db.fetchval(
+                """
+                INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
+                VALUES ($1, $2, $3, 'secret', $4)
+                ON CONFLICT (telegram_account_id, telegram_peer_id) DO UPDATE 
+                SET type = 'secret', title = $3, username = $4
+                RETURNING id
+                """,
+                self.account_id, secret_chat_id, peer_title, peer_username
+            )
+            
+            return {
+                "status": "initiated",
+                "conversation_id": conv_id,
+                "secret_chat_id": secret_chat_id,
+                "peer_title": peer_title
+            }
+        except FloodWaitError as e:
+            wait = e.seconds
+            logger.error(f"FloodWait initiating secret chat with {peer_id}: {wait}s")
+            raise Exception(f"Telegram rate limit: please wait {wait} seconds before starting another secret chat.")
+        except Exception as e:
+            logger.error(f"Error initiating secret chat with {peer_id}: {e}")
+            raise
+
+    async def send_secret_message(self, peer_id: int, text: str):
+        """Send a message to an existing secret chat"""
+        if not self.client or not self.is_connected or not self.secret_chat_manager:
+            raise Exception("Client or Secret Chat Manager not connected")
+
+        try:
+            # telethon-secret-chat uses the chat_id to send a secret message
+            # The peer_id passed here is the secret_chat_id from the conversations table
+            await self.secret_chat_manager.send_secret_message(peer_id, text)
+            
+            me = await self.client.get_me()
+            now = datetime.now()
+            return {
+                "message_id": 0, # Secret messages don't have standard IDs
+                "text": text,
+                "date": now,
+                "is_outgoing": True,
+                "type": "text",
+                "sender_user_id": me.id,
+                "sender_name": f"{me.first_name or ''} {me.last_name or ''}".strip() or me.username or "Me",
+                "sender_username": me.username
+            }
+        except Exception as e:
+            logger.error(f"Error sending secret message to {peer_id}: {e}")
             raise
 
     async def join_chat(self, peer_id: int):

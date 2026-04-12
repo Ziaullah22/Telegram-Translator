@@ -8,7 +8,7 @@
  * 3. Avatar pre-fetching for smooth scrolling
  * 4. Context menu for chat actions (Mute, Delete)
  */
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
@@ -24,6 +24,7 @@ interface ConversationListProps {
   accountId?: number;
   onConversationCreated?: () => Promise<void>;
   isTranslationEnabled?: boolean;
+  hideOriginal?: boolean;
 }
 
 const formatConvDate = (dateStr: string) => {
@@ -50,6 +51,7 @@ export default function ConversationList({
   accountId,
   onConversationCreated,
   isTranslationEnabled = true,
+  hideOriginal = false,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
@@ -160,9 +162,15 @@ export default function ConversationList({
   const getLastMessagePreview = (conversation: TelegramChat) => {
     if (!conversation.lastMessage) return 'No messages yet';
     const msg = conversation.lastMessage;
-    if (msg.type === 'text') {
-      const text = isTranslationEnabled ? (msg.translated_text || msg.original_text) : msg.original_text;
-      return text || '';
+    
+    if (msg.type === 'text' || msg.type === 'auto_reply') {
+      let text = '';
+      if (hideOriginal) {
+        text = msg.is_outgoing ? msg.original_text : (msg.translated_text || msg.original_text);
+      } else {
+        text = isTranslationEnabled ? (msg.translated_text || msg.original_text) : msg.original_text;
+      }
+      return (msg.type === 'auto_reply' ? '⚡ ' : '') + (text || '');
     }
     if (msg.type === 'photo') return '📷 Photo';
     if (msg.type === 'video') return '📹 Video';
@@ -173,7 +181,6 @@ export default function ConversationList({
     if (msg.type === 'location') return '📍 Location';
     if (msg.type === 'contact') return '👤 Contact';
     if (msg.type === 'poll') return '📊 Poll';
-    if (msg.type === 'auto_reply') return '⚡ ' + (msg.translated_text || msg.original_text);
     return '💬 Message';
   };
 
@@ -321,7 +328,8 @@ export default function ConversationList({
                   {/* Info */}
                   <div className={`flex-1 min-w-0 ml-3 py-1 ${isActive ? '' : 'border-b border-gray-100 dark:border-white/5'}`}>
                     <div className="flex items-center justify-between">
-                      <h3 className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                      <h3 className={`text-sm font-semibold truncate flex items-center gap-1 ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                        {conversation.type === 'secret' && <Lock className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-green-500'}`} />}
                         {conversation.username && (!conversation.title || conversation.title.startsWith('+'))
                           ? `@${conversation.username}`
                           : (conversation.title || 'Unknown')}

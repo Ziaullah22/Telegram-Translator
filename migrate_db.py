@@ -678,7 +678,28 @@ async def migrate():
                 CREATE INDEX IF NOT EXISTS idx_lead_network_lead ON instagram_lead_network(lead_id);
                 CREATE INDEX IF NOT EXISTS idx_lead_network_username ON instagram_lead_network(network_username);
             """)
-            print("[OK] Incremental updates applied.")
+            # --- 7. SECRET CHAT SUPPORT ---
+            await conn.execute("""
+                -- Add 'secret' to conversation_type enum
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = 'conversation_type' AND e.enumlabel = 'secret') THEN
+                        ALTER TYPE conversation_type ADD VALUE 'secret';
+                    END IF;
+                END $$;
+
+                -- Table for storing secret chat keys and state
+                CREATE TABLE IF NOT EXISTS telegram_secret_chats (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_account_id BIGINT NOT NULL REFERENCES telegram_accounts(id) ON DELETE CASCADE,
+                    peer_id BIGINT NOT NULL,
+                    access_hash BIGINT,
+                    auth_key BYTEA NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(telegram_account_id, peer_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_secret_chats_account ON telegram_secret_chats(telegram_account_id);
+            """)
+            print("[OK] Secret Chat support added.")
 
             print("\nDatabase initialization/synchronization completed successfully.")
             
