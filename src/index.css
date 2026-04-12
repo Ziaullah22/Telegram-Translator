@@ -79,24 +79,21 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
+  width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.4) !important;
-  border-radius: 20px !important;
-  border: 2px solid transparent !important;
-  background-clip: content-box !important;
+  background: rgba(107, 114, 128, 0.3);
+  border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.7) !important;
+  background: rgba(107, 114, 128, 0.6);
 }
 
 /* Telegram Chat Background */
