@@ -167,13 +167,13 @@ export default function AutoResponderModal({
       <div className="relative w-full h-full flex flex-col bg-white dark:bg-[#1a222c] overflow-hidden animate-fade-in">
         
         <div className="border-b border-blue-100 dark:border-white/5 bg-[#f0f9ff] dark:bg-[#0f172a] z-20 shrink-0 shadow-sm transition-colors">
-          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-                <Zap className="w-5 h-5" />
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div className="flex flex-col">
-                <h2 className="text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">
+                <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-white leading-none uppercase tracking-tight">
                   {rule ? 'Edit Auto-Responder Rule' : 'Create Auto-Responder Rule'}
                 </h2>
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Setup Rules & Automated Responses</p>
@@ -195,16 +195,16 @@ export default function AutoResponderModal({
           ref={scrollRef}
           className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/50 dark:bg-[#111827]"
         >
-          <div className="max-w-6xl mx-auto px-6 py-8">
-            <form onSubmit={handleSubmit} className="flex flex-col gap-10">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-8 sm:gap-10">
               {error && (
-                <div className="p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 text-red-500 animate-shake">
-                  <AlertCircle className="w-6 h-6 shrink-0" />
-                  <p className="text-base font-bold">{error}</p>
+                <div className="p-4 sm:p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 text-red-500 animate-shake">
+                  <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+                  <p className="text-sm sm:text-base font-bold">{error}</p>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
                 <div className="flex flex-col gap-8">
                   <div className="flex flex-col gap-1">
                     <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
@@ -255,7 +255,7 @@ export default function AutoResponderModal({
 
                     <div className="flex flex-col gap-4">
                       <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">Priority & Status</label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="flex flex-col gap-2">
                           <input
                             title="Priority (higher = checked first)"
@@ -413,19 +413,19 @@ export default function AutoResponderModal({
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 py-5 px-10 flex items-center justify-center gap-5 z-40 transition-all">
+        <div className="absolute bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a222c]/95 backdrop-blur-xl border-t border-gray-100 dark:border-white/5 p-4 sm:py-5 sm:px-10 flex items-center justify-center gap-3 sm:gap-5 z-40 transition-all">
           <button
             type="button"
             onClick={onClose}
             disabled={loading || uploadingMedia}
-            className="w-40 py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-3xl font-black uppercase tracking-widest text-[11px] transition-all hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50"
+            className="flex-1 sm:flex-none sm:w-40 py-3 sm:py-4 bg-transparent border-2 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 rounded-2xl sm:rounded-3xl font-black uppercase tracking-widest text-[10px] sm:text-[11px] transition-all hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading || uploadingMedia}
-            className="w-80 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-3xl font-black uppercase tracking-[0.2em] text-[11px] transition-all shadow-2xl shadow-blue-600/40 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+            className="flex-[2] sm:flex-none sm:w-80 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl sm:rounded-3xl font-black uppercase tracking-[0.1em] sm:tracking-[0.2em] text-[10px] sm:text-[11px] transition-all shadow-2xl shadow-blue-600/40 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 sm:gap-3"
           >
             {loading || uploadingMedia ? (
                <Loader2 className="w-4 h-4 animate-spin" />

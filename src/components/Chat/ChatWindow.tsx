@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock, ArrowLeft } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI, contactsAPI } from '../../services/api';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
@@ -415,7 +415,6 @@ interface ChatWindowProps {
   onJoinConversation?: (conversationId: number) => Promise<void>;
   onToggleMute?: (conversationId: number) => Promise<void>;
   onLeaveConversation?: (conversationId: number) => Promise<void>;
-  onDeleteConversation?: (conversationId: number) => Promise<void>;
   onDeleteMessages?: (conversationId: number, messageIds: number[], revoke: boolean) => Promise<void>;
   hasMoreMessages?: boolean;
   onLoadMoreMessages?: () => Promise<void>;
@@ -425,6 +424,7 @@ interface ChatWindowProps {
   conversations: TelegramChat[];
   isTranslationEnabled: boolean;
   hideOriginal: boolean;
+  onBack?: () => void;
 }
 
 export default function ChatWindow({
@@ -438,7 +438,6 @@ export default function ChatWindow({
   onJoinConversation,
   onToggleMute,
   onLeaveConversation,
-  onDeleteConversation,
   onDeleteMessages,
   hasMoreMessages = false,
   onLoadMoreMessages,
@@ -449,6 +448,7 @@ export default function ChatWindow({
   targetLanguage,
   isTranslationEnabled,
   hideOriginal,
+  onBack,
 }: ChatWindowProps): JSX.Element {
   // --- UI & INTERACTION STATE ---
   const [showChatMenu, setShowChatMenu] = useState(false);
@@ -1057,7 +1057,7 @@ export default function ChatWindow({
 
 
   return (
-    <div id="chat-window" className="relative flex-1 flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
+    <div id="chat-window" className="relative w-full h-full flex flex-col bg-telegram-bg-light dark:bg-telegram-bg-dark transition-colors duration-300">
       {/* Selection Mode Header Bar - Telegram style: CANCEL (left) | FORWARD DELETE (right) */}
       {isSelectionMode && (
         <div className="absolute top-0 left-0 right-0 z-50 bg-white dark:bg-[#212121] border-b border-gray-100 dark:border-white/5 shadow-sm flex items-center justify-between px-4 py-0" style={{ height: '72px' }}>
@@ -1322,125 +1322,133 @@ export default function ChatWindow({
       }
 
       {/* --- SECTION: CHAT HEADER --- */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm z-10 transition-colors duration-200 relative min-h-[72px]">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-3 xl:px-6 py-3 xl:py-4 shadow-sm z-10 transition-all duration-200 relative min-h-[64px] xl:min-h-[72px] flex items-center">
         {/* In selection mode, the absolute overlay above covers the header */}
         {isSelectionMode ? (
-          <div className="flex items-center space-x-6 animate-fade-in">
+          <div className="flex items-center space-x-4 xl:space-x-6 animate-fade-in w-full">
             <span className="text-[17px] font-semibold text-gray-900 dark:text-white">
-              {selectedMessages.length} message{selectedMessages.length !== 1 && 's'} selected
+              {selectedMessages.length} selected
             </span>
           </div>
         ) : (
-          <div className="flex items-center justify-between animate-fade-in">
-            <div className="flex-1">
+          <div className="flex items-center justify-between w-full animate-fade-in gap-2">
+            <div className="flex items-center gap-2 xl:gap-4 flex-1 min-w-0">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
+                  title="Back to Conversations"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+              )}
               <div 
-                className="flex items-center space-x-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1.5 -ml-1.5 rounded-2xl transition-all duration-200 group w-fit pr-6"
+                className="flex items-center gap-3 xl:gap-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 p-1.5 -ml-1.5 rounded-2xl transition-all duration-200 group truncate"
                 onClick={() => setShowChatProfileModal(true)}
-                title="View Profile Information"
               >
-                <div className="transform transition-transform group-hover:scale-105">
+                <div className="flex-shrink-0">
                   <PeerAvatar
-                  accountId={currentAccount?.id}
-                  peerId={
-                    currentConversation?.telegram_peer_id ||
-                    (currentConversation?.type === 'private' && !currentConversation?.lastMessage?.is_outgoing
-                      ? currentConversation?.lastMessage?.sender_user_id
-                      : undefined) ||
-                    (currentConversation?.type !== 'private' ? currentConversation?.id : undefined)
-                  }
-                  name={currentConversation?.title || 'Unknown'}
-                  className="w-12 h-12 rounded-full flex-shrink-0 text-xl font-bold uppercase shadow-inner"
-                />
+                    accountId={currentAccount?.id}
+                    peerId={
+                      currentConversation?.telegram_peer_id ||
+                      (currentConversation?.type === 'private' && !currentConversation?.lastMessage?.is_outgoing
+                        ? currentConversation?.lastMessage?.sender_user_id
+                        : undefined) ||
+                      (currentConversation?.type !== 'private' ? currentConversation?.id : undefined)
+                    }
+                    name={currentConversation?.title || 'Unknown'}
+                    className="w-10 h-10 xl:w-12 xl:h-12 rounded-full text-lg xl:text-xl font-bold uppercase shadow-inner"
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
-                  {/* [FEATURE: Advanced Username Handling] 
-                      Automatically display the @username in the chat header if the conversation title is just a phone number. */}
-                  <h2 className="text-[17px] font-semibold text-gray-900 dark:text-white truncate flex items-center gap-2">
-                    {currentConversation?.type === 'secret' && <Lock className="w-4 h-4 text-green-500" />}
+                  <h2 className="text-base xl:text-[17px] font-bold text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+                    {currentConversation?.type === 'secret' && <Lock className="w-3.5 h-3.5 text-green-500" />}
                     {currentConversation?.username && (!currentConversation?.title || currentConversation?.title.startsWith('+'))
                       ? `@${currentConversation.username}`
                       : (currentConversation?.title || 'Translation Chat')}
                   </h2>
-                  <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
+                  <div className="flex items-center flex-wrap gap-1 xl:gap-1.5 mt-0.5 min-h-[16px]">
                     {currentConversation?.username && currentConversation.title && !currentConversation.title.startsWith('+') && (
-                      <span className="text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
+                      <span className="text-[10px] xl:text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
                     )}
                     {contactTags.map(tag => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-500/15 text-green-600 dark:text-green-400 rounded-full text-[10px] font-black border border-green-500/20 leading-none"
+                        className="inline-flex items-center gap-1 px-1 xl:px-1.5 py-0.5 bg-green-500/10 dark:bg-green-500/15 text-green-600 dark:text-green-400 rounded-full text-[9px] xl:text-[10px] font-black border border-green-500/20 leading-none"
                       >
-                        <Tag className="w-2.5 h-2.5" />
+                        <Tag className="w-2 xl:w-2.5 h-2 xl:h-2.5" />
                         {tag}
                       </span>
                     ))}
+                    {/* Compact display of pending tasks for this chat */}
+                    {scheduledMessages.length > 0 && (
+                      <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-md">
+                        <Clock className="w-2.5 xl:w-3.5 h-2.5 xl:h-3.5 text-blue-500" />
+                        <span className="text-[10px] xl:text-xs font-bold text-blue-600 dark:text-blue-400">
+                          {scheduledMessages.filter(sm => !sm.is_sent && !sm.is_cancelled).length}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
-                {/* Compact display of pending tasks for this chat */}
-                {scheduledMessages.length > 0 && (
-                  <div className="flex items-center space-x-1 px-2 py-1 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-md">
-                    <Clock className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                      {scheduledMessages.filter(sm => !sm.is_sent && !sm.is_cancelled).length}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
             
-            {/* Conversation Settings Menu (Delete/Leave) - Hidden for private/secret chats per user request */}
-            {currentConversation && currentConversation.type !== 'private' && currentConversation.type !== 'secret' && (
-              <div className="relative ml-2">
+            <div className="flex items-center gap-1 xl:gap-2">
+              {/* [FEATURE: Contact CRM] - Link to external or internal contact data */}
+              {currentConversation && (
                 <button
-                  onClick={() => setShowChatMenu(p => !p)}
-                  className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="More options"
+                  id="chat-crm-btn"
+                  onClick={() => setShowContactModal(true)}
+                  className="p-2 xl:px-3 xl:py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
+                  title="Contact CRM Info"
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                  </svg>
+                  <User className="w-4 h-4 xl:w-4 xl:h-4" />
+                  <span className="hidden xl:inline">CRM</span>
                 </button>
-                {showChatMenu && (
-                  <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] z-50 w-52 py-1 animate-scale-in">
-                    {/* Group/Channel Options: Allows leaving */}
-                    {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
-                      <button
-                        onClick={() => {
-                          const isChannel = currentConversation.type === 'channel';
-                          setShowChatMenu(false);
-                          setConfirmModal({
-                            isOpen: true,
-                            title: isChannel ? 'Leave Channel' : 'Leave Group',
-                            message: isChannel
-                              ? 'Are you sure you want to leave this channel? You will no longer receive updates.'
-                              : 'Are you sure you want to leave this group? You will no longer receive messages from it.',
-                            type: 'danger',
-                            onConfirm: () => onLeaveConversation(currentConversation.id)
-                          });
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-[#ff595a] hover:bg-red-50 dark:hover:bg-red-500/10 font-medium flex items-center space-x-2 transition-colors"
-                      >
-                        <Trash2 className="w-[18px] h-[18px]" />
-                        <span className="text-[15px]">{currentConversation.type === 'channel' ? 'Leave channel' : 'Leave group'}</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* [FEATURE: Contact CRM] - Link to external or internal contact data */}
-            {currentConversation && (
-              <button
-                id="chat-crm-btn"
-                onClick={() => setShowContactModal(true)}
-                className="ml-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm font-medium"
-                title="Contact CRM Info"
-              >
-                <User className="w-4 h-4" />
-                <span>CRM</span>
-              </button>
-            )}
+              )}
+
+              {/* Conversation Settings Menu (Delete/Leave) - Hidden for private/secret chats per user request */}
+              {currentConversation && currentConversation.type !== 'private' && currentConversation.type !== 'secret' && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowChatMenu(p => !p)}
+                    className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title="More options"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                    </svg>
+                  </button>
+                  {showChatMenu && (
+                    <div className="absolute right-0 top-10 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)] z-50 w-52 py-1 animate-scale-in">
+                      {/* Group/Channel Options: Allows leaving */}
+                      {(currentConversation.type === 'group' || currentConversation.type === 'supergroup' || currentConversation.type === 'channel') && onLeaveConversation && (
+                        <button
+                          onClick={() => {
+                            const isChannel = currentConversation.type === 'channel';
+                            setShowChatMenu(false);
+                            setConfirmModal({
+                              isOpen: true,
+                              title: isChannel ? 'Leave Channel' : 'Leave Group',
+                              message: isChannel
+                                ? 'Are you sure you want to leave this channel? You will no longer receive updates.'
+                                : 'Are you sure you want to leave this group? You will no longer receive messages from it.',
+                              type: 'danger',
+                              onConfirm: () => onLeaveConversation(currentConversation.id)
+                            });
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-[#ff595a] hover:bg-red-50 dark:hover:bg-red-500/10 font-medium flex items-center space-x-2 transition-colors"
+                        >
+                          <Trash2 className="w-[18px] h-[18px]" />
+                          <span className="text-[15px]">{currentConversation.type === 'channel' ? 'Leave channel' : 'Leave group'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1448,12 +1456,14 @@ export default function ChatWindow({
       {/* Messages area */}
       <div className={`flex-1 relative overflow-hidden dark:bg-[#0E1621] chat-telegram-bg ${(!!contextMenu || (!!reactingToMessageId && showEmojiPicker)) ? 'pointer-events-none !overflow-hidden' : ''}`}>
         {messages.length === 0 ? (
-          <div className="text-center py-12">
-            <Languages className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-400 mb-2">
+          <div className="flex flex-col items-center justify-center h-full text-center p-6">
+            <div className="bg-black/10 dark:bg-white/5 p-8 rounded-full mb-6 backdrop-blur-sm">
+              <Languages className="w-16 h-16 text-blue-500/50" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
               {!currentConversation ? 'Select a conversation' : 'No messages yet'}
             </h3>
-            <p className="text-gray-500 px-6">
+            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
               {!currentConversation
                 ? 'Choose a conversation from the list to start viewing messages'
                 : isConnected
@@ -1531,7 +1541,7 @@ export default function ChatWindow({
                   <div
                     key={message.id}
                     data-tg-id={message.telegram_message_id}
-                    className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group pl-14 pr-6 py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
+                    className={`relative flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-1 group ${isSelectionMode ? 'pl-12 pr-3 xl:pr-5' : 'px-3 xl:px-5'} py-1.5 transition-colors duration-200 cursor-auto ${isSelected ? 'bg-[#419FD9]/10 dark:bg-[#419FD9]/15' : isSelectionMode ? 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer' : ''
                       }`}
                     onClick={(e) => {
                       if (isSelectionMode) {
@@ -1598,7 +1608,7 @@ export default function ChatWindow({
                       </div>
                     )}
 
-                    <div className={`flex flex-col max-w-[85%] lg:max-w-[70%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                    <div className={`flex flex-col max-w-[92%] xl:max-w-[75%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
                       {/* Sender info for group/supergroup/channel incoming messages */}
                       {!isOutgoing && (message.sender_name || message.sender_username) && (
                         <div className="flex items-center space-x-2 mb-1 pl-1">
@@ -1878,7 +1888,7 @@ export default function ChatWindow({
       </div>
 
       {/* Message input */}
-      <div id="chat-input-area" className={`bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 transition-colors duration-300 ${isSelectionMode ? 'p-2' : 'px-4 pt-3 pb-4'}`}>
+      <div id="chat-input-area" className={`bg-white dark:bg-[#1c2733] border-t border-gray-200 dark:border-white/5 transition-colors duration-300 ${isSelectionMode ? 'p-2' : 'px-2 xl:px-4 pt-2 xl:pt-3 pb-2 xl:pb-4'}`}>
         {isSelectionMode ? (
           <div className="h-14 flex items-center justify-center">
             <p className="text-[13px] text-gray-400">{selectedMessages.length} selected &mdash; use buttons above to forward or delete</p>
@@ -1920,7 +1930,7 @@ export default function ChatWindow({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
               >
                 <Copy className="w-3.5 h-3.5" />
-                <span>Templates</span>
+                <span className="hidden xl:inline">Templates</span>
               </button>
               <button
                 id="chat-templates-manage-btn"
@@ -1929,7 +1939,7 @@ export default function ChatWindow({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all text-sm border border-gray-200 dark:border-white/10"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Manage</span>
+                <span className="hidden xl:inline">Manage</span>
               </button>
             </div>
 

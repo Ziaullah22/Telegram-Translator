@@ -8,7 +8,7 @@
  * 3. Avatar pre-fetching for smooth scrolling
  * 4. Context menu for chat actions (Mute, Delete)
  */
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult } from '../../types';
 import { telegramAPI } from '../../services/api';
@@ -25,6 +25,7 @@ interface ConversationListProps {
   onConversationCreated?: () => Promise<void>;
   isTranslationEnabled?: boolean;
   hideOriginal?: boolean;
+  onBack?: () => void;
 }
 
 const formatConvDate = (dateStr: string) => {
@@ -52,6 +53,7 @@ export default function ConversationList({
   onConversationCreated,
   isTranslationEnabled = true,
   hideOriginal = false,
+  onBack,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
@@ -197,10 +199,19 @@ export default function ConversationList({
   };
 
   return (
-    <div id="conversation-list" className="w-80 bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300">
-      {/* Header with Search Bar */}
-      <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 space-y-3">
-        <div className="relative group">
+    <div id="conversation-list" className="w-full h-full bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-all duration-300">
+      {/* Header with Search Bar and Back Button */}
+      <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 flex items-center gap-2">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
+            title="Back to Accounts"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        <div className="relative group flex-1">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
           </div>
@@ -212,8 +223,8 @@ export default function ConversationList({
             autoComplete="no-autofill-search"
             spellCheck={false}
             name="search-query-field"
-            placeholder={isConnected ? "Search chats or usernames..." : "Connect account to search..."}
-            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none [&::-webkit-search-cancel-button]:hidden"
+            placeholder={isConnected ? "Search chats..." : "Connect account..."}
+            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
           />
           {searchQuery && (
             <button

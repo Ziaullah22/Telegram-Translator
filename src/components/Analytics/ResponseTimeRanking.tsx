@@ -113,7 +113,7 @@ const ResponseTimeRanking: React.FC<ResponseTimeRankingProps> = ({
 
             {/* Main Table Layout */}
             <div id="analytics-stats-table" className="flex-1 overflow-auto max-h-[450px] custom-scrollbar">
-                <table className="w-full text-left border-collapse table-fixed">
+                <table className="w-full text-left border-collapse table-fixed min-w-[500px] md:min-w-0">
                     <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-[#1c2733] shadow-sm">
                         <tr className="text-[10px] uppercase font-black tracking-[0.2em] text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-white/5">
                             <th className="px-6 py-4 w-20 text-center">Rank</th>

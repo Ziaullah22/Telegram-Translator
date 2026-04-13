@@ -625,77 +625,87 @@ function App() {
           <Route path="/crm" element={<CRMDashboard />} />
           <Route path="/instagram-leads" element={<InstagramLeadGenerator />} />
           <Route path="/" element={
-            <div className="flex-1 flex overflow-hidden">
-              <Sidebar
-                accounts={accounts}
-                currentAccount={currentAccount}
-                onAccountSelect={handleAccountSelect}
-                onAddAccount={() => setShowAddAccountModal(true)}
-                onConnect={handleConnectAccount}
-                onDisconnect={handleDisconnectAccount}
-                onEdit={handleEditAccount}
-                onDelete={handleHardDelete}
-                onProfile={(account) => { setProfileAccount(account); setShowProfileModal(true); }}
-                onSessions={(account) => { setSessionsAccount(account); setShowSessionsModal(true); }}
-                unreadCounts={unreadCounts}
-                hideOriginal={hideOriginal}
-                onToggleHideOriginal={() => setHideOriginal(!hideOriginal)}
-              />
-
-              {currentAccount && (
-                <ConversationList
-                  conversations={conversations}
-                  currentConversation={currentConversation}
-                  onConversationSelect={handleConversationSelect}
-                  onDeleteConversation={handleDeleteConversation}
-                  isConnected={currentAccount.isConnected}
-                  unreadCounts={unreadCounts[currentAccount.id] || {}}
-                  accountId={currentAccount.id}
-                  onConversationCreated={() => loadConversations(currentAccount.id)}
-                  isTranslationEnabled={currentAccount.isTranslationEnabled}
+            <div className="flex-1 flex overflow-hidden relative">
+              {/* Step 1: Account Selection (Sidebar) */}
+              <div className={`${currentAccount ? 'hidden xl:flex' : 'flex'} w-full xl:w-64 h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
+                <Sidebar
+                  accounts={accounts}
+                  currentAccount={currentAccount}
+                  onAccountSelect={handleAccountSelect}
+                  onAddAccount={() => setShowAddAccountModal(true)}
+                  onConnect={handleConnectAccount}
+                  onDisconnect={handleDisconnectAccount}
+                  onEdit={handleEditAccount}
+                  onDelete={handleHardDelete}
+                  onProfile={(account) => { setProfileAccount(account); setShowProfileModal(true); }}
+                  onSessions={(account) => { setSessionsAccount(account); setShowSessionsModal(true); }}
+                  unreadCounts={unreadCounts}
                   hideOriginal={hideOriginal}
+                  onToggleHideOriginal={() => setHideOriginal(!hideOriginal)}
                 />
+              </div>
+
+              {/* Step 2: Chat Selection (ConversationList) */}
+              {currentAccount && (
+                <div className={`${currentConversation ? 'hidden xl:flex' : 'flex'} w-full xl:w-[320px] 2xl:w-[360px] h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
+                  <ConversationList
+                    conversations={conversations}
+                    currentConversation={currentConversation}
+                    onConversationSelect={handleConversationSelect}
+                    onDeleteConversation={handleDeleteConversation}
+                    isConnected={currentAccount.isConnected}
+                    unreadCounts={unreadCounts[currentAccount.id] || {}}
+                    accountId={currentAccount.id}
+                    onConversationCreated={() => loadConversations(currentAccount.id)}
+                    isTranslationEnabled={currentAccount.isTranslationEnabled}
+                    hideOriginal={hideOriginal}
+                    onBack={() => setCurrentAccount(null)}
+                  />
+                </div>
               )}
 
-              <ChatWindow
-                messages={messages}
-                currentConversation={currentConversation}
-                currentAccount={currentAccount}
-                isConnected={currentAccount?.isConnected || false}
-                sourceLanguage={currentAccount?.sourceLanguage || 'auto'}
-                targetLanguage={currentAccount?.targetLanguage || 'en'}
-                onSendMessage={handleSendMessage}
-                onSendMedia={handleSendMedia}
-                onJoinConversation={async (id) => {
-                  try {
-                    await telegramAPI.joinConversation(id);
-                    if (currentAccount) {
-                      await loadConversations(currentAccount.id);
-                      setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
-                      loadMessages(id);
-                      setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
-                    }
-                  } catch (e) { console.error(e); }
-                }}
-                onToggleMute={async (id) => {
-                  try {
-                    const result = await telegramAPI.toggleMute(id);
-                    setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
-                    setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
-                  } catch (e) { console.error(e); }
-                }}
-                onLeaveConversation={handleLeaveConversation}
-                onDeleteConversation={handleDeleteConversation}
-                onDeleteMessages={handleDeleteMessages}
-                hasMoreMessages={hasMoreMessages}
-                onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
-                onReact={handleReact}
-                scheduledMessages={scheduledMessages}
-                setScheduledMessages={setScheduledMessages}
-                conversations={conversations}
-                isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
-                hideOriginal={hideOriginal}
-              />
+              {/* Step 3: Message View (ChatWindow) */}
+              <div className={`${currentConversation ? 'flex' : 'hidden xl:flex'} flex-1 h-full flex-col`}>
+                <ChatWindow
+                  messages={messages}
+                  currentConversation={currentConversation}
+                  currentAccount={currentAccount}
+                  isConnected={currentAccount?.isConnected || false}
+                  sourceLanguage={currentAccount?.sourceLanguage || 'auto'}
+                  targetLanguage={currentAccount?.targetLanguage || 'en'}
+                  onSendMessage={handleSendMessage}
+                  onSendMedia={handleSendMedia}
+                  onJoinConversation={async (id) => {
+                    try {
+                      await telegramAPI.joinConversation(id);
+                      if (currentAccount) {
+                        await loadConversations(currentAccount.id);
+                        setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
+                        loadMessages(id);
+                        setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
+                      }
+                    } catch (e) { console.error(e); }
+                  }}
+                  onToggleMute={async (id) => {
+                    try {
+                      const result = await telegramAPI.toggleMute(id);
+                      setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
+                      setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
+                    } catch (e) { console.error(e); }
+                  }}
+                  onLeaveConversation={handleLeaveConversation}
+                  onDeleteMessages={handleDeleteMessages}
+                  hasMoreMessages={hasMoreMessages}
+                  onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
+                  onReact={handleReact}
+                  scheduledMessages={scheduledMessages}
+                  setScheduledMessages={setScheduledMessages}
+                  conversations={conversations}
+                  isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
+                  hideOriginal={hideOriginal}
+                  onBack={() => setCurrentConversation(null)}
+                />
+              </div>
             </div>
           } />
         </Routes>

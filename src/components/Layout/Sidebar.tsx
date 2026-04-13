@@ -61,7 +61,7 @@ export default function Sidebar({
   });
 
   return (
-    <div className="w-64 bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300">
+    <div id="main-sidebar" className="w-full h-full bg-white dark:bg-[#17212b] border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300 relative">
       <div className="p-3 border-b border-gray-100 dark:border-white/5">
         <button
           id="add-account-btn"
