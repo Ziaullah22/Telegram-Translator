@@ -613,9 +613,10 @@ class InstagramService:
         # 🕵️ If ALL ghost accounts failed, try Ghost-less fallback
         if not harvest_success:
             logger.info(f"--- 🛰️ RESILIENT FALLBACK: All ghosts failed for @{username}. Attempting Ghost-less Search Surge... ---")
+            fallback_query = f'site:instagram.com "follower of {username}"'
             fallback_mirrors = [
                 f"https://www.picuki.com/profile/{username}",
-                f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"follower of {username}\"')}"
+                f"https://html.duckduckgo.com/html/?q={quote(fallback_query)}"
             ]
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}) as client:
                 for url in fallback_mirrors:
