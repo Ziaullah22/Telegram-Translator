@@ -29,7 +29,7 @@ class InstagramWarmingService:
     nap_end_times = {} # user_id: float (timestamp of when the nap finishes)
 
     async def get_proxies(self, user_id: int):
-        rows = await db.fetch("SELECT * FROM instagram_warming_proxies WHERE user_id = $1", user_id)
+        rows = await db.fetch("SELECT * FROM instagram_warming_proxies WHERE user_id = $1 ORDER BY id ASC", user_id)
         return [dict(row) for row in rows]
 
     async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 50):
@@ -769,10 +769,10 @@ class InstagramWarmingService:
 
             if not username or not password: continue
             
-            # Rotate Proxy
+            # Rotate Proxy (Round Robin)
             proxy_id = None
             if proxies:
-                proxy_id = proxies[idx % len(proxies)]['id']
+                proxy_id = proxies[count % len(proxies)]['id']
             
             await db.execute("""
                 INSERT INTO instagram_warming_accounts (user_id, username, password, proxy_id, session_id, verification_code, status)
