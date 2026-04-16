@@ -285,7 +285,7 @@ const InstagramWarmingDashboard: React.FC = () => {
     { id: 'leads', label: 'Discovery Pool', icon: <Users className="w-4 h-4" /> },
     { id: 'accounts', label: 'Ghost Unit', icon: <Ghost className="w-4 h-4" /> },
     { id: 'proxies', label: 'Network Shield', icon: <Shield className="w-4 h-4" /> },
-    { id: 'settings', label: 'Protocols', icon: <Settings className="w-4 h-4" /> },
+    // { id: 'settings', label: 'Protocols', icon: <Settings className="w-4 h-4" /> },
   ];
 
   return (
