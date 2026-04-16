@@ -701,6 +701,104 @@ async def migrate():
             """)
             print("[OK] Secret Chat support added.")
 
+            # --- 8. INSTAGRAM WARMING MODULE (ISOLATED) ---
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS instagram_warming_proxies (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    host TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    username TEXT,
+                    password TEXT,
+                    proxy_type TEXT DEFAULT 'http',
+                    is_working BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_warming_accounts (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    email TEXT,
+                    proxy_id BIGINT REFERENCES instagram_warming_proxies(id) ON DELETE SET NULL,
+                    status TEXT DEFAULT 'active',
+                    session_id TEXT,
+                    user_id_cookie TEXT,
+                    two_factor_secret TEXT,
+                    settings_dump JSONB,
+                    verification_code TEXT,
+                    frozen_until TIMESTAMPTZ,
+                    warming_started_at TIMESTAMPTZ,
+                    days_warmed INTEGER DEFAULT 0,
+                    leads_scraped_today INTEGER DEFAULT 0,
+                    last_reset_at TIMESTAMPTZ,
+                    last_warm_at TIMESTAMPTZ,
+                    next_wakeup_time TIMESTAMPTZ,
+                    daily_usage_count INTEGER DEFAULT 0,
+                    last_usage_reset TIMESTAMPTZ DEFAULT NOW(),
+                    last_used TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_warming_leads (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                    instagram_username TEXT NOT NULL,
+                    full_name TEXT,
+                    bio TEXT,
+                    follower_count INTEGER,
+                    following_count INTEGER,
+                    is_private BOOLEAN DEFAULT FALSE,
+                    status TEXT DEFAULT 'discovered',
+                    failed_attempts INTEGER DEFAULT 0,
+                    last_attempt_at TIMESTAMPTZ,
+                    warmed_by_account_id INTEGER,
+                    discovery_keyword TEXT,
+                    recent_posts JSONB DEFAULT '[]',
+                    profile_pic_url TEXT,
+                    assigned_account_id INTEGER,
+                    assigned_account_name TEXT,
+                    source TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    CONSTRAINT uq_warming_leads_user_handle UNIQUE (user_id, instagram_username)
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_warming_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    account_id BIGINT REFERENCES instagram_warming_accounts(id) ON DELETE CASCADE,
+                    log_type VARCHAR(255),
+                    message TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_warming_settings (
+                    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    bio_keywords TEXT DEFAULT '',
+                    min_followers INTEGER DEFAULT 0,
+                    max_followers INTEGER DEFAULT 0,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_warming_leads_status ON instagram_warming_leads(status);
+                CREATE INDEX IF NOT EXISTS idx_warming_leads_user ON instagram_warming_leads(user_id);
+                
+                -- Ensure updated_at exists on both warming tables (safe ALTER for existing DBs)
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='updated_at') THEN
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_leads' AND column_name='updated_at') THEN
+                        ALTER TABLE instagram_warming_leads ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+                    END IF;
+                END $$;
+            """)
+            print("[OK] Instagram Warming Module tables added.")
+
+
             print("\nDatabase initialization/synchronization completed successfully.")
             
         except Exception as e:

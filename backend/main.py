@@ -28,6 +28,7 @@ from app.features.campaign.routes import router as campaign_router
 from app.features.products.routes import router as products_router
 from app.features.sales.routes import router as sales_router
 from app.features.instagram.routes import router as instagram_router
+from app.features.instagram_warming.routes import router as instagram_warming_router
 from auth import get_current_user
 from jose import jwt, JWTError
 from auto_responder_service import auto_responder_service
@@ -646,6 +647,7 @@ app.include_router(campaign_router)
 app.include_router(products_router)
 app.include_router(sales_router)
 app.include_router(instagram_router)
+app.include_router(instagram_warming_router)
 
 # Health check endpoint for monitoring application status
 @app.get("/api/health")

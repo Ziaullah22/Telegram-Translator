@@ -24,6 +24,7 @@ import ProductsPage from './components/Products/ProductsPage';
 import AdvancedSettings from './components/Settings/AdvancedSettings';
 import CRMDashboard from './components/CRM/CRMDashboard';
 import InstagramLeadGenerator from './components/Instagram/InstagramLeadGenerator';
+import InstagramWarmingDashboard from './components/InstagramWarming/InstagramWarmingDashboard';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
@@ -624,6 +625,7 @@ function App() {
           <Route path="/advanced-settings" element={<AdvancedSettings />} />
           <Route path="/crm" element={<CRMDashboard />} />
           <Route path="/instagram-leads" element={<InstagramLeadGenerator />} />
+          <Route path="/instagram-warming" element={<InstagramWarmingDashboard />} />
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden relative">
               {/* Step 1: Account Selection (Sidebar) */}

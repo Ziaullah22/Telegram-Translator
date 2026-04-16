@@ -292,3 +292,49 @@ export interface SalesSettings {
   ignored_languages?: string[];
   language_expert_packs?: Record<string, Record<string, string>>;
 }
+
+export interface InstagramWarmingAccount {
+  id: number;
+  user_id: number;
+  username: string;
+  status: 'active' | 'banned' | 'error' | 'pending';
+  proxy_id?: number;
+  proxy_host?: string;
+  last_used?: string;
+  created_at: string;
+}
+
+export interface InstagramWarmingProxy {
+  id: number;
+  user_id: number;
+  host: string;
+  port: number;
+  username?: string;
+  proxy_type: string;
+  is_working: boolean;
+  created_at: string;
+}
+
+export interface InstagramWarmingLead {
+  id: number;
+  user_id: number;
+  instagram_username: string;
+  full_name?: string;
+  profile_pic_url?: string;
+  bio?: string;
+  follower_count?: number;
+  following_count?: number;
+  is_private: boolean;
+  status: 'discovered' | 'qualified' | 'rejected' | 'harvested' | 'failed' | 'warming' | 'warmed' | 'queued' | 'private';
+  discovery_keyword?: string;
+  source?: string;
+  recent_posts?: any[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InstagramWarmingSettings {
+  bio_keywords: string;
+  min_followers: number;
+  max_followers: number;
+}

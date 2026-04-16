@@ -1,4 +1,4 @@
-import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings, ShieldAlert, Instagram, Menu, X, ChevronDown } from 'lucide-react';
+import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings, ShieldAlert, Instagram, Menu, X, ChevronDown, Flame } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -21,6 +21,7 @@ export default function Header({ onStartTour }: HeaderProps) {
     { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
     { path: '/crm', label: 'CRM / Leads', icon: <User className="w-3.5 h-3.5 text-green-500" />, id: 'nav-crm' },
     { path: '/instagram-leads', label: 'Insta Leads', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" />, id: 'nav-instagram' },
+    { path: '/instagram-warming', label: 'Insta Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-500" />, id: 'nav-warming' },
     { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
     { path: '/products', label: 'Store', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
     { path: '/advanced-settings', label: 'Advanced', icon: <Settings className="w-3.5 h-3.5 text-blue-600" /> },
@@ -89,7 +90,8 @@ export default function Header({ onStartTour }: HeaderProps) {
                 <div className="absolute top-[80%] left-0 mt-2 w-48 z-[100] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/5 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 overflow-hidden py-1">
                   {[
                     { path: '/crm', label: 'CRM / Leads', icon: <User className="w-3.5 h-3.5 text-green-500" />, id: 'nav-crm' },
-                    { path: '/instagram-leads', label: 'Insta Leads', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" />, id: 'nav-instagram' }
+                    { path: '/instagram-leads', label: 'Insta Leads', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" />, id: 'nav-instagram' },
+                    { path: '/instagram-warming', label: 'Insta Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-500" />, id: 'nav-warming' }
                   ].map(item => (
                     <button
                       key={item.path}

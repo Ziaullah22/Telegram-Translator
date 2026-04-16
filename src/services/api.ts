@@ -12,7 +12,7 @@ import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationR
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
 });

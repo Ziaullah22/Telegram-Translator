@@ -42,6 +42,7 @@ backend/temp/
 backend/tdata/
 backend/sessions/
 backend/media/
+backend/backend/media/files/
 **/*.session
 **/tdata/**
 
