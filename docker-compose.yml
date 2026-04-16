@@ -25,13 +25,24 @@ services:
     ports:
       - "8000:8000"
 
-  # The Frontend
+  # The User Frontend
   frontend:
     build: 
       context: .
     restart: always
     ports:
       - "80:80"
+    depends_on:
+      - backend
+
+  # The Admin Frontend
+  admin:
+    build:
+      context: .
+      dockerfile: ./admin/Dockerfile
+    restart: always
+    ports:
+      - "8080:80"
     depends_on:
       - backend
 
