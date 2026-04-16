@@ -403,7 +403,8 @@ class InstagramService:
 
         # 3. Strategy 3: Search Snippet Fallback
         try:
-            search_url = f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{username}\"')}"
+            u_search_query = f'site:instagram.com "{username}"'
+            search_url = f"https://html.duckduckgo.com/html/?q={quote(u_search_query)}"
             async with httpx.AsyncClient(headers=stealth_headers, timeout=12.0) as client:
                 res = await client.get(search_url)
                 if res.status_code == 200:
