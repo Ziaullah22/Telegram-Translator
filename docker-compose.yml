@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # The Database
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: telegram_translator
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: zia_ultra_secure_pass_99
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # The Backend API
+  backend:
+    build: 
+      context: ./backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator
+      JWT_SECRET: super_secret_warming_key
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  # The Frontend
+  frontend:
+    build: 
+      context: .
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
