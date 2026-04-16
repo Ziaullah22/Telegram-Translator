@@ -735,8 +735,9 @@ class InstagramWarmingService:
 
     async def bulk_add_accounts(self, user_id: int, lines: List[str]):
         proxies = await self.get_proxies(user_id)
+        active_pos = 0
         count = 0
-        for idx, line in enumerate(lines):
+        for line in lines:
             line = line.strip()
             if not line: continue
             
@@ -772,7 +773,7 @@ class InstagramWarmingService:
             # Rotate Proxy (Round Robin)
             proxy_id = None
             if proxies:
-                proxy_id = proxies[count % len(proxies)]['id']
+                proxy_id = proxies[active_pos % len(proxies)]['id']
             
             await db.execute("""
                 INSERT INTO instagram_warming_accounts (user_id, username, password, proxy_id, session_id, verification_code, status)
@@ -786,6 +787,7 @@ class InstagramWarmingService:
                     updated_at = NOW()
             """, user_id, username, password, proxy_id, session_id, verification_code)
             count += 1
+            active_pos += 1
             
         # 🚨 Emergency Wake-Up Override
         self.nap_end_times[user_id] = 0
