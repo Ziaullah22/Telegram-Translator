@@ -24,6 +24,8 @@ services:
       - db
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/media:/app/media
 
   # The User Frontend
   frontend:

@@ -47,9 +47,10 @@ class InstagramService:
                 if status == "INSERT 0 1": new_count += 1
 
             # 🛠️ Multi-Search Engine Engine (DuckDuckGo + Google Fallback)
+            kw_search_query = f'site:instagram.com "{keyword}"'
             mirrors = [
-                f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{keyword}\"')}",
-                f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}"
+                f"https://html.duckduckgo.com/html/?q={quote(kw_search_query)}",
+                f"https://www.google.com/search?q={quote(kw_search_query)}"
             ]
 
             for search_url in mirrors:
