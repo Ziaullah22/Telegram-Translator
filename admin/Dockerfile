@@ -11,8 +11,8 @@ RUN npm run build:admin
 
 # Stage 2: Serve
 FROM nginx:stable-alpine
-# Admin build goes to admin/dist
-COPY --from=builder /app/admin/dist /usr/share/nginx/html
+# Put files in a subfolder so Nginx finds them at /admin-portal/
+COPY --from=builder /app/admin/dist /usr/share/nginx/html/admin-portal
 # Use the admin-specific Nginx config
 COPY admin/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
