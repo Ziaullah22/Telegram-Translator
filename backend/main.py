@@ -631,7 +631,9 @@ app.add_middleware(
         "http://localhost:5173", 
         "http://localhost:5174", 
         "http://165.154.225.233", 
-        "http://165.154.225.233:8080"
+        "http://165.154.225.233:8080",
+        "https://165.154.225.233.nip.io",
+        "https://165.154.225.233.nip.io:8443"
     ],
     allow_credentials=True,
     allow_methods=["*"],
