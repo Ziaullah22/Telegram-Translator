@@ -34,8 +34,12 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - backend
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
 
   # The Admin Frontend
   admin:
@@ -45,8 +49,11 @@ services:
     restart: always
     ports:
       - "8080:80"
+      - "8443:443"
     depends_on:
       - backend
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
 
 volumes:
   postgres_data:

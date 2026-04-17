@@ -1,9 +1,0 @@
-﻿
---- USER 2 LEAD STATUS ---
-[QUALIFIED]: 1 leads
-
---- USER 2 GHOST READINESS ---
-@woodsblaze755125: active
-@yangkeira586468: active
-@wallsevelyn652186: active
-@zhangpaula365475: active

@@ -1,1 +1,0 @@
-﻿['users', 'conversations', 'telegram_accounts', 'message_templates', 'scheduled_messages', 'contact_info', 'auto_responder_rules', 'auto_responder_logs', 'system_settings', 'campaigns', 'campaign_steps', 'campaign_logs', 'campaign_leads', 'sales_settings', 'messages', 'product_orders', 'products', 'sales_states', 'orders']
