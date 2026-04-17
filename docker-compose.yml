@@ -43,8 +43,8 @@ services:
       context: .
       dockerfile: ./admin/Dockerfile
     restart: always
-    # ports:
-    #   - "8080:80"
+    ports:
+      - "8080:80"
     depends_on:
       - backend
 
