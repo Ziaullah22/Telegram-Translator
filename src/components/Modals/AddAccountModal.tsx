@@ -139,8 +139,8 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start md:items-center justify-center p-4 z-[100] animate-fade-in overflow-y-auto" onClick={handleClose}>
-      <div className="bg-white dark:bg-[#212121] rounded-xl max-w-md w-full shadow-2xl overflow-hidden animate-scale-in my-auto mt-20 md:mt-0" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[99999] animate-fade-in overflow-y-auto" onClick={handleClose}>
+      <div className="bg-white dark:bg-[#212121] rounded-xl max-w-md w-full shadow-2xl overflow-hidden animate-scale-in my-auto mt-16 md:mt-0" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5">
           <h3 className="text-[19px] font-medium text-gray-900 dark:text-white">Add Telegram Account</h3>
           <button
