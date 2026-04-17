@@ -633,7 +633,7 @@ app.add_middleware(
         "http://165.154.225.233", 
         "http://165.154.225.233:8080",
         "https://165.154.225.233.nip.io",
-        "https://165.154.225.233.nip.io:8443"
+        "https://165.154.225.233.nip.io:8080"
     ],
     allow_credentials=True,
     allow_methods=["*"],
