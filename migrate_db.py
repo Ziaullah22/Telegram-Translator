@@ -396,6 +396,17 @@ async def migrate():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_ab_results_test ON ab_test_results(test_id);
+
+                CREATE TABLE IF NOT EXISTS sales_states (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_account_id BIGINT REFERENCES telegram_accounts(id) ON DELETE CASCADE,
+                    telegram_peer_id BIGINT NOT NULL,
+                    status VARCHAR(50) DEFAULT 'idle', -- 'idle', 'awaiting_confirmation'
+                    pending_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+                    pending_quantity INTEGER,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(telegram_account_id, telegram_peer_id)
+                );
             """)
             print("[OK] Tables: products, orders, sales_settings")
             
