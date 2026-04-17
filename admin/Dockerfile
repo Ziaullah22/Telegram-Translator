@@ -13,7 +13,7 @@ RUN npm run build:admin
 FROM nginx:stable-alpine
 # Admin build goes to admin/dist
 COPY --from=builder /app/admin/dist /usr/share/nginx/html
-# We will use the same config but just for this container
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Use the admin-specific Nginx config
+COPY admin/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
