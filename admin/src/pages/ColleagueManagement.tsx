@@ -201,8 +201,8 @@ const ColleagueManagement = () => {
                         // Set the token for the MAIN app
                         const Cookies = (await import('js-cookie')).default;
                         Cookies.set('auth_token', access_token, { expires: 1, path: '/' });
-                        // Redirect to main app (Automatic port detection for VPS vs Local)
-                        const userAppUrl = window.location.origin.replace(':8080', '').replace(':5174', ':5173');
+                        // Super-robust redirection: Always go to the main IP/domain on Port 80
+                        const userAppUrl = window.location.protocol + "//" + window.location.hostname;
                         window.open(userAppUrl, '_blank');
                       } catch (error) {
                         console.error('Impersonation failed:', error);
