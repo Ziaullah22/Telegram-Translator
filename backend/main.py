@@ -627,7 +627,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:5174", "http://127.0.0.1:5174"],
+    allow_origins=["http://165.154.225.233", "http://165.154.225.233:8080", "http://165.154.225.233"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
