@@ -3,12 +3,12 @@ import asyncpg
 import os
 
 async def migrate():
-    # Try to load URL from backend/.env like the main app does
-    db_url = "postgresql://postgres:postgres@localhost:5432/telegram_translator" # Default fallback
+    # Load from Environment (Docker) or fallback
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator")
     
-    # Path to backend/.env
+    # Path to backend/.env (for local dev fallback)
     env_path = os.path.join(os.getcwd(), 'backend', '.env')
-    if os.path.exists(env_path):
+    if os.path.exists(env_path) and "localhost" in db_url:
         with open(env_path, 'r') as f:
             for line in f:
                 if line.startswith('DATABASE_URL='):
