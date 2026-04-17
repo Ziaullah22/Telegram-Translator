@@ -191,7 +191,7 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
 
               <div className="pt-2">
                 <a
-                  href="http://165.154.225.233:8080"
+                  href={window.location.hostname === 'localhost' ? 'http://localhost:5174' : `http://${window.location.hostname}:8080`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-xs font-bold text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors uppercase tracking-widest"

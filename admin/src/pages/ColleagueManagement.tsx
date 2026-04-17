@@ -201,8 +201,10 @@ const ColleagueManagement = () => {
                         // Set the token for the MAIN app
                         const Cookies = (await import('js-cookie')).default;
                         Cookies.set('auth_token', access_token, { expires: 1, path: '/' });
-                        // Super-robust redirection: Always go to the main IP/domain on Port 80
-                        const userAppUrl = window.location.protocol + "//" + window.location.hostname;
+                        // Smart Redirection: Detects if we are Local or in Production
+                        const userAppUrl = window.location.hostname === 'localhost' 
+                            ? 'http://localhost:5173' 
+                            : window.location.protocol + "//" + window.location.hostname;
                         window.open(userAppUrl, '_blank');
                       } catch (error) {
                         console.error('Impersonation failed:', error);
