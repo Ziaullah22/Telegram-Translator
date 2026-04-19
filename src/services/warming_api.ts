@@ -106,4 +106,16 @@ export const instagramWarmingAPI = {
     const response = await api.patch(`/instagram-warming/accounts/${accountId}`, data);
     return response.data;
   },
+  warmupAccount: async (accountId: number) => {
+    const response = await api.post(`/instagram-warming/accounts/${accountId}/warmup`);
+    return response.data;
+  },
+  pauseAccount: async (accountId: number) => {
+    const response = await api.post(`/instagram-warming/accounts/${accountId}/pause`);
+    return response.data;
+  },
+  resumeAccount: async (accountId: number) => {
+    const response = await api.post(`/instagram-warming/accounts/${accountId}/resume`);
+    return response.data;
+  }
 };

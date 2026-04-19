@@ -300,7 +300,13 @@ export interface InstagramWarmingAccount {
   status: 'active' | 'banned' | 'error' | 'pending';
   proxy_id?: number;
   proxy_host?: string;
+  warming_session_count?: number;
+  daily_usage_count?: number;
+  frozen_until?: string | Date;
+  last_usage_reset?: string | Date;
   last_used?: string;
+  is_active?: boolean;
+  is_paused?: boolean;
   created_at: string;
 }
 
