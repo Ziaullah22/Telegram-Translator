@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev:backend": "cd backend && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "cd backend && .\\venv\\Scripts\\python.exe run_server.py",
     "dev:client": "vite --host",
     "dev:admin": "cd admin && npm run dev",
     "build": "vite build",

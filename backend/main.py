@@ -1,5 +1,10 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request
+# ✅ MUST be first — Windows needs ProactorEventLoop for Playwright subprocess support
+import sys
 import asyncio
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -161,6 +166,9 @@ async def lifespan(app: FastAPI):
             payment_details TEXT,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Warming Engine Enhancement
+        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS warming_session_count INTEGER DEFAULT 0;
         """)
         logger.info("Database migration (reply support & Campaign tables) completed")
     except Exception as e:

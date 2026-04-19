@@ -137,3 +137,22 @@ async def delete_warming_lead(lead_id: int, current_user: TokenData = Depends(ge
 @router.delete("/leads")
 async def clear_warming_leads(current_user: TokenData = Depends(get_current_user)):
     return await instagram_warming_service.clear_leads(current_user.user_id)
+
+@router.post("/accounts/{account_id}/warmup")
+async def manual_account_warmup(account_id: int, current_user: TokenData = Depends(get_current_user)):
+    return await instagram_warming_service.manual_warmup_account(current_user.user_id, account_id)
+
+@router.post("/accounts/{account_id}/pause")
+async def pause_account_bot(account_id: int, current_user: TokenData = Depends(get_current_user)):
+    """🎮 Human takes control — bot pauses for this account."""
+    return await instagram_warming_service.pause_session(current_user.user_id, account_id)
+
+@router.post("/accounts/{account_id}/resume")
+async def resume_account_bot(account_id: int, current_user: TokenData = Depends(get_current_user)):
+    """🤖 Bot resumes control — smart page-aware navigation."""
+    return await instagram_warming_service.resume_session(current_user.user_id, account_id)
+
+@router.get("/accounts/paused")
+async def get_paused_accounts(current_user: TokenData = Depends(get_current_user)):
+    """Returns list of account IDs currently paused (human in control)."""
+    return {"paused": list(instagram_warming_service.paused_accounts)}

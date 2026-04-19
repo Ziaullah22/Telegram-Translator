@@ -67,3 +67,5 @@ uvicorn==0.41.0
 watchfiles==1.1.1
 websockets==16.0
 pyotp==2.9.0
+playwright==1.42.0
+playwright-stealth==1.0.6
