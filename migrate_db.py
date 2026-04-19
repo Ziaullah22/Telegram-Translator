@@ -805,6 +805,19 @@ async def migrate():
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_leads' AND column_name='updated_at') THEN
                         ALTER TABLE instagram_warming_leads ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
                     END IF;
+                    -- Human Handoff Columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='warming_session_count') THEN
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN warming_session_count INT DEFAULT 0;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='session_intensity') THEN
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN session_intensity INT DEFAULT 5;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='is_active') THEN
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN is_active BOOLEAN DEFAULT FALSE;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='is_paused') THEN
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN is_paused BOOLEAN DEFAULT FALSE;
+                    END IF;
                 END $$;
             """)
             print("[OK] Instagram Warming Module tables added.")
