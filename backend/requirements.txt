@@ -16,7 +16,7 @@ decorator==4.4.2
 ecdsa==0.19.1
 fastapi==0.133.1
 googletrans==4.0.2
-greenlet==3.3.2
+greenlet
 h11==0.16.0
 h2==4.3.0
 hpack==4.1.0
@@ -67,5 +67,5 @@ uvicorn==0.41.0
 watchfiles==1.1.1
 websockets==16.0
 pyotp==2.9.0
-playwright==1.42.0
+playwright
 playwright-stealth==1.0.6

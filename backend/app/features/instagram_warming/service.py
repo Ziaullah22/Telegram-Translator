@@ -466,6 +466,8 @@ class InstagramWarmingService:
             await page.mouse.move(x, y)
             await page.evaluate(f"window.mouseX = {x}; window.mouseY = {y};")
             await asyncio.sleep(random.uniform(0.01, 0.03))
+        
+        logger.info(f"   🎢 Smooth curve move completed to ({int(target_x)}, {int(target_y)})")
 
     async def _human_click(self, page, selector):
         """Clicks with curve movement and 'Bot-Acting' flag for sensor bypass."""
@@ -479,9 +481,11 @@ class InstagramWarmingService:
                 if box:
                     center_x = box['x'] + box['width'] / 2
                     center_y = box['y'] + box['height'] / 2
+                    logger.info(f"   🎯 Targeting {selector} at center ({int(center_x)}, {int(center_y)})")
                     await self._human_mouse_move(page, center_x, center_y)
                     await asyncio.sleep(random.uniform(0.2, 0.5))
                     await page.mouse.click(center_x, center_y)
+                    logger.info("   🖱️ Human-style click performed.")
                 else:
                     await btn.click()
                 
@@ -555,10 +559,12 @@ class InstagramWarmingService:
 
     async def _human_type(self, page, text: str, delay_range: tuple = (100, 300)):
         """Simulates human typing with variable speed and occasional typos/backspaces."""
+        logger.info(f"   ⌨️ Typing: {text[:10]}{'...' if len(text) > 10 else ''}")
         for char in text:
             # 5% chance of a typo
             if random.random() < 0.05:
                 wrong_char = random.choice("abcdefghijklmnopqrstuvwxyz")
+                logger.info(f"   ✍️ Oops! Made a typo: '{wrong_char}' instead of '{char}'. Fixing...")
                 await page.keyboard.press(wrong_char)
                 await asyncio.sleep(random.uniform(0.1, 0.3))
                 await page.keyboard.press("Backspace")
@@ -566,6 +572,7 @@ class InstagramWarmingService:
             
             await page.keyboard.press(char)
             await asyncio.sleep(random.uniform(delay_range[0] / 1000, delay_range[1] / 1000))
+        logger.info("   ✅ Finished typing.")
 
     async def pause_session(self, user_id: int, account_id: int):
         """🎮 Human takes control. Bot pauses for this account."""
@@ -643,6 +650,7 @@ class InstagramWarmingService:
 
             # 1. Scroll down through content
             scroll_dist = random.randint(300, 900)
+            logger.info(f"   📜 Scrolling feed down {scroll_dist}px...")
             await page.mouse.wheel(0, scroll_dist)
             await asyncio.sleep(random.uniform(1, 2))
 
@@ -725,7 +733,6 @@ class InstagramWarmingService:
                     logger.warning(f"⚠️ Deep Dive failed. No panic, just continuing...")
                     await asyncio.sleep(random.uniform(5, 10))
 
-            # 🛡️ BLANK PAGE WATCHDOG: Recover ONLY if totally dead (with Cooldown)
             if i > 0 and page.url == "about:blank":
                 logger.warning("🚨 Detected blank page! Cooling down for 20s before recovery...")
                 await asyncio.sleep(random.randint(20, 40)) # Human frustration pause
@@ -737,6 +744,40 @@ class InstagramWarmingService:
                 stare_time = random.uniform(25, 55) # Extended for DC bypass
                 logger.info(f"   📑 @{account_username} is contemplating a post for {int(stare_time)}s...")
                 await asyncio.sleep(stare_time)
+            elif random.random() < 0.30: # 30% jump to Explore
+                logger.info("   🧭 Attempting to switch to Explore/Reels...")
+                try:
+                    # Try clicking different Explore/Reels variants
+                    explore_selectors = ['a[href="/explore/"]', 'svg[aria-label="Search"]', 'svg[aria-label="Explore"]', 'a[href*="/reels/"]']
+                    found = False
+                    for selector in explore_selectors:
+                        btn = await page.query_selector(selector)
+                        if btn and await btn.is_visible():
+                            logger.info(f"   🔘 Found navigation button ({selector}). Clicking...")
+                            await btn.click()
+                            found = True
+                            break
+                    
+                    if not found:
+                        logger.warning("   ⚠️ Could not find navigation button. Using Direct Flight to Explore...")
+                        await page.goto("https://www.instagram.com/explore/", wait_until="load")
+                    
+                    await page.wait_for_timeout(random.randint(5000, 8000))
+                    
+                    # Verify we are there
+                    curr_url = page.url
+                    if "explore" in curr_url or "reels" in curr_url:
+                        logger.info(f"   ✅ Successfully landed on Explore/Reels (URL: {curr_url})")
+                        
+                        # WATCH 1-2 VIDEOS while here
+                        for _ in range(random.randint(1, 2)):
+                            logger.info("   📺 Watching a random Reel/Video for variety...")
+                            await page.mouse.wheel(0, random.randint(500, 1000))
+                            await asyncio.sleep(random.uniform(5, 15))
+                    else:
+                        logger.warning(f"   ❌ Navigation failed. Still at {curr_url}")
+                except Exception as e:
+                    logger.error(f"   ❌ Explore jump failed: {e}")
             else:
                 await asyncio.sleep(random.uniform(12, 22))
 
@@ -1008,20 +1049,36 @@ class InstagramWarmingService:
         # 1. Login if needed
         await self._goto_instagram_home_and_login(page, account_data)
 
-        # 📌 REGISTER ACTIVE PAGE for Smart Pause/Resume
+        # 📌 REGISTER ACTIVE PAGE for Smart Pause/Resume & Auto-Cleanup
         self.active_pages[account_data['username']] = page
+        
+        # 🧟‍♂️ ZOMBIE PROTECTION: Clear status if browser is closed externally
+        def on_close(p):
+            self.active_pages.pop(account_data['username'], None)
+            logger.info(f"🛑 Browser tab for @{account_data['username']} closed. Status cleared.")
+        page.on("close", on_close)
 
         # 2. ALWAYS Social Warmup first
-        await self._perform_social_warmup(page, account_data['username'])
-        
-        # ✅ UPATE: Mark seasoning day as successful
-        await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
+        try:
+            await self._perform_social_warmup(page, account_data['username'])
+            
+            # ✅ UPDATE: Mark seasoning day as successful
+            await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
 
-        # 3. CHECK GUARD: Is it allowed to scrape yet?
-        # IMPORTANT: During first 7 days, we STILL skip the scrape part!
-        if session_count <= 7 or usage >= limit:
-            logger.info(f"🛡️ GUARD: @{account_data['username']} is seasoning (#{session_count + 1}). Skipping target @{username}")
-            return None # Graceful skip
+            # 3. CHECK GUARD: Is it allowed to scrape yet?
+            # Maturation Trigger: Needs > 7 sessions. 
+            # Limit check: If we've already hit the daily limit for scraping, we skip.
+            if session_count < 7:
+                logger.info(f"🛡️ MATURATION GUARD: @{account_data['username']} is seasoning (#{session_count + 1}/7). Skipping scrape for now.")
+                return None # Graceful skip
+            
+            if usage >= limit and limit > 0:
+                logger.info(f"🛡️ LIMIT GUARD: @{account_data['username']} hit daily limit ({usage}/{limit}). Skipping scrape.")
+                return None
+        except Exception as e:
+            logger.error(f"⚠️ Social Warmup interrupted: {e}")
+            self.active_pages.pop(account_data['username'], None)
+            raise
 
             
         # 4. Search for target via Ghost Search
@@ -1218,16 +1275,34 @@ class InstagramWarmingService:
         # 1. Login if needed
         await self._goto_instagram_home_and_login(page, account_data)
 
+        # 📌 REGISTER ACTIVE PAGE for Smart Pause/Resume & Auto-Cleanup
+        self.active_pages[account_data['username']] = page
+        
+        # 🧟‍♂️ ZOMBIE PROTECTION: Clear status if browser is closed externally
+        def on_close(p):
+            self.active_pages.pop(account_data['username'], None)
+            logger.info(f"🛑 Browser tab for @{account_data['username']} closed. Status cleared.")
+        page.on("close", on_close)
+
         # 2. ALWAYS Social Warmup first
-        await self._perform_social_warmup(page, account_data['username'])
+        try:
+            await self._perform_social_warmup(page, account_data['username'])
 
-        # ✅ UPATE: Mark seasoning day as successful
-        await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
+            # ✅ UPDATE: Mark seasoning day as successful
+            await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
 
-        # 3. CHECK GUARD: Is it allowed to scrape yet?
-        if usage >= limit:
-            logger.warning(f"🛡️ GUARD: @{account_data['username']} is on seasoning session #{session_count + 1}. Limit is {limit}. Skipping harvest for @{username}")
-            return [] # Graceful skip
+            # 3. CHECK GUARD: Is it allowed to scrape yet?
+            if session_count < 7:
+                logger.info(f"🛡️ MATURATION GUARD: @{account_data['username']} is seasoning (#{session_count + 1}/7). Skipping harvest for @{username}")
+                return [] # Graceful skip
+            
+            if usage >= limit and limit > 0:
+                logger.info(f"🛡️ LIMIT GUARD: @{account_data['username']} hit daily limit ({usage}/{limit}). Skipping harvest.")
+                return []
+        except Exception as e:
+            logger.error(f"⚠️ Social Warmup interrupted during harvest: {e}")
+            self.active_pages.pop(account_data['username'], None)
+            raise
 
 
         # 4. Ghost Search to profile

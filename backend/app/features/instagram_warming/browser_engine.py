@@ -38,15 +38,28 @@ class InstagramBrowserEngine:
                 ]
             )
 
-            # 3. Create Mobile Context (iPhone 15 Pro Identity)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-                viewport={'width': 393, 'height': 852},
-                device_scale_factor=1,
-                is_mobile=True,
-                has_touch=True,
-                permissions=['geolocation', 'notifications']
-            )
+            # 3. Create Mobile Context (iPhone 15 Pro Identity with Session Memory)
+            import os
+            sessions_dir = "browser_sessions"
+            if not os.path.exists(sessions_dir):
+                os.makedirs(sessions_dir)
+            
+            storage_path = os.path.join(sessions_dir, f"session_{account_data['username']}.json")
+            
+            context_args = {
+                "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                "viewport": {'width': 393, 'height': 852},
+                "device_scale_factor": 1,
+                "is_mobile": True,
+                "has_touch": True,
+                "permissions": ['geolocation', 'notifications']
+            }
+            
+            if os.path.exists(storage_path):
+                logger.info(f"🍪 Memory Recall: Loading session cookies for @{account_data['username']}...")
+                context_args["storage_state"] = storage_path
+            
+            context = await browser.new_context(**context_args)
 
             # 🛡️ STEALTH INIT SCRIPT (Hardware Cloaking)
             bat_level = round(random.uniform(0.15, 0.95), 2)
@@ -174,7 +187,11 @@ class InstagramBrowserEngine:
             
             # 🚀 Session Execute
             try:
-                await action_func(page, account_data)
+                result = await action_func(page, account_data)
+                # 💾 SAVE MEMORY: Capture all cookies/sessions for next time
+                await context.storage_state(path=storage_path)
+                logger.info(f"💾 Memory Saved: Session cookies updated for @{account_data['username']}")
+                return result
             finally:
                 await browser.close()
 
