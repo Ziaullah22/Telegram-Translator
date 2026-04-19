@@ -8,11 +8,11 @@ async def migrate():
     
     # Path to backend/.env (for local dev fallback)
     env_path = os.path.join(os.getcwd(), 'backend', '.env')
-    if os.path.exists(env_path) and "localhost" in db_url:
+    if os.path.exists(env_path):
         with open(env_path, 'r') as f:
             for line in f:
-                if line.startswith('DATABASE_URL='):
-                    db_url = line.split('=')[1].strip()
+                if line.strip().startswith('DATABASE_URL='):
+                    db_url = line.split('=')[1].strip().strip('"').strip("'")
                     break
 
     print(f"Connecting to database: {db_url}")
