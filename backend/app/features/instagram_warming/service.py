@@ -459,15 +459,64 @@ class InstagramWarmingService:
         cp2_x = start_x + (target_x - start_x) * random.uniform(0.6, 0.9) + random.randint(-50, 50)
         cp2_y = start_y + (target_y - start_y) * random.uniform(0.6, 0.9) + random.randint(-50, 50)
 
+        # 💡 Slowed down for visual tracking (Human Visibility)
         for i in range(steps + 1):
             t = i / steps
             x = (1-t)**3 * start_x + 3*(1-t)**2 * t * cp1_x + 3*(1-t) * t**2 * cp2_x + t**3 * target_x
             y = (1-t)**3 * start_y + 3*(1-t)**2 * t * cp1_y + 3*(1-t) * t**2 * cp2_y + t**3 * target_y
             await page.mouse.move(x, y)
             await page.evaluate(f"window.mouseX = {x}; window.mouseY = {y};")
-            await asyncio.sleep(random.uniform(0.01, 0.03))
+            await asyncio.sleep(random.uniform(0.02, 0.05)) # Increased delay for visibility
         
-        logger.info(f"   🎢 Smooth curve move completed to ({int(target_x)}, {int(target_y)})")
+        logger.info(f"   🏁 Arrived at ({int(target_x)}, {int(target_y)})")
+
+    async def _human_swipe(self, page, distance: int):
+        """Simulates a real human thumb flick with dual-action (Touch Events + Physical Scroll)."""
+        start_x = random.randint(150, 250)
+        start_y = random.randint(600, 800)
+        
+        logger.info(f"   🖐️ DUAL-ACTION Swipe: Flicking thumb up {distance}px...")
+        
+        # 1. Physical Scroll Force (Ensures visual movement in Home Feed)
+        try:
+            await page.evaluate(f"window.scrollBy({{ top: {distance}, behavior: 'smooth' }});")
+        except: pass
+
+        # 2. Visual Touch Sensors (Stealthed for IG detection)
+        try:
+            await page.evaluate(f"""(() => {{
+                const el = document.elementFromPoint({start_x}, {start_y}) || document.body;
+                const touchObj = new Touch({{
+                    identifier: Date.now(),
+                    target: el,
+                    clientX: {start_x},
+                    clientY: {start_y},
+                    radiusX: 10,
+                    radiusY: 10,
+                    rotationAngle: 10,
+                    force: 0.5
+                }});
+
+                el.dispatchEvent(new TouchEvent('touchstart', {{
+                    bubbles: true, cancelable: true, touches: [touchObj]
+                }}));
+                
+                el.dispatchEvent(new TouchEvent('touchmove', {{
+                    bubbles: true, cancelable: true, touches: [touchObj]
+                }}));
+                
+                el.dispatchEvent(new TouchEvent('touchend', {{
+                    bubbles: true, cancelable: true
+                }}));
+            }})()""")
+        except: pass
+        
+        # 3. Visual Thumb Movement for the User
+        await page.mouse.move(start_x, start_y)
+        await page.mouse.down()
+        await page.mouse.move(start_x, start_y - (distance // 2), steps=10)
+        await page.mouse.up()
+        await asyncio.sleep(random.uniform(1.2, 2.5))
 
     async def _human_click(self, page, selector):
         """Clicks with curve movement and 'Bot-Acting' flag for sensor bypass."""
@@ -477,15 +526,14 @@ class InstagramWarmingService:
                 # 🛡️ TELL BROWSER WE ARE ACTING
                 await page.evaluate("window.isBotActing = true")
                 
-                box = await btn.bounding_box()
                 if box:
                     center_x = box['x'] + box['width'] / 2
                     center_y = box['y'] + box['height'] / 2
-                    logger.info(f"   🎯 Targeting {selector} at center ({int(center_x)}, {int(center_y)})")
+                    logger.info(f"   🎯 TARGET SPOTTED: {selector}. Moving to click center...")
                     await self._human_mouse_move(page, center_x, center_y)
-                    await asyncio.sleep(random.uniform(0.2, 0.5))
+                    await asyncio.sleep(random.uniform(0.4, 0.8))
                     await page.mouse.click(center_x, center_y)
-                    logger.info("   🖱️ Human-style click performed.")
+                    logger.info(f"   🖱️ CLICK LANDED on {selector}.")
                 else:
                     await btn.click()
                 
@@ -648,11 +696,9 @@ class InstagramWarmingService:
                         await asyncio.sleep(2)
                 except: pass
 
-            # 1. Scroll down through content
-            scroll_dist = random.randint(300, 900)
-            logger.info(f"   📜 Scrolling feed down {scroll_dist}px...")
-            await page.mouse.wheel(0, scroll_dist)
-            await asyncio.sleep(random.uniform(1, 2))
+            # 1. Human Touch Swipe instead of Wheel
+            swipe_dist = random.randint(300, 600)
+            await self._human_swipe(page, swipe_dist)
 
             # 🎯 SMART CENTERING: Identify the nearest post and center it
             try:
@@ -744,40 +790,81 @@ class InstagramWarmingService:
                 stare_time = random.uniform(25, 55) # Extended for DC bypass
                 logger.info(f"   📑 @{account_username} is contemplating a post for {int(stare_time)}s...")
                 await asyncio.sleep(stare_time)
-            elif random.random() < 0.30: # 30% jump to Explore
-                logger.info("   🧭 Attempting to switch to Explore/Reels...")
+            elif random.random() < 0.50: # Increased to 50% Reels focus
+                logger.info("   🧭 Attempting to switch to Explore/Reels for high-intensity warming...")
                 try:
-                    # Try clicking different Explore/Reels variants
-                    explore_selectors = ['a[href="/explore/"]', 'svg[aria-label="Search"]', 'svg[aria-label="Explore"]', 'a[href*="/reels/"]']
+                    # 🚀 PRIORITY: Try clicking the dedicated REELS tab first
+                    reels_tab_selectors = ['a[href="/reels/"]', 'svg[aria-label="Reels"]', 'svg[aria-label="Clips"]', 'div[role="tab"]:has-text("Reels")']
                     found = False
-                    for selector in explore_selectors:
-                        btn = await page.query_selector(selector)
-                        if btn and await btn.is_visible():
-                            logger.info(f"   🔘 Found navigation button ({selector}). Clicking...")
-                            await btn.click()
-                            found = True
-                            break
+                    for selector in reels_tab_selectors:
+                        try:
+                            btn = await page.query_selector(selector)
+                            if btn and await btn.is_visible():
+                                logger.info(f"   🎬 Found Reels Tab ({selector}). Switching...")
+                                await btn.click()
+                                found = True
+                                break
+                        except: continue
                     
                     if not found:
-                        logger.warning("   ⚠️ Could not find navigation button. Using Direct Flight to Explore...")
-                        await page.goto("https://www.instagram.com/explore/", wait_until="load")
+                        # Fallback to Explore Gateway
+                        explore_btn = await page.query_selector('a[href="/explore/"], svg[aria-label="Search"]')
+                        if explore_btn:
+                            logger.info("   🔘 Using Explore as gateway to Reels...")
+                            await explore_btn.click()
+                            found = True
                     
-                    await page.wait_for_timeout(random.randint(5000, 8000))
+                    if not found:
+                        logger.warning("   ⚠️ Navigation buttons hidden. Force-Routing to Reels...")
+                        await page.goto("https://www.instagram.com/reels/", wait_until="load")
+                    
+                    await page.wait_for_timeout(random.randint(6000, 9000))
                     
                     # Verify we are there
                     curr_url = page.url
                     if "explore" in curr_url or "reels" in curr_url:
                         logger.info(f"   ✅ Successfully landed on Explore/Reels (URL: {curr_url})")
                         
-                        # WATCH 1-2 VIDEOS while here
-                        for _ in range(random.randint(1, 2)):
-                            logger.info("   📺 Watching a random Reel/Video for variety...")
-                            await page.mouse.wheel(0, random.randint(500, 1000))
-                            await asyncio.sleep(random.uniform(5, 15))
+                        # IF ON EXPLORE: We must CLICK a video first to enter the "Player"
+                        if "explore" in curr_url:
+                            logger.info("   🔍 On Explore Grid. Scanning for immersive entry point...")
+                            # Expanded selectors for mobile grid
+                            entry_selectors = [
+                                'a[href*="/reels/"]', 'a[href*="/p/"]', 
+                                'div[role="link"]:has(img)', 'article a',
+                                'main img' # Last resort: just tap a picture!
+                            ]
+                            
+                            found_entry = False
+                            for selector in entry_selectors:
+                                try:
+                                    # Wait briefly for each to be sure it's loaded
+                                    btn = await page.wait_for_selector(selector, timeout=3000)
+                                    if btn and await btn.is_visible():
+                                        logger.info(f"   🎯 Immersive entry found via: {selector}. Tapping...")
+                                        await self._human_click(page, selector)
+                                        found_entry = True
+                                        await page.wait_for_timeout(random.randint(4000, 6000))
+                                        break
+                                except: continue
+                            
+                            if not found_entry:
+                                logger.warning("   ⚠️ Grid seems empty or unclickable. Swiping to force load...")
+                                await page.mouse.wheel(0, 500)
+                                await asyncio.sleep(2)
+                        
+                        # Watch 2-3 Reels/Videos for variety
+                        for reel_idx in range(random.randint(2, 3)):
+                            watch_time = random.randint(15, 35)
+                            logger.info(f"   🎬 Watching content #{reel_idx+1} for {watch_time}s...")
+                            await asyncio.sleep(watch_time)
+                            
+                            # 📱 MOBILE SWIPE: Flicking upward
+                            await self._human_swipe(page, 500)
                     else:
                         logger.warning(f"   ❌ Navigation failed. Still at {curr_url}")
                 except Exception as e:
-                    logger.error(f"   ❌ Explore jump failed: {e}")
+                    logger.error(f"   ❌ Reels session failed: {e}")
             else:
                 await asyncio.sleep(random.uniform(12, 22))
 
