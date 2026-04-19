@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Flame, Search, Trash2, Shield, Plus,
-  Settings, Users, Globe, RefreshCw, Upload,
+  Users, Globe, RefreshCw, Upload,
   ExternalLink, CheckCircle2, AlertCircle,
   Loader2, X, Ghost, Server, UserCheck, Clock, Instagram, Zap, Snowflake, Lock
 } from 'lucide-react';
@@ -29,6 +29,8 @@ const InstagramWarmingDashboard: React.FC = () => {
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [harvestingId, setHarvestingId] = useState<number | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [warmingAccountId, setWarmingAccountId] = useState<number | null>(null);
+  const [pausingAccountId, setPausingAccountId] = useState<number | null>(null);
   const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'alert' } | null>(null);
 
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
@@ -38,6 +40,28 @@ const InstagramWarmingDashboard: React.FC = () => {
   const [keywords, setKeywords] = useState('');
   const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', verification_code: '' });
   const [newProxy, setNewProxy] = useState({ host: '', port: '', username: '', password: '', proxy_type: 'http' });
+
+  const formatTimeAgo = (dateStr: string) => {
+    if (!dateStr) return 'Unknown';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 0) return 'just now'; // Safety for clock drift
+    if (diffInSeconds < 60) return 'seconds ago';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 7200) return `1h ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 172800) return 'Yesterday';
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  const getSeasoningProgress = (count: number) => {
+    if (count >= 7) return { text: 'Mature', color: 'bg-green-500/10 text-green-500' };
+    return { text: `Seasoning: ${count}/7`, color: 'bg-orange-500/10 text-orange-500' };
+  };
+
+  const notify = (msg: string, type: 'success' | 'alert' = 'success') => setNotification({ msg, type });
   const [bulkUploading, setBulkUploading] = useState<'accounts' | 'proxies' | null>(null);
 
   const handleBulkUploadAccounts = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,7 +98,6 @@ const InstagramWarmingDashboard: React.FC = () => {
   const [napEndTime, setNapEndTime] = useState<number | null>(null);
   const [remainingNap, setRemainingNap] = useState<number>(0);
 
-  const notify = (msg: string, type: 'success' | 'alert' = 'success') => setNotification({ msg, type });
   const { onMessage } = useSocket();
 
   const fetchData = async () => {
@@ -120,8 +143,21 @@ const InstagramWarmingDashboard: React.FC = () => {
         setNapEndTime(null);
       }
     });
-    return unsubscribe;
-  }, [onMessage]);
+
+    // 📡 LIVE RADAR: Poll accounts status every 10s if we are on the accounts tab
+    let pollInterval: any;
+    if (activeTab === 'accounts') {
+      pollInterval = setInterval(() => {
+        // Shorter, silent fetch for accounts
+        instagramWarmingAPI.getAccounts().then(setAccounts).catch(() => {});
+      }, 10000);
+    }
+
+    return () => {
+      unsubscribe();
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [onMessage, activeTab]);
 
   useEffect(() => {
     if (!napEndTime) {
@@ -218,6 +254,40 @@ const InstagramWarmingDashboard: React.FC = () => {
       setLeads(leads.filter(l => l.id !== leadId));
     } catch { notify('Failed to purge lead.', 'alert'); }
   };
+
+  const handleWarmup = async (accountId: number) => {
+    setWarmingAccountId(accountId);
+    try {
+      await instagramWarmingAPI.warmupAccount(accountId);
+      notify('🔥 Manual Warming engaged for Ghost Unit!');
+      fetchData();
+    } catch {
+      notify('Warming mission failed.', 'alert');
+    } finally {
+      setWarmingAccountId(null);
+    }
+  };
+
+  const handlePauseResume = async (accountId: number, isPaused?: boolean) => {
+    setPausingAccountId(accountId);
+    try {
+      if (isPaused) {
+        // Resume the bot
+        await instagramWarmingAPI.resumeAccount(accountId);
+        notify('🤖 Bot resumed! Smart navigation engaged.');
+      } else {
+        // Pause the bot — human takes control
+        await instagramWarmingAPI.pauseAccount(accountId);
+        notify('🎮 You have control! Bot is waiting...');
+      }
+      fetchData(); // Sync active states immediately
+    } catch {
+      notify('Control handoff failed.', 'alert');
+    } finally {
+      setPausingAccountId(null);
+    }
+  };
+
 
   const handleClearLeads = async () => {
     if (!window.confirm('Wipe ALL Warming targets? This cannot be undone.')) return;
@@ -422,8 +492,15 @@ const InstagramWarmingDashboard: React.FC = () => {
                       <tr key={lead.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-xs border border-white dark:border-gray-800">
-                              {lead.profile_pic_url ? <img src={lead.profile_pic_url} className="w-full h-full object-cover" alt="" /> : <Instagram className="w-5 h-5" />}
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-orange-500/10 flex flex-shrink-0 items-center justify-center text-orange-500 font-black text-xs border border-white dark:border-gray-800">
+                              {lead.profile_pic_url ? (
+                                <img 
+                                  src={lead.profile_pic_url} 
+                                  className="w-full h-full object-cover" 
+                                  alt="" 
+                                  onError={(e) => { e.currentTarget.src = `https://ui-avatars.com/api/?name=${lead.instagram_username}&background=f97316&color=fff&bold=true`; }}
+                                />
+                              ) : <Instagram className="w-5 h-5" />}
                             </div>
                             <div className="flex flex-col">
                               <div className="flex items-center gap-1.5">
@@ -448,14 +525,18 @@ const InstagramWarmingDashboard: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col">
+                          <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1">
                               <span className="text-xs font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
                               <span className="text-[8px] text-gray-400 font-bold uppercase">Fol</span>
                             </div>
-                            <div className="flex items-center gap-1 opacity-60">
+                            <div className="flex items-center gap-1 opacity-80">
                               <span className="text-[10px] font-bold text-gray-500">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
                               <span className="text-[8px] text-gray-400 font-bold uppercase">Wng</span>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-60">
+                              <span className="text-[10px] font-bold text-gray-500">{lead.recent_posts && Array.isArray(lead.recent_posts) ? (lead.recent_posts[0]?.posts_count || '0') : (typeof lead.recent_posts === 'string' ? (JSON.parse(lead.recent_posts)[0]?.posts_count || '0') : '---')}</span>
+                              <span className="text-[8px] text-gray-400 font-bold uppercase">Posts</span>
                             </div>
                           </div>
                         </td>
@@ -546,7 +627,40 @@ const InstagramWarmingDashboard: React.FC = () => {
               <div className="grid md:grid-cols-3 gap-4">
                 {accounts.map(account => (
                   <div key={account.id} className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-white/5 shadow-sm relative group">
-                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute top-3 right-3 flex gap-2">
+                      <button
+                        onClick={() => handleWarmup(account.id)}
+                        disabled={warmingAccountId === account.id || account.is_active}
+                        className={`p-2 rounded-lg transition-all ${
+                          warmingAccountId === account.id || account.is_active 
+                            ? 'bg-orange-500 text-white animate-pulse' 
+                            : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white'
+                        }`}
+                        title="Manual Warm-up"
+                      >
+                        {warmingAccountId === account.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Flame className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {/* 🎮 HUMAN CONTROL TOGGLE - Only show if active! */}
+                      {account.is_active && (
+                        <button
+                          onClick={() => handlePauseResume(account.id, account.is_paused)}
+                          disabled={pausingAccountId === account.id}
+                          className={`p-2 rounded-lg transition-all text-xs font-black shadow-lg ${
+                            account.is_paused
+                              ? 'bg-green-500 text-white animate-pulse'
+                              : 'bg-blue-600 text-white animate-bounce-slow'
+                          }`}
+                          title={account.is_paused ? 'Resume Bot' : 'Take Control'}
+                        >
+                          {pausingAccountId === account.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : account.is_paused
+                            ? <span className="flex items-center gap-1">🤖 Resume</span>
+                            : <span className="flex items-center gap-1">🎮 Control</span>
+                          }
+                        </button>
+                      )}
                       <button
                         onClick={() => instagramWarmingAPI.deleteAccount(account.id).then(fetchData)}
                         className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
@@ -562,11 +676,11 @@ const InstagramWarmingDashboard: React.FC = () => {
                         <p className="font-black text-gray-900 dark:text-white tracking-tight">@{account.username}</p>
                         <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg ${account.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
                           }`}>{account.status}</span>
-                        {(account as any).frozen_until && new Date((account as any).frozen_until) > new Date() && (
+                        {account.frozen_until && new Date(account.frozen_until as string) > new Date() && (
                           <div className="flex items-center gap-1 mt-1 text-blue-500 text-[9px] font-black uppercase italic tracking-tighter bg-blue-500/10 px-2 py-0.5 rounded-lg animate-pulse">
                             <Snowflake className="w-2.5 h-2.5" />
                             <span>Frozen: {(() => {
-                              const diff = new Date((account as any).frozen_until).getTime() - new Date().getTime();
+                              const diff = new Date(account.frozen_until as string).getTime() - new Date().getTime();
                               const h = Math.floor(diff / (1000 * 60 * 60));
                               const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                               return `${h}h ${m}m Left`;
@@ -579,27 +693,27 @@ const InstagramWarmingDashboard: React.FC = () => {
                       <div className="flex justify-between items-center text-[10px] uppercase font-black tracking-widest text-gray-400">
                         <span>Fleet Age</span>
                         <span className="text-gray-900 dark:text-white font-black">
-                          {Math.max(1, Math.floor((new Date().getTime() - new Date(account.created_at).getTime()) / (1000 * 60 * 60 * 24)))} Days
+                          {formatTimeAgo(account.created_at)}
                         </span>
                       </div>
                       <div className="space-y-1.5">
                         <div className="flex justify-between items-center text-[10px] uppercase font-black tracking-widest">
-                          <span className="text-gray-400">Safety Meter</span>
-                          <span className={`${(account as any).daily_usage_count >= 5 ? 'text-red-500 font-black' : 'text-orange-500 font-black'}`}>
-                            {(account as any).daily_usage_count}/5 Active
+                          <span className="text-gray-400">Seasoning Path</span>
+                          <span className={`${getSeasoningProgress(account.warming_session_count || 0).text === 'Mature' ? 'text-green-500' : 'text-orange-500'} font-black`}>
+                            {getSeasoningProgress(account.warming_session_count || 0).text}
                           </span>
                         </div>
                         <div className="h-1.5 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-700 ${(account as any).daily_usage_count >= 5 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-gradient-to-r from-orange-400 to-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.5)]'}`}
-                            style={{ width: `${Math.min(((account as any).daily_usage_count / 5) * 100, 100)}%` }}
+                            className={`h-full transition-all duration-700 ${getSeasoningProgress(account.warming_session_count || 0).text === 'Mature' ? 'bg-green-500' : 'bg-gradient-to-r from-orange-400 to-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.5)]'}`}
+                            style={{ width: `${Math.min(((account.warming_session_count || 0) / 7) * 100, 100)}%` }}
                           />
                         </div>
-                        {(account as any).daily_usage_count >= 5 && (
+                        {account.daily_usage_count !== undefined && account.daily_usage_count >= 5 && (
                           <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter text-red-500/80 mt-1">
                             <Clock className="w-2.5 h-2.5 animate-pulse" />
                             <span>LOCKED: {(() => {
-                              const resetAt = new Date(new Date((account as any).last_usage_reset).getTime() + 24 * 60 * 60 * 1000);
+                              const resetAt = new Date(new Date(account.last_usage_reset as string).getTime() + 24 * 60 * 60 * 1000);
                               const diff = resetAt.getTime() - new Date().getTime();
                               if (diff <= 0) return "RESETTING...";
                               const h = Math.floor(diff / (1000 * 60 * 60));
