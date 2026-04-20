@@ -117,5 +117,9 @@ export const instagramWarmingAPI = {
   resumeAccount: async (accountId: number) => {
     const response = await api.post(`/instagram-warming/accounts/${accountId}/resume`);
     return response.data;
+  },
+  getAccountLogs: async (accountId: number, limit: number = 50) => {
+    const response = await api.get(`/instagram-warming/accounts/${accountId}/logs`, { params: { limit } });
+    return response.data;
   }
 };

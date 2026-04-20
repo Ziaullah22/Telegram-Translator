@@ -152,6 +152,15 @@ async def resume_account_bot(account_id: int, current_user: TokenData = Depends(
     """🤖 Bot resumes control — smart page-aware navigation."""
     return await instagram_warming_service.resume_session(current_user.user_id, account_id)
 
+@router.get("/accounts/{account_id}/logs")
+async def get_warming_account_logs(
+    account_id: int, 
+    limit: int = 50, 
+    current_user: TokenData = Depends(get_current_user)
+):
+    """📜 Ghost Journal: Fetch recent activity logs for an account."""
+    return await instagram_warming_service.get_account_logs(current_user.user_id, account_id, limit)
+
 @router.get("/accounts/paused")
 async def get_paused_accounts(current_user: TokenData = Depends(get_current_user)):
     """Returns list of account IDs currently paused (human in control)."""

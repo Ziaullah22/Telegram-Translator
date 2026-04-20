@@ -3,7 +3,7 @@ import {
   Flame, Search, Trash2, Shield, Plus,
   Users, Globe, RefreshCw, Upload,
   ExternalLink, CheckCircle2, AlertCircle,
-  Loader2, X, Ghost, Server, UserCheck, Clock, Instagram, Zap, Snowflake, Lock
+  Loader2, X, Ghost, Server, UserCheck, Clock, Instagram, Zap, Snowflake, Lock, History
 } from 'lucide-react';
 import { instagramWarmingAPI } from '../../services/warming_api';
 import { useSocket } from '../../hooks/useSocket';
@@ -18,7 +18,7 @@ const inputClass = "w-full bg-gray-50 dark:bg-black/20 border-2 border-transpare
 const labelClass = "block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2";
 
 const InstagramWarmingDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'settings'>('leads');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'settings'>('accounts');
   const [leads, setLeads] = useState<InstagramWarmingLead[]>([]);
   const [accounts, setAccounts] = useState<InstagramWarmingAccount[]>([]);
   const [proxies, setProxies] = useState<InstagramWarmingProxy[]>([]);
@@ -41,6 +41,11 @@ const InstagramWarmingDashboard: React.FC = () => {
   const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', verification_code: '' });
   const [newProxy, setNewProxy] = useState({ host: '', port: '', username: '', password: '', proxy_type: 'http' });
 
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<InstagramWarmingAccount | null>(null);
+  const [accountLogs, setAccountLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
   const formatTimeAgo = (dateStr: string) => {
     if (!dateStr) return 'Unknown';
     const date = new Date(dateStr);
@@ -57,8 +62,11 @@ const InstagramWarmingDashboard: React.FC = () => {
   };
 
   const getSeasoningProgress = (count: number) => {
-    if (count >= 7) return { text: 'Mature', color: 'bg-green-500/10 text-green-500' };
-    return { text: `Seasoning: ${count}/7`, color: 'bg-orange-500/10 text-orange-500' };
+    if (count >= 30) return { text: '👑 Seasoned', color: 'text-yellow-500', bg: 'bg-yellow-500' };
+    if (count >= 21) return { text: '⚔️ Mature', color: 'text-green-500', bg: 'bg-green-500' };
+    if (count >= 14) return { text: '⚔️ Operative', color: 'text-blue-500', bg: 'bg-blue-500' };
+    if (count >= 7)  return { text: '🧪 Socialite', color: 'text-purple-500', bg: 'bg-purple-500' };
+    return { text: '🛡️ Incubation', color: 'text-orange-500', bg: 'bg-gradient-to-r from-orange-400 to-orange-600' };
   };
 
   const notify = (msg: string, type: 'success' | 'alert' = 'success') => setNotification({ msg, type });
@@ -256,10 +264,26 @@ const InstagramWarmingDashboard: React.FC = () => {
   };
 
   const handleWarmup = async (accountId: number) => {
+    // Prevent if already locked client-side
+    const account = accounts.find(a => a.id === accountId);
+    if (account && (account.daily_usage_count || 0) >= 1) {
+      const resetAt = new Date(new Date(account.last_usage_reset as string).getTime() + 24 * 60 * 60 * 1000);
+      const diff = resetAt.getTime() - new Date().getTime();
+      if (diff > 0) {
+        const h = Math.floor(diff / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        notify(`🔒 @${account.username} is locked. Resets in ${h}h ${m}m.`, 'alert');
+        return;
+      }
+    }
     setWarmingAccountId(accountId);
     try {
-      await instagramWarmingAPI.warmupAccount(accountId);
-      notify('🔥 Manual Warming engaged for Ghost Unit!');
+      const res = await instagramWarmingAPI.warmupAccount(accountId);
+      if (res?.error) {
+        notify(`🔒 ${res.error}`, 'alert');
+      } else {
+        notify('🔥 Warmup session launched for Ghost Unit!');
+      }
       fetchData();
     } catch {
       notify('Warming mission failed.', 'alert');
@@ -288,6 +312,20 @@ const InstagramWarmingDashboard: React.FC = () => {
     }
   };
 
+
+  const handleShowHistory = async (account: InstagramWarmingAccount) => {
+    setSelectedAccount(account);
+    setShowHistoryModal(true);
+    setIsLoadingLogs(true);
+    try {
+      const logs = await instagramWarmingAPI.getAccountLogs(account.id);
+      setAccountLogs(logs);
+    } catch {
+      notify('Failed to retrieve ghost journal.', 'alert');
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
 
   const handleClearLeads = async () => {
     if (!window.confirm('Wipe ALL Warming targets? This cannot be undone.')) return;
@@ -347,15 +385,14 @@ const InstagramWarmingDashboard: React.FC = () => {
       case 'private': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 border border-orange-200/50';
       case 'warming': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
       case 'warmed': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+      case 'frozen': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 border border-blue-200/50';
       default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
     }
   };
 
   const tabs = [
-    { id: 'leads', label: 'Discovery Pool', icon: <Users className="w-4 h-4" /> },
-    { id: 'accounts', label: 'Ghost Unit', icon: <Ghost className="w-4 h-4" /> },
+    { id: 'accounts', label: 'Ghost Units', icon: <Ghost className="w-4 h-4" /> },
     { id: 'proxies', label: 'Network Shield', icon: <Shield className="w-4 h-4" /> },
-    // { id: 'settings', label: 'Protocols', icon: <Settings className="w-4 h-4" /> },
   ];
 
   return (
@@ -384,7 +421,7 @@ const InstagramWarmingDashboard: React.FC = () => {
               Instagram Warmer
             </h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm font-medium">
-              Isolated lead discovery &amp; profile warming — zero link to your main leads.
+              Pure social warming — 30-day ghost maturation protocol.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -399,14 +436,23 @@ const InstagramWarmingDashboard: React.FC = () => {
               {isAutoPilotRunning ? 'Engine Auto-Pilot: ON' : 'Engine Auto-Pilot: OFF'}
             </button>
             {remainingNap > 0 && (
-              <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-amber-500 text-white font-bold text-sm shadow-[0_0_15px_rgba(245,158,11,0.3)] animate-in fade-in zoom-in duration-300">
-                <Clock className="w-4 h-4 animate-spin-slow" />
-                <span>Nap Timer: {(() => {
-                  const h = Math.floor(remainingNap / 3600);
-                  const m = Math.floor((remainingNap % 3600) / 60);
-                  const s = remainingNap % 60;
-                  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-                })()}</span>
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm shadow-lg animate-in fade-in zoom-in duration-300 ${
+                remainingNap > 3600
+                  ? 'bg-indigo-600 text-white shadow-indigo-500/30'
+                  : 'bg-amber-500 text-white shadow-amber-500/30'
+              }`}>
+                <Clock className="w-4 h-4 animate-pulse" />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[9px] uppercase tracking-widest opacity-80">
+                    {remainingNap > 3600 ? '🔒 Fleet Resting — Next Session In' : '⚡ Engine Cooldown'}
+                  </span>
+                  <span>{(() => {
+                    const h = Math.floor(remainingNap / 3600);
+                    const m = Math.floor((remainingNap % 3600) / 60);
+                    const s = remainingNap % 60;
+                    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                  })()}</span>
+                </div>
               </div>
             )}
             <button
@@ -415,29 +461,16 @@ const InstagramWarmingDashboard: React.FC = () => {
             >
               <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={handleClearLeads}
-              className="flex items-center gap-2 px-5 py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all"
-            >
-              <Trash2 className="w-4 h-4" /> Wipe Pool
-            </button>
-            <button
-              onClick={() => setShowDiscoveryModal(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-orange-500/25 transition-all"
-            >
-              <Search className="w-4 h-4" /> Start Discovery
-            </button>
           </div>
         </div>
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Total Scoped', value: leads.length, icon: <Globe className="w-5 h-5 text-blue-500" /> },
-            { label: 'Qualified', value: leads.filter(l => l.status === 'qualified' || l.status === 'harvested').length, icon: <CheckCircle2 className="w-5 h-5 text-purple-500" /> },
-            { label: 'Rejected', value: leads.filter(l => l.status === 'rejected').length, icon: <AlertCircle className="w-5 h-5 text-red-500" /> },
-            { label: 'Ghosts', value: accounts.length, icon: <Ghost className="w-5 h-5 text-indigo-500" /> },
-            { label: 'Network', value: leads.filter(l => l.source === 'network_expansion').length, icon: <Users className="w-5 h-5 text-orange-500" /> },
+            { label: 'Ghost Units', value: accounts.length, icon: <Ghost className="w-5 h-5 text-indigo-500" /> },
+            { label: 'Active Now', value: accounts.filter(a => a.is_active).length, icon: <Zap className="w-5 h-5 text-green-500" /> },
+            { label: 'Locked (24h)', value: accounts.filter(a => (a.daily_usage_count || 0) >= 1).length, icon: <Lock className="w-5 h-5 text-amber-500" /> },
+            { label: 'Shield Nodes', value: proxies.length, icon: <Server className="w-5 h-5 text-blue-500" /> },
           ].map(stat => (
             <div key={stat.label} className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-white/5 shadow-sm">
               <div className="flex items-center justify-between mb-3">{stat.icon}<span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">{stat.label}</span></div>
@@ -462,142 +495,16 @@ const InstagramWarmingDashboard: React.FC = () => {
           ))}
         </div>
 
-        {/* ── LEADS TAB ── */}
-        {activeTab === 'leads' && (
-          <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-20 text-orange-500">
-                <Loader2 className="w-8 h-8 animate-spin" />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-gray-50/50 dark:bg-black/10 text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
-                    <tr>
-                      <th className="px-6 py-4">Identity</th>
-                      <th className="px-6 py-4">Status / Origin</th>
-                      <th className="px-6 py-4">Influence</th>
-                      <th className="px-6 py-4">Bio / Description</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                    {leads.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-                          Discovery pool is empty — launch a mission to find targets.
-                        </td>
-                      </tr>
-                    ) : leads.map(lead => (
-                      <tr key={lead.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-orange-500/10 flex flex-shrink-0 items-center justify-center text-orange-500 font-black text-xs border border-white dark:border-gray-800">
-                              {lead.profile_pic_url ? (
-                                <img 
-                                  src={lead.profile_pic_url} 
-                                  className="w-full h-full object-cover" 
-                                  alt="" 
-                                  onError={(e) => { e.currentTarget.src = `https://ui-avatars.com/api/?name=${lead.instagram_username}&background=f97316&color=fff&bold=true`; }}
-                                />
-                              ) : <Instagram className="w-5 h-5" />}
-                            </div>
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-black text-gray-900 dark:text-white text-sm">@{lead.instagram_username}</span>
-                                {lead.is_private && <Lock className="w-2.5 h-2.5 text-orange-500 shadow-orange-500/20" />}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[9px] text-gray-400 font-bold lowercase">{lead.full_name || 'Personal'}</span>
-                                {analyzingId === lead.id && <span className="text-[8px] font-black text-orange-500 uppercase animate-pulse">Analyzing...</span>}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col gap-1 w-fit">
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-center ${statusStyle(lead.status)}`}>
-                              {lead.status}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter text-center ${lead.source === 'network_expansion' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'}`}>
-                              {lead.source === 'network_expansion' ? 'Follower' : 'Search'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
-                              <span className="text-[8px] text-gray-400 font-bold uppercase">Fol</span>
-                            </div>
-                            <div className="flex items-center gap-1 opacity-80">
-                              <span className="text-[10px] font-bold text-gray-500">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
-                              <span className="text-[8px] text-gray-400 font-bold uppercase">Wng</span>
-                            </div>
-                            <div className="flex items-center gap-1 opacity-60">
-                              <span className="text-[10px] font-bold text-gray-500">{lead.recent_posts && Array.isArray(lead.recent_posts) ? (lead.recent_posts[0]?.posts_count || '0') : (typeof lead.recent_posts === 'string' ? (JSON.parse(lead.recent_posts)[0]?.posts_count || '0') : '---')}</span>
-                              <span className="text-[8px] text-gray-400 font-bold uppercase">Posts</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 max-w-[200px]">
-                          <p className="text-[10px] text-gray-500 line-clamp-2 leading-relaxed italic">
-                            {lead.bio || (lead.status === 'discovered' ? 'Awaiting Identify...' : 'No bio available')}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <a href={`https://instagram.com/${lead.instagram_username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
 
-                            {lead.status === 'qualified' && <span className="px-2 py-0.5 bg-green-500/10 text-green-500 rounded-lg text-[9px] font-black uppercase tracking-widest">Pass</span>}
-                            {lead.status === 'rejected' && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 rounded-lg text-[9px] font-black uppercase tracking-widest">Skip</span>}
-                            {lead.status === 'private' && <span className="px-2 py-0.5 bg-orange-500/10 text-orange-500 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><Lock className="w-2.5 h-2.5" /> Locked</span>}
-                            {lead.status === 'harvested' && <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-lg italic text-[9px] font-black uppercase tracking-widest">Harvested</span>}
-                            {lead.status === 'discovered' && <span className="px-2 py-0.5 bg-orange-500/10 text-orange-500 rounded-lg text-[9px] font-black uppercase tracking-widest">New</span>}
-                            {lead.status === 'failed' && <span className="px-2 py-0.5 bg-gray-500/10 text-gray-400 rounded-lg text-[9px] font-black uppercase tracking-widest">Retry</span>}
-
-                            {lead.status === 'discovered' ? (
-                              <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-orange-500/10 text-orange-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`} title="Identify Profile">
-                                {analyzingId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-                              </button>
-                            ) : (lead.status === 'rejected' || lead.status === 'private') ? (
-                              <button onClick={() => handleUpdateStatus(lead.id, 'discovered')} className="p-2 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all" title="Retry Analysis">
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
-                            ) : lead.status === 'harvested' ? (
-                              <div className="p-2 text-green-500 flex items-center gap-1.5" title="Deep Scrape Completed">
-                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Completed</span>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => handleHarvest(lead.id)}
-                                disabled={harvestingId === lead.id}
-                                className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all ${harvestingId === lead.id ? 'bg-emerald-500 text-white animate-pulse' : 'bg-green-500 text-white hover:bg-green-600 shadow-md shadow-green-500/10'}`}
-                              >
-                                {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
-                                {harvestingId === lead.id ? "Scraping..." : "Approve & Scrape"}
-                              </button>
-                            )}
-
-                            <button onClick={() => handleDeleteLead(lead.id)} className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── ACCOUNTS TAB ── */}
+        {/* ── ACCOUNTS TAB: PROFESSIONAL COMMAND CONSOLE ── */}
         {activeTab === 'accounts' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-black text-gray-900 dark:text-white">Ghost Unit Management</h3>
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white">Ghost Fleet Control</h3>
+                <p className="text-gray-400 text-xs font-medium mt-0.5 uppercase tracking-wider">Enterprise Management Protocol v2.0</p>
+              </div>
+              <div className="flex items-center gap-3">
                 <input
                   type="file"
                   accept=".txt"
@@ -607,131 +514,237 @@ const InstagramWarmingDashboard: React.FC = () => {
                 />
                 <label
                   htmlFor="bulk-accounts-upload"
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 dark:bg-white/5 text-gray-900 dark:text-white rounded-xl font-bold text-xs hover:opacity-90 transition-all cursor-pointer"
+                  className="group flex items-center gap-2 px-5 py-2.5 bg-gray-100 dark:bg-white/5 text-gray-900 dark:text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-500 hover:text-white transition-all cursor-pointer border border-transparent hover:border-orange-400/50"
                 >
-                  <Upload className="w-3.5 h-3.5" /> {bulkUploading === 'accounts' ? 'Uploading...' : 'Bulk Upload'}
+                  <Upload className="w-3.5 h-3.5" /> {bulkUploading === 'accounts' ? 'Deploying...' : 'Bulk Deployment'}
                 </label>
                 <button
                   onClick={() => setShowAccountModal(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-xl font-bold text-xs shadow-xl shadow-black/10 hover:opacity-90 transition-all"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-orange-600/20 hover:bg-orange-500 transition-all border border-orange-400/50"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Deploy Account
+                  <Plus className="w-3.5 h-3.5" /> Add Ghost Unit
                 </button>
               </div>
             </div>
+
             {accounts.length === 0 ? (
-              <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 py-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-                No ghost accounts deployed yet.
+              <div className="bg-white dark:bg-[#1e293b] rounded-[32px] border border-gray-100 dark:border-white/5 py-24 text-center">
+                <div className="w-16 h-16 bg-gray-50 dark:bg-black/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-dashed border-gray-200 dark:border-white/10">
+                   <Ghost className="w-8 h-8 text-gray-300 dark:text-gray-600" />
+                </div>
+                <p className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Ghost Fleet Offline. Deploy units to begin.</p>
               </div>
             ) : (
-              <div className="grid md:grid-cols-3 gap-4">
-                {accounts.map(account => (
-                  <div key={account.id} className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-white/5 shadow-sm relative group">
-                    <div className="absolute top-3 right-3 flex gap-2">
-                      <button
-                        onClick={() => handleWarmup(account.id)}
-                        disabled={warmingAccountId === account.id || account.is_active}
-                        className={`p-2 rounded-lg transition-all ${
-                          warmingAccountId === account.id || account.is_active 
-                            ? 'bg-orange-500 text-white animate-pulse' 
-                            : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white'
-                        }`}
-                        title="Manual Warm-up"
-                      >
-                        {warmingAccountId === account.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Flame className="w-3.5 h-3.5" />}
-                      </button>
+              <div className="bg-white dark:bg-[#1e293b] rounded-[32px] border border-gray-100 dark:border-white/5 shadow-2xl shadow-black/5 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50/50 dark:bg-black/20 border-b border-gray-100 dark:border-white/5">
+                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Identity / Profile</th>
+                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Networking</th>
+                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Seasoning Path</th>
+                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Pulse / Limit</th>
+                        <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Ops Control</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                      {accounts.map(account => (
+                        <tr key={account.id} className="group hover:bg-gray-50/80 dark:hover:bg-white/[0.02] transition-all">
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-4">
+                              <div className="relative">
+                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center border-2 ${
+                                  account.is_active ? 'bg-orange-500/10 border-orange-500/20' : 'bg-gray-100 dark:bg-black/40 border-transparent'
+                                }`}>
+                                  <Instagram className={`w-5 h-5 ${account.is_active ? 'text-orange-500' : 'text-gray-400'}`} />
+                                </div>
+                                {account.is_active && (
+                                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-[#1e293b] animate-pulse shadow-lg shadow-green-500/50" />
+                                )}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-black text-gray-900 dark:text-white tracking-tight">@{account.username}</p>
+                                  {account.is_paused && (
+                                    <span className="bg-blue-500/10 text-blue-500 text-[8px] font-black uppercase px-1.5 py-0.5 rounded italic">Paused</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${
+                                    account.status === 'active' ? 'bg-green-500/10 text-green-500' :
+                                    account.status === 'frozen' ? 'bg-blue-500/10 text-blue-500' :
+                                    'bg-red-500/10 text-red-500'
+                                  }`}>{account.status}</span>
+                                  <span className="text-gray-400 text-[9px] font-bold tracking-tight">{formatTimeAgo(account.created_at)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          
+                          <td className="px-6 py-5">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5 text-gray-900 dark:text-white font-bold text-xs uppercase tracking-tighter">
+                                <Shield className="w-3 h-3 text-blue-500" />
+                                {(account as any).proxy_host || 'Direct Link'}
+                              </div>
+                              <span className="text-[9px] text-gray-400 font-medium uppercase tracking-widest mt-1">Isolated Node</span>
+                            </div>
+                          </td>
 
-                      {/* 🎮 HUMAN CONTROL TOGGLE - Only show if active! */}
-                      {account.is_active && (
-                        <button
-                          onClick={() => handlePauseResume(account.id, account.is_paused)}
-                          disabled={pausingAccountId === account.id}
-                          className={`p-2 rounded-lg transition-all text-xs font-black shadow-lg ${
-                            account.is_paused
-                              ? 'bg-green-500 text-white animate-pulse'
-                              : 'bg-blue-600 text-white animate-bounce-slow'
-                          }`}
-                          title={account.is_paused ? 'Resume Bot' : 'Take Control'}
-                        >
-                          {pausingAccountId === account.id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : account.is_paused
-                            ? <span className="flex items-center gap-1">🤖 Resume</span>
-                            : <span className="flex items-center gap-1">🎮 Control</span>
-                          }
-                        </button>
-                      )}
-                      <button
-                        onClick={() => instagramWarmingAPI.deleteAccount(account.id).then(fetchData)}
-                        className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-12 h-12 bg-gray-100 dark:bg-black/20 rounded-2xl flex items-center justify-center">
-                        <Ghost className="w-6 h-6 text-gray-400" />
-                      </div>
-                      <div>
-                        <p className="font-black text-gray-900 dark:text-white tracking-tight">@{account.username}</p>
-                        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg ${account.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
-                          }`}>{account.status}</span>
-                        {account.frozen_until && new Date(account.frozen_until as string) > new Date() && (
-                          <div className="flex items-center gap-1 mt-1 text-blue-500 text-[9px] font-black uppercase italic tracking-tighter bg-blue-500/10 px-2 py-0.5 rounded-lg animate-pulse">
-                            <Snowflake className="w-2.5 h-2.5" />
-                            <span>Frozen: {(() => {
-                              const diff = new Date(account.frozen_until as string).getTime() - new Date().getTime();
-                              const h = Math.floor(diff / (1000 * 60 * 60));
-                              const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                              return `${h}h ${m}m Left`;
-                            })()}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-white/5">
-                      <div className="flex justify-between items-center text-[10px] uppercase font-black tracking-widest text-gray-400">
-                        <span>Fleet Age</span>
-                        <span className="text-gray-900 dark:text-white font-black">
-                          {formatTimeAgo(account.created_at)}
-                        </span>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-[10px] uppercase font-black tracking-widest">
-                          <span className="text-gray-400">Seasoning Path</span>
-                          <span className={`${getSeasoningProgress(account.warming_session_count || 0).text === 'Mature' ? 'text-green-500' : 'text-orange-500'} font-black`}>
-                            {getSeasoningProgress(account.warming_session_count || 0).text}
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-700 ${getSeasoningProgress(account.warming_session_count || 0).text === 'Mature' ? 'bg-green-500' : 'bg-gradient-to-r from-orange-400 to-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.5)]'}`}
-                            style={{ width: `${Math.min(((account.warming_session_count || 0) / 7) * 100, 100)}%` }}
-                          />
-                        </div>
-                        {account.daily_usage_count !== undefined && account.daily_usage_count >= 5 && (
-                          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter text-red-500/80 mt-1">
-                            <Clock className="w-2.5 h-2.5 animate-pulse" />
-                            <span>LOCKED: {(() => {
-                              const resetAt = new Date(new Date(account.last_usage_reset as string).getTime() + 24 * 60 * 60 * 1000);
-                              const diff = resetAt.getTime() - new Date().getTime();
-                              if (diff <= 0) return "RESETTING...";
-                              const h = Math.floor(diff / (1000 * 60 * 60));
-                              const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                              return `${h}h ${m}m Remaining`;
-                            })()}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center text-[10px] uppercase font-black tracking-widest text-gray-400">
-                        <span>Shield Node</span>
-                        <span className="text-gray-900 dark:text-white italic truncate max-w-[100px]">
-                          {(account as any).proxy_host || 'Direct Handshake'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                          <td className="px-6 py-5 w-52">
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between items-center">
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${getSeasoningProgress(account.warming_session_count || 0).color}`}>
+                                  {getSeasoningProgress(account.warming_session_count || 0).text}
+                                </span>
+                                <span className="text-[9px] font-bold text-gray-400">
+                                  Day {Math.min(account.warming_session_count || 0, 30)}/30
+                                </span>
+                              </div>
+                              <div className="h-1.5 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden w-36">
+                                <div
+                                  className={`h-full transition-all duration-700 ${getSeasoningProgress(account.warming_session_count || 0).bg}`}
+                                  style={{ width: `${Math.min(((account.warming_session_count || 0) / 30) * 100, 100)}%` }}
+                                />
+                              </div>
+                              <p className="text-[8px] text-gray-400 font-medium uppercase tracking-wider">
+                                {(account.warming_session_count || 0) < 7 ? 'Scroll + Reels only' :
+                                 (account.warming_session_count || 0) < 14 ? '+ Liking posts' :
+                                 (account.warming_session_count || 0) < 21 ? '+ Following users' :
+                                 '+ Explore deep dive'}
+                              </p>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  account.daily_usage_count !== undefined && account.daily_usage_count >= 1 ? 'bg-amber-500' : 'bg-green-500'
+                                } shadow-[0_0_8px_rgba(34,197,94,0.3)]`} />
+                                <span className={`text-xs font-black uppercase ${
+                                  account.daily_usage_count !== undefined && account.daily_usage_count >= 1
+                                    ? 'text-amber-500' : 'text-green-500'
+                                }`}>
+                                  {account.daily_usage_count !== undefined && account.daily_usage_count >= 1 ? 'Done Today' : 'Ready'}
+                                </span>
+                              </div>
+                              <span className="text-[8px] uppercase tracking-widest font-bold text-gray-400">Pure Warmup Only</span>
+                              {account.daily_usage_count !== undefined && account.daily_usage_count >= 1 && (
+                                <div className="flex items-center gap-1 text-amber-500 text-[9px] font-black uppercase italic animate-pulse">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  <span>{(() => {
+                                    const resetAt = new Date(new Date(account.last_usage_reset as string).getTime() + 24 * 60 * 60 * 1000);
+                                    const diff = resetAt.getTime() - new Date().getTime();
+                                    if (diff <= 0) return "RESETTING...";
+                                    const h = Math.floor(diff / (1000 * 60 * 60));
+                                    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                                    return `Resets in ${h}h ${m}m`;
+                                  })()}</span>
+                                </div>
+                              )}
+                              {/* Frozen state badge with Timer */}
+                              {account.frozen_until && new Date(account.frozen_until as string) > new Date() && (
+                                <div className="flex flex-col gap-1 mt-1">
+                                  <div className="flex items-center gap-1.5 text-blue-500 text-[9px] font-black uppercase tracking-widest italic animate-pulse">
+                                    <Snowflake className="w-2.5 h-2.5 animate-spin-slow" />
+                                    <span>Frozen (Safety Sleep)</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-blue-400/80 text-[8px] font-bold uppercase tracking-tight">
+                                    <Clock className="w-2 h-2" />
+                                    <span>{(() => {
+                                      const thawAt = new Date(account.frozen_until as string);
+                                      const diff = thawAt.getTime() - new Date().getTime();
+                                      if (diff <= 0) return "WAKING UP...";
+                                      const h = Math.floor(diff / (1000 * 60 * 60));
+                                      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                                      return `Unfreezes in ${h}h ${m}m`;
+                                    })()}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <div className="flex items-center justify-end gap-2">
+                              {/* 🎮 CONTROL BUTTON */}
+                              {account.is_active && (
+                                <button
+                                  onClick={() => handlePauseResume(account.id, account.is_paused)}
+                                  disabled={pausingAccountId === account.id}
+                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg ${
+                                    account.is_paused
+                                      ? 'bg-green-600 text-white hover:bg-green-500 animate-pulse'
+                                      : 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20'
+                                  }`}
+                                >
+                                  {pausingAccountId === account.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : account.is_paused ? <Zap className="w-3 h-3" /> : <Ghost className="w-3 h-3" />}
+                                  {account.is_paused ? 'Resume' : 'Control'}
+                                </button>
+                              )}
+
+                              {/* WARMUP BUTTON */}
+                              {!account.is_active && (
+                                <div className="relative group/warmup">
+                                  <button
+                                    onClick={() => handleWarmup(account.id)}
+                                    disabled={warmingAccountId === account.id || (account.daily_usage_count || 0) >= 1}
+                                    className={`p-2.5 rounded-xl transition-all ${
+                                      warmingAccountId === account.id
+                                        ? 'bg-orange-500 text-white animate-pulse'
+                                        : (account.daily_usage_count || 0) >= 1
+                                        ? 'bg-amber-500/10 text-amber-500 cursor-not-allowed'
+                                        : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-transparent hover:border-orange-400'
+                                    }`}
+                                    title={(account.daily_usage_count || 0) >= 1 ? 'Already warmed today' : 'Start Manual Warmup'}
+                                  >
+                                    {warmingAccountId === account.id
+                                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                                      : (account.daily_usage_count || 0) >= 1
+                                      ? <Lock className="w-4 h-4" />
+                                      : <Flame className="w-4 h-4" />}
+                                  </button>
+                                  {/* Tooltip showing unlock time */}
+                                  {(account.daily_usage_count || 0) >= 1 && account.last_usage_reset && (
+                                    <div className="absolute bottom-full right-0 mb-2 w-36 bg-gray-900 text-white text-[9px] font-black uppercase tracking-wider rounded-xl px-3 py-2 opacity-0 group-hover/warmup:opacity-100 transition-all pointer-events-none shadow-2xl z-50">
+                                      <div className="text-amber-400 mb-0.5">🔒 Locked 24h</div>
+                                      <div>{(() => {
+                                        const resetAt = new Date(new Date(account.last_usage_reset as string).getTime() + 24 * 60 * 60 * 1000);
+                                        const diff = resetAt.getTime() - new Date().getTime();
+                                        if (diff <= 0) return 'Resetting...';
+                                        const h = Math.floor(diff / (1000 * 60 * 60));
+                                        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                                        return `Resets in ${h}h ${m}m`;
+                                      })()}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* HISTORY BUTTON */}
+                              <button
+                                onClick={() => handleShowHistory(account)}
+                                className="p-2.5 bg-indigo-500/10 text-indigo-500 rounded-xl hover:bg-indigo-500 hover:text-white transition-all border border-transparent hover:border-indigo-400"
+                                title="View Activity Journal"
+                              >
+                                <History className="w-4 h-4" />
+                              </button>
+
+                              {/* DELETE BUTTON */}
+                              <button
+                                onClick={() => instagramWarmingAPI.deleteAccount(account.id).then(fetchData)}
+                                className="p-2.5 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all border border-transparent hover:border-red-400"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -986,6 +999,74 @@ const InstagramWarmingDashboard: React.FC = () => {
                 className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-2 mt-2"
               >
                 <Globe className="w-5 h-5" /> Activate Proxy Node
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── HISTORY MODAL ── */}
+      {showHistoryModal && selectedAccount && (
+        <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowHistoryModal(false)} />
+          <div className="relative bg-white dark:bg-[#1e293b] w-full max-w-xl rounded-[32px] shadow-2xl border border-gray-200 dark:border-white/10 p-8 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between mb-6 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                  <History className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white">Ghost Journal</h3>
+                  <p className="text-gray-500 text-xs font-medium mt-0.5">@{selectedAccount.username}'s Activity Logs</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowHistoryModal(false)} 
+                className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+              {isLoadingLogs ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <Loader2 className="w-8 h-8 animate-spin mb-4" />
+                  <p className="text-[10px] font-black uppercase tracking-widest">Accessing records...</p>
+                </div>
+              ) : accountLogs.length === 0 ? (
+                <div className="text-center py-20 text-gray-500 font-bold uppercase tracking-widest text-[10px]">
+                  No activities recorded in the last 24h.
+                </div>
+              ) : (
+                <div className="relative pl-6 border-l-2 border-gray-100 dark:border-white/5 space-y-6">
+                  {accountLogs.map((log, idx) => (
+                    <div key={log.id} className="relative">
+                      <div className="absolute -left-[29px] top-1.5 w-3 h-3 rounded-full bg-indigo-500 border-4 border-white dark:border-[#1e293b]" />
+                      <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-4 border border-transparent hover:border-indigo-500/30 transition-all">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 bg-indigo-500/10 text-indigo-500 rounded-lg">
+                            {log.log_type}
+                          </span>
+                          <span className="text-[9px] font-bold text-gray-400">
+                            {formatTimeAgo(log.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                          {log.message}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-6 pt-6 border-t border-gray-100 dark:border-white/5 shrink-0">
+               <button 
+                onClick={() => setShowHistoryModal(false)} 
+                className="w-full py-4 bg-gray-100 dark:bg-white/5 text-gray-900 dark:text-white rounded-2xl font-black text-sm hover:bg-gray-200 dark:hover:bg-white/10 transition-all"
+              >
+                Close Journal
               </button>
             </div>
           </div>

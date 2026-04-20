@@ -18,6 +18,10 @@ from .browser_engine import browser_engine
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:     %(message)s')
 logger = logging.getLogger(__name__)
 
+class InstagramChallengeException(Exception):
+    """Custom exception raised when an Instagram security challenge is detected."""
+    pass
+
 class InstagramWarmingService:
     """
     TOTAL ISOLATION MODULE: Instagram Warming
@@ -223,6 +227,32 @@ class InstagramWarmingService:
         return {"status": "success"}
 
     # --- Engine Auto-Pilot (Warming & Aging) ---
+    async def log_activity(self, account_id: int, log_type: str, message: str):
+        """Records a social event in the account's history journal."""
+        try:
+            await db.execute("""
+                INSERT INTO instagram_warming_logs (account_id, log_type, message, created_at)
+                VALUES ($1, $2, $3, NOW())
+            """, account_id, log_type, message)
+        except Exception as e:
+            logger.error(f"❌ Failed to write activity log: {e}")
+
+    async def get_account_logs(self, user_id: int, account_id: int, limit: int = 50):
+        """Fetches the latest activity logs for a specific Warming account."""
+        # Check ownership first
+        account = await db.fetchrow("SELECT id FROM instagram_warming_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
+        if not account:
+            return []
+        
+        rows = await db.fetch("""
+            SELECT id, log_type, message, created_at 
+            FROM instagram_warming_logs 
+            WHERE account_id = $1 
+            ORDER BY created_at DESC 
+            LIMIT $2
+        """, account_id, limit)
+        return [dict(row) for row in rows]
+
     async def _auto_pilot_worker(self, user_id: int):
         logger.info(f"🛸 Warming Auto-Pilot Sector Active for User {user_id}")
         try:
@@ -257,57 +287,22 @@ class InstagramWarmingService:
                             except: pass
                             continue
                 except Exception as e:
-                    logger.error(f"⚠️ Hibernation Check Failed: {e}. Defaulting to 5-min safety nap.")
-                    self.nap_end_times[user_id] = time.time() + 300
+                    logger.error(f"⚠️ Hibernation Check Failed: {e}. Defaulting to safety nap.")
                     continue
 
-                # 2. Priority Mission: Analyze new leads
-                lead = await db.fetchrow("""
-                    SELECT id FROM instagram_warming_leads 
-                    WHERE user_id = $1 AND status = 'discovered' 
-                    ORDER BY created_at ASC LIMIT 1
-                """, user_id)
+                # 🎭 PURE WARMING MODE: Bypass all scraping/harvesting
+                # We prioritize Daily Seasoning (Warming) for all eligible accounts
+                account_to_warm = await self._get_available_ghost(user_id)
                 
-                mission_type = None
-                
-                if lead:
-                    logger.info(f"🎯 Auto-Pilot: Initiating Analysis on Lead {lead['id']}...")
-                    await self.analyze_lead(user_id, lead['id'])
-                    mission_type = 'analyze'
+                if account_to_warm:
+                    logger.info(f"🎭 Auto-Pilot: Triggering Daily Seasoning for Account {account_to_warm['id']}...")
+                    await self.manual_warmup_account(user_id, account_to_warm['id'])
                 else:
-                    # 3. Secondary Mission: Harvest existing qualified leads
-                    lead = await db.fetchrow("""
-                        SELECT id FROM instagram_warming_leads 
-                        WHERE user_id = $1 AND status = 'qualified' 
-                        ORDER BY updated_at ASC LIMIT 1
-                    """, user_id)
-                    
-                    if lead:
-                        logger.info(f"🛰️ Auto-Pilot: Initiating Deep Harvest on Lead {lead['id']}...")
-                        await self.harvest_lead_network(user_id, lead['id'])
-                        mission_type = 'harvest'
-                
-                if not mission_type:
-                    # 🎭 SEASONING MISSION: Wake up accounts that need their daily warmup even if no leads exist!
-                    account_to_warm = await db.fetchrow("""
-                        SELECT id FROM instagram_warming_accounts 
-                        WHERE user_id = $1 AND status = 'active' 
-                          AND daily_usage_count = 0 
-                          AND (frozen_until IS NULL OR frozen_until < NOW())
-                        LIMIT 1
-                    """, user_id)
-                    
-                    if account_to_warm:
-                        logger.info(f"🎭 Auto-Pilot: No leads in pool. Triggering Daily Seasoning for Account {account_to_warm['id']}...")
-                        await self.manual_warmup_account(user_id, account_to_warm['id'])
-                        mission_type = 'seasoning'
-                    else:
-                        logger.info(f"😴 Warming Fleet Resting: All active accounts have finished their sessions for today.")
-                        # Only send idle if we aren't currently napping from a previous instruction
-                        if self.nap_end_times.get(user_id, 0) < time.time():
-                            await manager.send_personal_message({"type": "warming_autopilot_idle", "message": "Fleet Resting: All accounts seasoned for today."}, user_id)
-                        await asyncio.sleep(60)
-                        continue
+                    logger.info(f"😴 Warming Fleet Resting: All active accounts have finished their 24h sessions.")
+                    if self.nap_end_times.get(user_id, 0) < time.time():
+                        await manager.send_personal_message({"type": "warming_autopilot_idle", "message": "Fleet Resting: All accounts seasoned for today."}, user_id)
+                    await asyncio.sleep(60)
+                    continue
 
                 # 🛌 THE GLOBAL NAP: Random cooldown between 2-3 minutes after every action
                 nap_duration = random.randint(120, 180)
@@ -338,12 +333,12 @@ class InstagramWarmingService:
               AND daily_usage_count > 0
         """, user_id)
         
-        # 2. Check if ANY account is available right now
+        # 2. Check if ANY account is available right now (< 1 session today)
         available = await db.fetchval("""
             SELECT COUNT(id) FROM instagram_warming_accounts 
             WHERE user_id = $1 
-              AND status IN ('active', 'error') 
-              AND daily_usage_count < 5
+              AND status IN ('active', 'error', 'frozen') 
+              AND daily_usage_count < 1
               AND (frozen_until IS NULL OR frozen_until < NOW())
         """, user_id)
         
@@ -351,16 +346,15 @@ class InstagramWarmingService:
             return None # Ghosts are ready for duty
             
         # 3. Fleet Exhausted! Find the SOONEST time any ghost recovers.
-        # Use COALESCE(..., 'infinity') to ensure NULL fields don't kill the LEAST function.
         soonest = await db.fetchval("""
             SELECT MIN(
                 LEAST(
-                   CASE WHEN daily_usage_count >= 5 THEN COALESCE(last_usage_reset, created_at, NOW()) + INTERVAL '24 hours' ELSE 'infinity'::timestamp END,
+                   CASE WHEN daily_usage_count >= 1 THEN COALESCE(last_usage_reset, created_at, NOW()) + INTERVAL '24 hours' ELSE 'infinity'::timestamp END,
                    CASE WHEN frozen_until IS NOT NULL AND frozen_until > NOW() THEN frozen_until ELSE 'infinity'::timestamp END
                 )
             )
             FROM instagram_warming_accounts 
-            WHERE user_id = $1 AND status IN ('active', 'error')
+            WHERE user_id = $1 AND status IN ('active', 'error', 'frozen')
         """, user_id)
         
         if not soonest or soonest == 'infinity' or (hasattr(soonest, 'year') and soonest.year == 9999):
@@ -410,16 +404,16 @@ class InstagramWarmingService:
             WHERE user_id = $1 AND last_usage_reset < NOW() - INTERVAL '24 hours'
         """, user_id)
 
-        # 2. Find a ghost that is active, NOT hit limit, and NOT frozen
+        # 2. Find a ghost that is active, NOT hit 1-session-limit, and NOT frozen
         account = await db.fetchrow(f"""
             SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
             FROM instagram_warming_accounts a LEFT JOIN instagram_warming_proxies p ON a.proxy_id = p.id
             WHERE a.user_id = $1 
-              AND a.status IN ('active', 'error') 
-              AND a.daily_usage_count < 5
+              AND a.status IN ('active', 'error', 'frozen') 
+              AND a.daily_usage_count < 1
               AND (a.frozen_until IS NULL OR a.frozen_until < NOW())
             {"AND a.id NOT IN (" + ",".join(map(str, used_ids)) + ")" if used_ids else ""}
-            ORDER BY CASE WHEN a.status = 'active' THEN 0 ELSE 1 END ASC, updated_at ASC NULLS FIRST LIMIT 1
+            ORDER BY CASE WHEN a.status = 'active' THEN 0 WHEN a.status = 'frozen' THEN 1 ELSE 2 END ASC, updated_at ASC NULLS FIRST LIMIT 1
         """, user_id)
         
         return account
@@ -435,20 +429,19 @@ class InstagramWarmingService:
 
     async def _get_dynamic_daily_limit(self, session_count):
         """
-        🛡️ DYNAMIC LIMIT SYSTEM (Conserve & Conquer):
-        Sessions 1-7:   0 Leads (Pure Social Warmup)
-        Sessions 8-14:  Random 1-2 Leads
-        Sessions 15-21: Random 3-5 Leads
-        Sessions 22+:   Progressive (+2 every day, Max 50)
+        🚀 30-DAY GHOST MATURATION CURVE
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Phase 1 — Incubation   (Days  1-7):  ZERO scraping. Pure social only.
+        Phase 2 — Socialite    (Days  8-14): Low volume. 5-12 leads/day.
+        Phase 3 — Operative    (Days 15-21): Medium. 15-25 leads/day.
+        Phase 4 — Mature       (Days 22-30): Full speed. 30-45 leads/day.
+        Seasoned               (Days 30+):   Maximum safe. 50-75 leads/day.
         """
-        if session_count <= 7: return 0 
-        if session_count <= 14: return random.randint(1, 2)
-        if session_count <= 21: return random.randint(3, 5)
-        
-        # Growth phase
-        base = 6
-        growth = (session_count - 21) * 2
-        return min(base + growth, 50)
+        if session_count < 7:   return 0                        # Phase 1: Zero scraping
+        if session_count < 14:  return random.randint(5, 12)    # Phase 2: Slow start
+        if session_count < 21:  return random.randint(15, 25)   # Phase 3: Building trust
+        if session_count < 30:  return random.randint(30, 45)   # Phase 4: Ramping up
+        return random.randint(50, 75)                            # Seasoned: Full power
 
     async def _human_mouse_move(self, page, target_x: int, target_y: int, steps: int = 15):
         """Moves the mouse in a cubic Bezier curve to simulate human muscle movement."""
@@ -470,12 +463,14 @@ class InstagramWarmingService:
         
         logger.info(f"   🏁 Arrived at ({int(target_x)}, {int(target_y)})")
 
-    async def _human_swipe(self, page, distance: int):
+    async def _human_swipe(self, page, distance: int, account_id: int = None):
         """Simulates a real human thumb flick with dual-action (Touch Events + Physical Scroll)."""
         start_x = random.randint(150, 250)
         start_y = random.randint(600, 800)
         
         logger.info(f"   🖐️ DUAL-ACTION Swipe: Flicking thumb up {distance}px...")
+        if account_id:
+            await self.log_activity(account_id, "interaction", f"🖐️ Flicked thumb up {distance}px (Mobile Gesture)")
         
         # 1. Physical Scroll Force (Ensures visual movement in Home Feed)
         try:
@@ -518,7 +513,7 @@ class InstagramWarmingService:
         await page.mouse.up()
         await asyncio.sleep(random.uniform(1.2, 2.5))
 
-    async def _human_click(self, page, selector):
+    async def _human_click(self, page, selector, account_id: int = None):
         """Clicks with curve movement and 'Bot-Acting' flag for sensor bypass."""
         try:
             btn = await page.wait_for_selector(selector, timeout=10000)
@@ -526,6 +521,7 @@ class InstagramWarmingService:
                 # 🛡️ TELL BROWSER WE ARE ACTING
                 await page.evaluate("window.isBotActing = true")
                 
+                box = await btn.bounding_box()
                 if box:
                     center_x = box['x'] + box['width'] / 2
                     center_y = box['y'] + box['height'] / 2
@@ -534,6 +530,8 @@ class InstagramWarmingService:
                     await asyncio.sleep(random.uniform(0.4, 0.8))
                     await page.mouse.click(center_x, center_y)
                     logger.info(f"   🖱️ CLICK LANDED on {selector}.")
+                    if account_id:
+                        await self.log_activity(account_id, "interaction", f"🎯 Tapped UI Element: {selector}")
                 else:
                     await btn.click()
                 
@@ -605,9 +603,11 @@ class InstagramWarmingService:
         except Exception as e:
             logger.error(f"⚠️ Profile update failed for @{account_data['username']}: {e}")
 
-    async def _human_type(self, page, text: str, delay_range: tuple = (100, 300)):
+    async def _human_type(self, page, text: str, account_id: int = None, delay_range: tuple = (100, 300)):
         """Simulates human typing with variable speed and occasional typos/backspaces."""
         logger.info(f"   ⌨️ Typing: {text[:10]}{'...' if len(text) > 10 else ''}")
+        if account_id:
+            await self.log_activity(account_id, "interaction", f"⌨️ Typing comment/info: {text[:20]}...")
         for char in text:
             # 5% chance of a typo
             if random.random() < 0.05:
@@ -667,257 +667,338 @@ class InstagramWarmingService:
             return True
         return False
 
-
-    async def _perform_social_warmup(self, page, account_username):
+    async def _check_for_challenge(self, page, account_data: dict) -> bool:
         """
-        🎭 ENHANCED GHOST-HUMAN SOCIAL ROUTINE:
-        Mocks a real user 'living' on Instagram by scrolling, liking, and watching.
-        Durations are now much longer and highly randomized (5-15 mins).
+        🚨 INSTAGRAM CHALLENGE WATCHDOG
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Detects security checkpoints, puzzles, and identity challenges.
+        If triggered: ABORT SESSION + FREEZE ACCOUNT for 36 hours.
+        Returns True if challenge detected (caller must abort).
         """
-        account_data = {'username': account_username} # Minimal data for profile update
-        await self._randomly_update_profile(page, account_data)
-        
-        logger.info(f"🎭 Starting Deep Social Session for @{account_username} (High Randomness Mode)...")
-        
-        # 🕒 CONSERVATIVE INTENSITY (DC Proxy Special: Slow & Steady)
-        session_intensity = random.randint(8, 16)
-        
-        for i in range(session_intensity):
-            # 🕹️ SMART PAUSE: Check if human has taken control via UI
-            await self._check_human_intervention(page, account_username)
+        try:
+            current_url = page.url.lower()
 
-            # 🧹 POPUP WATCHDOG: Check for annoying popups on every scroll!
-            for btn_text in ["Not Now", "Not now", "Allow", "Save Info", "Save info", "Turn On", "Dismiss"]:
+            # ── 1. URL-BASED DETECTION ──
+            danger_urls = [
+                '/challenge/', '/checkpoint/', '/suspended/',
+                '/unusualactivity/', '/accounts/login/unusual_attempt/',
+                '/accounts/suspended/', 'accounts/integrity/',
+            ]
+            url_flagged = any(d in current_url for d in danger_urls)
+
+            # ── 2. PAGE CONTENT DETECTION ──
+            page_flagged = False
+            if not url_flagged:
+                try:
+                    body_text = await page.evaluate("() => document.body?.innerText || ''")
+                    challenge_phrases = [
+                        'verify your identity', 'confirm your identity',
+                        'we detected an unusual', 'suspicious login',
+                        'help us confirm it', 'enter your phone number',
+                        'confirm this was you', 'we need to confirm',
+                        'temporarily locked', 'account suspended',
+                        'unusual login attempt', 'prove you\'re a human',
+                        'complete the puzzle', 'select all images',
+                        'enter the code we sent', 'add your email',
+                        'confirm your email', 'verify your account',
+                        'blocked', 'your account has been',
+                    ]
+                    body_lower = body_text.lower()
+                    page_flagged = any(phrase in body_lower for phrase in challenge_phrases)
+                except: pass
+
+            # ── 3. ELEMENT-BASED DETECTION ──
+            element_flagged = False
+            if not url_flagged and not page_flagged:
+                try:
+                    challenge_selectors = [
+                        'input[name="email"]',
+                        'input[name="phone"]',
+                        'button:has-text("Send Security Code")',
+                        'button:has-text("Verify")',
+                        'div:has-text("Verify your identity")',
+                        'img[src*="challenge"]',
+                        '[data-testid="challenge"]',
+                    ]
+                    for sel in challenge_selectors:
+                        el = await page.query_selector(sel)
+                        if el and await el.is_visible():
+                            element_flagged = True
+                            break
+                except: pass
+
+            if not (url_flagged or page_flagged or element_flagged):
+                return False  # ✅ All clear
+
+            # ── 🚨 CHALLENGE DETECTED — EMERGENCY PROTOCOL ──
+            account_id   = account_data.get('id')
+            account_user = account_data.get('username', 'unknown')
+
+            logger.warning(f"🚨 CHALLENGE DETECTED for @{account_user} (URL: {page.url})")
+            logger.warning(f"   📍 Trigger: URL={url_flagged} | Content={page_flagged} | Element={element_flagged}")
+            logger.warning(f"   ❄️ Initiating Emergency Freeze Protocol (36h)...")
+
+            # Freeze account for 36 hours
+            if account_id:
+                await db.execute("""
+                    UPDATE instagram_warming_accounts
+                    SET frozen_until = NOW() + INTERVAL '36 hours',
+                        status = 'frozen',
+                        updated_at = NOW()
+                    WHERE id = $1
+                """, account_id)
+                await self.log_activity(
+                    account_id, "challenge_freeze",
+                    f"🚨 Instagram challenge detected! Emergency freeze for 36h. URL: {page.url[:80]}"
+                )
+
+            return True  # Caller must abort session
+
+        except Exception as e:
+            logger.error(f"⚠️ Challenge watchdog error: {e}")
+            return False
+
+
+    async def _perform_social_warmup(self, page, account_username, account_id: int = None):
+        """
+        🎭 30-DAY GHOST MATURATION WARMUP ROUTINE
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Phase 1 (Days 1-7):   INCUBATION  — Scroll + Watch Reels only
+        Phase 2 (Days 8-14):  SOCIALITE   — + Like posts (2-4 per session)
+        Phase 3 (Days 15-21): OPERATIVE   — + Follow users (1-2 per session)
+        Phase 4 (Days 22+):   MATURE      — Full routine, all actions
+        """
+        # Get session count to determine phase
+        if account_id:
+            row = await db.fetchrow("SELECT warming_session_count FROM instagram_warming_accounts WHERE id = $1", account_id)
+            session_count = row['warming_session_count'] if row else 0
+        else:
+            session_count = 0
+
+        # Determine phase
+        if session_count < 7:
+            phase = 1
+            phase_name = "🛡️ Incubation (Scroll & Watch)"
+            session_duration = random.randint(5, 10)
+        elif session_count < 14:
+            phase = 2
+            phase_name = "🧪 Socialite (+ Liking Posts)"
+            session_duration = random.randint(10, 15)
+        elif session_count < 21:
+            phase = 3
+            phase_name = "⚔️ Operative (+ Following Users)"
+            session_duration = random.randint(15, 22)
+        else:
+            phase = 4
+            phase_name = "👑 Mature (Full Routine)"
+            session_duration = random.randint(20, 30)
+
+        logger.info(f"🎭 @{account_username} — {phase_name} | Target: {session_duration} mins")
+        if account_id:
+            await self.log_activity(account_id, "session_start", f"🎭 {phase_name} — Target duration: {session_duration} mins")
+
+        # ── POPUP & CHALLENGE WATCHDOG (all phases) ──
+        async def clear_popups():
+            # 1. 🚨 Security Challenge Check (The 36h Freeze)
+            account_data = {'id': account_id, 'username': account_username}
+            if await self._check_for_challenge(page, account_data):
+                raise InstagramChallengeException(f"🚨 CHALLENGE DETECTED: Aborting session for @{account_username} and freezing for 36h.")
+
+            # 2. Generic Popups (Not Now, Save Info, etc.)
+            for btn_text in ["Not Now", "Not now", "Allow", "Save Info", "Turn On", "Dismiss"]:
                 try:
                     btn = await page.query_selector(f'button:has-text("{btn_text}"), div[role="button"]:has-text("{btn_text}")')
                     if btn and await btn.is_visible():
-                        logger.info(f"   🧹 Watchdog triggered! Clearing '{btn_text}' popup...")
-                        await self._human_click(page, f'button:has-text("{btn_text}"), div[role="button"]:has-text("{btn_text}")')
-                        await asyncio.sleep(2)
+                        await btn.click()
+                        await asyncio.sleep(1.5)
+                except InstagramChallengeException: raise
                 except: pass
 
-            # 1. Human Touch Swipe instead of Wheel
-            swipe_dist = random.randint(300, 600)
-            await self._human_swipe(page, swipe_dist)
+        # ── PHASE 1 & 2 & 3 & 4: SCROLL HOME FEED ──
+        scroll_cycles = random.randint(6, 14)
+        logger.info(f"📜 Scrolling home feed for {scroll_cycles} cycles...")
 
-            # 🎯 SMART CENTERING: Identify the nearest post and center it
+        for i in range(scroll_cycles):
+            await self._check_human_intervention(page, account_username)
+            await clear_popups()
+
+            # Scroll
+            swipe_dist = random.randint(300, 650)
+            await self._human_swipe(page, swipe_dist, account_id)
+
+            # Center nearest post
             try:
                 await page.evaluate("""() => {
                     const articles = Array.from(document.querySelectorAll('article'));
                     const center = window.innerHeight / 2;
-                    let closest = null;
-                    let minDiff = Infinity;
-                    
+                    let closest = null, minDiff = Infinity;
                     articles.forEach(a => {
                         const rect = a.getBoundingClientRect();
                         const diff = Math.abs((rect.top + rect.height / 2) - center);
                         if (diff < minDiff) { minDiff = diff; closest = a; }
                     });
-
-                    if (closest && minDiff < 400) {
-                        closest.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                    if (closest && minDiff < 400) closest.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }""")
                 await asyncio.sleep(random.uniform(1.5, 3))
             except: pass
-            
-            # Mimic eye movement / cursor wiggle
-            for _ in range(random.randint(2, 4)):
-                await page.mouse.move(random.randint(100, 900), random.randint(200, 700))
-                await asyncio.sleep(random.uniform(0.5, 1.5))
 
-            # 🏃 THE "READING" PAUSE: 15% chance of a long stare (mimics reading a caption)
-            if random.random() < 0.15:
-                # 📌 SNAP TO POST: Center the current article fully in view before staring
+            # Reading pause (all phases)
+            if random.random() < 0.20:
+                stare = random.uniform(15, 40)
+                logger.info(f"   📑 Reading a post for {int(stare)}s...")
+                await asyncio.sleep(stare)
+            else:
+                await asyncio.sleep(random.uniform(5, 14))
+
+            # Carousel swipe (all phases, 30% chance)
+            if random.random() < 0.30:
                 try:
-                    await page.evaluate("""() => {
-                        const articles = Array.from(document.querySelectorAll('article'));
-                        const center = window.innerHeight / 2;
-                        let closest = null;
-                        let minDiff = Infinity;
-                        articles.forEach(a => {
-                            const rect = a.getBoundingClientRect();
-                            const diff = Math.abs((rect.top + rect.height / 2) - center);
-                            if (diff < minDiff) { minDiff = diff; closest = a; }
-                        });
-                        if (closest) {
-                            closest.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                    }""")
-                    await asyncio.sleep(1.5) # Let the scroll settle
+                    next_btn = await page.query_selector('button[aria-label="Next"]')
+                    if next_btn:
+                        swipes = random.randint(1, 3)
+                        logger.info(f"   📸 Carousel: swiping {swipes} images...")
+                        for _ in range(swipes):
+                            await self._human_click(page, 'button[aria-label="Next"]')
+                            await asyncio.sleep(random.uniform(2, 5))
                 except: pass
-                # 📸 CAROUSEL CHECK: If there are multiple images, swipe through them!
-                if random.random() < 0.40:
+
+            # ── PHASE 2+: LIKE POSTS ──
+            if phase >= 2 and random.random() < 0.35:
+                try:
+                    like_btn = await page.query_selector('article svg[aria-label="Like"]')
+                    if like_btn:
+                        await like_btn.click()
+                        logger.info(f"   ❤️ Liked a post (Phase {phase})")
+                        if account_id:
+                            await self.log_activity(account_id, "like", "❤️ Liked a post on home feed")
+                        await asyncio.sleep(random.uniform(1, 2.5))
+                except: pass
+
+        # ── ALL PHASES: WATCH REELS ──
+        reel_count = random.randint(2, 4) if phase >= 2 else random.randint(1, 2)
+        logger.info(f"🎬 Watching {reel_count} Reels...")
+        if account_id:
+            await self.log_activity(account_id, "reels_start", f"🎬 Entering Reels — watching {reel_count} clips")
+
+        try:
+            # Navigate to Reels tab
+            reels_selectors = ['a[href="/reels/"]', 'svg[aria-label="Reels"]', 'svg[aria-label="Clips"]']
+            found = False
+            for sel in reels_selectors:
+                try:
+                    btn = await page.query_selector(sel)
+                    if btn and await btn.is_visible():
+                        await btn.click()
+                        found = True
+                        break
+                except: continue
+
+            if not found:
+                await page.goto("https://www.instagram.com/reels/", wait_until="load")
+
+            await page.wait_for_timeout(random.randint(5000, 8000))
+
+            for reel_idx in range(reel_count):
+                watch_time = random.randint(12, 35)
+                logger.info(f"   🎬 Watching Reel #{reel_idx+1} for {watch_time}s...")
+                if account_id:
+                    await self.log_activity(account_id, "video_watch", f"🎬 Watched Reel for {watch_time}s")
+                await asyncio.sleep(watch_time)
+
+                # Like reel (Phase 2+, 25% chance)
+                if phase >= 2 and random.random() < 0.25:
                     try:
-                        next_btn = await page.query_selector('button[aria-label="Next"]')
-                        if next_btn:
-                            swipes = random.randint(1, 3)
-                            logger.info(f"   📸 Carousel detected! Swiping through {swipes} images...")
-                            for _ in range(swipes):
-                                await self._human_click(page, 'button[aria-label="Next"]')
-                                await asyncio.sleep(random.uniform(2, 5))
+                        like_btn = await page.query_selector('svg[aria-label="Like"]')
+                        if like_btn:
+                            await like_btn.click()
+                            logger.info("   ❤️ Liked a Reel")
+                            if account_id:
+                                await self.log_activity(account_id, "like", "❤️ Liked a Reel")
+                            await asyncio.sleep(random.uniform(1, 2))
                     except: pass
 
-            # 🔍 THE "DEEP DIVE": (Reduced 10% chance) - Only click if on screen
-            if random.random() < 0.10:
-                try:
-                    # Select ONLY links that are likely to be real posts in view
-                    deep_view_btn = await page.query_selector('article a[href*="/p/"]')
-                    if deep_view_btn and await deep_view_btn.is_visible():
-                        logger.info(f"   🔍 Taking a deep dive into a post...")
-                        await self._human_click(page, 'article a[href*="/p/"]')
-                        await asyncio.sleep(random.uniform(8, 15))
-                        
-                        # Once inside, scroll a bit
-                        await page.mouse.wheel(0, random.randint(300, 500))
-                        await asyncio.sleep(random.uniform(10, 20))
-                        
-                        # Safe Return
-                        await page.go_back()
-                        await asyncio.sleep(random.uniform(4, 7))
-                except Exception as e:
-                    logger.warning(f"⚠️ Deep Dive failed. No panic, just continuing...")
-                    await asyncio.sleep(random.uniform(5, 10))
+                # Swipe to next reel
+                await self._human_swipe(page, 500, account_id)
+                await asyncio.sleep(random.uniform(1, 3))
+                await clear_popups() 
+        except InstagramChallengeException: raise
+        except Exception as e:
+            logger.warning(f"   ⚠️ Reels session issue: {e}")
 
-            if i > 0 and page.url == "about:blank":
-                logger.warning("🚨 Detected blank page! Cooling down for 20s before recovery...")
-                await asyncio.sleep(random.randint(20, 40)) # Human frustration pause
-                await page.goto("https://www.instagram.com/", wait_until="load")
-                await page.wait_for_timeout(8000)
-
-            # 🏃 THE "READING" PAUSE: 15% chance of a long stare
-            if random.random() < 0.15:
-                stare_time = random.uniform(25, 55) # Extended for DC bypass
-                logger.info(f"   📑 @{account_username} is contemplating a post for {int(stare_time)}s...")
-                await asyncio.sleep(stare_time)
-            elif random.random() < 0.50: # Increased to 50% Reels focus
-                logger.info("   🧭 Attempting to switch to Explore/Reels for high-intensity warming...")
-                try:
-                    # 🚀 PRIORITY: Try clicking the dedicated REELS tab first
-                    reels_tab_selectors = ['a[href="/reels/"]', 'svg[aria-label="Reels"]', 'svg[aria-label="Clips"]', 'div[role="tab"]:has-text("Reels")']
-                    found = False
-                    for selector in reels_tab_selectors:
-                        try:
-                            btn = await page.query_selector(selector)
-                            if btn and await btn.is_visible():
-                                logger.info(f"   🎬 Found Reels Tab ({selector}). Switching...")
-                                await btn.click()
-                                found = True
-                                break
-                        except: continue
-                    
-                    if not found:
-                        # Fallback to Explore Gateway
-                        explore_btn = await page.query_selector('a[href="/explore/"], svg[aria-label="Search"]')
-                        if explore_btn:
-                            logger.info("   🔘 Using Explore as gateway to Reels...")
-                            await explore_btn.click()
-                            found = True
-                    
-                    if not found:
-                        logger.warning("   ⚠️ Navigation buttons hidden. Force-Routing to Reels...")
-                        await page.goto("https://www.instagram.com/reels/", wait_until="load")
-                    
-                    await page.wait_for_timeout(random.randint(6000, 9000))
-                    
-                    # Verify we are there
-                    curr_url = page.url
-                    if "explore" in curr_url or "reels" in curr_url:
-                        logger.info(f"   ✅ Successfully landed on Explore/Reels (URL: {curr_url})")
-                        
-                        # IF ON EXPLORE: We must CLICK a video first to enter the "Player"
-                        if "explore" in curr_url:
-                            logger.info("   🔍 On Explore Grid. Scanning for immersive entry point...")
-                            # Expanded selectors for mobile grid
-                            entry_selectors = [
-                                'a[href*="/reels/"]', 'a[href*="/p/"]', 
-                                'div[role="link"]:has(img)', 'article a',
-                                'main img' # Last resort: just tap a picture!
-                            ]
-                            
-                            found_entry = False
-                            for selector in entry_selectors:
-                                try:
-                                    # Wait briefly for each to be sure it's loaded
-                                    btn = await page.wait_for_selector(selector, timeout=3000)
-                                    if btn and await btn.is_visible():
-                                        logger.info(f"   🎯 Immersive entry found via: {selector}. Tapping...")
-                                        await self._human_click(page, selector)
-                                        found_entry = True
-                                        await page.wait_for_timeout(random.randint(4000, 6000))
-                                        break
-                                except: continue
-                            
-                            if not found_entry:
-                                logger.warning("   ⚠️ Grid seems empty or unclickable. Swiping to force load...")
-                                await page.mouse.wheel(0, 500)
-                                await asyncio.sleep(2)
-                        
-                        # Watch 2-3 Reels/Videos for variety
-                        for reel_idx in range(random.randint(2, 3)):
-                            watch_time = random.randint(15, 35)
-                            logger.info(f"   🎬 Watching content #{reel_idx+1} for {watch_time}s...")
-                            await asyncio.sleep(watch_time)
-                            
-                            # 📱 MOBILE SWIPE: Flicking upward
-                            await self._human_swipe(page, 500)
-                    else:
-                        logger.warning(f"   ❌ Navigation failed. Still at {curr_url}")
-                except Exception as e:
-                    logger.error(f"   ❌ Reels session failed: {e}")
-            else:
-                await asyncio.sleep(random.uniform(12, 22))
-
-            # 3. MISSION PIVOT: 10% chance to jump to Explore/Reels
-            if i == session_intensity // 2 and random.random() < 0.3:
-                logger.info(f"   🧭 Switching to Explore/Reels for variety...")
-                try:
-                    # Use safe _human_click (sets isBotActing flag, no sensor trigger)
-                    clicked = await self._human_click(page, 'a[href="/explore/"]')
-                    if clicked:
-                        await asyncio.sleep(random.uniform(5, 8))
-                        
-                        # 📺 SMART VIDEO WATCH: Wait for the actual video duration
-                        video_duration = await page.evaluate("""() => {
-                            const v = document.querySelector('video');
-                            return v ? v.duration : 0;
-                        }""")
-                        
-                        if video_duration > 0 and video_duration < 90:
-                            if random.random() < 0.30:
-                                skip_time = random.uniform(2, 5)
-                                logger.info(f"   🥱 Not interested. Skipping Reel after {int(skip_time)}s...")
-                                await asyncio.sleep(skip_time)
-                            else:
-                                watch_time = video_duration * random.uniform(0.8, 1.05)
-                                logger.info(f"   🎬 Watching Reel for {int(watch_time)}s...")
-                                await asyncio.sleep(watch_time)
-                        else:
-                            await asyncio.sleep(random.uniform(5, 12))
-                        
-                        # Return to home feed safely
-                        await self._human_click(page, 'a[href="/"]')
-                        await asyncio.sleep(random.uniform(3, 5))
-                except: pass
-
-        # 4. Watch Stories (safe click on story avatar, NOT canvas)
+        # ── ALL PHASES: WATCH STORIES ──
         try:
-            # Target the story container link, not the raw canvas element
+            await clear_popups()
+            await page.goto("https://www.instagram.com/", wait_until="load")
+            await page.wait_for_timeout(4000)
+            await clear_popups()
             story_link = await page.query_selector('div[role="menuitem"] a, a[href*="/stories/"]')
             if story_link and await story_link.is_visible():
-                await page.evaluate("window.isBotActing = true")
                 await story_link.click()
-                await page.evaluate("window.isBotActing = false")
-                num_stories = random.randint(2, 4)
+                num_stories = random.randint(2, 5)
                 logger.info(f"   📺 Watching {num_stories} stories...")
+                if account_id:
+                    await self.log_activity(account_id, "story_watch", f"📺 Viewed {num_stories} stories")
                 for _ in range(num_stories):
-                    await asyncio.sleep(random.uniform(6, 12))
+                    await asyncio.sleep(random.uniform(6, 14))
+                    await clear_popups()
                 await page.keyboard.press("Escape")
                 await asyncio.sleep(random.uniform(2, 4))
+        except InstagramChallengeException: raise
         except: pass
 
-        logger.info(f"✨ Deep Social Session complete for @{account_username}")
+        # ── PHASE 3+: FOLLOW 1-2 USERS (from Explore suggestions) ──
+        if phase >= 3 and random.random() < 0.60:
+            try:
+                await clear_popups()
+                await page.goto("https://www.instagram.com/explore/people/", wait_until="load")
+                await page.wait_for_timeout(4000)
+                await clear_popups()
+
+                follow_btns = await page.query_selector_all('button:has-text("Follow")')
+                follow_count = random.randint(1, 2)
+                followed = 0
+                for btn in follow_btns:
+                    if followed >= follow_count:
+                        break
+                    try:
+                        if await btn.is_visible():
+                            await btn.click()
+                            followed += 1
+                            logger.info(f"   👤 Followed a suggested user (Phase {phase})")
+                            if account_id:
+                                await self.log_activity(account_id, "follow", "👤 Followed a suggested user from Explore")
+                            await asyncio.sleep(random.uniform(8, 18))
+                            await clear_popups()
+                    except InstagramChallengeException: raise
+                    except: pass
+            except InstagramChallengeException: raise
+            except Exception as e:
+                logger.warning(f"   ⚠️ Follow step skipped: {e}")
+
+        # ── PHASE 4: EXPLORE DEEP DIVE ──
+        if phase >= 4 and random.random() < 0.40:
+            try:
+                await page.goto("https://www.instagram.com/explore/", wait_until="load")
+                await page.wait_for_timeout(4000)
+                logger.info("   🔍 Phase 4: Exploring the Explore grid...")
+                if account_id:
+                    await self.log_activity(account_id, "explore", "🔍 Browsed the Explore grid")
+                for _ in range(random.randint(3, 5)):
+                    await page.mouse.wheel(0, random.randint(300, 600))
+                    await asyncio.sleep(random.uniform(4, 8))
+            except: pass
+
+        # ── RETURN HOME & EXIT ──
+        try:
+            await page.goto("https://www.instagram.com/", wait_until="load")
+            await page.wait_for_timeout(2000)
+        except: pass
+
+        logger.info(f"✨ Warmup session complete for @{account_username} (Phase {phase})")
+        if account_id:
+            await self.log_activity(account_id, "session_end", f"✨ Session complete — Phase {phase} ({phase_name})")
         await self._human_session_exit(page)
+
 
 
     async def _human_session_exit(self, page):
@@ -1081,24 +1162,11 @@ class InstagramWarmingService:
                     await page.wait_for_timeout(random.randint(2000, 4000))
             except: pass
 
-        # Handle "Suspicious Login Attempt" / "Confirm it's you"
-        try:
-            confirm_btn = await page.query_selector('button:has-text("This was me"), button:has-text("It was me"), button:has-text("Confirm")')
-            if confirm_btn and await confirm_btn.is_visible():
-                logger.info(f"🛡️ Security checkpoint detected! Clicking confirmation for @{account_data['username']}...")
-                await confirm_btn.click()
-                await page.wait_for_timeout(4000)
-        except: pass
+        # 🚨 FINAL RECOVERY/CHALLENGE CHECK (The 36h Freeze Protocol)
+        if await self._check_for_challenge(page, account_data):
+            raise Exception(f"🚨 CHALLENGE DETECTED: Aborting login for @{account_data['username']} and freezing for 36h.")
 
-        # Handle "Confirm you're human" / "Continue" to Captcha
-        try:
-            continue_btn = await page.query_selector('button:has-text("Continue"), span:has-text("Continue")')
-            page_text = await page.evaluate("() => document.body.innerText")
-            if continue_btn and await continue_btn.is_visible() and ("human" in page_text.lower() or "bot" in page_text.lower()):
-                logger.warning(f"⚠️ Captcha/Human Checkpoint seen for @{account_data['username']}! Clicking continue...")
-                await continue_btn.click()
-                await page.wait_for_timeout(4000)
-        except: pass
+        logger.info(f"✅ Login Sequence Complete for @{account_data['username']}")
 
     async def _ghost_search_and_navigate(self, page, username):
         """Shared helper: Use the search bar to navigate to a profile (Ghost-Human Mobile-Aware)."""
@@ -1147,7 +1215,7 @@ class InstagramWarmingService:
 
         # 2. ALWAYS Social Warmup first
         try:
-            await self._perform_social_warmup(page, account_data['username'])
+            await self._perform_social_warmup(page, account_data['username'], account_data['id'])
             
             # ✅ UPDATE: Mark seasoning day as successful
             await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
@@ -1287,11 +1355,20 @@ class InstagramWarmingService:
         # 📌 REGISTER ACTIVE PAGE for Smart Pause/Resume
         self.active_pages[account_data['username']] = page
         
-        # 2. Perform high-intensity social routine
-        await self._perform_social_warmup(page, account_data['username'])
+        # 2. Perform phased social warmup routine
+        await self._perform_social_warmup(page, account_data['username'], account_data['id'])
         
-        # 3. Increment seasoning progress
-        await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
+        # 3. ✅ LOCK FOR 24H: Increment session count AND usage count so it's locked
+        await db.execute("""
+            UPDATE instagram_warming_accounts 
+            SET warming_session_count = warming_session_count + 1,
+                daily_usage_count = 1,
+                last_usage_reset = NOW(),
+                updated_at = NOW() 
+            WHERE id = $1
+        """, account_data['id'])
+        
+        logger.info(f"🔒 @{account_data['username']} locked for 24h. Session complete.")
         
         # 🧹 Cleanup
         self.active_pages.pop(account_data['username'], None)
@@ -1302,8 +1379,20 @@ class InstagramWarmingService:
         account = await db.fetchrow("SELECT * FROM instagram_warming_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
         if not account: return {"error": "Account not found"}
         
+        # 🔒 24H LOCK CHECK: Don't run if already done today
+        if (account['daily_usage_count'] or 0) >= 1:
+            from datetime import datetime, timezone, timedelta
+            reset_at = account['last_usage_reset']
+            if reset_at:
+                unlock_at = reset_at.replace(tzinfo=timezone.utc) + timedelta(hours=24)
+                remaining = unlock_at - datetime.now(timezone.utc)
+                h = int(remaining.total_seconds() // 3600)
+                m = int((remaining.total_seconds() % 3600) // 60)
+                if remaining.total_seconds() > 0:
+                    return {"error": f"🔒 Account @{account['username']} already warmed today. Unlocks in {h}h {m}m."}
+        
         account_data = dict(account)
-        # Fetch proxy if exists (Safely map names to avoid overwrite)
+        # Fetch proxy if exists
         proxy = await db.fetchrow("SELECT * FROM instagram_warming_proxies WHERE id = $1", account['proxy_id'])
         if proxy:
             account_data['proxy_host'] = proxy['host']
@@ -1373,7 +1462,7 @@ class InstagramWarmingService:
 
         # 2. ALWAYS Social Warmup first
         try:
-            await self._perform_social_warmup(page, account_data['username'])
+            await self._perform_social_warmup(page, account_data['username'], account_data['id'])
 
             # ✅ UPDATE: Mark seasoning day as successful
             await db.execute("UPDATE instagram_warming_accounts SET warming_session_count = warming_session_count + 1, updated_at = NOW() WHERE id = $1", account_data['id'])
