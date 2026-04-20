@@ -297,7 +297,7 @@ export interface InstagramWarmingAccount {
   id: number;
   user_id: number;
   username: string;
-  status: 'active' | 'banned' | 'error' | 'pending';
+  status: 'active' | 'banned' | 'error' | 'pending' | 'frozen';
   proxy_id?: number;
   proxy_host?: string;
   warming_session_count?: number;
