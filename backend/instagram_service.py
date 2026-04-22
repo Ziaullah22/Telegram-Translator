@@ -509,81 +509,47 @@ class InstagramService:
                 WHERE a.id = $1 AND a.status = 'active' LIMIT 1
             """, assigned['assigned_account_id'])
 
-        used_account_ids = []
+        # 🚀 DIRECT ANONYMOUS SURGE: No Ghost Account required for InstaCognito!
+        logger.info(f"🛰️ Launching Direct Anonymous Surge for @{username} via InstaCognito...")
+        
         harvest_success = False
         count = 0
         
-        # If no assigned account (or it's banned), pick a new one from the pool
-        for ghost_attempt in range(3):
-            if not account:
-                # Pick the least-recently-used active account not already tried
-                id_exclusion = f"AND a.id NOT IN ({','.join(map(str, used_account_ids))})" if used_account_ids else ""
-                account = await db.fetchrow(f"""
-                    SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
-                    FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
-                    WHERE a.user_id = $1 AND a.status = 'active' {id_exclusion}
-                    ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
-                """, user_id)
-            
-            if not account:
-                logger.error("🛑 Ghost Pool Exhausted: No more active accounts to try.")
-                break
+        try:
+            # 🚀 DIRECT CONNECTION: No Proxy, using local IP for maximum stability
+            proxy_data = None 
 
-            sender = account['username']
-            used_account_ids.append(account['id'])
+            # 🚀 DEPLOY ANONYMOUS BROWSER
+            result = await browser_engine.run_anonymous_session(
+                username,
+                self._perform_easycomment_harvest,
+                is_desktop=False,
+                proxy=proxy_data
+            )
 
-            try:
-                # ── SAFETY CHECK: 24h LOCK & 36h FREEZE & MATURATION ──
-                if await self._check_usage_limit(account['id']):
-                    logger.warning(f"⏳ Account @{sender} is currently locked. Skipping...")
-                    account = None
-                    continue
-                if account.get('frozen_until') and account['frozen_until'] > datetime.now(account['frozen_until'].tzinfo):
-                    logger.warning(f"❄️ Account @{sender} is FROZEN. Skipping...")
-                    account = None
-                    continue
-                if not self._check_maturation(account.get('warming_session_count', 0), 1):
-                    logger.warning(f"🛡️ Account @{sender} is not eligible for Harvesting. Skipping...")
-                    account = None
-                    continue
-
-                logger.info(f"🛰️ Switching to InstaCognito for @{username} (Temporary Mode)...")
-
-                # 🚀 DEPLOY ANONYMOUS BROWSER (No Login)
-                result = await browser_engine.run_anonymous_session(
-                    username,
-                    self._perform_easycomment_harvest,
-                    is_desktop=False
-                )
-
-                if result and result.get('success'):
-                    # Save results like normal
-                    for f_user in result['usernames']:
-                        try:
-                            await db.execute("""
-                                INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
-                                VALUES ($1, $2, $3, 'network_expansion', 'discovered') 
-                                ON CONFLICT (user_id, instagram_username) DO UPDATE SET
-                                    status = 'discovered', updated_at = NOW()
-                            """, user_id, f_user, f"follower_of_{username}")
-                            count += 1
-                        except: continue
-                    
+            if result and result.get('success'):
+                # Save results
+                for f_user in result.get('usernames', []):
+                    try:
+                        await db.execute("""
+                            INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
+                            VALUES ($1, $2, $3, 'network_expansion', 'discovered') 
+                            ON CONFLICT (user_id, instagram_username) DO UPDATE SET
+                                status = 'discovered', updated_at = NOW()
+                        """, user_id, f_user, f"follower_of_{username}")
+                        count += 1
+                    except: continue
+                
+                if count > 0:
                     harvest_success = True
-                    logger.info(f"✅ EasyComment Surge Complete for @{username}! {count} leads added.")
-                    break
+                    logger.info(f"✅ InstaCognito Surge Complete for @{username}! {count} leads added.")
                 else:
-                    raise Exception("EasyComment returned no data")
+                    logger.warning(f"⚠️ InstaCognito returned no usernames for @{username}.")
+            else:
+                logger.error(f"❌ InstaCognito session failed for @{username}")
 
-            except InstagramChallengeException as ce:
-                logger.error(f"❄️ CHALLENGE DETECTED: Freezing @{sender} for 36h.")
-                await self._freeze_account(account['id'])
-                account = None
-                continue
-            except Exception as e:
-                logger.error(f"❌ Harvest Phase failed for @{sender}: {e}")
-                account = None
-                continue
+        except Exception as e:
+            logger.error(f"❌ Harvest Surge failed: {e}")
 
         # 🕵️ If ALL ghost accounts failed, try Ghost-less fallback
         if not harvest_success:
@@ -617,10 +583,18 @@ class InstagramService:
         # 🔓 RELEASE LOCK + FINAL UI SYNC
         self._harvest_tasks.pop(user_id, None)
         try:
-            # If lead was originally REJECTED, keep it rejected (Force Scrape mode)
-            # Otherwise upgrade to 'harvested' to signal completion
+            # 🛡️ INTEGRITY CHECK: Only mark as 'harvested' if we actually found something
             final_status = original_status if original_status == 'rejected' else 'harvested'
-            await db.execute("UPDATE instagram_leads SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", final_status, lead_id, user_id)
+            
+            if harvest_success and count > 0:
+                await db.execute("UPDATE instagram_leads SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", final_status, lead_id, user_id)
+                logger.info(f"🛰️ Mission Successful: Lead {lead_id} marked as '{final_status}'")
+            else:
+                final_status = original_status # Revert to original
+                logger.warning(f"⚠️ Mission Incomplete: Lead {lead_id} remains as '{original_status}' (No data found).")
+                # Clear the processing/queued status so it can be retried
+                await db.execute("UPDATE instagram_leads SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", original_status, lead_id, user_id)
+            
             await manager.send_personal_message({"type": "instagram_lead_updated", "lead_id": lead_id, "status": final_status}, user_id)
             logger.info(f"🛰️ Signal Sent: Lead {lead_id} marked as '{final_status}' for user {user_id}")
             
@@ -1853,15 +1827,22 @@ class InstagramService:
         """Anonymous harvest via InstaCognito."""
         target_username = account_data['target_username']
         url = "https://instacognito.com/en/followed"
-        logger.info(f"🛰️ Navigating to {url} (MOBILE VIEW)...")
+        logger.info(f"🛰️ Navigating to {url} (High-Stealth Mobile)...")
         
         try:
-            # Switch to 'domcontentloaded' as InstaCognito has many tracking connections
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(5000) 
+            # 1. Direct Navigation with Retry
+            await page.goto(url, wait_until="networkidle", timeout=60000)
+            await page.wait_for_timeout(3000) 
 
-            # 1. Handle Security Check (I am human) if it appears
-            logger.info("🛡️ Checking for security boxes...")
+            # 🚨 BLANK PAGE WATCHDOG: If page is empty, force a reload
+            body_len = await page.evaluate("() => document.body.innerText.length")
+            if body_len < 100:
+                logger.warning("⚠️ Detected possible blank page. Attempting forced reload...")
+                await page.reload(wait_until="networkidle")
+                await page.wait_for_timeout(4000)
+
+            # 2. Handle Security Check (I am human) if it appears
+            logger.info("🛡️ Checking for security boxes/popups...")
             captcha_selectors = [
                 'iframe[title*="hCaptcha"]', 'iframe[title*="reCAPTCHA"]', 
                 '.h-captcha', '.g-recaptcha', 'div:has-text("I am human")',

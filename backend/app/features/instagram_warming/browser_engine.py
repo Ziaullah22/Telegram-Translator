@@ -200,14 +200,24 @@ class InstagramBrowserEngine:
             finally:
                 await browser.close()
 
-    async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False):
+    async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False, proxy: dict = None):
         """
         Launches a headful browser to visit Instagram ANONYMOUSLY (No Login).
         """
         async with async_playwright() as p:
-            # 1. Launch Browser
+            # 1. Setup Proxy
+            playwright_proxy = None
+            if proxy and proxy.get('host'):
+                playwright_proxy = {
+                    "server": f"http://{proxy['host']}:{proxy['port']}",
+                    "username": proxy.get('p_user'),
+                    "password": proxy.get('p_pass'),
+                }
+
+            # 2. Launch Browser
             browser = await p.chromium.launch(
                 headless=False,
+                proxy=playwright_proxy,
                 args=[
                     '--start-maximized', 
                     '--disable-blink-features=AutomationControlled',
