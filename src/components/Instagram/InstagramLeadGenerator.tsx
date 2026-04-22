@@ -58,6 +58,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [analyzingId, setAnalyzingId] = useState<number | null>(null);
     const [harvestingId, setHarvestingId] = useState<number | null>(null);
+    const [statusUpdates, setStatusUpdates] = useState<Record<number, string>>({});
     const [autoAnalyzingId, setAutoAnalyzingId] = useState<number | null>(null);
     const [isAutoPilotRunning, setIsAutoPilotRunning] = useState(false);
     const [restTimer, setRestTimer] = useState<number | null>(null);
@@ -139,6 +140,9 @@ const InstagramLeadGenerator: React.FC = () => {
                 setNotification({ msg: message.message, type: 'alert' });
             } else if (message.type === 'instagram_lead_updated' || message.type === 'new_lead_discovered') {
                 // 🛰️ INSTANT SYNC: Leads pop into the table the millisecond they are found!
+                if (message.current_action) {
+                    setStatusUpdates(prev => ({ ...prev, [message.lead_id]: message.current_action }));
+                }
                 fetchData();
                 // If the updated lead is the one we are harvesting, clear the stuck state
                 if (message.type === 'instagram_lead_updated') {
@@ -1333,9 +1337,10 @@ const InstagramLeadGenerator: React.FC = () => {
 
                 return (
                     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
-                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300">
-                            <div className="p-8">
-                                <div className="flex items-center justify-between mb-8">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                            {/* Sticky Header */}
+                            <div className="p-8 pb-4 shrink-0">
+                                <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-4">
                                         <div className="p-3 bg-indigo-500/10 rounded-2xl">
                                             <Brain className="w-6 h-6 text-indigo-500" />
@@ -1349,97 +1354,100 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <X className="w-6 h-6 text-gray-400" />
                                     </button>
                                 </div>
+                            </div>
 
-                                <div className="space-y-6">
-                                    {/* Gemma Analysis */}
-                                    {(!ai || Object.keys(ai).length === 0) ? (
-                                        <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
-                                            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <Sparkles className="w-4 h-4 text-indigo-500" />
-                                                    <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
-                                                </div>
-                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
-                                                    "{ai.strategy || 'No strategic summary available.'}"
-                                                </p>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
-                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Detected Niche</span>
-                                                        <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">{ai.niche || 'General'}</span>
-                                                    </div>
-                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
-                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Intent Score</span>
-                                                        <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {ai.suggested_hook && (
-                                                <div className="p-6 bg-pink-500/5 rounded-3xl border border-pink-500/10">
-                                                    <div className="flex items-center justify-between mb-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <Zap className="w-4 h-4 text-pink-500" />
-                                                            <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">AI Cold Hook</h3>
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => {
-                                                                navigator.clipboard.writeText(ai.suggested_hook);
-                                                                setNotification({ msg: '📋 Hook copied!', type: 'success' });
-                                                            }}
-                                                            className="text-[9px] font-black text-pink-500 uppercase hover:underline"
-                                                        >
-                                                            Copy Hook
-                                                        </button>
-                                                    </div>
-                                                    <p className="text-sm font-black text-gray-900 dark:text-white tracking-tight">
-                                                        "{ai.suggested_hook}"
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* LLaVA Visual Audit */}
-                                    <div className="p-6 bg-slate-50 dark:bg-black/20 rounded-3xl border border-slate-200 dark:border-white/10">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <Eye className={`w-4 h-4 ${liveLead.rejection_reason ? (liveLead.status === 'rejected' ? 'text-red-500' : 'text-emerald-500') : 'text-gray-400'}`} />
-                                                <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">
-                                                    {liveLead.status === 'rejected' ? 'Vision Rejection Logic' : 'Vision Qualification Reason'}
-                                                </h3>
-                                            </div>
-                                            {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) ? (
-                                                <div className="flex items-center gap-1">
-                                                    <Loader2 className="w-2.5 h-2.5 text-blue-500 animate-spin" />
-                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-blue-500/10 text-blue-500">
-                                                        Deep Scan Active...
-                                                    </span>
-                                                </div>
-                                            ) : liveLead.rejection_reason ? (
-                                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${liveLead.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
-                                                    {liveLead.status === 'rejected' ? 'Rejected' : 'Qualified'}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-gray-100 dark:bg-white/5 text-gray-400">
-                                                    Pending Scan
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className={`text-sm font-medium leading-relaxed italic border-l-4 border-blue-500/20 pl-4 py-1 ${liveLead.rejection_reason ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}>
-                                            {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) 
-                                                ? "Gemma 4 is scanning photos and analyzing intent. Please wait..." 
-                                                : (liveLead.rejection_reason || "No visual audit data available. This lead was analyzed before AI Vision was enabled or the target niche was empty.")
-                                            }
-                                        </p>
+                            {/* Scrollable Content */}
+                            <div className="px-8 flex-1 overflow-y-auto space-y-6 pb-2 scrollbar-hide">
+                                {/* Gemma Analysis */}
+                                {(!ai || Object.keys(ai).length === 0) ? (
+                                    <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
+                                        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <Sparkles className="w-4 h-4 text-indigo-500" />
+                                                <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
+                                            </div>
+                                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
+                                                "{ai.strategy || 'No strategic summary available.'}"
+                                            </p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                    <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Detected Niche</span>
+                                                    <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">{ai.niche || 'General'}</span>
+                                                </div>
+                                                <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                    <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Intent Score</span>
+                                                    <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                                <button onClick={() => setShowAuditModal(false)} className="w-full mt-8 py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
+                                        {ai.suggested_hook && (
+                                            <div className="p-6 bg-pink-500/5 rounded-3xl border border-pink-500/10">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <Zap className="w-4 h-4 text-pink-500" />
+                                                        <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">AI Cold Hook</h3>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(ai.suggested_hook);
+                                                            setNotification({ msg: '📋 Hook copied!', type: 'success' });
+                                                        }}
+                                                        className="text-[9px] font-black text-pink-500 uppercase hover:underline"
+                                                    >
+                                                        Copy Hook
+                                                    </button>
+                                                </div>
+                                                <p className="text-sm font-black text-gray-900 dark:text-white tracking-tight">
+                                                    "{ai.suggested_hook}"
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Gemma 4 Vision Audit */}
+                                <div className="p-6 bg-slate-50 dark:bg-black/20 rounded-3xl border border-slate-200 dark:border-white/10">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <Eye className={`w-4 h-4 ${liveLead.rejection_reason ? (liveLead.status === 'rejected' ? 'text-red-500' : 'text-emerald-500') : 'text-gray-400'}`} />
+                                            <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">
+                                                {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <Loader2 className="w-2.5 h-2.5 text-blue-500 animate-spin" />
+                                                        <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-blue-500/10 text-blue-500">
+                                                            {statusUpdates[liveLead.id] || "Deep Scan Active..."}
+                                                        </span>
+                                                    </div>
+                                                ) : liveLead.rejection_reason ? (
+                                                    <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${liveLead.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                                                        {liveLead.status === 'rejected' ? 'Rejected' : 'Qualified'}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-gray-100 dark:bg-white/5 text-gray-400">
+                                                        Pending Scan
+                                                    </span>
+                                                )}
+                                            </h3>
+                                        </div>
+                                    </div>
+                                    <p className={`text-sm font-medium leading-relaxed italic border-l-4 border-blue-500/20 pl-4 py-1 ${liveLead.rejection_reason ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}>
+                                        {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) 
+                                            ? (statusUpdates[liveLead.id] || "Gemma 4 is scanning photos and analyzing intent. Please wait...") 
+                                            : (liveLead.rejection_reason || "No visual audit data available. This lead was analyzed before AI Vision was enabled or the target niche was empty.")
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="p-8 pt-4 shrink-0 bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-white/5">
+                                <button onClick={() => setShowAuditModal(false)} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
                                     Close Audit
                                 </button>
                             </div>

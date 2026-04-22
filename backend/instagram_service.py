@@ -140,6 +140,16 @@ class InstagramService:
         """Internal worker to analyze profile data and update lead status."""
         logger.info(f"📊 Analyzing @Lead {lead_id} (Followers: {followers}, Following: {following}), Bio: '{bio[:30]}...', Private: {is_private})")
         
+        async def update_ui(action: str):
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": "analyzing",
+                    "current_action": action
+                }, user_id)
+            except: pass
+
         ai_analysis = {}
         score = 0
         
@@ -188,25 +198,57 @@ class InstagramService:
         if settings['min_followers'] > 0 and followers < settings['min_followers']: is_qualified = False
         if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']: is_qualified = False
             
-        # 2. Bio Keyword Match
-        if is_qualified and not self._check_bio_keywords(bio, settings['bio_keywords']):
-            is_qualified = False
-
-        # 3. Picture Visual Match (AI Vision + Hashing Fallback)
+        # 2. Picture Visual Match (AI Vision + Hashing Fallback)
         visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
         
+        # 🧠 DEEP AI ANALYSIS (Gemma Powered) - Moved up to be the PRIMARY judge
+        await update_ui("Gemma 4: Analyzing Bio & Intent...")
+        logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
+        ai_result = await instagram_ai.analyze_lead_deep({
+            "username": full_name,
+            "bio": bio,
+            "followers": followers
+        })
+        
+        if ai_result and "error" not in ai_result:
+            ai_analysis.update(ai_result)
+            score = ai_result.get("intent_score", 0)
+            if ai_result.get("quality") == "high":
+                score = max(score, 90)
+            logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+        else:
+            logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
+
+        # ⚖️ THE DECISION ENGINE: Use AI Score + Keywords
+        is_qualified = True
+        
+        # 1. AI Score Filter (Must be > 70 if we have a score)
+        if score > 0 and score < 70:
+            logger.info(f"❌ AI Rejected lead: Intent Score {score}% is too low.")
+            is_qualified = False
+            
+        # 2. Bio Keyword Match (Acts as a secondary booster or filter)
+        # If score is high (90+), we ignore keywords. Otherwise, we check them.
+        if is_qualified and score < 90 and not self._check_bio_keywords(bio, settings['bio_keywords']):
+            logger.info("❌ Keyword Filter rejected lead: No matching keywords found in bio.")
+            is_qualified = False
+
+        # 3. Visual Match Filter (Only if enabled)
         if is_qualified and (visual_niche or target_hashes):
             if not recent_posts:
-                logger.info("❌ Visual Scanner rejected lead: Lead has NO photos to scan.")
+                reason = "Visual Scanner rejected lead: Lead has NO photos to scan."
+                logger.info(f"❌ {reason}")
                 is_qualified = False
+                ai_analysis['vision_reason'] = reason
             else:
                 image_matched = False
                 # Try AI Vision FIRST if niche is described
                 if visual_niche:
+                    await update_ui(f"AI Vision: Scanning for '{visual_niche}'...")
                     logger.info(f"👁️ AI VISION ACTIVE: Checking photos for '{visual_niche}'...")
                     async with httpx.AsyncClient(timeout=20.0) as client:
-                        for post in recent_posts[:2]: # Check first 2 posts for speed
+                        for post in recent_posts[:2]:
                             try:
                                 res = await client.get(post['display_url'])
                                 if res.status_code == 200:
@@ -261,30 +303,6 @@ class InstagramService:
 
         new_status = 'qualified' if is_qualified else 'rejected'
         
-        # 🧠 DEEP AI ANALYSIS (Gemma Powered)
-        # Run AI analysis for EVERY lead we have data for, so user can see niche/score even for rejected ones
-        if bio or followers > 0:
-            logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
-            ai_result = await instagram_ai.analyze_lead_deep({
-                "username": full_name,
-                "bio": bio,
-                "followers": followers
-            })
-            
-            logger.info(f"📡 [Gemma 4] Raw Response: {ai_result}")
-
-            if ai_result and "error" not in ai_result:
-                # Merge existing data (like vision_reason) with AI results
-                ai_analysis.update(ai_result)
-                # Update score and quality if AI provides it
-                score = ai_result.get("intent_score", 0)
-                if ai_result.get("quality") == "high":
-                    score = max(score, 90)
-                
-                logger.info(f"✨ [Gemma 4] Success! Score: {score}, Niche: {ai_result.get('niche')}")
-            else:
-                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
-        
         # 🏎️ SAVE EVERYTHING: Full Name, Bio, Followers, Posts, and AI Data
         posts_json = json.dumps(recent_posts or [])
         ai_data_json = json.dumps(ai_analysis)
@@ -305,7 +323,8 @@ class InstagramService:
             await manager.send_personal_message({
                 "type": "instagram_lead_updated",
                 "lead_id": lead_id,
-                "status": new_status
+                "status": new_status,
+                "current_action": "Analysis Complete"
             }, user_id)
         except: pass
         
