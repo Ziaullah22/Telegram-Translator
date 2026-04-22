@@ -34,7 +34,12 @@ class InstagramBrowserEngine:
                     '--start-maximized',
                     '--disable-blink-features=AutomationControlled',
                     '--use-fake-ui-for-media-stream',
-                    '--use-fake-device-for-media-stream'
+                    '--use-fake-device-for-media-stream',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--no-sandbox',
+                    '--disable-extensions',
+                    '--window-state=minimized'
                 ]
             )
 
@@ -192,6 +197,50 @@ class InstagramBrowserEngine:
                 await context.storage_state(path=storage_path)
                 logger.info(f"💾 Memory Saved: Session cookies updated for @{account_data['username']}")
                 return result
+            finally:
+                await browser.close()
+
+    async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False):
+        """
+        Launches a headful browser to visit Instagram ANONYMOUSLY (No Login).
+        """
+        async with async_playwright() as p:
+            # 1. Launch Browser
+            browser = await p.chromium.launch(
+                headless=False,
+                args=[
+                    '--start-maximized', 
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--no-sandbox',
+                    '--disable-extensions',
+                    '--window-state=minimized'
+                ]
+            )
+
+            # 2. Context based on device type
+            if is_desktop:
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    viewport={'width': 1920, 'height': 1080}
+                )
+            else:
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                    viewport={'width': 393, 'height': 852},
+                    is_mobile=True,
+                    has_touch=True
+                )
+
+            page = await context.new_page()
+            
+            try:
+                result = await action_func(page, {'target_username': target_username})
+                return result
+            except Exception as e:
+                logger.error(f"Anonymous session error: {e}")
+                return {"success": False}
             finally:
                 await browser.close()
 

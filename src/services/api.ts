@@ -607,7 +607,7 @@ export const analyticsAPI = {
   getAdminAccountRanking: async (limit: number = 20) => {
     const response = await api.get('/analytics/admin/ranking/accounts', { params: { limit } });
     return response.data;
-  }
+  },
 };
 
 // --- CAMPAIGN SERVICES ---
@@ -936,6 +936,38 @@ export const instagramAPI = {
 
   generateImageHash: async (imageBase64: string): Promise<{ hash: string }> => {
     const response = await api.post('/instagram/filters/generate-hash', { image_base64: imageBase64 });
+    return response.data;
+  },
+
+  bulkAddAccounts: async (accountsString: string, proxyId?: string) => {
+    const response = await api.post('/instagram/bulk-accounts', {
+      accounts_string: accountsString,
+      proxy_id: proxyId ? parseInt(proxyId) : null
+    });
+    return response.data;
+  },
+
+  bulkUploadAccounts: async (file: File, proxyId?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/instagram/bulk-accounts-file', formData, {
+      params: proxyId ? { proxy_id: proxyId } : {},
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+
+  bulkAddProxies: async (proxyString: string) => {
+    const response = await api.post('/instagram/bulk-proxies', { proxy_string: proxyString });
+    return response.data;
+  },
+
+  bulkUploadProxies: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/instagram/bulk-proxies-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
     return response.data;
   }
 };

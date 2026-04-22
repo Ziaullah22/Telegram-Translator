@@ -627,6 +627,7 @@ async def delete_account(
     account_id: int,
     current_user = Depends(get_current_user),
 ):
+    # Ownership and existence check
     account = await db.fetchrow(
         "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
         account_id,
@@ -639,43 +640,111 @@ async def delete_account(
             detail="Account not found",
         )
 
-    # Get account info for session file deletion before we delete from DB
+    # 1. Fetch all media filenames + conversation IDs before cascade delete wipes them
+    media_records = []
+    conversation_ids = []
+    try:
+        rows = await db.fetch(
+            """
+            SELECT m.media_file_name, m.media_thumbnail, c.id as conversation_id
+            FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE c.telegram_account_id = $1
+              AND (m.media_file_name IS NOT NULL OR m.media_thumbnail IS NOT NULL)
+            """,
+            account_id
+        )
+        media_records = rows
+        conv_rows = await db.fetch(
+            "SELECT id FROM conversations WHERE telegram_account_id = $1",
+            account_id
+        )
+        conversation_ids = [r['id'] for r in conv_rows]
+    except Exception as e:
+        logger.warning(f"Could not fetch media records for account {account_id} cleanup: {e}")
+
+    # 2. Prepare session file path
     account_name = account['account_name']
     user_id = account['user_id']
     session_file = f"sessions/{user_id}_{account_name}.session"
 
-    await telethon_service.disconnect_session(account_id)
+    # 3. Disconnect active Telethon session first
+    try:
+        await telethon_service.disconnect_session(account_id)
+    except Exception as e:
+        logger.warning(f"Could not disconnect session for account {account_id}: {e}")
 
-    # Delete Telegram account from database
+    # 4. Delete from database — ON DELETE CASCADE handles conversations, messages, etc.
     await db.execute(
         "DELETE FROM telegram_accounts WHERE id = $1 AND user_id = $2",
         account_id,
         current_user.user_id,
     )
 
-    # Clean up session file from disk
+    # 5. Wipe .session files from disk
     try:
         if os.path.exists(session_file):
             os.remove(session_file)
-            # Also clean up journal files if any
-            for suffix in ['-journal', '-wal', '-shm']:
-                if os.path.exists(session_file + suffix):
-                    os.remove(session_file + suffix)
+            logger.info(f"Deleted session file: {session_file}")
+        for suffix in ['-journal', '-wal', '-shm']:
+            variant = session_file + suffix
+            if os.path.exists(variant):
+                os.remove(variant)
     except Exception as e:
-        logger.warning(f"Could not delete session file {session_file}: {e}")
+        logger.warning(f"Could not delete session files for {session_file}: {e}")
 
-    await manager.send_to_account(
-        {
-            "type": "account_deleted",
-            "account_id": account_id
-        },
-        account_id,
-        current_user.user_id,
+    # 6. Wipe media files from backend/media/files/
+    deleted_files_count = 0
+    media_base_dir = os.path.join(os.getcwd(), "backend", "media", "files")
+    for record in media_records:
+        for col in ['media_file_name', 'media_thumbnail']:
+            filename = record.get(col)
+            if not filename:
+                continue
+            # Strip leading slashes/media prefix if stored as path
+            filename = filename.lstrip('/')
+            if filename.startswith('media/files/'):
+                filename = filename[len('media/files/'):]
+            elif filename.startswith('media/'):
+                filename = filename[len('media/'):]
+            abs_path = os.path.join(media_base_dir, filename)
+            try:
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+                    deleted_files_count += 1
+                    logger.debug(f"Deleted media file: {abs_path}")
+            except Exception as e:
+                logger.debug(f"Media file cleanup skipped for {abs_path}: {e}")
+
+    # 7. Wipe temp/downloads for each conversation
+    for conv_id in conversation_ids:
+        dl_dir = os.path.join(os.getcwd(), "backend", "temp", "downloads", str(conv_id))
+        try:
+            if os.path.exists(dl_dir):
+                shutil.rmtree(dl_dir)
+                logger.debug(f"Deleted temp downloads dir: {dl_dir}")
+        except Exception as e:
+            logger.debug(f"Temp dir cleanup skipped for {dl_dir}: {e}")
+
+    # 8. Broadcast deletion to frontend clients
+    try:
+        await manager.send_to_account(
+            {
+                "type": "account_deleted",
+                "account_id": account_id
+            },
+            account_id,
+            current_user.user_id,
+        )
+    except Exception:
+        pass  # Session already disconnected, broadcast failure is acceptable
+
+    logger.info(
+        f"Telegram account PURGED: {account['account_name']} (id={account_id}) "
+        f"for user {current_user.user_id}. {deleted_files_count} media files removed."
     )
 
-    logger.info(f"Telegram account deleted: {account['account_name']} for user {current_user.user_id}")
-
-    return {"message": "Account deleted successfully"}
+    return {"message": "Account and all associated data fully removed"}
 
 
 # Retrieve an aggregated list of all synchronized conversations (peers) for an account

@@ -51,7 +51,7 @@ const InstagramWarmingDashboard: React.FC = () => {
     const date = new Date(dateStr);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
+
     if (diffInSeconds < 0) return 'just now'; // Safety for clock drift
     if (diffInSeconds < 60) return 'seconds ago';
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
@@ -65,7 +65,7 @@ const InstagramWarmingDashboard: React.FC = () => {
     if (count >= 30) return { text: '👑 Seasoned', color: 'text-yellow-500', bg: 'bg-yellow-500' };
     if (count >= 21) return { text: '⚔️ Mature', color: 'text-green-500', bg: 'bg-green-500' };
     if (count >= 14) return { text: '⚔️ Operative', color: 'text-blue-500', bg: 'bg-blue-500' };
-    if (count >= 7)  return { text: '🧪 Socialite', color: 'text-purple-500', bg: 'bg-purple-500' };
+    if (count >= 7) return { text: '🧪 Socialite', color: 'text-purple-500', bg: 'bg-purple-500' };
     return { text: '🛡️ Incubation', color: 'text-orange-500', bg: 'bg-gradient-to-r from-orange-400 to-orange-600' };
   };
 
@@ -157,7 +157,7 @@ const InstagramWarmingDashboard: React.FC = () => {
     if (activeTab === 'accounts') {
       pollInterval = setInterval(() => {
         // Shorter, silent fetch for accounts
-        instagramWarmingAPI.getAccounts().then(setAccounts).catch(() => {});
+        instagramWarmingAPI.getAccounts().then(setAccounts).catch(() => { });
       }, 10000);
     }
 
@@ -436,11 +436,10 @@ const InstagramWarmingDashboard: React.FC = () => {
               {isAutoPilotRunning ? 'Engine Auto-Pilot: ON' : 'Engine Auto-Pilot: OFF'}
             </button>
             {remainingNap > 0 && (
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm shadow-lg animate-in fade-in zoom-in duration-300 ${
-                remainingNap > 3600
-                  ? 'bg-indigo-600 text-white shadow-indigo-500/30'
-                  : 'bg-amber-500 text-white shadow-amber-500/30'
-              }`}>
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm shadow-lg animate-in fade-in zoom-in duration-300 ${remainingNap > 3600
+                ? 'bg-indigo-600 text-white shadow-indigo-500/30'
+                : 'bg-amber-500 text-white shadow-amber-500/30'
+                }`}>
                 <Clock className="w-4 h-4 animate-pulse" />
                 <div className="flex flex-col leading-tight">
                   <span className="text-[9px] uppercase tracking-widest opacity-80">
@@ -530,7 +529,7 @@ const InstagramWarmingDashboard: React.FC = () => {
             {accounts.length === 0 ? (
               <div className="bg-white dark:bg-[#1e293b] rounded-[32px] border border-gray-100 dark:border-white/5 py-24 text-center">
                 <div className="w-16 h-16 bg-gray-50 dark:bg-black/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-dashed border-gray-200 dark:border-white/10">
-                   <Ghost className="w-8 h-8 text-gray-300 dark:text-gray-600" />
+                  <Ghost className="w-8 h-8 text-gray-300 dark:text-gray-600" />
                 </div>
                 <p className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Ghost Fleet Offline. Deploy units to begin.</p>
               </div>
@@ -553,9 +552,8 @@ const InstagramWarmingDashboard: React.FC = () => {
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-4">
                               <div className="relative">
-                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center border-2 ${
-                                  account.is_active ? 'bg-orange-500/10 border-orange-500/20' : 'bg-gray-100 dark:bg-black/40 border-transparent'
-                                }`}>
+                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center border-2 ${account.is_active ? 'bg-orange-500/10 border-orange-500/20' : 'bg-gray-100 dark:bg-black/40 border-transparent'
+                                  }`}>
                                   <Instagram className={`w-5 h-5 ${account.is_active ? 'text-orange-500' : 'text-gray-400'}`} />
                                 </div>
                                 {account.is_active && (
@@ -570,17 +568,16 @@ const InstagramWarmingDashboard: React.FC = () => {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${
-                                    account.status === 'active' ? 'bg-green-500/10 text-green-500' :
+                                  <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${account.status === 'active' ? 'bg-green-500/10 text-green-500' :
                                     account.status === 'frozen' ? 'bg-blue-500/10 text-blue-500' :
-                                    'bg-red-500/10 text-red-500'
-                                  }`}>{account.status}</span>
+                                      'bg-red-500/10 text-red-500'
+                                    }`}>{account.status}</span>
                                   <span className="text-gray-400 text-[9px] font-bold tracking-tight">{formatTimeAgo(account.created_at)}</span>
                                 </div>
                               </div>
                             </div>
                           </td>
-                          
+
                           <td className="px-6 py-5">
                             <div className="flex flex-col">
                               <div className="flex items-center gap-1.5 text-gray-900 dark:text-white font-bold text-xs uppercase tracking-tighter">
@@ -609,9 +606,9 @@ const InstagramWarmingDashboard: React.FC = () => {
                               </div>
                               <p className="text-[8px] text-gray-400 font-medium uppercase tracking-wider">
                                 {(account.warming_session_count || 0) < 7 ? 'Scroll + Reels only' :
-                                 (account.warming_session_count || 0) < 14 ? '+ Liking posts' :
-                                 (account.warming_session_count || 0) < 21 ? '+ Following users' :
-                                 '+ Explore deep dive'}
+                                  (account.warming_session_count || 0) < 14 ? '+ Liking posts' :
+                                    (account.warming_session_count || 0) < 21 ? '+ Following users' :
+                                      '+ Explore deep dive'}
                               </p>
                             </div>
                           </td>
@@ -619,13 +616,11 @@ const InstagramWarmingDashboard: React.FC = () => {
                           <td className="px-6 py-5">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full ${
-                                  account.daily_usage_count !== undefined && account.daily_usage_count >= 1 ? 'bg-amber-500' : 'bg-green-500'
-                                } shadow-[0_0_8px_rgba(34,197,94,0.3)]`} />
-                                <span className={`text-xs font-black uppercase ${
-                                  account.daily_usage_count !== undefined && account.daily_usage_count >= 1
-                                    ? 'text-amber-500' : 'text-green-500'
-                                }`}>
+                                <span className={`w-2 h-2 rounded-full ${account.daily_usage_count !== undefined && account.daily_usage_count >= 1 ? 'bg-amber-500' : 'bg-green-500'
+                                  } shadow-[0_0_8px_rgba(34,197,94,0.3)]`} />
+                                <span className={`text-xs font-black uppercase ${account.daily_usage_count !== undefined && account.daily_usage_count >= 1
+                                  ? 'text-amber-500' : 'text-green-500'
+                                  }`}>
                                   {account.daily_usage_count !== undefined && account.daily_usage_count >= 1 ? 'Done Today' : 'Ready'}
                                 </span>
                               </div>
@@ -673,11 +668,10 @@ const InstagramWarmingDashboard: React.FC = () => {
                                 <button
                                   onClick={() => handlePauseResume(account.id, account.is_paused)}
                                   disabled={pausingAccountId === account.id}
-                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg ${
-                                    account.is_paused
-                                      ? 'bg-green-600 text-white hover:bg-green-500 animate-pulse'
-                                      : 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20'
-                                  }`}
+                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg ${account.is_paused
+                                    ? 'bg-green-600 text-white hover:bg-green-500 animate-pulse'
+                                    : 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20'
+                                    }`}
                                 >
                                   {pausingAccountId === account.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : account.is_paused ? <Zap className="w-3 h-3" /> : <Ghost className="w-3 h-3" />}
                                   {account.is_paused ? 'Resume' : 'Control'}
@@ -690,20 +684,19 @@ const InstagramWarmingDashboard: React.FC = () => {
                                   <button
                                     onClick={() => handleWarmup(account.id)}
                                     disabled={warmingAccountId === account.id || (account.daily_usage_count || 0) >= 1}
-                                    className={`p-2.5 rounded-xl transition-all ${
-                                      warmingAccountId === account.id
-                                        ? 'bg-orange-500 text-white animate-pulse'
-                                        : (account.daily_usage_count || 0) >= 1
+                                    className={`p-2.5 rounded-xl transition-all ${warmingAccountId === account.id
+                                      ? 'bg-orange-500 text-white animate-pulse'
+                                      : (account.daily_usage_count || 0) >= 1
                                         ? 'bg-amber-500/10 text-amber-500 cursor-not-allowed'
                                         : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-transparent hover:border-orange-400'
-                                    }`}
+                                      }`}
                                     title={(account.daily_usage_count || 0) >= 1 ? 'Already warmed today' : 'Start Manual Warmup'}
                                   >
                                     {warmingAccountId === account.id
                                       ? <Loader2 className="w-4 h-4 animate-spin" />
                                       : (account.daily_usage_count || 0) >= 1
-                                      ? <Lock className="w-4 h-4" />
-                                      : <Flame className="w-4 h-4" />}
+                                        ? <Lock className="w-4 h-4" />
+                                        : <Flame className="w-4 h-4" />}
                                   </button>
                                   {/* Tooltip showing unlock time */}
                                   {(account.daily_usage_count || 0) >= 1 && account.last_usage_reset && (
@@ -869,7 +862,7 @@ const InstagramWarmingDashboard: React.FC = () => {
 
       {/* ── DISCOVERY MODAL ── */}
       {showDiscoveryModal && (
-        <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowDiscoveryModal(false)} />
           <div className="relative bg-white dark:bg-[#1e293b] w-full max-w-lg rounded-[32px] shadow-2xl border border-gray-200 dark:border-white/10 p-8">
             <div className="flex items-center justify-between mb-6">
@@ -906,7 +899,7 @@ const InstagramWarmingDashboard: React.FC = () => {
 
       {/* ── ACCOUNT MODAL ── */}
       {showAccountModal && (
-        <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowAccountModal(false)} />
           <div className="relative bg-white dark:bg-[#1e293b] w-full max-w-lg rounded-[32px] shadow-2xl border border-gray-200 dark:border-white/10 p-8">
             <div className="flex items-center justify-between mb-6">
@@ -953,7 +946,7 @@ const InstagramWarmingDashboard: React.FC = () => {
 
       {/* ── PROXY MODAL ── */}
       {showProxyModal && (
-        <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowProxyModal(false)} />
           <div className="relative bg-white dark:bg-[#1e293b] w-full max-w-lg rounded-[32px] shadow-2xl border border-gray-200 dark:border-white/10 p-8">
             <div className="flex items-center justify-between mb-6">
@@ -1006,7 +999,7 @@ const InstagramWarmingDashboard: React.FC = () => {
       )}
       {/* ── HISTORY MODAL ── */}
       {showHistoryModal && selectedAccount && (
-        <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowHistoryModal(false)} />
           <div className="relative bg-white dark:bg-[#1e293b] w-full max-w-xl rounded-[32px] shadow-2xl border border-gray-200 dark:border-white/10 p-8 overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between mb-6 shrink-0">
@@ -1019,8 +1012,8 @@ const InstagramWarmingDashboard: React.FC = () => {
                   <p className="text-gray-500 text-xs font-medium mt-0.5">@{selectedAccount.username}'s Activity Logs</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowHistoryModal(false)} 
+              <button
+                onClick={() => setShowHistoryModal(false)}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
               >
                 <X className="w-5 h-5 text-gray-400" />
@@ -1060,10 +1053,10 @@ const InstagramWarmingDashboard: React.FC = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="mt-6 pt-6 border-t border-gray-100 dark:border-white/5 shrink-0">
-               <button 
-                onClick={() => setShowHistoryModal(false)} 
+              <button
+                onClick={() => setShowHistoryModal(false)}
                 className="w-full py-4 bg-gray-100 dark:bg-white/5 text-gray-900 dark:text-white rounded-2xl font-black text-sm hover:bg-gray-200 dark:hover:bg-white/10 transition-all"
               >
                 Close Journal

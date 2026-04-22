@@ -457,6 +457,8 @@ async def migrate():
                     data_audit_json JSONB,
                     recent_posts JSONB DEFAULT '[]',
                     score INTEGER DEFAULT 0,
+                    assigned_account_id BIGINT,
+                    assigned_account_name TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
                     UNIQUE(user_id, instagram_username)
@@ -667,6 +669,8 @@ async def migrate():
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'google';
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS profile_pic_url TEXT;
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS assigned_account_id BIGINT;
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS assigned_account_name TEXT;
 
                 -- Force uniqueness on instagram handles to allow ON CONFLICT logic (USER-SCOPED)
                 -- 🧹 Step 1: Remove existing duplicates so the constraint doesn't fail
@@ -819,7 +823,7 @@ async def migrate():
                         ALTER TABLE instagram_warming_accounts ADD COLUMN session_intensity INT DEFAULT 5;
                     END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='is_active') THEN
-                        ALTER TABLE instagram_warming_accounts ADD COLUMN is_active BOOLEAN DEFAULT FALSE;
+                        ALTER TABLE instagram_warming_accounts ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
                     END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='instagram_warming_accounts' AND column_name='is_paused') THEN
                         ALTER TABLE instagram_warming_accounts ADD COLUMN is_paused BOOLEAN DEFAULT FALSE;

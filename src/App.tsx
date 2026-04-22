@@ -503,17 +503,37 @@ function App() {
 
   const confirmHardDelete = async () => {
     if (!accountToDelete) return;
+    const deletedId = accountToDelete.id;
     try {
-      await telegramAPI.deleteAccount(accountToDelete.id);
-      if (currentAccount?.id === accountToDelete.id) {
+      await telegramAPI.deleteAccount(deletedId);
+
+      // Immediately remove from accounts list so the sidebar updates without flicker
+      setAccounts(prev => prev.filter(a => a.id !== deletedId));
+
+      // Clear active view if this was the selected account
+      if (currentAccount?.id === deletedId) {
         setCurrentAccount(null);
         setCurrentConversation(null);
         setConversations([]);
         setMessages([]);
       }
-      await loadAccounts();
+
+      // Clean up unread counts for this account
+      setUnreadCounts(prev => {
+        const next = { ...prev };
+        delete next[deletedId];
+        return next;
+      });
+
+      // Clean up message cache for this account's conversations
+      Object.keys(messageCache.current).forEach(convId => {
+        delete messageCache.current[Number(convId)];
+      });
+
     } catch (e) {
-      console.error(e);
+      console.error('Failed to delete account:', e);
+      // Reload to restore correct state on failure
+      await loadAccounts();
     } finally {
       setAccountToDelete(null);
     }

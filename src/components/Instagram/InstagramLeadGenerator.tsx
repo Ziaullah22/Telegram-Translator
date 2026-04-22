@@ -1,9 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Instagram, Search, Trash2, Play,
-    Zap, Target, Plus, Globe, Filter,
-    RefreshCw, ExternalLink, UserCheck, CheckCircle2,
-    Server, Users, AlertCircle, Loader2, X, Eye, EyeOff, Clock
+    Instagram,
+    Search,
+    Globe,
+    UserCheck,
+    Users,
+    Plus,
+    Trash2,
+    RefreshCw,
+    Play,
+    Zap,
+    AlertCircle,
+    Clock,
+    CheckCircle2,
+    ExternalLink,
+    Eye,
+    EyeOff,
+    Loader2,
+    Server,
+    X,
+    Edit3,
+    Upload,
+    Target,
+    Filter,
+    Sparkles,
+    Brain,
+    Copy
 } from 'lucide-react';
 import { instagramAPI } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
@@ -39,11 +61,14 @@ const InstagramLeadGenerator: React.FC = () => {
     const [autoAnalyzingId, setAutoAnalyzingId] = useState<number | null>(null);
     const [isAutoPilotRunning, setIsAutoPilotRunning] = useState(false);
     const [restTimer, setRestTimer] = useState<number | null>(null);
+    const [bulkUploading, setBulkUploading] = useState<'accounts' | 'proxies' | null>(null);
 
     // Modals
     const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
     const [showAccountModal, setShowAccountModal] = useState(false);
+    const [showBulkModal, setShowBulkModal] = useState(false);
     const [showProxyModal, setShowProxyModal] = useState(false);
+    const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
 
@@ -53,6 +78,10 @@ const InstagramLeadGenerator: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [notification, setNotification] = useState<{ msg: string, type: 'success' | 'alert' } | null>(null);
     const [newAccount, setNewAccount] = useState({ username: '', password: '', proxy_id: '', bundle: '', verification_code: '', session_id: '' });
+    const [bulkAccountsString, setBulkAccountsString] = useState('');
+    const [isBulkAdding, setIsBulkAdding] = useState(false);
+    const [bulkProxyString, setBulkProxyString] = useState('');
+    const [isBulkAddingProxies, setIsBulkAddingProxies] = useState(false);
     const [needs2FA, setNeeds2FA] = useState(false);
     const [newProxy, setNewProxy] = useState({ host: '', port: '', username: '', password: '', proxy_type: 'http', bundle: '' });
 
@@ -275,6 +304,47 @@ const InstagramLeadGenerator: React.FC = () => {
         return () => clearInterval(interval);
     }, [restTimer]);
 
+    const notify = (msg: string, type: 'success' | 'alert' = 'success') => setNotification({ msg, type });
+
+    const handleBulkUploadAccounts = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setBulkUploading('accounts');
+        console.log('🚀 Deploying Ghost Fleet via file:', file.name);
+        try {
+            await instagramAPI.bulkUploadAccounts(file);
+            fetchData();
+            notify('🛸 Ghost Unit Reinforced!');
+            setShowBulkModal(false);
+        } catch (err) {
+            console.error('❌ Bulk Account Deployment Failed:', err);
+            notify('Upload failed.', 'alert');
+        } finally {
+            setBulkUploading(null);
+            // Reset input value so same file can be uploaded again if needed
+            e.target.value = '';
+        }
+    };
+
+    const handleBulkUploadProxies = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setBulkUploading('proxies');
+        console.log('🛰️ Expanding Network Shield via file:', file.name);
+        try {
+            await instagramAPI.bulkUploadProxies(file);
+            fetchData();
+            notify('🛰️ Network Shield Expanded!');
+            setShowBulkProxyModal(false);
+        } catch (err) {
+            console.error('❌ Proxy Sync Failed:', err);
+            notify('Proxy sync failed.', 'alert');
+        } finally {
+            setBulkUploading(null);
+            e.target.value = '';
+        }
+    };
+
     const handleDiscover = async () => {
         if (!keywords.trim()) return;
         setIsDiscovering(true);
@@ -392,6 +462,23 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    const handleBulkAdd = async () => {
+        if (!bulkAccountsString.trim()) return;
+        try {
+            setIsBulkAdding(true);
+            const result = await instagramAPI.bulkAddAccounts(bulkAccountsString, newAccount.proxy_id || undefined);
+            setNotification({ msg: `✅ Bulk Deployment Complete: ${result.success} success, ${result.failed} failed.`, type: 'success' });
+            setShowBulkModal(false);
+            setBulkAccountsString('');
+            fetchData();
+        } catch (error) {
+            console.error('Bulk add failed:', error);
+            setNotification({ msg: '❌ Bulk Deployment Failed.', type: 'alert' });
+        } finally {
+            setIsBulkAdding(false);
+        }
+    };
+
     const handleAddProxy = async () => {
         try {
             // High-Resilience Cleaner: Isolate the core IP:Port block from table copy-pastes
@@ -406,8 +493,24 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    const handleBulkAddProxies = async () => {
+        if (!bulkProxyString.trim()) return;
+        try {
+            setIsBulkAddingProxies(true);
+            const result = await instagramAPI.bulkAddProxies(bulkProxyString);
+            setNotification({ msg: `✅ Shield Deployment Complete: ${result.success} success, ${result.failed} failed.`, type: 'success' });
+            setShowBulkProxyModal(false);
+            setBulkProxyString('');
+            fetchData();
+        } catch (error) {
+            console.error('Bulk proxy add failed:', error);
+            setNotification({ msg: '❌ Proxy Deployment Failed.', type: 'alert' });
+        } finally {
+            setIsBulkAddingProxies(false);
+        }
+    };
+
     const handleDeleteAccount = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this account?')) return;
         try {
             await instagramAPI.deleteAccount(id);
             fetchData();
@@ -454,7 +557,6 @@ const InstagramLeadGenerator: React.FC = () => {
     };
 
     const handleDeleteProxy = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this proxy?')) return;
         try {
             await instagramAPI.deleteProxy(id);
             fetchData();
@@ -477,7 +579,7 @@ const InstagramLeadGenerator: React.FC = () => {
     return (
         <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0f172a] p-6 lg:p-8 relative">
             {notification && (
-                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-md border ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400/20' : 'bg-red-500/90 text-white border-red-400/20'
                         }`}>
                         {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
@@ -513,12 +615,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             }`}
                         >
                             <Play className={`w-4 h-4 ${isAutoPilotRunning ? 'fill-current' : 'group-hover:fill-green-500'}`} />
-                            {isAutoPilotRunning
-                                ? restTimer !== null
-                                    ? `Ghost Nap... ${restTimer}s`
-                                    : 'Scanning...'
-                                : 'Auto-Pilot Mode'
-                            }
+                            {isAutoPilotRunning ? 'Scanning...' : 'Auto-Pilot Mode'}
                         </button>
                         <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
                             <Trash2 className="w-4 h-4" /> Clear All
@@ -631,9 +728,23 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 {lead.profile_pic_url ? <img src={lead.profile_pic_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400"><Instagram className="w-3.5 h-3.5" /></div>}
                                                             </div>
                                                             <div className="flex flex-col">
-                                                                <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
+                                                                    {lead.score > 0 && (
+                                                                        <div className={`w-2 h-2 rounded-full ${lead.score > 80 ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : lead.score > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} title={`Strategic Score: ${lead.score}%`} />
+                                                                    )}
+                                                                </div>
                                                                 <div className="flex items-center gap-1">
-                                                                    <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
+                                                                    {(() => {
+                                                                        const ai = typeof lead.data_audit_json === 'string' ? JSON.parse(lead.data_audit_json || '{}') : lead.data_audit_json;
+                                                                        return ai?.niche ? (
+                                                                            <span className="text-[8px] font-black text-indigo-500 uppercase bg-indigo-500/10 px-1 rounded flex items-center gap-0.5">
+                                                                                <Sparkles className="w-2 h-2" /> {ai.niche}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
+                                                                        );
+                                                                    })()}
                                                                     {autoAnalyzingId === lead.id && (
                                                                         <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 uppercase animate-pulse">
                                                                             <Loader2 className="w-2 h-2 animate-spin" /> Analyzing ⚙️
@@ -756,9 +867,13 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-500/10 text-gray-500 font-black text-[9px] uppercase tracking-widest border border-gray-500/20" title="Account unavailable or blocked">
                                                                             <AlertCircle className="w-3 h-3" /> FAILED ❌
                                                                         </div>
-                                                                    ) : lead.is_private ? (
+                                                                    ) : (lead.status === 'private' || lead.is_private) ? (
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-500/10 text-orange-500 font-black text-[9px] uppercase tracking-widest border border-orange-500/20">
-                                                                            <AlertCircle className="w-3 h-3" /> Private Profile 🔒
+                                                                            <AlertCircle className="w-3 h-3" /> Private 🔒
+                                                                        </div>
+                                                                    ) : lead.status === 'error' ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 font-black text-[9px] uppercase tracking-widest border border-red-500/20" title="Username not found or invalid">
+                                                                            <AlertCircle className="w-3 h-3" /> Not Found ❌
                                                                         </div>
                                                                     ) : (lead.status === 'vetted' || lead.status === 'harvested') ? (
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 font-black text-[9px] uppercase tracking-widest border border-emerald-500/20">
@@ -781,13 +896,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                             {harvestingId === lead.id ? "Scraping..." : "Approve & Scrape"}
                                                                         </button>
                                                                     )}
-                                                                    <button
-                                                                        onClick={() => handleUpdateStatus(lead.id, 'rejected')}
-                                                                        className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95"
-                                                                        title="DISCARD 🗑️❌"
-                                                                    >
-                                                                        <X className="w-4 h-4" />
-                                                                    </button>
+                                                                    {!(lead.status === 'vetted' || lead.status === 'harvested') && (
+                                                                        <button
+                                                                            onClick={() => handleUpdateStatus(lead.id, 'rejected')}
+                                                                            className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95"
+                                                                            title="DISCARD 🗑️❌"
+                                                                        >
+                                                                            <X className="w-4 h-4" />
+                                                                        </button>
+                                                                    )}
                                                                 </>
                                                             )}
                                                             <button
@@ -811,10 +928,20 @@ const InstagramLeadGenerator: React.FC = () => {
                 {activeTab === 'accounts' && (
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-black text-gray-900 dark:text-white">Ghost Accounts</h2>
+                            <div>
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Ghost Fleet Management</h2>
+                                <p className="text-xs text-gray-500 font-medium">Currently using {accounts.length} identities. Multi-phase safety active.</p>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button onClick={handleFixAccounts} className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500 text-green-600 hover:text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 border border-green-500/20" title="Activate all accounts for Campaign Pilot">
                                     <CheckCircle2 className="w-4 h-4" /> Activate All
+                                </button>
+                                <input type="file" accept=".txt" className="hidden" id="bulk-accounts-upload" onChange={handleBulkUploadAccounts} disabled={bulkUploading === 'accounts'} />
+                                <label htmlFor="bulk-accounts-upload" className="flex items-center gap-2 bg-indigo-500/10 hover:bg-indigo-500 text-indigo-600 hover:text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 border border-indigo-500/20 cursor-pointer">
+                                    <Upload className="w-4 h-4" /> {bulkUploading === 'accounts' ? 'Deploying...' : 'Bulk Import'}
+                                </label>
+                                <button onClick={() => setShowBulkModal(true)} className="p-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-indigo-500 transition-all border border-transparent hover:border-indigo-500/20" title="Paste identities manually">
+                                    <Edit3 className="w-4 h-4" />
                                 </button>
                                 <button onClick={() => setShowAccountModal(true)} className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-pink-600/25 transition-all active:scale-95"><Plus className="w-4 h-4" /> Add Account</button>
                             </div>
@@ -822,39 +949,103 @@ const InstagramLeadGenerator: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {accounts.length === 0 ? (
                                 <div className="col-span-3 text-center py-16 text-gray-400 text-sm font-bold uppercase tracking-widest">No ghost accounts yet. Add one to start outreach.</div>
-                            ) : accounts.map(acc => (
-                                <div key={acc.id} className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 border border-gray-100 dark:border-white/5 shadow-sm group hover:shadow-md transition-all">
-                                    <div className="flex items-start justify-between mb-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-orange-400 flex items-center justify-center shadow-lg shadow-pink-500/20">
-                                                <Instagram className="w-6 h-6 text-white" />
+                            ) : accounts.map(acc => {
+                                const usagePercent = (acc.daily_usage_count / 10) * 100;
+                                const safetyScore = Math.max(0, 100 - (acc.daily_usage_count * 10));
+                                
+                                return (
+                                    <div key={acc.id} className="bg-white dark:bg-[#1e293b] p-6 rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm group relative">
+                                        <div className="flex items-start justify-between mb-5">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-orange-400 flex items-center justify-center shadow-lg shadow-pink-500/20">
+                                                    <Instagram className="w-6 h-6 text-white" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                                            acc.status === 'active' ? 'bg-green-500 animate-pulse' : 
+                                                            acc.status === 'frozen' ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' :
+                                                            acc.status === 'rate_limited' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                        }`}></span>
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                                            acc.status === 'active' ? 'text-green-500' : 
+                                                            acc.status === 'frozen' ? 'text-blue-500' :
+                                                            acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'
+                                                        }`}>
+                                                            {acc.status === 'frozen' ? 'Cold Sleep ❄️' : 
+                                                             acc.daily_usage_count >= 10 ? 'Locked (Limit) ⏳' : 
+                                                             (acc.status || 'inactive')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${safetyScore > 70 ? 'bg-green-500' : safetyScore > 30 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-tighter">Safety: {safetyScore}%</span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${acc.status === 'active' ? 'bg-green-500 animate-pulse shadow-lg shadow-green-500/50' : acc.status === 'rate_limited' ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
-                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${acc.status === 'active' ? 'text-green-500' : acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'}`}>
-                                                        {acc.status === 'rate_limited' ? 'Limit Reached ⏳' : (acc.status || 'inactive')}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] text-gray-400 font-medium">{acc.proxy_host ? `🛡️ ${acc.proxy_host}` : '🌐 Direct IP'}</span>
-                                                    <span className="text-[10px] bg-gray-100 dark:bg-gray-700/50 text-gray-500 px-1.5 py-0.5 rounded font-medium border border-gray-200 dark:border-gray-600">
-                                                        ⏱️ {timeAgo(acc.last_used_at)}
-                                                    </span>
-                                                </div>
+                                            <button
+                                                onClick={() => handleDeleteAccount(acc.id)}
+                                                className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
 
+                                        <div className="mb-4">
+                                            <h3 className="font-black text-gray-900 dark:text-white text-sm tracking-tight flex items-center justify-between">
+                                                @{acc.username}
+                                                {acc.status === 'frozen' && acc.frozen_until && (
+                                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-500/10 text-blue-500 rounded-lg animate-pulse">
+                                                        <Clock className="w-3 h-3" />
+                                                        <span className="text-[9px] font-black">{(() => {
+                                                            const diff = new Date(acc.frozen_until).getTime() - new Date().getTime();
+                                                            if (diff <= 0) return '00:00:00';
+                                                            const h = Math.floor(diff / 3600000);
+                                                            const m = Math.floor((diff % 3600000) / 60000);
+                                                            const s = Math.floor((diff % 60000) / 1000);
+                                                            return `${h}h ${m}m ${s}s`;
+                                                        })()}</span>
+                                                    </div>
+                                                )}
+                                            </h3>
+                                            <p className="text-[10px] text-gray-400 font-medium mt-1">
+                                                {acc.proxy_host ? `🛡️ ${acc.proxy_host}` : '🌐 Direct IP'} • {timeAgo(acc.last_used_at)}
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-3 pt-4 border-t border-gray-50 dark:border-white/5">
+                                            {/* Usage Bar */}
+                                            <div className="space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Daily Scopes</span>
+                                                    <span className="text-[9px] font-black text-gray-500">{acc.daily_usage_count}/10</span>
+                                                </div>
+                                                <div className="h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                    <div className={`h-full transition-all duration-500 ${usagePercent > 80 ? 'bg-red-500' : usagePercent > 50 ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${usagePercent}%` }} />
+                                                </div>
+                                            </div>
+
+                                            {/* Maturation Phase */}
+                                            <div className="space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ghost Phase</span>
+                                                    <span className="text-[9px] font-black text-indigo-500 uppercase">
+                                                        {acc.warming_session_count < 7 ? '1: Incubation' :
+                                                         acc.warming_session_count < 14 ? '2: Socialite' :
+                                                         acc.warming_session_count < 21 ? '3: Operative' : '4: Mature'}
+                                                    </span>
+                                                </div>
+                                                <div className="h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                    <div 
+                                                        className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000"
+                                                        style={{ width: `${Math.min(100, (acc.warming_session_count / 21) * 100)}%` }}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => handleDeleteAccount(acc.id)}
-                                            className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
                                     </div>
-                                    <h3 className="font-black text-gray-900 dark:text-white text-sm tracking-tight">@{acc.username}</h3>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -862,8 +1053,20 @@ const InstagramLeadGenerator: React.FC = () => {
                 {activeTab === 'proxies' && (
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-black text-gray-900 dark:text-white">Proxy Shield Pool</h2>
-                            <button onClick={() => setShowProxyModal(true)} className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-pink-600/25 transition-all active:scale-95"><Plus className="w-4 h-4" /> Add Proxy</button>
+                            <div>
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Proxy Shield Pool</h2>
+                                <p className="text-xs text-gray-500 font-medium">Currently using {proxies.length} active shields.</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input type="file" accept=".txt" className="hidden" id="bulk-proxies-upload" onChange={handleBulkUploadProxies} disabled={bulkUploading === 'proxies'} />
+                                <label htmlFor="bulk-proxies-upload" className="flex items-center gap-2 bg-indigo-500/10 hover:bg-indigo-500 text-indigo-600 hover:text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 border border-indigo-500/20 cursor-pointer">
+                                    <Upload className="w-4 h-4" /> {bulkUploading === 'proxies' ? 'Deploying...' : 'Bulk Import'}
+                                </label>
+                                <button onClick={() => setShowBulkProxyModal(true)} className="p-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-indigo-500 transition-all border border-transparent hover:border-indigo-500/20" title="Paste proxies manually">
+                                    <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => setShowProxyModal(true)} className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-pink-600/25 transition-all active:scale-95"><Plus className="w-4 h-4" /> Add Proxy</button>
+                            </div>
                         </div>
                         <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 overflow-hidden shadow-sm">
                             <table className="w-full text-left">
@@ -1075,7 +1278,7 @@ const InstagramLeadGenerator: React.FC = () => {
 
             {/* Modals */}
             {showDiscoveryModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-8">
                             <div className="flex items-center gap-4 mb-6">
@@ -1095,7 +1298,7 @@ const InstagramLeadGenerator: React.FC = () => {
             )}
 
             {showAccountModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-2">
@@ -1201,7 +1404,7 @@ const InstagramLeadGenerator: React.FC = () => {
             )}
 
             {showProxyModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-2">
@@ -1238,31 +1441,42 @@ const InstagramLeadGenerator: React.FC = () => {
 
             {/* Enhanced Post & Network Preview Modal */}
             {showPreviewModal && selectedLead && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300">
-                        <div className="p-8">
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl">
-                                        <Users className="w-6 h-6 text-indigo-600" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                                            @{selectedLead.instagram_username || selectedLead.username}
-                                        </h2>
-                                        <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">In-Depth Lead Intelligence 🛰️</p>
-                                    </div>
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-8 bg-slate-900/90 backdrop-blur-md">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col mt-10">
+                        
+                        {/* Sticky Header */}
+                        <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl">
+                                    <Users className="w-6 h-6 text-indigo-600" />
                                 </div>
-                                <button
-                                    onClick={() => setShowPreviewModal(false)}
-                                    className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
-                                >
-                                    <X className="w-6 h-6 text-gray-400" />
-                                </button>
+                                <div>
+                                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+                                        @{selectedLead.instagram_username || selectedLead.username}
+                                    </h2>
+                                    <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">In-Depth Lead Intelligence 🛰️</p>
+                                </div>
                             </div>
+                            <button
+                                onClick={() => setShowPreviewModal(false)}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
+                            >
+                                <X className="w-6 h-6 text-gray-400" />
+                            </button>
+                        </div>
 
-                            <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-white/5">
-                                <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3">Professional Biography 🛰️</h3>
+                        {/* Scrollable Body */}
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 mb-6 border border-gray-100 dark:border-white/5">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Professional Biography 🛰️</h3>
+                                    {selectedLead.score > 0 && (
+                                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                            <Sparkles className="w-2.5 h-2.5" />
+                                            <span className="text-[9px] font-black uppercase">Gemma Score: {selectedLead.score}%</span>
+                                        </div>
+                                    )}
+                                </div>
                                 {selectedLead.bio ? (
                                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed italic">
                                         "{selectedLead.bio}"
@@ -1272,14 +1486,61 @@ const InstagramLeadGenerator: React.FC = () => {
                                 )}
                             </div>
 
-                            <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                            {/* 🧠 GEMMA DEEP INTELLIGENCE SECTION */}
+                            {(() => {
+                                const ai = typeof selectedLead.data_audit_json === 'string' ? JSON.parse(selectedLead.data_audit_json || '{}') : selectedLead.data_audit_json;
+                                if (!ai || Object.keys(ai).length === 0) return null;
+
+                                return (
+                                    <div className="mb-6 space-y-4">
+                                        <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Brain className="w-4 h-4 text-indigo-500" />
+                                                <h4 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Strategic Deep Analysis</h4>
+                                            </div>
+                                            <p className="text-xs font-bold text-gray-600 dark:text-gray-400 leading-relaxed">
+                                                {ai.strategy || "Gemma predicts this lead is a high-value prospect based on their bio intent and engagement markers."}
+                                            </p>
+                                        </div>
+
+                                        {ai.suggested_hook && (
+                                            <div className="relative group">
+                                                <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 to-indigo-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                                                <div className="relative p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-white/5">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Zap className="w-3.5 h-3.5 text-orange-400" />
+                                                            <h4 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">Personalized AI Hook</h4>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(ai.suggested_hook);
+                                                                setNotification({ msg: '📋 AI Hook copied to clipboard!', type: 'success' });
+                                                            }}
+                                                            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-indigo-500 hover:text-white text-gray-500 transition-all active:scale-95"
+                                                        >
+                                                            <Copy className="w-3 h-3" />
+                                                            <span className="text-[9px] font-black uppercase">Copy</span>
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-sm font-black text-gray-900 dark:text-white tracking-tight leading-snug">
+                                                        "{ai.suggested_hook}"
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            <div className="mb-4">
                                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Content Archive 📸</h3>
                                 <div className="grid grid-cols-3 gap-4">
                                     {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
                                         selectedLead.recent_posts.map((post: any, idx: number) => {
                                             const imageUrl = typeof post === 'string' ? post : post.display_url;
                                             return (
-                                                <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative">
+                                                <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative border border-gray-100 dark:border-white/5">
                                                     <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                                     <a
                                                         href={post.url || '#'}
@@ -1293,20 +1554,145 @@ const InstagramLeadGenerator: React.FC = () => {
                                             );
                                         })
                                     ) : (
-                                        <div className="col-span-3 py-10 text-center flex flex-col items-center">
+                                        <div className="col-span-3 py-10 text-center flex flex-col items-center border-2 border-dashed border-gray-100 dark:border-white/5 rounded-3xl">
                                             <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
                                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
                                         </div>
                                     )}
                                 </div>
                             </div>
+                        </div>
 
-                            <div className="mt-8 flex justify-center">
+                        {/* Sticky Footer */}
+                        <div className="p-8 pt-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10 flex justify-center">
+                            <button
+                                onClick={() => setShowPreviewModal(false)}
+                                className="w-full max-w-xs py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
+                            >
+                                Finish Inspection
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showBulkModal && (
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-2">
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white">Bulk Ghost Deployment</h2>
+                            </div>
+                            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-6">Mass Authorize Identities 🛰️</p>
+
+                            <div className="flex items-center justify-between gap-4 p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                                        <Plus className="w-5 h-5 text-indigo-500" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-black uppercase text-indigo-600">Flash Onboarding</span>
+                                        <span className="text-[9px] font-medium text-gray-500 uppercase tracking-tighter">Upload account list (.txt)</span>
+                                    </div>
+                                </div>
+                                <label className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-indigo-500/20">
+                                    {bulkUploading === 'accounts' ? 'Uploading...' : 'Select File'}
+                                    <input type="file" className="hidden" accept=".txt" onChange={handleBulkUploadAccounts} disabled={bulkUploading === 'accounts'} />
+                                </label>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Accounts List (One per line)</p>
+                                    <textarea
+                                        placeholder="username:password&#10;username:password"
+                                        className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 text-xs font-mono text-gray-900 dark:text-white focus:border-indigo-500/50 outline-none transition-all min-h-[200px]"
+                                        value={bulkAccountsString}
+                                        onChange={e => setBulkAccountsString(e.target.value)}
+                                    />
+                                    <p className="text-[9px] text-gray-400 mt-1 italic">Format: username:password</p>
+                                </div>
+
+                                <div className="pt-2">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Assign Proxy Shield (Optional)</p>
+                                    <select className="w-full bg-gray-50 dark:bg-gray-800/50 border-none rounded-xl p-4 text-sm text-gray-500 font-bold" value={newAccount.proxy_id} onChange={e => setNewAccount({ ...newAccount, proxy_id: e.target.value })}>
+                                        <option value="">No Proxy (Local IP)</option>
+                                        {proxies.map(p => <option key={p.id} value={p.id.toString()}>{p.host}:{p.port}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-8">
+                                <button onClick={() => setShowBulkModal(false)} className="px-6 py-3 font-bold text-sm text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
                                 <button
-                                    onClick={() => setShowPreviewModal(false)}
-                                    className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
+                                    onClick={handleBulkAdd}
+                                    disabled={!bulkAccountsString.trim() || isBulkAdding}
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-indigo-500/20 disabled:opacity-50 transition-all active:scale-95"
                                 >
-                                    Finish Inspection
+                                    {isBulkAdding ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Deploying Fleet...</span>
+                                        </div>
+                                    ) : 'Deploy Ghost Fleet 🚀'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showBulkProxyModal && (
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-2">
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white">Bulk Shield Deployment</h2>
+                            </div>
+                            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-6">Mass Authorize Proxies 🌐</p>
+
+                            <div className="flex items-center justify-between gap-4 p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                                        <Server className="w-5 h-5 text-indigo-500" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-black uppercase text-indigo-600">Rapid Deployment</span>
+                                        <span className="text-[9px] font-medium text-gray-500 uppercase tracking-tighter">Upload proxy list (.txt)</span>
+                                    </div>
+                                </div>
+                                <label className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-indigo-500/20">
+                                    {bulkUploading === 'proxies' ? 'Uploading...' : 'Select File'}
+                                    <input type="file" className="hidden" accept=".txt" onChange={handleBulkUploadProxies} disabled={bulkUploading === 'proxies'} />
+                                </label>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Proxy List (One per line)</p>
+                                    <textarea
+                                        placeholder="host:port:user:pass&#10;user:pass:host:port"
+                                        className="w-full bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-100 dark:border-white/5 rounded-2xl p-4 text-xs font-mono text-gray-900 dark:text-white focus:border-indigo-500/50 outline-none transition-all min-h-[200px]"
+                                        value={bulkProxyString}
+                                        onChange={e => setBulkProxyString(e.target.value)}
+                                    />
+                                    <p className="text-[9px] text-gray-400 mt-1 italic">Format: host:port:user:pass or user:pass:host:port</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-8">
+                                <button onClick={() => setShowBulkProxyModal(false)} className="px-6 py-3 font-bold text-sm text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
+                                <button
+                                    onClick={handleBulkAddProxies}
+                                    disabled={!bulkProxyString.trim() || isBulkAddingProxies}
+                                    className="flex-1 bg-pink-600 hover:bg-pink-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-pink-500/20 disabled:opacity-50 transition-all active:scale-95"
+                                >
+                                    {isBulkAddingProxies ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Deploying Shields...</span>
+                                        </div>
+                                    ) : 'Deploy Shield Pool 🛡️'}
                                 </button>
                             </div>
                         </div>

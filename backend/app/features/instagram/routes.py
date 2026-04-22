@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 from models import TokenData, InstagramDiscoveryRequest, InstagramProxyCreate, InstagramAccountCreate
@@ -58,6 +58,25 @@ async def add_proxy(
 ):
     return await instagram_service.add_proxy(current_user.user_id, proxy)
 
+class BulkProxiesRequest(BaseModel):
+    proxy_string: str
+
+@router.post("/bulk-proxies")
+async def bulk_add_proxies(
+    req: BulkProxiesRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
+    return await instagram_service.bulk_add_proxies(current_user.user_id, req.proxy_string)
+
+@router.post("/bulk-proxies-file")
+async def bulk_upload_proxies_file(
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user)
+):
+    content = await file.read()
+    lines = content.decode('utf-8').splitlines()
+    return await instagram_service.bulk_add_proxies(current_user.user_id, lines)
+
 # --- Accounts ---
 
 @router.get("/accounts")
@@ -70,6 +89,27 @@ async def add_account(
     current_user: TokenData = Depends(get_current_user)
 ):
     return await instagram_service.add_account(current_user.user_id, account)
+
+class BulkAccountsRequest(BaseModel):
+    accounts_string: str
+    proxy_id: Optional[int] = None
+
+@router.post("/bulk-accounts")
+async def bulk_add_accounts(
+    req: BulkAccountsRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
+    return await instagram_service.bulk_add_accounts(current_user.user_id, req.accounts_string, req.proxy_id)
+
+@router.post("/bulk-accounts-file")
+async def bulk_upload_accounts_file(
+    file: UploadFile = File(...),
+    proxy_id: Optional[int] = Query(None),
+    current_user: TokenData = Depends(get_current_user)
+):
+    content = await file.read()
+    lines = content.decode('utf-8').splitlines()
+    return await instagram_service.bulk_add_accounts(current_user.user_id, lines, proxy_id)
 
 @router.delete("/accounts/{account_id}")
 async def delete_account(

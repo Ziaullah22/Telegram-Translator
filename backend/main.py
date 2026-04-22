@@ -62,6 +62,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Instagram settings table init skipped: {e}")
 
+    # One-time cleanup: Mark all leads with 'not found' bios as 'error'
+    try:
+        cleaned = await db.execute("""
+            UPDATE instagram_leads 
+            SET status = 'error', updated_at = NOW()
+            WHERE status NOT IN ('error', 'rejected', 'harvested', 'contacted')
+            AND (
+                bio ILIKE '%we are downloading the profile%'
+                OR bio ILIKE '%the page was not found%'
+                OR bio ILIKE '%page was not found%'
+                OR bio ILIKE '%profile not found%'
+                OR bio ILIKE '%user not found%'
+                OR bio ILIKE '%account not found%'
+                OR bio ILIKE '%this account doesn''t exist%'
+                OR bio ILIKE '%sorry, this page isn''t available%'
+            )
+        """)
+        logger.info(f"✅ Instagram lead cleanup done: {cleaned}")
+    except Exception as e:
+        logger.warning(f"Instagram lead cleanup skipped: {e}")
+
     # Run migration for reply support
     try:
         await db.execute("""

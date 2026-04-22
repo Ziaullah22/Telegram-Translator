@@ -305,7 +305,7 @@ class InstagramWarmingService:
                     await asyncio.sleep(60)
                     continue
 
-                # 🛌 THE GLOBAL NAP: Random cooldown between 2-3 minutes after every action
+                # 🛌 THE GLOBAL NAP: Random cooldown between 2-3 minutes after every warming session
                 nap_duration = random.randint(120, 180)
                 logger.info(f"🛌 Engine Nap: Fleet taking a human break for {nap_duration}s...")
                 
@@ -662,11 +662,34 @@ class InstagramWarmingService:
         """Checks if the account is paused via the UI. If paused, waits until resumed."""
         if account_username in self.paused_accounts:
             logger.info(f"⏸️ @{account_username} is in human-control mode. Bot waiting...")
+            # Ensure the UI reflects the bot is waiting
             while account_username in self.paused_accounts:
-                await asyncio.sleep(3)  # Check every 3 seconds
+                await asyncio.sleep(1)  # High-frequency check
             logger.info(f"▶️ @{account_username} resumed! Bot taking back control...")
+            
+            # After resume, ensure we are still on IG and not blocked
+            try:
+                await page.wait_for_timeout(2000)
+                if "instagram.com" not in page.url:
+                    await page.goto("https://www.instagram.com/", wait_until="load")
+            except: pass
             return True
         return False
+
+    async def _smart_sleep(self, duration: float, page, account_username: str):
+        """Sleeps while continuously checking for human pause/intervention."""
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < duration:
+            # Check for pause
+            await self._check_human_intervention(page, account_username)
+            # Check for sudden browser close
+            if page.is_closed():
+                raise Exception("Browser closed during sleep.")
+            
+            remaining = duration - (asyncio.get_event_loop().time() - start_time)
+            sleep_step = min(1.0, remaining) if remaining > 0 else 0
+            if sleep_step > 0:
+                await asyncio.sleep(sleep_step)
 
     async def _check_for_challenge(self, page, account_data: dict) -> bool:
         """
@@ -847,9 +870,9 @@ class InstagramWarmingService:
             if random.random() < 0.20:
                 stare = random.uniform(15, 40)
                 logger.info(f"   📑 Reading a post for {int(stare)}s...")
-                await asyncio.sleep(stare)
+                await self._smart_sleep(stare, page, account_username)
             else:
-                await asyncio.sleep(random.uniform(5, 14))
+                await self._smart_sleep(random.uniform(5, 14), page, account_username)
 
             # Carousel swipe (all phases, 30% chance)
             if random.random() < 0.30:
@@ -900,11 +923,12 @@ class InstagramWarmingService:
             await page.wait_for_timeout(random.randint(5000, 8000))
 
             for reel_idx in range(reel_count):
+                await self._check_human_intervention(page, account_username)
                 watch_time = random.randint(12, 35)
                 logger.info(f"   🎬 Watching Reel #{reel_idx+1} for {watch_time}s...")
                 if account_id:
                     await self.log_activity(account_id, "video_watch", f"🎬 Watched Reel for {watch_time}s")
-                await asyncio.sleep(watch_time)
+                await self._smart_sleep(watch_time, page, account_username)
 
                 # Like reel (Phase 2+, 25% chance)
                 if phase >= 2 and random.random() < 0.25:
@@ -915,12 +939,12 @@ class InstagramWarmingService:
                             logger.info("   ❤️ Liked a Reel")
                             if account_id:
                                 await self.log_activity(account_id, "like", "❤️ Liked a Reel")
-                            await asyncio.sleep(random.uniform(1, 2))
+                            await self._smart_sleep(random.uniform(1, 2), page, account_username)
                     except: pass
 
                 # Swipe to next reel
                 await self._human_swipe(page, 500, account_id)
-                await asyncio.sleep(random.uniform(1, 3))
+                await self._smart_sleep(random.uniform(1, 3), page, account_username)
                 await clear_popups() 
         except InstagramChallengeException: raise
         except Exception as e:
