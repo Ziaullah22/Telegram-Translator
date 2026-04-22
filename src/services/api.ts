@@ -924,13 +924,13 @@ export const instagramAPI = {
     return response.data;
   },
 
-  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[] }> => {
+  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string }> => {
     const response = await api.get('/instagram/filters/settings');
     return response.data;
   },
 
-  saveFilterSettings: async (settings: { bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[] }): Promise<any> => {
-    const response = await api.post('/instagram/filters/settings', settings);
+  saveFilterSettings: async (bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[], visual_niche: string): Promise<any> => {
+    const response = await api.post('/instagram/filters/settings', { bio_keywords, min_followers, max_followers, sample_hashes, visual_niche });
     return response.data;
   },
 

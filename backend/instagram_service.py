@@ -140,6 +140,9 @@ class InstagramService:
         """Internal worker to analyze profile data and update lead status."""
         logger.info(f"📊 Analyzing @Lead {lead_id} (Followers: {followers}, Following: {following}), Bio: '{bio[:30]}...', Private: {is_private})")
         
+        ai_analysis = {}
+        score = 0
+        
         # 🚨 NOT FOUND CHECK: Detect InstaCognito's "profile not available" messages
         not_found_phrases = [
             'we are downloading the profile',
@@ -189,82 +192,98 @@ class InstagramService:
         if is_qualified and not self._check_bio_keywords(bio, settings['bio_keywords']):
             is_qualified = False
 
-        # 3. Picture Visual Match (Using the uploaded target hash)
+        # 3. Picture Visual Match (AI Vision + Hashing Fallback)
+        visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
-        if is_qualified and target_hashes:
+        
+        if is_qualified and (visual_niche or target_hashes):
             if not recent_posts:
                 logger.info("❌ Visual Scanner rejected lead: Lead has NO photos to scan.")
                 is_qualified = False
             else:
-                logger.info("🔍 Visual Scanner Enabled: Checking recent photos against target picture...")
                 image_matched = False
-                try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        for post in recent_posts:
+                # Try AI Vision FIRST if niche is described
+                if visual_niche:
+                    logger.info(f"👁️ AI VISION ACTIVE: Checking photos for '{visual_niche}'...")
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        for post in recent_posts[:2]: # Check first 2 posts for speed
                             try:
                                 res = await client.get(post['display_url'])
                                 if res.status_code == 200:
-                                    post_hash = await asyncio.get_event_loop().run_in_executor(None, self._get_image_hash, res.content)
-                                    if post_hash:
-                                        import imagehash
-                                        p_hashes = post_hash.split('|')
-                                        for target_hash in target_hashes:
-                                            t_hashes = target_hash.split('|')
-                                            
-                                            # Backwards compatibility check
-                                            if len(p_hashes) == 2 and len(t_hashes) == 2:
-                                                p_obj1, p_obj2 = imagehash.hex_to_hash(p_hashes[0]), imagehash.hex_to_hash(p_hashes[1])
-                                                t_obj1, t_obj2 = imagehash.hex_to_hash(t_hashes[0]), imagehash.hex_to_hash(t_hashes[1])
-                                                diff1, diff2 = p_obj1 - t_obj1, p_obj2 - t_obj2
-                                                
-                                                logger.info(f"📐 Multi-Dimensional AI: pHash={diff1}/64, dHash={diff2}/64")
-                                                # Both dimensions must pass structural checks
-                                                if diff1 <= 32 and diff2 <= 38: # 🧠 Increased breathing room: allow lighting changes, still block smooth faces.
-                                                    image_matched = True
-                                                    logger.info(f"✅ Visual Scanner: Perfect Multi-Dimensional Match!")
-                                                    break
-                                            else:
-                                                # Legacy fallback
-                                                diff = imagehash.hex_to_hash(p_hashes[0]) - imagehash.hex_to_hash(t_hashes[0])
-                                                if diff <= 26:
-                                                    image_matched = True
-                                                    break
+                                    import base64
+                                    img_b64 = base64.b64encode(res.content).decode('utf-8')
+                                    vision_res = await instagram_ai.analyze_vision(img_b64, visual_niche)
+                                    if vision_res.get('match'):
+                                        reason = vision_res.get('reason', 'Visual match confirmed.')
+                                        logger.info(f"✅ AI Vision Match: {reason}")
+                                        image_matched = True
+                                        ai_analysis['vision_reason'] = reason
+                                        break
+                                    else:
+                                        logger.info(f"❌ AI Vision Mismatch: {vision_res.get('reason', '')}")
                             except Exception as e:
-                                logger.warning(f"⚠️ Failed to scan picture: {e}")
-                            if image_matched: break
-                except Exception as e:
-                    logger.warning(f"⚠️ Visual Scanner failed: {e}")
-                    
+                                logger.warning(f"⚠️ AI Vision post check failed: {e}")
+                
+                # Fallback to Math Hashing if AI didn't confirm (or wasn't used)
+                if not image_matched and target_hashes:
+                    logger.info("🔍 Hashing Fallback: Checking structural match...")
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            for post in recent_posts:
+                                try:
+                                    res = await client.get(post['display_url'])
+                                    if res.status_code == 200:
+                                        post_hash = await asyncio.get_event_loop().run_in_executor(None, self._get_image_hash, res.content)
+                                        if post_hash:
+                                            import imagehash
+                                            p_hashes = post_hash.split('|')
+                                            for target_hash in target_hashes:
+                                                t_hashes = target_hash.split('|')
+                                                if len(p_hashes) == 2 and len(t_hashes) == 2:
+                                                    p_obj1, p_obj2 = imagehash.hex_to_hash(p_hashes[0]), imagehash.hex_to_hash(p_hashes[1])
+                                                    t_obj1, t_obj2 = imagehash.hex_to_hash(t_hashes[0]), imagehash.hex_to_hash(t_hashes[1])
+                                                    if (p_obj1 - t_obj1) <= 32 and (p_obj2 - t_obj2) <= 38:
+                                                        image_matched = True
+                                                        break
+                                                else:
+                                                    if (imagehash.hex_to_hash(p_hashes[0]) - imagehash.hex_to_hash(t_hashes[0])) <= 26:
+                                                        image_matched = True
+                                                        break
+                                except: pass
+                                if image_matched: break
+                    except: pass
+                
                 if not image_matched:
-                    logger.info("❌ Visual Scanner rejected lead: No photos matched the mathematical standard.")
+                    reason = vision_res.get('reason', 'No photos matched the target criteria') if visual_niche else 'No structural match found'
+                    logger.info(f"❌ Visual Check rejected lead: {reason}")
                     is_qualified = False
+                    ai_analysis['vision_reason'] = reason
 
         new_status = 'qualified' if is_qualified else 'rejected'
         
         # 🧠 DEEP AI ANALYSIS (Gemma Powered)
-        ai_analysis = {}
-        score = 0 # 🛡️ Safe Default
         # Run AI analysis for EVERY lead we have data for, so user can see niche/score even for rejected ones
         if bio or followers > 0:
-            logger.info(f"🧠 [GEMMA] Analyzing @{full_name}...")
+            logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
             ai_result = await instagram_ai.analyze_lead_deep({
                 "username": full_name,
                 "bio": bio,
                 "followers": followers
             })
             
-            logger.info(f"📡 [GEMMA] Raw Response: {ai_result}")
+            logger.info(f"📡 [Gemma 4] Raw Response: {ai_result}")
 
             if ai_result and "error" not in ai_result:
-                ai_analysis = ai_result
+                # Merge existing data (like vision_reason) with AI results
+                ai_analysis.update(ai_result)
                 # Update score and quality if AI provides it
                 score = ai_result.get("intent_score", 0)
                 if ai_result.get("quality") == "high":
                     score = max(score, 90)
                 
-                logger.info(f"✨ [GEMMA] Success! Score: {score}, Niche: {ai_result.get('niche')}")
+                logger.info(f"✨ [Gemma 4] Success! Score: {score}, Niche: {ai_result.get('niche')}")
             else:
-                logger.warning(f"⚠️ [GEMMA] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
+                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
         
         # 🏎️ SAVE EVERYTHING: Full Name, Bio, Followers, Posts, and AI Data
         posts_json = json.dumps(recent_posts or [])
@@ -465,11 +484,21 @@ class InstagramService:
         leads = []
         for row in rows:
             d = dict(row)
-            # Parse recent_posts JSON
+            # Parse JSON fields for frontend consumption
             try:
                 d['recent_posts'] = json.loads(d.get('recent_posts') or '[]')
             except:
                 d['recent_posts'] = []
+                
+            try:
+                audit = json.loads(d.get('data_audit_json') or '{}') if isinstance(d.get('data_audit_json'), str) else (d.get('data_audit_json') or {})
+                d['data_audit_json'] = audit
+                # 🏎️ UI Sync: Map the AI Vision reason to the primary rejection_reason field
+                d['rejection_reason'] = audit.get('vision_reason', '')
+            except:
+                d['data_audit_json'] = {}
+                d['rejection_reason'] = ''
+                
             leads.append(d)
         return leads
 
@@ -951,6 +980,8 @@ class InstagramService:
                     bio_keywords TEXT DEFAULT '',
                     min_followers INTEGER DEFAULT 0,
                     max_followers INTEGER DEFAULT 0,
+                    sample_hashes TEXT DEFAULT '[]',
+                    visual_niche TEXT DEFAULT '',
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """)
@@ -974,16 +1005,16 @@ class InstagramService:
             res = dict(row)
             res['sample_hashes'] = json.loads(res.get('sample_hashes') or '[]')
             return res
-        return {"user_id": user_id, "bio_keywords": "", "min_followers": 0, "max_followers": 0, "sample_hashes": []}
+        return {"user_id": user_id, "bio_keywords": "", "min_followers": 0, "max_followers": 0, "sample_hashes": [], "visual_niche": ""}
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = ""):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, updated_at)
-            VALUES ($1, $2, $3, $4, $5, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:

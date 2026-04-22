@@ -50,7 +50,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'campaign' | 'filters'>('leads');
     const [messageTemplate, setMessageTemplate] = useState('Hello [username], I saw your profile and loved your content! We help brands like yours grow. Would you be open to a quick chat?');
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
-    const [filterSettings, setFilterSettings] = useState<{ bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[] }>({ bio_keywords: '', min_followers: 0, max_followers: 0, sample_hashes: [] });
+    const [filterSettings, setFilterSettings] = useState<{ bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[], visual_niche: string }>({ bio_keywords: '', min_followers: 0, max_followers: 0, sample_hashes: [], visual_niche: '' });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -70,6 +70,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showProxyModal, setShowProxyModal] = useState(false);
     const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
+    const [showAuditModal, setShowAuditModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
 
     // Form States
@@ -177,7 +178,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 bio_keywords: s.bio_keywords || '',
                 min_followers: s.min_followers || 0,
                 max_followers: s.max_followers || 0,
-                sample_hashes: s.sample_hashes || []
+                sample_hashes: s.sample_hashes || [],
+                visual_niche: s.visual_niche || ''
             }))
             .catch(() => { });
     }, [filterStatus, searchQuery]);
@@ -831,6 +833,18 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <td className="px-4 py-3 text-right">
                                                         <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
+                                                            {(lead.data_audit_json || lead.rejection_reason) && (
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        setSelectedLead(lead);
+                                                                        setShowAuditModal(true);
+                                                                    }}
+                                                                    className="p-2 rounded-xl text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all"
+                                                                    title="View AI Decision Audit"
+                                                                >
+                                                                    <Brain className="w-4 h-4" />
+                                                                </button>
+                                                            )}
                                                             {lead.status === 'discarded' ? (
                                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 font-black text-[9px] uppercase tracking-widest border border-red-500/20">
                                                                     <X className="w-3 h-3" /> Discarded 🗑️
@@ -1164,6 +1178,35 @@ const InstagramLeadGenerator: React.FC = () => {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 space-y-6">
+                                <div className="space-y-4 p-6 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-3xl border border-indigo-500/10 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-500">
+                                            <Brain className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-black text-gray-900 dark:text-white tracking-tight">AI Vision Training</h3>
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Identify leads using LLaVA local vision model</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                            Target Visual Niche
+                                            <span className="px-1.5 py-0.5 bg-indigo-500 text-white rounded text-[8px]">New</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g., 'Luxury watches on wrist', 'Organic food catering', 'High-end sneakers'"
+                                            value={filterSettings.visual_niche}
+                                            onChange={(e) => setFilterSettings(p => ({ ...p, visual_niche: e.target.value }))}
+                                            className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-gray-400"
+                                        />
+                                        <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
+                                            💡 AI will 'look' at the first two posts of every lead. If they don't match this description, the lead is automatically rejected.
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
                                     <h3 className="text-xl font-black text-gray-900 dark:text-white mb-1 flex items-center gap-3">
                                         <Filter className="w-5 h-5 text-purple-500" /> Bio Keyword Filter
@@ -1228,7 +1271,13 @@ const InstagramLeadGenerator: React.FC = () => {
                                     onClick={async () => {
                                         setIsSavingFilters(true);
                                         try {
-                                            await instagramAPI.saveFilterSettings(filterSettings);
+                                            await instagramAPI.saveFilterSettings(
+                                                filterSettings.bio_keywords,
+                                                filterSettings.min_followers,
+                                                filterSettings.max_followers,
+                                                filterSettings.sample_hashes,
+                                                filterSettings.visual_niche
+                                            );
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }
                                         finally { setIsSavingFilters(false); }
@@ -1275,6 +1324,129 @@ const InstagramLeadGenerator: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* AI Decision Audit Modal */}
+            {showAuditModal && selectedLead && (() => {
+                // 🛰️ LIVE SYNC: Find the latest version of this lead in the main state
+                const liveLead = leads.find(l => l.id === selectedLead.id) || selectedLead;
+                const ai = typeof liveLead.data_audit_json === 'string' ? JSON.parse(liveLead.data_audit_json || '{}') : liveLead.data_audit_json;
+
+                return (
+                    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300">
+                            <div className="p-8">
+                                <div className="flex items-center justify-between mb-8">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-indigo-500/10 rounded-2xl">
+                                            <Brain className="w-6 h-6 text-indigo-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">AI Decision Audit</h2>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Decision Logic for @{liveLead.username}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowAuditModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                                        <X className="w-6 h-6 text-gray-400" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    {/* Gemma Analysis */}
+                                    {(!ai || Object.keys(ai).length === 0) ? (
+                                        <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
+                                            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                                                    <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
+                                                </div>
+                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
+                                                    "{ai.strategy || 'No strategic summary available.'}"
+                                                </p>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Detected Niche</span>
+                                                        <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">{ai.niche || 'General'}</span>
+                                                    </div>
+                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Intent Score</span>
+                                                        <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {ai.suggested_hook && (
+                                                <div className="p-6 bg-pink-500/5 rounded-3xl border border-pink-500/10">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Zap className="w-4 h-4 text-pink-500" />
+                                                            <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">AI Cold Hook</h3>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(ai.suggested_hook);
+                                                                setNotification({ msg: '📋 Hook copied!', type: 'success' });
+                                                            }}
+                                                            className="text-[9px] font-black text-pink-500 uppercase hover:underline"
+                                                        >
+                                                            Copy Hook
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-sm font-black text-gray-900 dark:text-white tracking-tight">
+                                                        "{ai.suggested_hook}"
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* LLaVA Visual Audit */}
+                                    <div className="p-6 bg-slate-50 dark:bg-black/20 rounded-3xl border border-slate-200 dark:border-white/10">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <Eye className={`w-4 h-4 ${liveLead.rejection_reason ? (liveLead.status === 'rejected' ? 'text-red-500' : 'text-emerald-500') : 'text-gray-400'}`} />
+                                                <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">
+                                                    {liveLead.status === 'rejected' ? 'Vision Rejection Logic' : 'Vision Qualification Reason'}
+                                                </h3>
+                                            </div>
+                                            {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) ? (
+                                                <div className="flex items-center gap-1">
+                                                    <Loader2 className="w-2.5 h-2.5 text-blue-500 animate-spin" />
+                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-blue-500/10 text-blue-500">
+                                                        Deep Scan Active...
+                                                    </span>
+                                                </div>
+                                            ) : liveLead.rejection_reason ? (
+                                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${liveLead.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                                                    {liveLead.status === 'rejected' ? 'Rejected' : 'Qualified'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-gray-100 dark:bg-white/5 text-gray-400">
+                                                    Pending Scan
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className={`text-sm font-medium leading-relaxed italic border-l-4 border-blue-500/20 pl-4 py-1 ${liveLead.rejection_reason ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}>
+                                            {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) 
+                                                ? "Gemma 4 is scanning photos and analyzing intent. Please wait..." 
+                                                : (liveLead.rejection_reason || "No visual audit data available. This lead was analyzed before AI Vision was enabled or the target niche was empty.")
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <button onClick={() => setShowAuditModal(false)} className="w-full mt-8 py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
+                                    Close Audit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Modals */}
             {showDiscoveryModal && (
@@ -1440,141 +1612,97 @@ const InstagramLeadGenerator: React.FC = () => {
             )}
 
             {/* Enhanced Post & Network Preview Modal */}
-            {showPreviewModal && selectedLead && (
-                <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-8 bg-slate-900/90 backdrop-blur-md">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col mt-10">
-                        
-                        {/* Sticky Header */}
-                        <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl">
-                                    <Users className="w-6 h-6 text-indigo-600" />
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                                        @{selectedLead.instagram_username || selectedLead.username}
-                                    </h2>
-                                    <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">In-Depth Lead Intelligence 🛰️</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setShowPreviewModal(false)}
-                                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
-                            >
-                                <X className="w-6 h-6 text-gray-400" />
-                            </button>
-                        </div>
-
-                        {/* Scrollable Body */}
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                            <div className="bg-gray-50 dark:bg-black/20 rounded-2xl p-6 mb-6 border border-gray-100 dark:border-white/5">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Professional Biography 🛰️</h3>
-                                    {selectedLead.score > 0 && (
-                                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                                            <Sparkles className="w-2.5 h-2.5" />
-                                            <span className="text-[9px] font-black uppercase">Gemma Score: {selectedLead.score}%</span>
+            {showPreviewModal && selectedLead && (() => {
+                const liveLead = leads.find(l => l.id === selectedLead.id) || selectedLead;
+                return (
+                    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-8 bg-slate-900/90 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col mt-10">
+                            
+                            {/* Sticky Header */}
+                            <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl">
+                                        <Users className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">@{liveLead.username}</h2>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{liveLead.full_name || 'Anonymous Creator'}</span>
+                                            <span className="w-1 h-1 bg-gray-300 rounded-full" />
+                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{liveLead.followers?.toLocaleString() || 0} Followers</span>
                                         </div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowPreviewModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                                    <X className="w-6 h-6 text-gray-400" />
+                                </button>
+                            </div>
+
+                            {/* Scrollable Content */}
+                            <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+                                <div className="space-y-4">
+                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Biography & Intent 📝</h3>
+                                    <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5">
+                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed">
+                                            {liveLead.biography || "No biography provided by this creator."}
+                                        </p>
+                                    </div>
+                                    {liveLead.external_url && (
+                                        <a 
+                                            href={liveLead.external_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="flex items-center gap-3 p-4 bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/30 hover:scale-[1.02] transition-transform"
+                                        >
+                                            <ExternalLink className="w-4 h-4" />
+                                            Visit Portfolio / Linktree
+                                        </a>
                                     )}
                                 </div>
-                                {selectedLead.bio ? (
-                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed italic">
-                                        "{selectedLead.bio}"
-                                    </p>
-                                ) : (
-                                    <p className="text-sm text-gray-400 italic">No biography available for this profile.</p>
-                                )}
-                            </div>
 
-                            {/* 🧠 GEMMA DEEP INTELLIGENCE SECTION */}
-                            {(() => {
-                                const ai = typeof selectedLead.data_audit_json === 'string' ? JSON.parse(selectedLead.data_audit_json || '{}') : selectedLead.data_audit_json;
-                                if (!ai || Object.keys(ai).length === 0) return null;
-
-                                return (
-                                    <div className="mb-6 space-y-4">
-                                        <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Brain className="w-4 h-4 text-indigo-500" />
-                                                <h4 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Strategic Deep Analysis</h4>
-                                            </div>
-                                            <p className="text-xs font-bold text-gray-600 dark:text-gray-400 leading-relaxed">
-                                                {ai.strategy || "Gemma predicts this lead is a high-value prospect based on their bio intent and engagement markers."}
-                                            </p>
-                                        </div>
-
-                                        {ai.suggested_hook && (
-                                            <div className="relative group">
-                                                <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 to-indigo-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-                                                <div className="relative p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-white/5">
-                                                    <div className="flex items-center justify-between mb-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <Zap className="w-3.5 h-3.5 text-orange-400" />
-                                                            <h4 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">Personalized AI Hook</h4>
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => {
-                                                                navigator.clipboard.writeText(ai.suggested_hook);
-                                                                setNotification({ msg: '📋 AI Hook copied to clipboard!', type: 'success' });
-                                                            }}
-                                                            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-indigo-500 hover:text-white text-gray-500 transition-all active:scale-95"
+                                <div className="mb-4">
+                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Content Archive 📸</h3>
+                                    <div className="grid grid-cols-3 gap-4">
+                                        {liveLead.recent_posts && liveLead.recent_posts.length > 0 ? (
+                                            liveLead.recent_posts.map((post: any, idx: number) => {
+                                                const imageUrl = typeof post === 'string' ? post : post.display_url;
+                                                return (
+                                                    <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative border border-gray-100 dark:border-white/5">
+                                                        <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                                        <a
+                                                            href={post.url || '#'}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
                                                         >
-                                                            <Copy className="w-3 h-3" />
-                                                            <span className="text-[9px] font-black uppercase">Copy</span>
-                                                        </button>
+                                                            <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
+                                                        </a>
                                                     </div>
-                                                    <p className="text-sm font-black text-gray-900 dark:text-white tracking-tight leading-snug">
-                                                        "{ai.suggested_hook}"
-                                                    </p>
-                                                </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="col-span-3 py-10 text-center flex flex-col items-center border-2 border-dashed border-gray-100 dark:border-white/5 rounded-3xl">
+                                                <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
+                                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
                                             </div>
                                         )}
                                     </div>
-                                );
-                            })()}
-
-                            <div className="mb-4">
-                                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Content Archive 📸</h3>
-                                <div className="grid grid-cols-3 gap-4">
-                                    {selectedLead.recent_posts && selectedLead.recent_posts.length > 0 ? (
-                                        selectedLead.recent_posts.map((post: any, idx: number) => {
-                                            const imageUrl = typeof post === 'string' ? post : post.display_url;
-                                            return (
-                                                <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative border border-gray-100 dark:border-white/5">
-                                                    <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                                    <a
-                                                        href={post.url || '#'}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
-                                                    >
-                                                        <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
-                                                    </a>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="col-span-3 py-10 text-center flex flex-col items-center border-2 border-dashed border-gray-100 dark:border-white/5 rounded-3xl">
-                                            <div className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-gray-300" /></div>
-                                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Gallery is empty for this lead</p>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Sticky Footer */}
-                        <div className="p-8 pt-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10 flex justify-center">
-                            <button
-                                onClick={() => setShowPreviewModal(false)}
-                                className="w-full max-w-xs py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
-                            >
-                                Finish Inspection
-                            </button>
+                            {/* Sticky Footer */}
+                            <div className="p-8 pt-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10 flex justify-center">
+                                <button
+                                    onClick={() => setShowPreviewModal(false)}
+                                    className="w-full max-w-xs py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl shadow-gray-300/30 dark:shadow-none"
+                                >
+                                    Finish Inspection
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {showBulkModal && (
                 <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
