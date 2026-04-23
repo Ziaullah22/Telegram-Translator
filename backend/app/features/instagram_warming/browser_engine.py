@@ -91,8 +91,34 @@ class InstagramBrowserEngine:
                 }};
                 navigator.getBattery = () => Promise.resolve(batteryObj);
 
-                // ☄️ GHOST THUMB: UNSTOPPABLE VISUAL SYSTEM
-                const pulseCSS = `
+                // ☄️ GHOST HUD: REAL-TIME TERMINAL OVERLAY
+                const hudCSS = `
+                    #ghost-hud {{
+                        position: fixed !important;
+                        bottom: 20px !important;
+                        left: 20px !important;
+                        right: 20px !important;
+                        background: rgba(0, 0, 0, 0.85) !important;
+                        color: #00ff00 !important;
+                        font-family: 'Courier New', Courier, monospace !important;
+                        font-size: 11px !important;
+                        padding: 10px !important;
+                        border-radius: 8px !important;
+                        border: 1px solid #444 !important;
+                        z-index: 2147483647 !important;
+                        max-height: 120px !important;
+                        overflow-y: hidden !important;
+                        pointer-events: none !important;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.5) !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        gap: 4px !important;
+                    }}
+                    .hud-line {{ opacity: 0; transform: translateX(-10px); animation: hudIn 0.3s forwards; }}
+                    .hud-line.error {{ color: #ff4444 !important; }}
+                    .hud-line.warn {{ color: #ffaa00 !important; }}
+                    @keyframes hudIn {{ to {{ opacity: 1; transform: translateX(0); }} }}
+                    
                     @keyframes ripple {{
                         0% {{ transform: scale(1); opacity: 0.8; }}
                         100% {{ transform: scale(3); opacity: 0; }}
@@ -125,16 +151,51 @@ class InstagramBrowserEngine:
                     }}
                     #ghost-cursor.active {{ transform: scale(0.7) !important; background-color: #ff8c00 !important; }}
                 `;
-                const style = document.createElement('style');
-                style.innerHTML = pulseCSS;
-                document.documentElement.appendChild(style);
+                const initHud = () => {{
+                    if (document.getElementById('ghost-hud')) return;
+                    
+                    const style = document.createElement('style');
+                    style.innerHTML = hudCSS;
+                    document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
 
-                const cursor = document.createElement('div');
-                cursor.id = 'ghost-cursor';
-                document.documentElement.appendChild(cursor);
+                    const hud = document.createElement('div');
+                    hud.id = 'ghost-hud';
+                    hud.innerHTML = '<div class="hud-line">🛰️ Ghost Terminal Initialized...</div>';
+                    (document.body || document.documentElement).appendChild(hud);
+
+                    const cursor = document.createElement('div');
+                    cursor.id = 'ghost-cursor';
+                    (document.body || document.documentElement).appendChild(cursor);
+                }};
+
+                // Watchdog: Ensure HUD stays in DOM
+                const observer = new MutationObserver(() => {{
+                    if (!document.getElementById('ghost-hud')) initHud();
+                }});
+                observer.observe(document.documentElement, {{ childList: true, subtree: true }});
+
+                // Initial call
+                if (document.readyState === 'loading') {{
+                    document.addEventListener('DOMContentLoaded', initHud);
+                }} else {{
+                    initHud();
+                }}
 
                 window.mouseX = 0;
                 window.mouseY = 0;
+                window.isBotActing = false;
+
+                window.showGhostLog = (msg, type = 'info') => {{
+                    const hud = document.getElementById('ghost-hud');
+                    if (!hud) {{ initHud(); return; }}
+                    const line = document.createElement('div');
+                    line.className = 'hud-line' + (type !== 'info' ? ' ' + type : '');
+                    const icon = type === 'error' ? '❌ ' : (type === 'warn' ? '⚠️ ' : '💬 ');
+                    line.innerText = icon + msg;
+                    hud.appendChild(line);
+                    if (hud.children.length > 8) hud.removeChild(hud.children[0]);
+                    hud.scrollTop = hud.scrollHeight;
+                }};
 
                 const updateLoop = () => {{
                     cursor.style.setProperty('left', (window.mouseX - 9) + 'px', 'important');

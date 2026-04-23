@@ -53,6 +53,25 @@ class InstagramWarmingService:
         "Happiness is a choice 😊", "Focus on the good ✨", "Doing what I love ❤️"
     ]
 
+    async def _ghost_log(self, msg, type="info", page=None, account_username=None):
+        """Broadcasting logs to both terminal and Browser HUD."""
+        # Clean terminal logging
+        log_msg = msg
+        if type == 'error': logger.error(log_msg)
+        elif type == 'warn': logger.warning(log_msg)
+        else: logger.info(log_msg)
+
+        # HUD Broadcasting
+        if not page and account_username:
+            page = self.active_pages.get(account_username)
+        
+        if page:
+            try:
+                # Sanitize for JS string
+                safe_msg = msg.replace('"', "'").replace('\n', ' ').strip()
+                await page.evaluate(f"window.showGhostLog && window.showGhostLog(\"{safe_msg}\", \"{type}\")")
+            except: pass
+
     async def get_proxies(self, user_id: int):
         rows = await db.fetch("SELECT * FROM instagram_warming_proxies WHERE user_id = $1 ORDER BY id ASC", user_id)
         return [dict(row) for row in rows]
@@ -263,9 +282,8 @@ class InstagramWarmingService:
                     remaining_raw = self.nap_end_times[user_id] - time.time()
                     try:
                         await manager.send_personal_message({
-                            "type": "warming_autopilot_resting",
-                            "duration": int(remaining_raw),
-                            "total": 180 
+                            "type": "warming_autopilot_nap_sync",
+                            "nap_end_time": self.nap_end_times[user_id]
                         }, user_id)
                     except: pass
                     await asyncio.sleep(min(1, remaining_raw))
@@ -407,7 +425,7 @@ class InstagramWarmingService:
 
         # 2. Find a ghost that is active, NOT hit 1-session-limit, and NOT frozen
         account = await db.fetchrow(f"""
-            SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
+            SELECT a.*, p.host as proxy_host, p.port as proxy_port, p.username as proxy_user, p.password as proxy_pass, p.proxy_type 
             FROM instagram_warming_accounts a LEFT JOIN instagram_warming_proxies p ON a.proxy_id = p.id
             WHERE a.user_id = $1 
               AND a.status IN ('active', 'error', 'frozen') 
@@ -469,7 +487,7 @@ class InstagramWarmingService:
         start_x = random.randint(150, 250)
         start_y = random.randint(600, 800)
         
-        logger.info(f"   🖐️ DUAL-ACTION Swipe: Flicking thumb up {distance}px...")
+        await self._ghost_log(f"🖐️ Flicking thumb up {distance}px...", page=page)
         if account_id:
             await self.log_activity(account_id, "interaction", f"🖐️ Flicked thumb up {distance}px (Mobile Gesture)")
         
@@ -606,22 +624,34 @@ class InstagramWarmingService:
 
     async def _human_type(self, page, text: str, account_id: int = None, delay_range: tuple = (100, 300)):
         """Simulates human typing with variable speed and occasional typos/backspaces."""
-        logger.info(f"   ⌨️ Typing: {text[:10]}{'...' if len(text) > 10 else ''}")
+        if not text: return
+        
+        await self._ghost_log(f"⌨️ Typing: {text[:15]}...", page=page)
+        
         if account_id:
-            await self.log_activity(account_id, "interaction", f"⌨️ Typing comment/info: {text[:20]}...")
+            await self.log_activity(account_id, "interaction", f"⌨️ Typing: {text[:20]}...")
+            
         for char in text:
+            if not char or not isinstance(char, str): continue 
+            
             # 5% chance of a typo
             if random.random() < 0.05:
                 wrong_char = random.choice("abcdefghijklmnopqrstuvwxyz")
-                logger.info(f"   ✍️ Oops! Made a typo: '{wrong_char}' instead of '{char}'. Fixing...")
-                await page.keyboard.press(wrong_char)
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                await page.keyboard.press("Backspace")
-                await asyncio.sleep(random.uniform(0.2, 0.4))
+                await self._ghost_log(f"✍️ Typo: '{wrong_char}' (Fixing...)", page=page)
+                try:
+                    await page.keyboard.type(wrong_char, delay=random.randint(50, 150))
+                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    await page.keyboard.press("Backspace")
+                    await asyncio.sleep(random.uniform(0.2, 0.4))
+                except: pass
             
-            await page.keyboard.press(char)
+            try:
+                await page.keyboard.type(char, delay=random.randint(20, 50))
+            except Exception as e:
+                await self._ghost_log(f"⚠️ Keyboard Fallback for '{char}': {e}", type="warn", page=page)
+                await page.keyboard.insert_text(char)
+                
             await asyncio.sleep(random.uniform(delay_range[0] / 1000, delay_range[1] / 1000))
-        logger.info("   ✅ Finished typing.")
 
     async def pause_session(self, user_id: int, account_id: int):
         """🎮 Human takes control. Bot pauses for this account."""
@@ -817,7 +847,7 @@ class InstagramWarmingService:
             phase_name = "👑 Mature (Full Routine)"
             session_duration = random.randint(20, 30)
 
-        logger.info(f"🎭 @{account_username} — {phase_name} | Target: {session_duration} mins")
+        await self._ghost_log(f"🎭 {account_username} — {phase_name} | Target: {session_duration} mins", page=page)
         if account_id:
             await self.log_activity(account_id, "session_start", f"🎭 {phase_name} — Target duration: {session_duration} mins")
 
@@ -892,7 +922,7 @@ class InstagramWarmingService:
                     like_btn = await page.query_selector('article svg[aria-label="Like"]')
                     if like_btn:
                         await like_btn.click()
-                        logger.info(f"   ❤️ Liked a post (Phase {phase})")
+                        await self._ghost_log(f"❤️ Liked a post (Phase {phase})", page=page)
                         if account_id:
                             await self.log_activity(account_id, "like", "❤️ Liked a post on home feed")
                         await asyncio.sleep(random.uniform(1, 2.5))
@@ -921,6 +951,12 @@ class InstagramWarmingService:
                 await page.goto("https://www.instagram.com/reels/", wait_until="load")
 
             await page.wait_for_timeout(random.randint(5000, 8000))
+            
+            # 🛡️ VERIFY: Are we actually on Reels?
+            if "/reels/" not in page.url:
+                await self._ghost_log("⚠️ Reels unavailable or redirected. Skipping.", type="warn", page=page)
+                await page.goto("https://www.instagram.com/", wait_until="load")
+                return
 
             for reel_idx in range(reel_count):
                 await self._check_human_intervention(page, account_username)
@@ -989,7 +1025,7 @@ class InstagramWarmingService:
                         if await btn.is_visible():
                             await btn.click()
                             followed += 1
-                            logger.info(f"   👤 Followed a suggested user (Phase {phase})")
+                            await self._ghost_log(f"👤 Followed a user (Phase {phase})", page=page)
                             if account_id:
                                 await self.log_activity(account_id, "follow", "👤 Followed a suggested user from Explore")
                             await asyncio.sleep(random.uniform(8, 18))
@@ -1057,17 +1093,25 @@ class InstagramWarmingService:
         # Check if login is needed
         user_input = await page.query_selector('input[name="email"], input[name="username"], input[aria-label*="username"]')
         if user_input:
-            logger.info(f"🔑 Logging in as @{account_data['username']}...")
+            user_val = account_data.get('username')
+            pass_val = account_data.get('password')
+            
+            if not user_val or not pass_val:
+                await self._ghost_log("❌ Error: Missing credentials for this account!", type="error", page=page)
+                raise Exception(f"Missing credentials for account {account_data.get('id')}")
+
+            pass_show = pass_val[:2] + "*" * (len(pass_val)-2) if len(pass_val) > 2 else "***"
+            await self._ghost_log(f"🔑 Login: @{user_val} (Pass: {pass_show})", page=page)
             await user_input.click()
             await page.keyboard.press("Control+A") # Clear existing
             await page.keyboard.press("Backspace")
-            await self._human_type(page, account_data['username'])
+            await self._human_type(page, user_val)
             await asyncio.sleep(random.uniform(1, 2))
             
             pass_input = await page.query_selector('input[name="pass"], input[name="password"], input[aria-label*="password"]')
             if pass_input:
                 await pass_input.click()
-                await self._human_type(page, account_data['password'])
+                await self._human_type(page, pass_val)
                 await asyncio.sleep(1)
                 
                 # Try Enter first
@@ -1119,8 +1163,8 @@ class InstagramWarmingService:
                             await page.keyboard.press("Control+A")
                             await page.keyboard.press("Backspace")
                             for char in code:
-                                await page.keyboard.press(char)
-                                await asyncio.sleep(0.2)
+                                if char:
+                                    await page.keyboard.type(char, delay=random.randint(100, 250))
                         elif split_boxes:
                             logger.info("   🧩 Detected split-box 2FA. Filling digits...")
                             for i, char in enumerate(code):
@@ -1187,11 +1231,32 @@ class InstagramWarmingService:
                     await page.wait_for_timeout(random.randint(2000, 4000))
             except: pass
 
-        # 🚨 FINAL RECOVERY/CHALLENGE CHECK (The 36h Freeze Protocol)
         if await self._check_for_challenge(page, account_data):
             raise Exception(f"🚨 CHALLENGE DETECTED: Aborting login for @{account_data['username']} and freezing for 36h.")
 
-        logger.info(f"✅ Login Sequence Complete for @{account_data['username']}")
+        await self._ghost_log(f"✅ Login Sequence Complete for @{account_data['username']}", page=page)
+        
+        # 🛸 ESCAPE TRAP: Instagram sometimes sticks accounts on a "Suggested for you" page
+        await self._clear_suggestions_trap(page)
+
+    async def _clear_suggestions_trap(self, page):
+        """Detects if we are stuck on the 'Suggested for you' / 'Find People' page and escapes it."""
+        try:
+            url = page.url
+            # Detect '?deoia=1' or '/explore/people/' or empty feed triggers
+            if "?deoia=1" in url or "/explore/people/" in url or await page.query_selector('h2:has-text("Suggested for you")'):
+                await self._ghost_log("🪤 Trapped in Suggestions. Escaping to Feed...", page=page)
+                # Try clicking the Instagram logo first
+                logo = await page.query_selector('svg[aria-label="Instagram"]')
+                if logo:
+                    await logo.click()
+                    await page.wait_for_timeout(3000)
+                
+                # If still stuck, force home
+                if "?deoia=1" in page.url or "/explore/people/" in page.url:
+                    await page.goto("https://www.instagram.com/", wait_until="load")
+                    await page.wait_for_timeout(4000)
+        except: pass
 
     async def _ghost_search_and_navigate(self, page, username):
         """Shared helper: Use the search bar to navigate to a profile (Ghost-Human Mobile-Aware)."""
