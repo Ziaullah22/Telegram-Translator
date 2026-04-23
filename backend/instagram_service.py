@@ -1004,6 +1004,12 @@ class InstagramService:
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            # 🏎️ SELF-HEALING: Ensure columns exist if table was created in older version
+            await db.execute("""
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS visual_niche TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS sample_hashes TEXT DEFAULT '[]';
+            """)
+            
             await db.execute("""
                 ALTER TABLE instagram_accounts 
                   ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP,

@@ -470,6 +470,7 @@ async def migrate():
                     min_followers INTEGER DEFAULT 0,
                     max_followers INTEGER DEFAULT 0,
                     sample_hashes JSONB DEFAULT '[]',
+                    visual_niche TEXT DEFAULT '',
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
 
@@ -654,16 +655,10 @@ async def migrate():
                 -- Instagram Filter & Scoring Additions
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS recent_posts JSONB DEFAULT '[]';
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
+                ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS data_audit_json JSONB;
 
-                CREATE TABLE IF NOT EXISTS instagram_filter_settings (
-                    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                    bio_keywords TEXT DEFAULT '',
-                    min_followers INTEGER DEFAULT 0,
-                    max_followers INTEGER DEFAULT 0,
-                    sample_hashes JSONB DEFAULT '[]',
-                    updated_at TIMESTAMPTZ DEFAULT NOW()
-                );
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS sample_hashes JSONB DEFAULT '[]';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS visual_niche TEXT DEFAULT '';
 
                 -- Following Count + Network Lists (Follower/Following Scraping)
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
