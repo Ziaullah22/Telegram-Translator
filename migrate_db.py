@@ -4,22 +4,29 @@ import os
 
 async def migrate():
     # Load from Environment (Docker) or fallback
-    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator")
+    # 1. Try to get from actual environment first (standard Docker/Compose behavior)
+    db_url = os.getenv("DATABASE_URL")
     
-    # Robust path detection for .env
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    env_path = os.path.join(base_dir, 'backend', '.env')
-    
-    # Fallback if already inside backend folder
-    if not os.path.exists(env_path):
-        env_path = os.path.join(base_dir, '.env')
+    if not db_url:
+        print("DATABASE_URL not found in environment, checking .env file...")
+        # Robust path detection for .env
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        env_path = os.path.join(base_dir, 'backend', '.env')
         
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            for line in f:
-                if line.strip().startswith('DATABASE_URL='):
-                    db_url = line.split('=')[1].strip().strip('"').strip("'")
-                    break
+        # Fallback if already inside backend folder
+        if not os.path.exists(env_path):
+            env_path = os.path.join(base_dir, '.env')
+            
+        if os.path.exists(env_path):
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if line.strip().startswith('DATABASE_URL='):
+                        db_url = line.split('=')[1].strip().strip('"').strip("'")
+                        break
+    
+    # Final fallback if still nothing found
+    if not db_url:
+        db_url = "postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator"
 
     print(f"Connecting to database: {db_url}")
     try:
