@@ -273,7 +273,7 @@ async def lifespan(app: FastAPI):
             if text and translation_enabled:
                 try:
                     # Detect language first to see if it's already in the target language
-                    detected = translation_service.detect_language(text)
+                    detected = await translation_service.detect_language(text)
                     target_lang = account['target_language']
                     
                     # Special Logic for Product Auto-Replies:
@@ -361,9 +361,9 @@ async def lifespan(app: FastAPI):
                     """
                     INSERT INTO messages
                     (conversation_id, telegram_message_id, sender_user_id, sender_name, sender_username, type, original_text, translated_text,
-                     source_language, target_language, created_at, is_encrypted, is_outgoing, media_file_name,
+                     source_language, target_language, created_at, is_encrypted, is_outgoing, is_read, media_file_name,
                      reply_to_telegram_id, reply_to_text, reply_to_sender, media_thumbnail, media_duration)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                     RETURNING id
                     """,
                     conversation_id,
@@ -379,6 +379,7 @@ async def lifespan(app: FastAPI):
                     created_at,
                     is_encrypted,
                     message_data.get('is_outgoing', False),
+                    message_data.get('is_read', False),
                     message_data.get('media_filename'),
                     reply_to_tg_id,
                     reply_to_text,
@@ -414,6 +415,7 @@ async def lifespan(app: FastAPI):
                 "created_at": created_at.isoformat() if isinstance(created_at, datetime) else created_at,
                 "edited_at": None,
                 "is_outgoing": message_data.get('is_outgoing', False),
+                "is_read": message_data.get('is_read', False),
                 "media_file_name": message_data.get('media_filename'),
                 "reply_to_telegram_id": reply_to_tg_id,
                 "reply_to_text": reply_to_text,
@@ -601,6 +603,53 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error in handle_reaction: {e}")
 
     telethon_service.add_reaction_handler(handle_reaction)
+
+    # Handler for incoming read receipts from Telegram
+    async def handle_read(read_data: dict):
+        try:
+            account_id = read_data['account_id']
+            peer_id = read_data['peer_id']
+            max_id = read_data['max_id']
+            is_out = read_data['is_out']
+            
+            logger.debug(f"Processing read receipt: account={account_id}, peer={peer_id}, max_id={max_id}, is_out={is_out}")
+            
+            # Find the conversation
+            conv = await db.fetchrow(
+                "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                account_id,
+                peer_id
+            )
+            
+            if conv:
+                logger.debug(f"Matched conversation {conv['id']} for read receipt")
+                # Update all messages in this conversation up to max_id as read
+                # If is_out is True, it means the OTHER person read OUR messages
+                # If is_out is False, it means WE read THEIR messages
+                await db.execute(
+                    "UPDATE messages SET is_read = TRUE WHERE conversation_id = $1 AND telegram_message_id <= $2 AND is_outgoing = $3",
+                    conv['id'],
+                    max_id,
+                    is_out
+                )
+                
+                # Get the user_id for broadcasting
+                account = await db.fetchrow("SELECT user_id FROM telegram_accounts WHERE id = $1", account_id)
+                if account:
+                    await manager.send_to_account(
+                        {
+                            "type": "messages_read",
+                            "conversation_id": conv['id'],
+                            "max_id": max_id,
+                            "is_out": is_out
+                        },
+                        account_id,
+                        account['user_id']
+                    )
+        except Exception as e:
+            logger.error(f"Error in handle_read: {e}")
+
+    telethon_service.add_read_handler(handle_read)
     
     # Auto-connect accounts from database in the background
     # Background task to automatically reconnect all active accounts on startup

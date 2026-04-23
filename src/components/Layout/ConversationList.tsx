@@ -58,6 +58,8 @@ export default function ConversationList({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchFilter, setSearchFilter] = useState<'all' | 'users' | 'groups' | 'channels'>('all');
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; conversationId: number | null }>({
     isOpen: false,
     conversationId: null,
@@ -136,6 +138,7 @@ export default function ConversationList({
         username: user.username,
         type: targetType,
         is_hidden: isGroup, // Hide if it's a group we haven't joined yet to trigger "Join" button UI
+        invite_hash: user.invite_hash,
       });
 
       // Select immediately to show chat window
@@ -201,65 +204,113 @@ export default function ConversationList({
   return (
     <div id="conversation-list" className="w-full h-full bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-all duration-300">
       {/* Header with Search Bar and Back Button */}
-      <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 flex items-center gap-2">
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
-            title="Back to Accounts"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-        )}
-        <div className="relative group flex-1">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
-          </div>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            disabled={!isConnected}
-            autoComplete="no-autofill-search"
-            spellCheck={false}
-            name="search-query-field"
-            placeholder={isConnected ? "Search chats..." : "Connect account..."}
-            className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
-          />
-          {searchQuery && (
+      <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          {onBack && (
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+              onClick={onBack}
+              className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
+              title="Back to Accounts"
             >
-              <X className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          {isSearching && (
-            <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
-              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+          <div className="relative group flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
             </div>
-          )}
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)} // Delay to allow filter clicks
+              disabled={!isConnected}
+              autoComplete="no-autofill-search"
+              spellCheck={false}
+              name="search-query-field"
+              placeholder={isConnected ? "Search chats..." : "Connect account..."}
+              className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {isSearching && (
+              <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Global Search Filters */}
+        {(searchQuery.trim() || isSearchFocused || searchFilter !== 'all') && (
+          <div className="px-1 flex gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'users', label: 'Users' },
+              { id: 'groups', label: 'Groups' },
+              { id: 'channels', label: 'Channels' }
+            ].map(filter => (
+              <button
+                key={filter.id}
+                onClick={() => setSearchFilter(filter.id as any)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                  searchFilter === filter.id 
+                    ? 'bg-blue-600 text-white shadow-sm' 
+                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* List Space */}
       <div id="list-container" className="flex-1 overflow-y-auto">
-        {searchQuery.trim() ? (
+        {(searchQuery.trim() || searchFilter !== 'all') ? (
           /* Search Results View */
           <div className="flex flex-col">
-            <div className="px-4 py-2 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
-              Global Search Results
+            <div className="px-4 py-2 flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
+              <span>{searchFilter === 'all' ? 'Global Search Results' : `${searchFilter} Results`}</span>
+              {searchFilter !== 'all' && (
+                <button 
+                  onClick={() => setSearchFilter('all')}
+                  className="text-blue-600 hover:text-blue-700 normal-case font-medium"
+                >
+                  Clear Filter
+                </button>
+              )}
             </div>
             {isSearching && searchResults.length === 0 ? (
               <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
                 Searching Telegram...
               </div>
-            ) : searchResults.length === 0 && !isSearching ? (
-              <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
-                No users found for "{searchQuery}"
-              </div>
-            ) : (
-              searchResults.map((user) => {
+            ) : (() => {
+              const filteredResults = searchResults.filter(user => {
+                if (searchFilter === 'all') return true;
+                if (searchFilter === 'users') return user.type === 'user' || user.type === 'private';
+                if (searchFilter === 'groups') return user.type === 'group' || user.type === 'supergroup';
+                if (searchFilter === 'channels') return user.type === 'channel';
+                return true;
+              });
+
+              if (filteredResults.length === 0) {
+                return (
+                  <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
+                    No {searchFilter !== 'all' ? searchFilter : 'results'} found for "{searchQuery}"
+                  </div>
+                );
+              }
+
+              return filteredResults.map((user) => {
                 const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
                 const subtitle = user.username ? `@${user.username}` : user.phone || '';
 
@@ -288,20 +339,32 @@ export default function ConversationList({
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         ) : (
           /* Normal Conversations View */
-          conversations.length === 0 ? (
-            <div className="p-10 text-center">
-              <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4 opacity-30" />
-              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-                {isConnected ? 'No conversations yet' : 'Connect account to see conversations'}
-              </p>
-            </div>
-          ) : (
-            conversations.map((conversation) => {
+          (() => {
+            const filteredConversations = conversations.filter(conv => {
+              if (searchFilter === 'all') return true;
+              if (searchFilter === 'users') return conv.type === 'private';
+              if (searchFilter === 'groups') return conv.type === 'group' || conv.type === 'supergroup';
+              if (searchFilter === 'channels') return conv.type === 'channel';
+              return true;
+            });
+
+            if (filteredConversations.length === 0) {
+              return (
+                <div className="p-10 text-center">
+                  <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4 opacity-30" />
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+                    {searchFilter === 'all' ? 'No conversations yet' : `No ${searchFilter} found`}
+                  </p>
+                </div>
+              );
+            }
+
+            return filteredConversations.map((conversation) => {
               const isActive = currentConversation?.id === conversation.id;
               const unread = unreadCounts[conversation.id] || 0;
               const lastPreview = getLastMessagePreview(conversation);
@@ -347,9 +410,16 @@ export default function ConversationList({
                       </h3>
                       <div className="flex items-center space-x-1 ml-2 flex-shrink-0 relative">
                         {isOutgoing && (
-                          <svg className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`} fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
+                          <div className="flex items-center mr-1">
+                            <svg className={`${conversation.lastMessage?.is_read ? 'text-blue-400' : (isActive ? 'text-blue-100' : 'text-gray-400')} w-3 h-3 transition-colors duration-300`} fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            {conversation.lastMessage?.is_read && (
+                              <svg className="w-3 h-3 text-blue-400 -ml-1 transition-colors duration-300" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
                         )}
                         {conversation.is_muted && (
                           <BellOff className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`} />
@@ -375,8 +445,8 @@ export default function ConversationList({
                   </div>
                 </div>
               );
-            })
-          )
+            });
+          })()
         )}
       </div>
 

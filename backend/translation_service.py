@@ -58,15 +58,13 @@ class TranslationService:
                 "error": str(e)
             }
 
-    def detect_language(self, text: str) -> Optional[str]:
+    async def detect_language(self, text: str) -> Optional[str]:
         try:
             detection = self.translator.detect(text)
             
             # Handle potential async detection
             if hasattr(detection, '__await__') or asyncio.iscoroutine(detection):
-                # This would need an async wrapper or running in an event loop
-                # For now, we return the lang if it's already there (sync)
-                return detection.lang
+                detection = await detection
             
             return detection.lang
         except Exception as e:

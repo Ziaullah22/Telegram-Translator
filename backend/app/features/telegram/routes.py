@@ -772,7 +772,7 @@ async def get_conversations(
             SELECT conversation_id, 
                    id, telegram_message_id, sender_user_id, sender_name, sender_username, 
                    type, original_text, translated_text, source_language, target_language, 
-                   created_at, edited_at, is_outgoing, media_file_name,
+                   created_at, edited_at, is_outgoing, is_read, media_file_name,
                    ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) as rn
             FROM messages
         )
@@ -781,7 +781,7 @@ async def get_conversations(
                lm.sender_username, lm.type as msg_type, lm.original_text, lm.translated_text, 
                lm.source_language as msg_source_lang, lm.target_language as msg_target_lang, 
                lm.created_at as msg_created_at, lm.edited_at as msg_edited_at, 
-               lm.is_outgoing as msg_is_outgoing, lm.media_file_name,
+               lm.is_outgoing as msg_is_outgoing, lm.is_read as msg_is_read, lm.media_file_name,
                (SELECT COUNT(*) FROM messages m2 
                 WHERE m2.conversation_id = c.id AND m2.is_outgoing = false AND (m2.is_read = false OR m2.is_read IS NULL)) as unread_count_db
         FROM conversations c
@@ -811,6 +811,7 @@ async def get_conversations(
                 "created_at": conv['msg_created_at'],
                 "edited_at": conv['msg_edited_at'],
                 "is_outgoing": conv['msg_is_outgoing'] or False,
+                "is_read": conv['msg_is_read'] or False,
                 "media_file_name": conv['media_file_name'],
             }
 
@@ -932,11 +933,20 @@ async def create_conversation(
         )
 
     # Check if conversation already exists
-    existing = await db.fetchrow(
-        "SELECT * FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
-        account_id,
-        conversation_data.telegram_peer_id,
-    )
+    if conversation_data.telegram_peer_id != 0:
+        existing = await db.fetchrow(
+            "SELECT * FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+            account_id,
+            conversation_data.telegram_peer_id,
+        )
+    elif conversation_data.invite_hash:
+        existing = await db.fetchrow(
+            "SELECT * FROM conversations WHERE telegram_account_id = $1 AND invite_hash = $2",
+            account_id,
+            conversation_data.invite_hash,
+        )
+    else:
+        existing = None
 
     if existing:
         # If existing record is missing username or has a phone number title, update it
@@ -968,8 +978,8 @@ async def create_conversation(
     # Create new conversation
     conversation_id = await db.fetchval(
         """
-        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, invite_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         """,
         account_id,
@@ -979,6 +989,7 @@ async def create_conversation(
         conversation_data.username,
         conversation_data.is_hidden,
         False, # is_muted
+        conversation_data.invite_hash
     )
 
     conversation = await db.fetchrow(
@@ -1011,7 +1022,7 @@ async def join_conversation(
     """Join the group/channel and unhide it"""
     # Get details
     conv = await db.fetchrow(
-        "SELECT telegram_account_id, telegram_peer_id FROM conversations WHERE id = $1",
+        "SELECT telegram_account_id, telegram_peer_id, invite_hash FROM conversations WHERE id = $1",
         conversation_id
     )
     if not conv:
@@ -1019,7 +1030,7 @@ async def join_conversation(
     
     # Try to join via Telethon
     try:
-        await telethon_service.join_chat(conv['telegram_account_id'], conv['telegram_peer_id'])
+        await telethon_service.join_chat(conv['telegram_account_id'], conv['telegram_peer_id'], conv['invite_hash'])
     except Exception as e:
         # Some errors might be okay (e.g. already joined), but log it
         logger.warning(f"Joining chat error: {e}")

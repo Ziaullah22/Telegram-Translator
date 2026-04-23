@@ -128,6 +128,7 @@ async def get_messages(
             "reply_to_telegram_id": msg['reply_to_telegram_id'],
             "reply_to_text": msg['reply_to_text'],
             "reply_to_sender": msg['reply_to_sender'],
+            "is_read": msg['is_read'],
             "reactions": json.loads(msg['reactions']) if msg['reactions'] else {},
         })
 
@@ -237,6 +238,7 @@ async def send_message(
             "created_at": sent_message['date'].isoformat() if sent_message['date'] else None,
             "edited_at": None,
             "is_outgoing": True,
+            "is_read": False,
             "reply_to_telegram_id": message_data.reply_to_message_id,
             "reply_to_text": None,
             "reply_to_sender": None,
@@ -392,6 +394,7 @@ async def send_media(
             "target_language": conversation['source_language'],
             "created_at": sent_message['date'].isoformat() if sent_message['date'] else None,
             "is_outgoing": True,
+            "is_read": False,
             "media_file_name": file.filename,
         }
         

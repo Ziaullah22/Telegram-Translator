@@ -374,6 +374,48 @@ function App() {
           return [data.conversation, ...prev];
         });
       }
+
+      // HANDLE: Read receipts
+      if (data?.type === 'messages_read') {
+        const conversationId = Number(data.conversation_id);
+        const maxId = Number(data.max_id);
+        const isOut = !!data.is_out;
+        
+        // Update messages if this conversation is currently active
+        if (currentConversationRef.current?.id === conversationId) {
+          setMessages(prev => prev.map(msg => {
+            if (Number(msg.telegram_message_id) <= maxId && msg.is_outgoing === isOut) {
+              return { ...msg, is_read: true };
+            }
+            return msg;
+          }));
+        }
+
+        // Update conversations list (sidebar)
+        setConversations(prev => prev.map(conv => {
+          if (Number(conv.id) === conversationId && conv.lastMessage) {
+            if (Number(conv.lastMessage.telegram_message_id) <= maxId && conv.lastMessage.is_outgoing === isOut) {
+              return {
+                ...conv,
+                lastMessage: { ...conv.lastMessage, is_read: true }
+              };
+            }
+          }
+          return conv;
+        }));
+
+        // Update cache
+        if (messageCache.current[conversationId]) {
+          const cached = messageCache.current[conversationId];
+          const updatedMessages = cached.messages.map((msg: TelegramMessage) => {
+            if (Number(msg.telegram_message_id) <= maxId && msg.is_outgoing === isOut) {
+              return { ...msg, is_read: true };
+            }
+            return msg;
+          });
+          messageCache.current[conversationId] = { ...cached, messages: updatedMessages };
+        }
+      }
     });
     return unsubscribe;
   }, [onMessage, playNotificationSound, showNativeNotification]);

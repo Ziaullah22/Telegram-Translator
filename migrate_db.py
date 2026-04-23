@@ -86,6 +86,7 @@ async def migrate():
                     is_archived BOOLEAN NOT NULL DEFAULT FALSE,
                     is_muted BOOLEAN NOT NULL DEFAULT FALSE,
                     is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+                    invite_hash TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     last_message_at TIMESTAMPTZ
                 );
@@ -489,6 +490,7 @@ async def migrate():
                 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+                ALTER TABLE conversations ADD COLUMN IF NOT EXISTS invite_hash TEXT;
                 
                 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_telegram_id BIGINT;

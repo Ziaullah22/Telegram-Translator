@@ -20,8 +20,6 @@ export default function Header({ onStartTour }: HeaderProps) {
     { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
     { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
     { path: '/crm', label: 'CRM / Leads', icon: <User className="w-3.5 h-3.5 text-green-500" />, id: 'nav-crm' },
-    { path: '/instagram-leads', label: 'Insta Leads', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" />, id: 'nav-instagram' },
-    { path: '/instagram-warming', label: 'Insta Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-500" />, id: 'nav-warming' },
     { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
     { path: '/products', label: 'Store', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
     { path: '/advanced-settings', label: 'Advanced', icon: <Settings className="w-3.5 h-3.5 text-blue-600" /> },
@@ -64,8 +62,6 @@ export default function Header({ onStartTour }: HeaderProps) {
                 { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
                 { path: '/campaigns', label: 'Campaigns', icon: <Zap className="w-3.5 h-3.5 text-orange-500" />, id: 'nav-campaigns' },
                 { path: '/crm', label: 'CRM', icon: <User className="w-3.5 h-3.5 text-green-500" /> },
-                { path: '/instagram-leads', label: 'Insta Leads', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" /> },
-                { path: '/instagram-warming', label: 'Insta Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-500" /> },
                 { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
               ].map(item => (
                 <button

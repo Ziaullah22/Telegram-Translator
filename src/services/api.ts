@@ -190,6 +190,7 @@ export const telegramAPI = {
     username?: string;
     type?: string;
     is_hidden?: boolean;
+    invite_hash?: string;
   }) => {
     const response = await api.post(`/telegram/accounts/${accountId}/conversations`, data);
     return response.data;

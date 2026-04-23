@@ -110,6 +110,7 @@ class MessageResponse(BaseModel):
     created_at: datetime
     edited_at: Optional[datetime]
     is_outgoing: bool = False
+    is_read: bool = False
     media_file_name: Optional[str] = None
     reply_to_telegram_id: Optional[int] = None
     reply_to_text: Optional[str] = None
@@ -305,6 +306,7 @@ class ConversationCreate(BaseModel):
     type: str = "private"
     is_hidden: bool = False
     is_muted: bool = False
+    invite_hash: Optional[str] = None
 # --- Campaign Models ---
 class CampaignStatus(str, Enum):
     draft = "draft"

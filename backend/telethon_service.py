@@ -61,9 +61,9 @@ class TelegramSession:
                     session_id,
                     self.telegram_api_id,
                     self.telegram_api_hash,
-                    device_model="Desktop",
-                    system_version="Windows 10",
-                    app_version="1.0.0"
+                    device_model="Samsung Galaxy S24 Ultra",
+                    system_version="Android 14",
+                    app_version="10.9.1"
                 )
 
                 # Max retries for "database is locked" errors on Windows
@@ -746,21 +746,28 @@ class TelegramSession:
             logger.error(f"Error sending secret message to {peer_id}: {e}")
             raise
 
-    async def join_chat(self, peer_id: int):
-        """Join a Telegram group or channel"""
+    async def join_chat(self, peer_id: int, invite_hash: str = None):
+        """Join a Telegram group or channel using peer_id or invite_hash"""
         if not self.client or not self.is_connected:
             raise Exception("Client not connected")
 
         try:
             from telethon.tl.functions.channels import JoinChannelRequest
+            from telethon.tl.functions.messages import ImportChatInviteRequest
+            from telethon.tl.types import Channel
+            
+            if invite_hash:
+                logger.info(f"Joining chat via invite hash {invite_hash} for account {self.account_id}")
+                await self.client(ImportChatInviteRequest(invite_hash))
+                return True
+                
             entity = await self.client.get_entity(peer_id)
             
             # For channels and supergroups
             if isinstance(entity, Channel):
                 await self.client(JoinChannelRequest(entity))
                 return True
-            # For normal groups, you usually need an invite or to be added, 
-            # but global search usually returns supergroups/channels.
+            # For normal groups, you usually need an invite or to be added
             return True
         except Exception as e:
             logger.error(f"Error joining chat {peer_id} for account {self.account_id}: {e}")
@@ -933,6 +940,65 @@ class TelegramSession:
         # 1. First, search in our local entity cache (instant results for people we know)
         local_results = []
         clean_query = query.lower().lstrip('@')
+
+        # 1.2 Check for invite links (t.me/joinchat/ or t.me/+)
+        if 't.me/' in query or 'telegram.me/' in query:
+            try:
+                import re
+                # Handle t.me/+hash or t.me/joinchat/hash
+                invite_match = re.search(r't\.me/(?:\+|joinchat/)([a-zA-Z0-9_-]+)', query)
+                if invite_match:
+                    invite_hash = invite_match.group(1)
+                    from telethon.tl.functions.messages import CheckChatInviteRequest
+                    try:
+                        invite_info = await self.client(CheckChatInviteRequest(invite_hash))
+                        from telethon.tl.types import ChatInvite, ChatInviteAlready
+                        if isinstance(invite_info, ChatInvite):
+                            return [{
+                                "id": 0,
+                                "username": None,
+                                "title": invite_info.title,
+                                "type": "channel" if invite_info.channel else "group",
+                                "is_contact": False,
+                                "source": "invite_link",
+                                "invite_hash": invite_hash,
+                                "is_public": False
+                            }]
+                        elif isinstance(invite_info, ChatInviteAlready):
+                            entity = invite_info.chat
+                            db_id = self._get_peer_id(entity)
+                            return [{
+                                "id": db_id,
+                                "username": getattr(entity, 'username', None),
+                                "title": getattr(entity, 'title', None),
+                                "type": self._get_conversation_type(entity),
+                                "is_contact": False,
+                                "source": "invite_link",
+                                "is_public": False
+                            }]
+                    except Exception as ie:
+                        logger.warning(f"Could not resolve invite hash {invite_hash}: {ie}")
+
+                # Handle public links (t.me/username)
+                public_match = re.search(r't\.me/([a-zA-Z0-9_]{5,})', query)
+                if public_match:
+                    username = public_match.group(1)
+                    try:
+                        entity = await self.client.get_entity(username)
+                        db_id = self._get_peer_id(entity)
+                        return [{
+                            "id": db_id,
+                            "username": getattr(entity, 'username', None),
+                            "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
+                            "type": self._get_conversation_type(entity),
+                            "is_contact": False,
+                            "source": "public_link",
+                            "is_public": True
+                        }]
+                    except Exception as pe:
+                        logger.warning(f"Could not resolve public link {username}: {pe}")
+            except Exception as e:
+                logger.error(f"Error resolving link {query}: {e}")
         
         for peer_id, entity in self.entity_cache.items():
             # Only match by name/username for strings
@@ -1158,6 +1224,7 @@ class TelethonService:
         self.sessions: Dict[int, TelegramSession] = {}
         self.message_handlers: List[Callable] = []
         self.reaction_handlers: List[Callable] = []
+        self.read_handlers: List[Callable] = []
         self.polling_task: Optional[asyncio.Task] = None
         self.polling_interval = 10  # seconds
         os.makedirs("sessions", exist_ok=True)
@@ -1169,6 +1236,10 @@ class TelethonService:
     def add_reaction_handler(self, handler):
         if handler not in self.reaction_handlers:
             self.reaction_handlers.append(handler)
+
+    def add_read_handler(self, handler):
+        if handler not in self.read_handlers:
+            self.read_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
         # 1. Reuse existing session if it exists
@@ -1351,13 +1422,13 @@ class TelethonService:
 
         return await session.download_media(telegram_message_id, peer_id, download_path)
 
-    async def join_chat(self, account_id: int, peer_id: int):
+    async def join_chat(self, account_id: int, peer_id: int, invite_hash: str = None):
         """Join a group or channel"""
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
-        return await session.join_chat(peer_id)
+        return await session.join_chat(peer_id, invite_hash)
 
     # --- PHASE 3: SMART PREFETCHING (BACKEND) ---
     # This silently downloads latest messages in the background so there is zero wait time.
@@ -1483,6 +1554,7 @@ class TelethonService:
                     "conversation_type": conversation_type,
                     "date": message.date,
                     "is_outgoing": message.out,
+                    "is_read": not message.out, # Incoming is immediately marked read by send_read_acknowledge below
                     "type": msg_type,
                     "has_media": has_media,
                     "media_filename": media_filename,
@@ -1542,6 +1614,53 @@ class TelethonService:
         #             await handler(reaction_data)
         #     except Exception as e:
         #         logger.error(f"Error handling reactions event: {e}")
+
+        @session.client.on(events.MessageRead)
+        async def handle_message_read(event):
+            try:
+                # event.chat_id is the correctly formatted ID (negative for groups/channels)
+                peer_id = event.chat_id
+                
+                # Safeguard against missing attributes
+                max_id = getattr(event, 'max_id', 0)
+                is_out = getattr(event, 'out', True)
+                
+                logger.info(f"Read event (MessageRead): account={session.account_id}, peer={peer_id}, max_id={max_id}, out={is_out}")
+                
+                read_data = {
+                    "account_id": session.account_id,
+                    "peer_id": peer_id,
+                    "max_id": max_id,
+                    "is_out": is_out
+                }
+                
+                for handler in self.read_handlers:
+                    asyncio.create_task(handler(read_data))
+            except Exception as e:
+                logger.error(f"Error handling read event: {e}")
+
+        @session.client.on(events.ReadHistoryContents)
+        async def handle_read_history(event):
+            try:
+                peer_id = event.chat_id
+                
+                max_id = getattr(event, 'max_id', 0)
+                logger.info(f"Read event (ReadHistoryContents): account={session.account_id}, peer={peer_id}, max_id={max_id}")
+                
+                # In channels, we usually care if others read our messages.
+                # ReadHistoryContents doesn't have an .out property, but it's typically an external read.
+                
+                read_data = {
+                    "account_id": session.account_id,
+                    "peer_id": peer_id,
+                    "max_id": max_id,
+                    "is_out": True # Assume someone else read ours
+                }
+                
+                for handler in self.read_handlers:
+                    asyncio.create_task(handler(read_data))
+            except Exception as e:
+                logger.error(f"Error handling read history event: {e}")
 
     async def _check_unread_messages_on_start(self, account_id: int):
         """Check for unread messages immediately when session starts"""
