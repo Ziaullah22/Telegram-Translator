@@ -1639,28 +1639,6 @@ class TelethonService:
             except Exception as e:
                 logger.error(f"Error handling read event: {e}")
 
-        @session.client.on(events.ReadHistoryContents)
-        async def handle_read_history(event):
-            try:
-                peer_id = event.chat_id
-                
-                max_id = getattr(event, 'max_id', 0)
-                logger.info(f"Read event (ReadHistoryContents): account={session.account_id}, peer={peer_id}, max_id={max_id}")
-                
-                # In channels, we usually care if others read our messages.
-                # ReadHistoryContents doesn't have an .out property, but it's typically an external read.
-                
-                read_data = {
-                    "account_id": session.account_id,
-                    "peer_id": peer_id,
-                    "max_id": max_id,
-                    "is_out": True # Assume someone else read ours
-                }
-                
-                for handler in self.read_handlers:
-                    asyncio.create_task(handler(read_data))
-            except Exception as e:
-                logger.error(f"Error handling read history event: {e}")
 
     async def _check_unread_messages_on_start(self, account_id: int):
         """Check for unread messages immediately when session starts"""
