@@ -156,6 +156,20 @@ export interface TelegramUserSearchResult {
   source?: string;
 }
 
+export interface TelegramGlobalMessageSearchResult {
+  id: number;
+  conversation_id: number;
+  telegram_message_id: number;
+  sender_name: string;
+  sender_username?: string;
+  text: string;
+  created_at: string;
+  is_outgoing: boolean;
+  conversation_title: string;
+  conversation_type: string;
+  telegram_account_id: number;
+}
+
 export interface AutoResponderRule {
   id: number;
   user_id: number;

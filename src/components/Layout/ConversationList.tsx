@@ -8,10 +8,10 @@
  * 3. Avatar pre-fetching for smooth scrolling
  * 4. Context menu for chat actions (Mute, Delete)
  */
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft, MessageSquare } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-import type { TelegramChat, TelegramUserSearchResult } from '../../types';
-import { telegramAPI } from '../../services/api';
+import type { TelegramChat, TelegramUserSearchResult, TelegramGlobalMessageSearchResult } from '../../types';
+import { telegramAPI, messagesAPI } from '../../services/api';
 import PeerAvatar, { prefetchAvatars } from '../Common/PeerAvatar';
 
 interface ConversationListProps {
@@ -57,6 +57,7 @@ export default function ConversationList({
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TelegramUserSearchResult[]>([]);
+  const [messageResults, setMessageResults] = useState<TelegramGlobalMessageSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchFilter, setSearchFilter] = useState<'all' | 'users' | 'groups' | 'channels'>('all');
@@ -91,6 +92,7 @@ export default function ConversationList({
 
     if (searchQuery.trim().length === 0) {
       setSearchResults([]);
+      setMessageResults([]);
       setIsSearching(false);
       return;
     }
@@ -103,11 +105,16 @@ export default function ConversationList({
       }
 
       try {
-        const results = await telegramAPI.searchUsers(accountId, searchQuery);
-        setSearchResults(results);
+        const [users, messages] = await Promise.all([
+          telegramAPI.searchUsers(accountId, searchQuery),
+          messagesAPI.searchGlobalMessages(searchQuery)
+        ]);
+        setSearchResults(users);
+        setMessageResults(messages);
       } catch (error) {
         console.error('Search failed:', error);
         setSearchResults([]);
+        setMessageResults([]);
       } finally {
         setIsSearching(false);
       }
@@ -276,10 +283,74 @@ export default function ConversationList({
       {/* List Space */}
       <div id="list-container" className="flex-1 overflow-y-auto">
         {(searchQuery.trim() || searchFilter !== 'all') ? (
-          /* Search Results View */
+          /* Combined Search View (Local + Global) */
           <div className="flex flex-col">
-            <div className="px-4 py-2 flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-white/5">
-              <span>{searchFilter === 'all' ? 'Global Search Results' : `${searchFilter} Results`}</span>
+            
+            {/* Section 1: Local Matches (Your Chats) */}
+            {(() => {
+              // If we are strictly searching for something else, we can hide the header but keep the items?
+              // The user said: "chats should only show if i select all"
+              // But usually you want to see your existing user chats if you select "Users".
+              // I will follow the user's request: only show "Your Chats" section if "All" is selected OR if it matches.
+              
+              const localMatches = conversations.filter(conv => {
+                const title = (conv.title || '').toLowerCase();
+                const username = (conv.username || '').toLowerCase();
+                const query = searchQuery.toLowerCase();
+                
+                // Filter by text
+                const matchesText = title.includes(query) || username.includes(query);
+                if (!matchesText && searchQuery.trim()) return false;
+
+                // Filter by category
+                if (searchFilter === 'all') return true;
+                if (searchFilter === 'users') return conv.type === 'private';
+                if (searchFilter === 'groups') return conv.type === 'group' || conv.type === 'supergroup';
+                if (searchFilter === 'channels') return conv.type === 'channel';
+                return true;
+              });
+
+              if (localMatches.length === 0) return null;
+
+              return (
+                <>
+                  <div className="px-4 py-2 text-[11px] font-bold text-blue-600 dark:text-blue-500 uppercase tracking-widest bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
+                    Your Chats
+                  </div>
+                  {localMatches.map(conv => (
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        onConversationSelect(conv);
+                        setSearchQuery('');
+                      }}
+                      className={`flex items-center px-3 py-2.5 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5 last:border-0 ${
+                        currentConversation?.id === conv.id ? 'bg-blue-50 dark:bg-blue-500/10' : ''
+                      }`}
+                    >
+                      <PeerAvatar
+                        accountId={accountId}
+                        peerId={conv.telegram_peer_id!}
+                        name={conv.title || 'Unknown'}
+                        className="w-12 h-12 rounded-full flex-shrink-0 text-lg"
+                      />
+                      <div className="flex-1 min-w-0 ml-3">
+                        <h3 className="text-sm font-semibold truncate text-gray-900 dark:text-white">
+                          {conv.title || 'Unknown'}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {conv.username ? `@${conv.username}` : (conv.type.charAt(0).toUpperCase() + conv.type.slice(1))}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+
+            {/* Section 2: Global Search Results */}
+            <div className="px-4 py-2 flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 mt-2">
+              <span>{searchFilter === 'all' ? 'Global Search' : `${searchFilter.charAt(0).toUpperCase() + searchFilter.slice(1)}`}</span>
               {searchFilter !== 'all' && (
                 <button 
                   onClick={() => setSearchFilter('all')}
@@ -289,12 +360,17 @@ export default function ConversationList({
                 </button>
               )}
             </div>
+
             {isSearching && searchResults.length === 0 ? (
               <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
                 Searching Telegram...
               </div>
             ) : (() => {
-              const filteredResults = searchResults.filter(user => {
+              const filteredGlobal = searchResults.filter(user => {
+                // Remove duplicates that are already in local matches
+                const isAlreadyLocal = conversations.some(c => Number(c.telegram_peer_id) === Number(user.id));
+                if (isAlreadyLocal) return false;
+
                 if (searchFilter === 'all') return true;
                 if (searchFilter === 'users') return user.type === 'user' || user.type === 'private';
                 if (searchFilter === 'groups') return user.type === 'group' || user.type === 'supergroup';
@@ -302,15 +378,15 @@ export default function ConversationList({
                 return true;
               });
 
-              if (filteredResults.length === 0) {
+              if (filteredGlobal.length === 0) {
                 return (
                   <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">
-                    No {searchFilter !== 'all' ? searchFilter : 'results'} found for "{searchQuery}"
+                    {searchQuery.trim() ? `No more ${searchFilter !== 'all' ? searchFilter : 'results'} for "${searchQuery}"` : 'Type to search'}
                   </div>
                 );
               }
 
-              return filteredResults.map((user) => {
+              return filteredGlobal.map((user) => {
                 const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
                 const subtitle = user.username ? `@${user.username}` : user.phone || '';
 
@@ -341,6 +417,45 @@ export default function ConversationList({
                 );
               });
             })()}
+
+            {/* Section 3: Message Results (Only show on 'All' tab) */}
+            {searchFilter === 'all' && messageResults.length > 0 && (
+              <>
+                <div className="px-4 py-2 text-[11px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 mt-2">
+                  Messages
+                </div>
+                {messageResults.map(msg => (
+                  <div
+                    key={msg.id}
+                    onClick={() => {
+                      onConversationSelect({
+                        id: msg.conversation_id,
+                        title: msg.conversation_title,
+                        type: msg.conversation_type as any,
+                        telegram_account_id: msg.telegram_account_id
+                      } as any);
+                      setSearchQuery('');
+                    }}
+                    className="flex flex-col px-4 py-3 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate max-w-[70%]">
+                        {msg.conversation_title}
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        {formatConvDate(msg.created_at)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-3 h-3 text-gray-400 shrink-0" />
+                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed">
+                        <span className="font-semibold">{msg.sender_name}:</span> {msg.text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         ) : (
           /* Normal Conversations View */

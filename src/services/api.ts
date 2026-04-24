@@ -413,6 +413,12 @@ export const messagesAPI = {
     });
     return response.data;
   },
+  searchGlobalMessages: async (query: string, limit: number = 20) => {
+    const response = await api.get('/messages/search', {
+      params: { query, limit }
+    });
+    return response.data;
+  },
 };
 
 // --- HEALTH & STATUS SERVICES ---

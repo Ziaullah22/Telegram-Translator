@@ -135,6 +135,68 @@ async def get_messages(
     return result
 
 
+# --- GLOBAL MESSAGE SEARCH ---
+# Search for specific text across ALL messages belonging to the user's accounts
+@router.get("/search", response_model=List[dict])
+async def search_messages_global(
+    query: str = Query(...),
+    limit: int = 50,
+    current_user = Depends(get_current_user),
+):
+    if not query.strip():
+        return []
+
+    # 1. Fetch recent messages for the user's accounts
+    # Since messages are encrypted, we can't search via SQL ILIKE.
+    # We fetch a reasonable batch and filter in Python.
+    results = await db.fetch(
+        """
+        SELECT m.*, c.title as conversation_title, c.type as conversation_type, c.telegram_account_id
+        FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 
+        ORDER BY m.created_at DESC
+        LIMIT 1000
+        """,
+        current_user.user_id,
+    )
+
+    formatted = []
+    query_lower = query.lower()
+    
+    for row in results:
+        # Decrypt if necessary
+        original_text, translated_text = await decrypt_message_if_encrypted(
+            row['is_encrypted'], row['original_text'], row['translated_text']
+        )
+        
+        # Check if query matches in either text
+        orig_match = original_text and query_lower in original_text.lower()
+        trans_match = translated_text and query_lower in translated_text.lower()
+        
+        if orig_match or trans_match:
+            formatted.append({
+                "id": row['id'],
+                "conversation_id": row['conversation_id'],
+                "telegram_message_id": row['telegram_message_id'],
+                "sender_name": row['sender_name'],
+                "sender_username": row['sender_username'],
+                "text": translated_text or original_text,
+                "created_at": row['created_at'],
+                "is_outgoing": row['is_outgoing'],
+                "conversation_title": row['conversation_title'],
+                "conversation_type": row['conversation_type'],
+                "telegram_account_id": row['telegram_account_id']
+            })
+            
+            # Stop if we hit the limit
+            if len(formatted) >= limit:
+                break
+
+    return formatted
+
+
 # Translate and send a new text message to a designated conversation
 @router.post("/send", response_model=MessageResponse)
 async def send_message(
