@@ -511,8 +511,20 @@ class TelegramSession:
         retry_count = 0
         while retry_count <= max_retries:
             try:
-                # Force Telethon to find the user/group entity first (resolves PeerIdInvalid)
-                entity = await self.client.get_entity(peer_id)
+                # --- Advanced Peer Discovery ---
+                logger.info(f"Resolving peer {peer_id} for account {self.account_id}")
+                
+                # 1. Try to get Input Entity (most efficient)
+                try:
+                    entity = await self.client.get_input_entity(peer_id)
+                except Exception as e:
+                    logger.debug(f"Input entity check failed for {peer_id}, falling back to full entity: {e}")
+                    # 2. Fallback to full entity search (refreshes cache/hashes)
+                    entity = await self.client.get_entity(peer_id)
+                
+                logger.info(f"Resolved entity: {type(entity).__name__} for peer {peer_id}")
+                
+                # 3. Send the message using the resolved entity
                 message = await self.client.send_message(entity, text, reply_to=reply_to)
                 self.last_message_time = datetime.now()  # Update last message time
                 
@@ -602,11 +614,23 @@ class TelegramSession:
                 logger.debug(f"Rate limiting (media): waiting {wait_time:.2f}s before sending")
                 await asyncio.sleep(wait_time)
 
+        # Safety: Ensure peer_id is int
+        try:
+            peer_id = int(peer_id)
+        except:
+            pass
+
         retry_count = 0
         while retry_count <= max_retries:
             try:
+                # --- Advanced Peer Discovery ---
+                try:
+                    entity = await self.client.get_input_entity(peer_id)
+                except:
+                    entity = await self.client.get_entity(peer_id)
+
                 message = await self.client.send_file(
-                    peer_id,
+                    entity,
                     file_path,
                     caption=caption
                 )
