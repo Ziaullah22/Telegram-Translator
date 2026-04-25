@@ -13,7 +13,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock, ArrowLeft, Sparkles, Brain, Shield } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI, contactsAPI } from '../../services/api';
-import { aiService, AIStatus } from '../../services/aiService';
+import { aiService } from '../../services/aiService';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
@@ -520,39 +520,7 @@ export default function ChatWindow({
     };
   }, [contextMenu, reactingToMessageId, showEmojiPicker, reactionAnchor]);
 
-  const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
   const pickerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
-      const dx = e.clientX - dragStart.current.x;
-      const dy = e.clientY - dragStart.current.y;
-      setPickerPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-      dragStart.current = { x: e.clientX, y: e.clientY };
-    };
-
-    const handleMouseUp = () => {
-      isDragging.current = false;
-    };
-
-    if (showEmojiPicker) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [showEmojiPicker]);
-
-  const onDragStart = (e: React.MouseEvent) => {
-    isDragging.current = true;
-    dragStart.current = { x: e.clientX, y: e.clientY };
-  };
 
   const emojis = [
     { cat: 'Recent', items: ['❤️', '🔥', '👍', '😂', '😍', '✨', '🙏', '😊'] },
@@ -1067,14 +1035,20 @@ export default function ChatWindow({
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // If we have a file selected, handle that first
+    if (selectedFile) {
+      handleSendFile();
+      return;
+    }
+
     if (!newMessage.trim() || !isConnected || !currentConversation || translating) return;
 
     setTranslating(true);
     try {
-      // Send the message directly with reply info if present
       await onSendMessage(newMessage, replyMessage?.telegram_message_id);
       setNewMessage('');
-      setReplyMessage(null); // Clear reply after sending
+      setReplyMessage(null);
     } catch (error) {
       console.error('Failed to send message:', error);
     } finally {
@@ -1949,8 +1923,8 @@ export default function ChatWindow({
             )}
 
             {showTemplatesList && <div id="templates-menu-state-open" className="hidden" />}
-            {/* Top action row: Templates + Manage */}
-            <div className="flex items-center space-x-2 mb-3">
+            {/* Top action row: Templates + Manage + (AI/Schedule on Mobile) */}
+            <div className="flex items-center flex-wrap gap-2 mb-3">
               <button
                 id="chat-templates-btn"
                 type="button"
@@ -1970,6 +1944,63 @@ export default function ChatWindow({
                 <FileText className="w-3.5 h-3.5" />
                 <span className="hidden xl:inline">Manage</span>
               </button>
+
+              {/* Mobile-Only Actions: AI & Schedule moved here to save space on input bar */}
+              <div className="flex md:hidden items-center gap-2">
+                <div className="relative">
+                  {showToneMenu && (
+                    <div className="absolute bottom-full left-0 mb-2 w-44 bg-white dark:bg-[#17212b] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-200 origin-bottom">
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1.5 mb-1 border-b border-gray-100 dark:border-white/5">
+                        Select Tone
+                      </div>
+                      {(['professional', 'friendly', 'closer'] as const).map(t => (
+                        <button
+                          key={t}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTone(t);
+                            setShowToneMenu(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all flex items-center justify-between group ${selectedTone === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                        >
+                          <span className="capitalize">{t}</span>
+                          {selectedTone === t && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={handleAiSuggest}
+                      disabled={isAiGenerating || !isConnected || !currentConversation}
+                      className={`px-3 py-1.5 rounded-l-full text-xs font-bold transition-all flex items-center gap-1.5 border-r border-blue-200 dark:border-blue-800 ${isAiGenerating ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30'}`}
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{isAiGenerating ? 'AI...' : 'Suggest'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowToneMenu(!showToneMenu);
+                      }}
+                      className={`px-1.5 py-1.5 rounded-r-full text-xs font-bold transition-all flex items-center ${isAiGenerating ? 'bg-blue-100 text-blue-600' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30'}`}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  disabled={!newMessage.trim() || !isConnected || !currentConversation}
+                  className="px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-900/30 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>Schedule</span>
+                </button>
+              </div>
             </div>
 
             {/* File Preview */}
@@ -2030,11 +2061,11 @@ export default function ChatWindow({
                 </div>
               ) : (
                 // --- INPUT AREA: STANDARD CHAT ---
-                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                 <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" />
 
                 {/* Text input with emoji icon inside */}
-                <div className="flex-1 relative">
+                <div className="flex-1 relative min-w-0">
                   <textarea
                     ref={inputRef as any}
                     rows={1}
@@ -2054,42 +2085,36 @@ export default function ChatWindow({
                     }}
                     placeholder={
                       !currentConversation
-                        ? 'Select a conversation to start messaging'
+                        ? 'Select a conversation'
                         : isConnected
                           ? "Write a message..."
-                          : 'Connect to an account to start messaging'
+                          : 'Connect to start'
                     }
-                    className="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm resize-none overflow-hidden min-h-[46px] leading-normal"
+                    className="w-full px-4 py-3 pr-10 bg-gray-100 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors text-sm resize-none overflow-hidden min-h-[46px] leading-normal"
                     disabled={!isConnected || !currentConversation || translating}
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
                     <button
                       type="button"
                       onClick={() => {
                         setReactingToMessageId(null);
                         setShowEmojiPicker(!showEmojiPicker);
                       }}
-                      className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                      title="Emojis"
+                      className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-1"
                     >
                       <Smile className="w-5 h-5" />
                     </button>
-                    {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse" />}
+                    {translating && <Languages className="w-4 h-4 text-blue-400 animate-pulse ml-1" />}
                   </div>
 
-                  {/* Emoji Picker Overlay (Input focus) */}
+                  {/* Emoji Picker Overlay */}
                   {showEmojiPicker && !reactingToMessageId && (
                     <div
                       ref={pickerRef}
-                      style={{
-                        transform: `translate(${pickerPos.x}px, ${pickerPos.y}px)`,
-                        transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
-                      }}
-                      className="absolute bottom-full right-0 mb-4 w-[350px] h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden animate-fade-in transition-colors duration-300"
+                      className="absolute bottom-full right-0 mb-4 w-[280px] sm:w-[350px] h-[400px] sm:h-[450px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-2xl flex flex-col z-[100] overflow-hidden animate-fade-in"
                     >
                       <div
-                        onMouseDown={onDragStart}
-                        className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80 cursor-grab active:cursor-grabbing backdrop-blur-md"
+                        className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/80"
                       >
                         <div className="flex items-center space-x-2">
                           <Smile className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -2106,7 +2131,7 @@ export default function ChatWindow({
                         {emojis.map((group) => (
                           <div key={group.cat} className="mb-6">
                             <p className="text-[11px] font-bold text-blue-400/70 mb-3 uppercase tracking-widest">{group.cat}</p>
-                            <div className="grid grid-cols-8 gap-1.5">
+                            <div className="grid grid-cols-7 sm:grid-cols-8 gap-1.5">
                               {group.items.map((emoji, idx) => (
                                 <button
                                   key={`${group.cat}-${idx}`}
@@ -2125,123 +2150,97 @@ export default function ChatWindow({
                   )}
                 </div>
 
-                {/* AI Suggestion button with Premium Tone Selector */}
-                <div className="relative">
-                  {/* Floating Glassmorphism Tone Menu */}
-                  {showToneMenu && !isAiGenerating && (
-                    <div 
-                      id="ai-tone-menu"
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-44 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-200 origin-bottom"
-                    >
-                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1.5 mb-1 border-b border-gray-100 dark:border-white/5">
-                        Select Tone
+                {/* Desktop-Only Actions: These stay next to the input on large screens */}
+                <div className="hidden md:flex items-center gap-2">
+                  {/* AI Suggestion button with Premium Tone Selector */}
+                  <div className="relative">
+                    {showToneMenu && !isAiGenerating && (
+                      <div 
+                        id="ai-tone-menu"
+                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-44 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-200 origin-bottom"
+                      >
+                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1.5 mb-1 border-b border-gray-100 dark:border-white/5">
+                          Select Tone
+                        </div>
+                        {(['professional', 'friendly', 'closer'] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTone(t);
+                              setShowToneMenu(false);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                              selectedTone === t 
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                            }`}
+                          >
+                            <div className={`p-1 rounded-lg ${selectedTone === t ? 'bg-white/20' : 'bg-gray-100 dark:bg-white/5'}`}>
+                              {t === 'professional' && <Shield className="w-3 h-3" />}
+                              {t === 'friendly' && <Smile className="w-3 h-3" />}
+                              {t === 'closer' && <Zap className="w-3 h-3" />}
+                            </div>
+                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                          </button>
+                        ))}
+                        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white/80 dark:bg-[#17212b]/90 border-r border-b border-gray-200 dark:border-white/10 rotate-45" />
                       </div>
-                      {(['professional', 'friendly', 'closer'] as const).map(t => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => {
-                            setSelectedTone(t);
-                            setShowToneMenu(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                            selectedTone === t 
-                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                              : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
-                          }`}
-                        >
-                          <div className={`p-1 rounded-lg ${selectedTone === t ? 'bg-white/20' : 'bg-gray-100 dark:bg-white/5'}`}>
-                            {t === 'professional' && <Shield className="w-3 h-3" />}
-                            {t === 'friendly' && <Smile className="w-3 h-3" />}
-                            {t === 'closer' && <Zap className="w-3 h-3" />}
-                          </div>
-                          {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </button>
-                      ))}
-                      {/* Arrow tail */}
-                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white/80 dark:bg-[#17212b]/90 border-r border-b border-gray-200 dark:border-white/10 rotate-45" />
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center">
-                    <button
-                      id="ai-sparkles-btn"
-                      type="button"
-                      onClick={handleAiSuggest}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setShowToneMenu(!showToneMenu);
-                      }}
-                      disabled={isAiGenerating || !isConnected || !currentConversation}
-                      className={`w-11 h-11 flex items-center justify-center rounded-l-xl transition-all ${
-                        isAiGenerating 
-                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-500 animate-pulse' 
-                          : 'bg-white dark:bg-white/10 text-blue-500 hover:bg-blue-50 dark:hover:bg-white/20 border-y border-l border-gray-100 dark:border-white/5'
-                      }`}
-                      title={`AI ${selectedTone} Suggestion`}
-                    >
-                      <div className="relative">
-                        {isAiGenerating ? (
-                          <Brain className="w-5 h-5 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-5 h-5" />
-                        )}
-                      </div>
-                    </button>
+                    )}
                     
-                    <button
-                      type="button"
-                      onClick={() => setShowToneMenu(!showToneMenu)}
-                      className="w-6 h-11 flex items-center justify-center rounded-r-xl bg-white dark:bg-white/10 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-white/20 border-y border-r border-l-0 border-gray-100 dark:border-white/5 transition-all"
-                      title="Select AI Tone"
-                    >
-                      <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${showToneMenu ? 'rotate-180' : ''}`} />
-                    </button>
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={handleAiSuggest}
+                        disabled={isAiGenerating || !isConnected || !currentConversation}
+                        className={`w-11 h-11 flex items-center justify-center rounded-l-xl transition-all ${
+                          isAiGenerating 
+                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-500 animate-pulse' 
+                            : 'bg-white dark:bg-white/10 text-blue-500 hover:bg-blue-50 dark:hover:bg-white/20 border-y border-l border-gray-100 dark:border-white/5'
+                        }`}
+                      >
+                        {isAiGenerating ? <Brain className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowToneMenu(!showToneMenu)}
+                        className="w-6 h-11 flex items-center justify-center rounded-r-xl bg-white dark:bg-white/10 text-gray-400 hover:text-blue-500 border-y border-r border-l border-gray-100 dark:border-white/5 transition-all"
+                      >
+                        <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${showToneMenu ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Attachment button */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!isConnected || !currentConversation || uploadingFile}
-                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all"
-                  title="Attach file"
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
-
-                {/* Send / Send File button */}
-                {selectedFile ? (
+                  {/* Schedule button */}
                   <button
                     type="button"
-                    onClick={handleSendFile}
-                    disabled={uploadingFile || !isConnected || !currentConversation}
-                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
+                    onClick={() => setShowScheduleModal(true)}
+                    disabled={!newMessage.trim() || !isConnected || !currentConversation}
+                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Attachment & Send: These stay on both mobile and desktop */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!isConnected || !currentConversation || uploadingFile}
+                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 transition-all"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={(!newMessage.trim() && !selectedFile) || !isConnected || !currentConversation || translating || uploadingFile}
+                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-all shadow-lg shadow-blue-600/30"
                   >
                     {uploadingFile ? <Languages className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!newMessage.trim() || !isConnected || !currentConversation || translating}
-                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/30"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                )}
-
-                {/* Schedule button */}
-                <button
-                  id="chat-schedule-btn"
-                  type="button"
-                  onClick={() => setShowScheduleModal(true)}
-                  disabled={!newMessage.trim() || !isConnected || !currentConversation}
-                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-purple-600/30"
-                  title="Schedule Message"
-                >
-                  <Clock className="w-4 h-4" />
-                </button>
+                </div>
               </form>
             )}
 
