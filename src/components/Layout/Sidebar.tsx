@@ -260,10 +260,10 @@ export default function Sidebar({
               AI Engine
             </span>
             <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-1">
-              {aiStatus === 'idle' && 'Gemma-2B (Offline GPU Mode)'}
-              {aiStatus === 'loading' && (localStorage.getItem("ai_auto_init") === "true" ? 'AI Waking Up...' : `Downloading: ${aiProgress}%`)}
-              {aiStatus === 'ready' && 'Gemma is Online & Ready'}
-              {aiStatus === 'error' && 'WebGPU not supported or error'}
+              {aiStatus === 'idle' && 'Qwen-1.5B (Turbo GPU Mode)'}
+              {aiStatus === 'loading' && `Downloading Model: ${aiProgress}%`}
+              {aiStatus === 'ready' && 'AI Brain is Online'}
+              {aiStatus === 'error' && 'GPU Error: Check WebGPU'}
             </p>
           </div>
           <div className={`p-1.5 rounded-lg ${aiStatus === 'ready' ? 'bg-green-500/10 text-green-500' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
@@ -271,12 +271,18 @@ export default function Sidebar({
           </div>
         </div>
 
-        {aiStatus === 'loading' && localStorage.getItem("ai_auto_init") !== "true" && (
-          <div className="w-full h-1 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden mb-3">
-            <div 
-              className="h-full bg-blue-500 transition-all duration-300" 
-              style={{ width: `${aiProgress}%` }}
-            />
+        {aiStatus === 'loading' && (
+          <div className="space-y-1.5 mb-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">System Sync</span>
+              <span className="text-[9px] font-black text-blue-500">{aiProgress}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-300" 
+                style={{ width: `${aiProgress}%` }}
+              />
+            </div>
           </div>
         )}
 

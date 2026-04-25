@@ -497,8 +497,16 @@ class TelegramSession:
         return {"name": "Unknown", "username": None, "phone": None}
 
     async def send_message(self, peer_id: int, text: str, max_retries: int = 3, reply_to: int = None):
-        if not self.client or not self.is_connected:
-            raise Exception("Client not connected")
+        if not self.client:
+            raise Exception("Client not initialized")
+            
+        # AUTO-RECONNECT: If socket is dead, reconnect before sending
+        if not self.client.is_connected():
+            logger.info(f"Connection lost for account {self.account_id}. Reconnecting...")
+            await self.connect()
+
+        if not self.is_connected:
+            raise Exception("Client failed to reconnect")
 
         # Rate limiting: wait if needed
         if self.last_message_time:
@@ -603,8 +611,16 @@ class TelegramSession:
 
     async def send_media(self, peer_id: int, file_path: str, caption: str = "", max_retries: int = 3):
         """Send a media file (photo, video, document) to a peer"""
-        if not self.client or not self.is_connected:
-            raise Exception("Client not connected")
+        if not self.client:
+            raise Exception("Client not initialized")
+            
+        # AUTO-RECONNECT: Restore connection if dropped
+        if not self.client.is_connected():
+            logger.info(f"Connection lost for account {self.account_id} during media send. Reconnecting...")
+            await self.connect()
+
+        if not self.is_connected:
+            raise Exception("Client failed to reconnect")
 
         # Rate limiting: wait if needed
         if self.last_message_time:

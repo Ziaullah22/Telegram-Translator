@@ -4,7 +4,7 @@ export type AIStatus = "idle" | "loading" | "ready" | "error";
 
 class AIService {
   private engine: any = null;
-  private selectedModel = "gemma-2b-it-q4f16_1-MLC";
+  private selectedModel = "Qwen2-1.5B-Instruct-q4f16_1-MLC";
   private status: AIStatus = "idle";
   private progress = 0;
   private onStatusChange: ((status: AIStatus, progress: number) => void) | null = null;
@@ -26,6 +26,8 @@ class AIService {
       this.status = "loading";
       this.updateStatus();
 
+      const webllm = await import("@mlc-ai/web-llm");
+
       this.engine = await webllm.CreateWebWorkerMLCEngine(
         new Worker(new URL("./ai.worker.ts", import.meta.url), { type: "module" }),
         this.selectedModel,
@@ -34,9 +36,9 @@ class AIService {
             this.progress = Math.round(report.progress * 100);
             this.updateStatus();
           },
-          // Cast to any to bypass strict type checking for adapterOptions
+          // TURBO MODE: Request high-performance for speed
           adapterOptions: {
-            powerPreference: 'low-power'
+            powerPreference: 'high-performance'
           }
         } as any
       );
@@ -57,22 +59,30 @@ class AIService {
       throw new Error("AI not ready");
     }
 
-    const systemPrompt = `You are an expert sales assistant for a Telegram marketing platform. 
-    Your goal is to suggest a reply to the customer. 
-    Tone: ${tone.toUpperCase()}. 
-    Keep it concise and natural. Use the conversation history to stay relevant.`;
+    const systemPrompt = `You are a human friend. 
+    REPLY to the user's message naturally.
+    
+    Examples:
+    User: "Are you free?" -> Reply: "Yeah, I'm free! What's up?"
+    User: "How are you?" -> Reply: "I'm good, you?"
+    User: "I need help" -> Reply: "Sure, what do you need help with?"
 
-    // Filter out messages with no text content (e.g., pure media messages)
-    const chatHistory = lastMessages
-      .filter(msg => (msg.translated_text || msg.original_text))
-      .map(msg => ({
-        role: msg.is_outgoing ? "assistant" : "user",
-        content: msg.translated_text || msg.original_text
-      }));
+    Tone: ${tone.toUpperCase()}.
+    Rule: If the user asks a question, you MUST answer it directly.`;
 
-    if (chatHistory.length === 0) {
-      return "Hello! How can I help you today?";
+    // Filter to find the absolute last message from the contact (the 'user')
+    const lastUserMessage = [...lastMessages]
+      .reverse()
+      .find(msg => !msg.is_outgoing && (msg.translated_text || msg.original_text));
+
+    if (!lastUserMessage) {
+      return "Hey! What's up?";
     }
+
+    const chatHistory = [{
+      role: "user",
+      content: lastUserMessage.translated_text || lastUserMessage.original_text
+    }];
 
     try {
       console.log("AI Generating with tone:", tone, "History length:", chatHistory.length);
@@ -83,13 +93,14 @@ class AIService {
 
       const reply = await this.engine.chat.completions.create({
         messages,
-        temperature: 0.7,
-        max_tokens: 128,
+        temperature: 0.6,
+        top_p: 0.9,
+        max_tokens: 48, // Reduced for much faster speed
       });
 
       const result = reply.choices[0].message.content || "";
       console.log("AI Result:", result);
-      return result || "I'm here to help! What's on your mind?";
+      return result.trim() || "I'm here to help! What's on your mind?";
     } catch (err) {
       console.error("Inference Error:", err);
       return "I'm sorry, I'm having trouble thinking of a reply right now. Could you try again?";
