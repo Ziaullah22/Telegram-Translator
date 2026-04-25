@@ -11,8 +11,9 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock, ArrowLeft } from 'lucide-react';
+import { Send, Languages, Clock, FileText, Copy, User, Paperclip, X, Video, Download, Zap, Smile, Trash, Trash2, Reply, Forward, Play, ChevronDown, CheckCircle2, Tag, Lock, ArrowLeft, Sparkles, Brain, Shield } from 'lucide-react';
 import { templatesAPI, scheduledMessagesAPI, contactsAPI } from '../../services/api';
+import { aiService, AIStatus } from '../../services/aiService';
 import type { TelegramMessage, TelegramChat, TelegramAccount, MessageTemplate, ScheduledMessage } from '../../types';
 import ScheduleMessageModal from '../Modals/ScheduleMessageModal';
 import MessageTemplatesModal from '../Modals/MessageTemplatesModal';
@@ -472,6 +473,26 @@ export default function ChatWindow({
   const [reactionAnchor, setReactionAnchor] = useState<{ x: number; y: number; showAbove: boolean } | null>(null);
   const emojiStrip = ['❤️', '🔥', '👍', '😂', '😍', '🙏'];
 
+  // AI Suggestion State
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [selectedTone, setSelectedTone] = useState<'professional' | 'friendly' | 'closer'>('friendly');
+  const [showToneMenu, setShowToneMenu] = useState(false);
+
+  const handleAiSuggest = async () => {
+    if (!currentConversation || isAiGenerating) return;
+    
+    try {
+      setIsAiGenerating(true);
+      const last5 = messages.slice(-5);
+      const suggestion = await aiService.generateReply(last5, selectedTone);
+      setNewMessage(suggestion);
+    } catch (err) {
+      console.error("AI Suggest Error:", err);
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
   // --- REFS FOR VIRTUALIZATION & SCROLLING ---
   const inputRef = useRef<HTMLInputElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -543,6 +564,12 @@ export default function ChatWindow({
     const handleClickOutside = (event: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
         setShowEmojiPicker(false);
+      }
+      // Close Tone Menu if clicking outside
+      const toneMenu = document.getElementById('ai-tone-menu');
+      const toneBtn = document.getElementById('ai-sparkles-btn');
+      if (toneMenu && !toneMenu.contains(event.target as Node) && toneBtn && !toneBtn.contains(event.target as Node)) {
+        setShowToneMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -2096,6 +2123,81 @@ export default function ChatWindow({
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* AI Suggestion button with Premium Tone Selector */}
+                <div className="relative">
+                  {/* Floating Glassmorphism Tone Menu */}
+                  {showToneMenu && !isAiGenerating && (
+                    <div 
+                      id="ai-tone-menu"
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-44 bg-white/80 dark:bg-[#17212b]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-200 origin-bottom"
+                    >
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1.5 mb-1 border-b border-gray-100 dark:border-white/5">
+                        Select Tone
+                      </div>
+                      {(['professional', 'friendly', 'closer'] as const).map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setSelectedTone(t);
+                            setShowToneMenu(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                            selectedTone === t 
+                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                              : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          <div className={`p-1 rounded-lg ${selectedTone === t ? 'bg-white/20' : 'bg-gray-100 dark:bg-white/5'}`}>
+                            {t === 'professional' && <Shield className="w-3 h-3" />}
+                            {t === 'friendly' && <Smile className="w-3 h-3" />}
+                            {t === 'closer' && <Zap className="w-3 h-3" />}
+                          </div>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                      ))}
+                      {/* Arrow tail */}
+                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white/80 dark:bg-[#17212b]/90 border-r border-b border-gray-200 dark:border-white/10 rotate-45" />
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center">
+                    <button
+                      id="ai-sparkles-btn"
+                      type="button"
+                      onClick={handleAiSuggest}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setShowToneMenu(!showToneMenu);
+                      }}
+                      disabled={isAiGenerating || !isConnected || !currentConversation}
+                      className={`w-11 h-11 flex items-center justify-center rounded-l-xl transition-all ${
+                        isAiGenerating 
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-500 animate-pulse' 
+                          : 'bg-white dark:bg-white/10 text-blue-500 hover:bg-blue-50 dark:hover:bg-white/20 border-y border-l border-gray-100 dark:border-white/5'
+                      }`}
+                      title={`AI ${selectedTone} Suggestion`}
+                    >
+                      <div className="relative">
+                        {isAiGenerating ? (
+                          <Brain className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-5 h-5" />
+                        )}
+                      </div>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setShowToneMenu(!showToneMenu)}
+                      className="w-6 h-11 flex items-center justify-center rounded-r-xl bg-white dark:bg-white/10 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-white/20 border-y border-r border-l-0 border-gray-100 dark:border-white/5 transition-all"
+                      title="Select AI Tone"
+                    >
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${showToneMenu ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Attachment button */}

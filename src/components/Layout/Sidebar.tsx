@@ -9,7 +9,9 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { aiService, AIStatus } from '../../services/aiService';
 import type { TelegramAccount } from '../../types';
 
 interface SidebarProps {
@@ -43,6 +45,16 @@ export default function Sidebar({
   hideOriginal,
   onToggleHideOriginal,
 }: SidebarProps) {
+  const [aiStatus, setAiStatus] = useState<AIStatus>(aiService.getStatus().status);
+  const [aiProgress, setAiProgress] = useState(aiService.getStatus().progress);
+
+  useEffect(() => {
+    aiService.setStatusCallback((status, progress) => {
+      setAiStatus(status);
+      setAiProgress(progress);
+    });
+  }, []);
+
   // Natural sort function that handles numbers correctly (1,2,3,11,23 instead of 1,11,2,23,3)
   const naturalSort = (a: string, b: string): number => {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -240,6 +252,53 @@ export default function Sidebar({
         </div>
       </div>
       
+      {/* --- AI ENGINE CONTROL --- */}
+      <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-black uppercase tracking-tight text-gray-700 dark:text-gray-200">
+              AI Engine
+            </span>
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-1">
+              {aiStatus === 'idle' && 'Gemma-2B (Offline GPU Mode)'}
+              {aiStatus === 'loading' && (localStorage.getItem("ai_auto_init") === "true" ? 'AI Waking Up...' : `Downloading: ${aiProgress}%`)}
+              {aiStatus === 'ready' && 'Gemma is Online & Ready'}
+              {aiStatus === 'error' && 'WebGPU not supported or error'}
+            </p>
+          </div>
+          <div className={`p-1.5 rounded-lg ${aiStatus === 'ready' ? 'bg-green-500/10 text-green-500' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
+            <Brain className={`w-4 h-4 ${aiStatus === 'loading' ? 'animate-pulse' : ''}`} />
+          </div>
+        </div>
+
+        {aiStatus === 'loading' && localStorage.getItem("ai_auto_init") !== "true" && (
+          <div className="w-full h-1 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden mb-3">
+            <div 
+              className="h-full bg-blue-500 transition-all duration-300" 
+              style={{ width: `${aiProgress}%` }}
+            />
+          </div>
+        )}
+
+        {aiStatus === 'idle' || aiStatus === 'error' ? (
+          <button
+            onClick={() => aiService.init()}
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+          >
+            <Zap className="w-3 h-3 fill-current" />
+            Initialize AI
+          </button>
+        ) : aiStatus === 'ready' ? (
+          <div className="w-full py-2 bg-green-500/10 text-green-600 dark:text-green-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center border border-green-500/20">
+            Engine Active
+          </div>
+        ) : (
+          <div className="w-full py-2 bg-gray-100 dark:bg-white/5 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center animate-pulse">
+            Please Wait...
+          </div>
+        )}
+      </div>
+
       {/* --- ADDED FEATURE: FOCUS MODE TOGGLE --- */}
       <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
         <label className="flex items-center justify-between cursor-pointer group">

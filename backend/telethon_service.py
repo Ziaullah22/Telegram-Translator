@@ -511,7 +511,9 @@ class TelegramSession:
         retry_count = 0
         while retry_count <= max_retries:
             try:
-                message = await self.client.send_message(peer_id, text, reply_to=reply_to)
+                # Force Telethon to find the user/group entity first (resolves PeerIdInvalid)
+                entity = await self.client.get_entity(peer_id)
+                message = await self.client.send_message(entity, text, reply_to=reply_to)
                 self.last_message_time = datetime.now()  # Update last message time
                 
                 # Get current user information
