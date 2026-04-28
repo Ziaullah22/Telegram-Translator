@@ -183,24 +183,9 @@ async def is_encryption_enabled(db) -> bool:
 async def encrypt_message_if_enabled(db, original_text: Optional[str], 
                                      translated_text: Optional[str]) -> Tuple[Optional[str], Optional[str], bool]:
     """
-    Encrypt message fields if encryption is enabled in settings.
-    
-    Args:
-        db: Database connection
-        original_text: Original message text
-        translated_text: Translated message text
-        
-    Returns:
-        Tuple of (processed_original, processed_translated, is_encrypted)
+    Message encryption has been permanently disabled per user request.
+    Always returns the plaintext messages and is_encrypted = False.
     """
-    encryption_enabled = await is_encryption_enabled(db)
-    
-    if encryption_enabled and _encryption_service:
-        encrypted_original, encrypted_translated = _encryption_service.encrypt_message_fields(
-            original_text, translated_text
-        )
-        return encrypted_original, encrypted_translated, True
-    
     return original_text, translated_text, False
 
 
