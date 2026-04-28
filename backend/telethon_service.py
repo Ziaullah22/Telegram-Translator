@@ -61,9 +61,9 @@ class TelegramSession:
                     session_id,
                     self.telegram_api_id,
                     self.telegram_api_hash,
-                    device_model="Samsung Galaxy S24 Ultra",
-                    system_version="Android 14",
-                    app_version="10.9.1"
+                    device_model="PC",
+                    system_version="Windows 11",
+                    app_version="4.15.0"
                 )
 
                 # Max retries for "database is locked" errors on Windows

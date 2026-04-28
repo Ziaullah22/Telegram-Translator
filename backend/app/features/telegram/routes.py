@@ -3,6 +3,7 @@ import asyncio
 from typing import List
 from app.core.database import db
 from app.core.security import get_current_user
+from app.core.encryption import decrypt_message_if_encrypted
 from models import (
     TelegramAccountCreate,
     TelegramAccountResponse,
@@ -772,7 +773,7 @@ async def get_conversations(
             SELECT conversation_id, 
                    id, telegram_message_id, sender_user_id, sender_name, sender_username, 
                    type, original_text, translated_text, source_language, target_language, 
-                   created_at, edited_at, is_outgoing, is_read, media_file_name,
+                   created_at, edited_at, is_outgoing, is_read, media_file_name, is_encrypted,
                    ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) as rn
             FROM messages
         )
@@ -781,7 +782,7 @@ async def get_conversations(
                lm.sender_username, lm.type as msg_type, lm.original_text, lm.translated_text, 
                lm.source_language as msg_source_lang, lm.target_language as msg_target_lang, 
                lm.created_at as msg_created_at, lm.edited_at as msg_edited_at, 
-               lm.is_outgoing as msg_is_outgoing, lm.is_read as msg_is_read, lm.media_file_name,
+               lm.is_outgoing as msg_is_outgoing, lm.is_read as msg_is_read, lm.media_file_name, lm.is_encrypted as msg_is_encrypted,
                (SELECT COUNT(*) FROM messages m2 
                 WHERE m2.conversation_id = c.id AND m2.is_outgoing = false AND (m2.is_read = false OR m2.is_read IS NULL)) as unread_count_db
         FROM conversations c
@@ -796,6 +797,13 @@ async def get_conversations(
     for conv in conversations:
         last_message = None
         if conv['last_msg_db_id']:
+            # Decrypt last message if encrypted
+            original_text, translated_text = await decrypt_message_if_encrypted(
+                conv.get('msg_is_encrypted', False), 
+                conv['original_text'], 
+                conv['translated_text']
+            )
+
             last_message = {
                 "id": conv['last_msg_db_id'],
                 "conversation_id": conv['id'],
@@ -804,8 +812,8 @@ async def get_conversations(
                 "sender_name": conv['sender_name'],
                 "sender_username": conv['sender_username'],
                 "type": conv['msg_type'],
-                "original_text": conv['original_text'],
-                "translated_text": conv['translated_text'],
+                "original_text": original_text,
+                "translated_text": translated_text,
                 "source_language": conv['msg_source_lang'],
                 "target_language": conv['msg_target_lang'],
                 "created_at": conv['msg_created_at'],
