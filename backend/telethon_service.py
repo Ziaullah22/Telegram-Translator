@@ -985,18 +985,19 @@ class TelegramSession:
 
         # 1.2 Check for invite links (t.me/joinchat/ or t.me/+)
         if 't.me/' in query or 'telegram.me/' in query:
+            results = []
             try:
                 import re
-                # Handle t.me/+hash or t.me/joinchat/hash
-                invite_match = re.search(r't\.me/(?:\+|joinchat/)([a-zA-Z0-9_-]+)', query)
-                if invite_match:
+                
+                # Find all private invite links
+                for invite_match in re.finditer(r'(?:t\.me|telegram\.me)/(?:\+|joinchat/)([a-zA-Z0-9_-]+)', query):
                     invite_hash = invite_match.group(1)
-                    from telethon.tl.functions.messages import CheckChatInviteRequest
                     try:
+                        from telethon.tl.functions.messages import CheckChatInviteRequest
                         invite_info = await self.client(CheckChatInviteRequest(invite_hash))
                         from telethon.tl.types import ChatInvite, ChatInviteAlready
                         if isinstance(invite_info, ChatInvite):
-                            return [{
+                            results.append({
                                 "id": 0,
                                 "username": None,
                                 "title": invite_info.title,
@@ -1005,11 +1006,11 @@ class TelegramSession:
                                 "source": "invite_link",
                                 "invite_hash": invite_hash,
                                 "is_public": False
-                            }]
+                            })
                         elif isinstance(invite_info, ChatInviteAlready):
                             entity = invite_info.chat
                             db_id = self._get_peer_id(entity)
-                            return [{
+                            results.append({
                                 "id": db_id,
                                 "username": getattr(entity, 'username', None),
                                 "title": getattr(entity, 'title', None),
@@ -1017,30 +1018,36 @@ class TelegramSession:
                                 "is_contact": False,
                                 "source": "invite_link",
                                 "is_public": False
-                            }]
+                            })
                     except Exception as ie:
                         logger.warning(f"Could not resolve invite hash {invite_hash}: {ie}")
 
-                # Handle public links (t.me/username)
-                public_match = re.search(r't\.me/([a-zA-Z0-9_]{5,})', query)
-                if public_match:
+                # Find all public links
+                for public_match in re.finditer(r'(?:t\.me|telegram\.me)/([a-zA-Z0-9_]{4,})', query):
                     username = public_match.group(1)
+                    if username.lower() == 'joinchat':
+                        continue
                     try:
                         entity = await self.client.get_entity(username)
                         db_id = self._get_peer_id(entity)
-                        return [{
-                            "id": db_id,
-                            "username": getattr(entity, 'username', None),
-                            "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
-                            "type": self._get_conversation_type(entity),
-                            "is_contact": False,
-                            "source": "public_link",
-                            "is_public": True
-                        }]
+                        # Avoid duplicates
+                        if not any(r.get('id') == db_id for r in results if r.get('id')):
+                            results.append({
+                                "id": db_id,
+                                "username": getattr(entity, 'username', None),
+                                "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
+                                "type": self._get_conversation_type(entity),
+                                "is_contact": False,
+                                "source": "public_link",
+                                "is_public": True
+                            })
                     except Exception as pe:
                         logger.warning(f"Could not resolve public link {username}: {pe}")
+                
+                if results:
+                    return results
             except Exception as e:
-                logger.error(f"Error resolving link {query}: {e}")
+                logger.error(f"Error resolving links in query: {e}")
         
         for peer_id, entity in self.entity_cache.items():
             # Only match by name/username for strings
