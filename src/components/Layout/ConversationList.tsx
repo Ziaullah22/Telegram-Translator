@@ -387,8 +387,8 @@ export default function ConversationList({
               }
 
               return filteredGlobal.map((user) => {
-                const displayName = user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
-                const subtitle = user.username ? `@${user.username}` : user.phone || '';
+                const displayName = user.title || user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
+                const subtitle = user.username ? `@${user.username}` : user.title ? 'Channel/Group' : user.phone || '';
 
                 return (
                   <div
