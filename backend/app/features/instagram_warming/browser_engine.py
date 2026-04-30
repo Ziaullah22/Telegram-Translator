@@ -66,6 +66,21 @@ class InstagramBrowserEngine:
             
             context = await browser.new_context(**context_args)
 
+            # 💉 HYPER-INJECTION: If we have a fresh session_id from DB but no file yet, inject it!
+            if account_data.get('session_id') and not os.path.exists(storage_path):
+                logger.info(f"💉 Injecting raw session ID for @{account_data['username']}...")
+                await context.add_cookies([
+                    {
+                        "name": "sessionid",
+                        "value": account_data['session_id'],
+                        "domain": ".instagram.com",
+                        "path": "/",
+                        "httpOnly": True,
+                        "secure": True,
+                        "sameSite": "Lax"
+                    }
+                ])
+
             # 🛡️ STEALTH INIT SCRIPT (Hardware Cloaking)
             bat_level = round(random.uniform(0.15, 0.95), 2)
             is_charging = random.choice([True, False])

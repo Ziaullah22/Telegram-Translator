@@ -912,35 +912,55 @@ class InstagramService:
             if not line: continue
             
             try:
-                # Detect Separator (| or :)
-                sep = '|' if '|' in line else ':'
-                parts = line.split(sep)
-                
-                if len(parts) < 2: 
-                    results["failed"] += 1
-                    continue
-                
-                username = parts[0].strip().lstrip('@')
-                password = parts[1].strip()
-                
+                # --- 🚀 UNIVERSAL PARSER: Smart Detection of Labeled Text & JSON Cookies ---
+                username = ""
+                password = ""
                 fa_secret = None
                 session_id = None
                 
-                # Warmer Logic: Extract 2FA and Cookies
-                for p_idx, p in enumerate(parts[2:]):
-                    p = p.strip()
-                    if not p: continue
+                # 1. Detect Labeled Formats (e.g., 账号:user | 密码:pass | Cookies:[...])
+                if "账号:" in line or "账号：" in line or "Username:" in line:
+                    username_match = re.search(r'(?:账号|Username)[:：]\s*([a-zA-Z0-9._]+)', line)
+                    password_match = re.search(r'(?:密码|Password)[:：]\s*([^| \t\n]+)', line)
+                    fa_match = re.search(r'(?:2FA|Secret|SecretKey)[:：]\s*([A-Z2-7]{16,})', line, re.I)
                     
-                    if 'sessionid=' in p:
-                        match = re.search(r'sessionid=([^; ]+)', p)
+                    if username_match: username = username_match.group(1)
+                    if password_match: password = password_match.group(1)
+                    if fa_match: fa_secret = fa_match.group(1)
+                    
+                    # Detect JSON Cookie Array
+                    cookie_json_match = re.search(r'Cookies[:：]\s*(\[.*?\])', line)
+                    if cookie_json_match:
+                        try:
+                            cookies_list = json.loads(cookie_json_match.group(1))
+                            for c in cookies_list:
+                                if c.get('name') == 'sessionid': session_id = c.get('value')
+                        except: pass
+                    
+                    # Fallback for standard cookie strings inside labeled format
+                    if not session_id and 'sessionid=' in line:
+                        match = re.search(r'sessionid=([^; |\s]+)', line)
                         if match: session_id = match.group(1)
-                    elif p_idx == 0 and p.isalnum() and len(p) >= 16:
-                        # First extra field that is alphanumeric and 16+ chars = 2FA Secret
-                        fa_secret = p
-                    elif 'x-mid=' in p or 'ig-u-rur=' in p:
-                        # Cookie string - extract session ID from it
-                        match = re.search(r'sessionid=([^;|\s]+)', p)
-                        if match: session_id = match.group(1)
+                
+                # 2. Fallback to Delimiter-based parsing (Original Logic)
+                if not username or not password:
+                    sep = '|' if '|' in line else ':'
+                    parts = line.split(sep)
+                    if len(parts) >= 2:
+                        username = parts[0].strip().lstrip('@')
+                        password = parts[1].strip()
+                        
+                        for p_idx, p in enumerate(parts[2:]):
+                            p = p.strip()
+                            if not p: continue
+                            if 'sessionid=' in p:
+                                match = re.search(r'sessionid=([^; ]+)', p)
+                                if match: session_id = match.group(1)
+                            elif p_idx == 0 and p.isalnum() and len(p) >= 16:
+                                fa_secret = p
+                            elif 'x-mid=' in p or 'ig-u-rur=' in p:
+                                match = re.search(r'sessionid=([^;|\s]+)', p)
+                                if match: session_id = match.group(1)
 
                 if not username or not password:
                     results["failed"] += 1
