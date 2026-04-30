@@ -917,6 +917,8 @@ class InstagramService:
                 password = ""
                 fa_secret = None
                 session_id = None
+                ds_user_id = None
+                full_cookies_json = None
                 
                 # 1. Detect Labeled Formats (e.g., 账号:user | 密码:pass | Cookies:[...])
                 if "账号:" in line or "账号：" in line or "Username:" in line:
@@ -929,12 +931,13 @@ class InstagramService:
                     if fa_match: fa_secret = fa_match.group(1)
                     
                     # Detect JSON Cookie Array
-                    cookie_json_match = re.search(r'Cookies[:：]\s*(\[.*?\])', line)
                     if cookie_json_match:
+                        full_cookies_json = cookie_json_match.group(1)
                         try:
-                            cookies_list = json.loads(cookie_json_match.group(1))
+                            cookies_list = json.loads(full_cookies_json)
                             for c in cookies_list:
                                 if c.get('name') == 'sessionid': session_id = c.get('value')
+                                if c.get('name') == 'ds_user_id': ds_user_id = c.get('value')
                         except: pass
                     
                     # Fallback for standard cookie strings inside labeled format
@@ -967,16 +970,18 @@ class InstagramService:
                     continue
 
                 await db.execute("""
-                    INSERT INTO instagram_accounts (user_id, username, password, proxy_id, session_id, verification_code, status) 
-                    VALUES ($1, $2, $3, $4, $5, $6, 'active')
+                    INSERT INTO instagram_accounts (user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, verification_code, status) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
                     ON CONFLICT (username) DO UPDATE SET
                         password = EXCLUDED.password,
                         proxy_id = COALESCE(EXCLUDED.proxy_id, instagram_accounts.proxy_id),
                         session_id = COALESCE(EXCLUDED.session_id, instagram_accounts.session_id),
+                        ds_user_id = COALESCE(EXCLUDED.ds_user_id, instagram_accounts.ds_user_id),
+                        full_cookies_json = COALESCE(EXCLUDED.full_cookies_json, instagram_accounts.full_cookies_json),
                         verification_code = COALESCE(EXCLUDED.verification_code, instagram_accounts.verification_code),
                         status = 'active',
                         updated_at = NOW()
-                """, user_id, username, password, proxy_id, session_id, fa_secret)
+                """, user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, fa_secret)
                 results["success"] += 1
             except Exception as e:
                 logger.error(f"Bulk add error on line '{line}': {e}")

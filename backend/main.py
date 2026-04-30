@@ -188,8 +188,10 @@ async def lifespan(app: FastAPI):
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Warming Engine Enhancement
-        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS warming_session_count INTEGER DEFAULT 0;
+        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS ds_user_id VARCHAR(255);
+        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS full_cookies_json TEXT;
+        ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS ds_user_id VARCHAR(255);
+        ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS full_cookies_json TEXT;
         """)
         logger.info("Database migration (reply support & Campaign tables) completed")
     except Exception as e:

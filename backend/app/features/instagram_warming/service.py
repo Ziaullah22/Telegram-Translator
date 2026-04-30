@@ -1076,7 +1076,9 @@ class InstagramWarmingService:
 
     async def _goto_instagram_home_and_login(self, page, account_data):
         """Shared helper: Go to Instagram home, login if needed, clear popups."""
-        await page.goto("https://www.instagram.com/", wait_until="load")
+        # 🚀 DEEP LINK BYPASS: Navigate to Inbox instead of Home to force session check
+        nav_target = "https://www.instagram.com/direct/inbox/" if account_data.get('full_cookies_json') else "https://www.instagram.com/"
+        await page.goto(nav_target, wait_until="load")
         
         # 🧪 GHOST CURSOR - Already handled by Browser Engine Init
         await page.wait_for_timeout(random.randint(4000, 7000))
@@ -1796,6 +1798,8 @@ class InstagramWarmingService:
             password = ""
             fa_secret = None
             session_id = None
+            ds_user_id = None
+            full_cookies_json = None
             
             # 1. Detect Labeled Formats (e.g., 账号:user | 密码:pass | Cookies:[...])
             if "账号:" in line or "账号：" in line or "Username:" in line:
@@ -1810,10 +1814,12 @@ class InstagramWarmingService:
                 # Detect JSON Cookie Array
                 cookie_json_match = re.search(r'Cookies[:：]\s*(\[.*?\])', line)
                 if cookie_json_match:
+                    full_cookies_json = cookie_json_match.group(1)
                     try:
-                        cookies_list = json.loads(cookie_json_match.group(1))
+                        cookies_list = json.loads(full_cookies_json)
                         for c in cookies_list:
                             if c.get('name') == 'sessionid': session_id = c.get('value')
+                            if c.get('name') == 'ds_user_id': ds_user_id = c.get('value')
                     except: pass
                 
                 # Fallback for standard cookie strings inside labeled format
@@ -1849,18 +1855,20 @@ class InstagramWarmingService:
                 proxy_id = proxies[active_pos % len(proxies)]['id']
             
             await db.execute("""
-                INSERT INTO instagram_warming_accounts (user_id, username, password, proxy_id, session_id, verification_code, status, warming_session_count)
-                VALUES ($1, $2, $3, $4, $5, $6, 'active', 0)
+                INSERT INTO instagram_warming_accounts (user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, verification_code, status, warming_session_count)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', 0)
                 ON CONFLICT (username) DO UPDATE SET
                     password = EXCLUDED.password,
                     proxy_id = EXCLUDED.proxy_id,
                     session_id = EXCLUDED.session_id,
+                    ds_user_id = EXCLUDED.ds_user_id,
+                    full_cookies_json = EXCLUDED.full_cookies_json,
                     verification_code = EXCLUDED.verification_code,
                     status = 'active',
                     created_at = NOW(),
                     warming_session_count = 0,
                     updated_at = NOW()
-            """, user_id, username, password, proxy_id, session_id, fa_secret)  # fa_secret saved as verification_code
+            """, user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, fa_secret)  # fa_secret saved as verification_code
             count += 1
             active_pos += 1
             

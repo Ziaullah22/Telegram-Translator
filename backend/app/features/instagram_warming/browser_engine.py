@@ -3,6 +3,7 @@ import random
 import time
 import logging
 from playwright.async_api import async_playwright
+import json
 from typing import Callable, Any
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,13 @@ class InstagramBrowserEngine:
             
             storage_path = os.path.join(sessions_dir, f"session_{account_data['username']}.json")
             
+            # 🧹 CLEAN SLATE: If we are doing a FULL CLONE, delete the old local file first
+            if account_data.get('full_cookies_json') and os.path.exists(storage_path):
+                try:
+                    os.remove(storage_path)
+                    logger.info(f"🧹 Clean Slate: Deleted old session file for @{account_data['username']}")
+                except: pass
+
             context_args = {
                 "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
                 "viewport": {'width': 393, 'height': 852},
@@ -66,20 +74,55 @@ class InstagramBrowserEngine:
             
             context = await browser.new_context(**context_args)
 
-            # 💉 HYPER-INJECTION: If we have a fresh session_id from DB but no file yet, inject it!
-            if account_data.get('session_id') and not os.path.exists(storage_path):
-                logger.info(f"💉 Injecting raw session ID for @{account_data['username']}...")
-                await context.add_cookies([
-                    {
-                        "name": "sessionid",
-                        "value": account_data['session_id'],
-                        "domain": ".instagram.com",
-                        "path": "/",
-                        "httpOnly": True,
-                        "secure": True,
-                        "sameSite": "Lax"
-                    }
-                ])
+            # 💉 HYPER-INJECTION: Clone the FULL session state from the original cookies
+            if account_data.get('full_cookies_json'):
+                logger.info(f"💉 [FULL CLONE] Applying all cookies for @{account_data['username']}...")
+                try:
+                    raw_cookies = json.loads(account_data['full_cookies_json'])
+                    cookies_to_inject = []
+                    for c in raw_cookies:
+                        # Clean the cookie to match Playwright's format
+                        clean_c = {
+                            "name": c.get('name'),
+                            "value": c.get('value'),
+                            "domain": c.get('domain', '.instagram.com'),
+                            "path": c.get('path', '/'),
+                            "secure": True
+                        }
+                        if c.get('name') == 'sessionid':
+                            clean_c["httpOnly"] = True
+                        cookies_to_inject.append(clean_c)
+                    
+                    await context.add_cookies(cookies_to_inject)
+                    logger.info(f"✅ [CLONE SUCCESS] {len(cookies_to_inject)} cookies injected for @{account_data['username']}")
+                    
+                    # Verify they stuck
+                    applied = await context.cookies()
+                    names = [c['name'] for c in applied]
+                    logger.info(f"🍪 Verified Cookies in Browser: {', '.join(names)}")
+                    
+                    # ⏳ SETTLE DELAY: Give the browser a moment to "absorb" the cookies
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.error(f"❌ [CLONE FAILED] Error parsing full cookies: {e}")
+            
+            # Fallback to single session ID if full json is missing (Legacy support)
+            elif account_data.get('session_id'):
+                logger.info(f"💉 [LEGACY INJECT] Applying fallback Session ID for @{account_data['username']}...")
+                await context.add_cookies([{
+                    "name": "sessionid",
+                    "value": account_data['session_id'],
+                    "domain": ".instagram.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax"
+                }])
+            
+            # 🛡️ STEALTH: Add a script to make cookies persistent across reloads
+            await context.add_init_script("""
+                window.localStorage.setItem('ig_session_injected', 'true');
+            """)
 
             # 🛡️ STEALTH INIT SCRIPT (Hardware Cloaking)
             bat_level = round(random.uniform(0.15, 0.95), 2)
