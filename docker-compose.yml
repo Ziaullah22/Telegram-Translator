@@ -26,6 +26,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/media:/app/media
+      - ./backend/sessions:/app/sessions
+      - ./backend/browser_sessions:/app/browser_sessions
 
   # The User Frontend
   frontend:

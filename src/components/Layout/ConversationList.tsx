@@ -104,6 +104,10 @@ export default function ConversationList({
         return;
       }
 
+      // Add a controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
       try {
         const [users, messages] = await Promise.all([
           telegramAPI.searchUsers(accountId, searchQuery),
@@ -113,9 +117,12 @@ export default function ConversationList({
         setMessageResults(messages);
       } catch (error) {
         console.error('Search failed:', error);
-        setSearchResults([]);
-        setMessageResults([]);
+        if (searchQuery.trim().length > 0) {
+           // Only clear if search was actually failing, but keep previous results if it was just a slow/aborted request
+           // setSearchResults([]);
+        }
       } finally {
+        clearTimeout(timeoutId);
         setIsSearching(false);
       }
     }, 400); // 400ms debounce

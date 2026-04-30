@@ -1028,24 +1028,35 @@ class TelegramSession:
                     if username.lower() == 'joinchat':
                         continue
                     try:
-                        entity = await self.client.get_entity(username)
-                        db_id = self._get_peer_id(entity)
-                        # Avoid duplicates
-                        if not any(r.get('id') == db_id for r in results if r.get('id')):
-                            results.append({
-                                "id": db_id,
-                                "username": getattr(entity, 'username', None),
-                                "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
-                                "type": self._get_conversation_type(entity),
-                                "is_contact": False,
-                                "source": "public_link",
-                                "is_public": True
-                            })
+                        from telethon.tl.functions.contacts import ResolveUsernameRequest
+                        resolved = await self.client(ResolveUsernameRequest(username))
+                        
+                        entity = None
+                        if resolved.chats:
+                            entity = resolved.chats[0]
+                        elif resolved.users:
+                            entity = resolved.users[0]
+                            
+                        if entity:
+                            db_id = self._get_peer_id(entity)
+                            # Avoid duplicates
+                            if not any(r.get('id') == db_id for r in results if r.get('id')):
+                                results.append({
+                                    "id": db_id,
+                                    "username": getattr(entity, 'username', None),
+                                    "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
+                                    "type": self._get_conversation_type(entity),
+                                    "is_contact": False,
+                                    "source": "public_link",
+                                    "is_public": True
+                                })
                     except Exception as pe:
-                        logger.warning(f"Could not resolve public link {username}: {pe}")
+                        logger.error(f"TELEGRAM API REJECTED LINK '{username}': {pe}")
                 
                 if results:
-                    return results
+                    # If we found links, we still continue to local search to see if we have them in cache
+                    # but we don't return early anymore unless it's a very specific case
+                    pass
             except Exception as e:
                 logger.error(f"Error resolving links in query: {e}")
         
@@ -1062,7 +1073,7 @@ class TelegramSession:
                 e_type = self._get_conversation_type(entity)
                 
                 local_results.append({
-                    "id": peer_id if isinstance(peer_id, int) and peer_id != 0 else getattr(entity, 'id', 0),
+                    "id": self._get_peer_id(entity),
                     "username": e_user or None,
                     "first_name": e_name or None,
                     "last_name": e_last or None,
