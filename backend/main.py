@@ -233,6 +233,19 @@ async def lifespan(app: FastAPI):
                 peer_id
             )
 
+            # FALLBACK: If lookup by peer_id failed, try matching by username (Safety Net for ID 0 Search Results)
+            if not conversation and message_data.get('sender_username'):
+                conversation = await db.fetchrow(
+                    "SELECT id FROM conversations WHERE telegram_account_id = $1 AND (username = $2 OR username = $3)",
+                    account_id,
+                    message_data['sender_username'].lstrip('@'),
+                    message_data.get('peer_title') # Sometimes peer_title might be the username
+                )
+                if conversation:
+                    # Sync the real peer_id now that we've found the record by username
+                    await db.execute("UPDATE conversations SET telegram_peer_id = $1 WHERE id = $2", peer_id, conversation['id'])
+                    logger.info(f"Matched conversation by username {message_data['sender_username']} and synced peer_id {peer_id}")
+
             if not conversation:
                 peer_title = message_data.get('peer_title', 'Unknown')
                 peer_username = message_data.get('sender_username') if message_data.get('conversation_type', 'private') == 'private' else None

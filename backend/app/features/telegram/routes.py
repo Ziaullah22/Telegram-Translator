@@ -1038,19 +1038,44 @@ async def join_conversation(
     
     # Try to join via Telethon
     try:
-        await telethon_service.join_chat(conv['telegram_account_id'], conv['telegram_peer_id'], conv['invite_hash'])
+        join_result = await telethon_service.join_chat(conv['telegram_account_id'], conv['telegram_peer_id'], conv['invite_hash'])
+        
+        # CRITICAL FIX: After joining, we must update the telegram_peer_id from 0 to the REAL ID
+        # This prevents "Channel Collisions" where incoming messages create duplicate records.
+        if join_result and 'peer_id' in join_result:
+            real_peer_id = join_result['peer_id']
+            real_type = join_result.get('type')
+            
+            # If join_result has more info, update title as well to avoid "Unknown"
+            await db.execute(
+                """
+                UPDATE conversations 
+                SET telegram_peer_id = $1, is_hidden = false, type = COALESCE($3, type)
+                WHERE id = $2
+                """,
+                real_peer_id,
+                conversation_id,
+                real_type
+            )
+            logger.info(f"Synchronized REAL peer_id {real_peer_id} and type {real_type} for conversation {conversation_id}")
+        else:
+            # Fallback unhide if join_result was empty but no exception
+            await db.execute(
+                "UPDATE conversations SET is_hidden = false WHERE id = $1",
+                conversation_id
+            )
     except Exception as e:
         # Some errors might be okay (e.g. already joined), but log it
         logger.warning(f"Joining chat error: {e}")
-    
-    # Unhide in database
-    await db.execute(
-        "UPDATE conversations SET is_hidden = false WHERE id = $1",
-        conversation_id
-    )
+        # At least unhide it so the user can see it
+        await db.execute(
+            "UPDATE conversations SET is_hidden = false WHERE id = $1",
+            conversation_id
+        )
 
     # Fetch previous history (last 50 messages) in background to prevent timeout
-    await telethon_service.fetch_and_save_history(conv['telegram_account_id'], conv['telegram_peer_id'], limit=50)
+    # Use the real_peer_id we just synchronized!
+    await telethon_service.fetch_and_save_history(conv['telegram_account_id'], real_peer_id if 'real_peer_id' in locals() else conv['telegram_peer_id'], limit=50)
 
     # Insert a "You joined this group/channel" system message
     # Get conversation info to choose text

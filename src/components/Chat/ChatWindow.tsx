@@ -594,8 +594,17 @@ export default function ChatWindow({
   // Virtual bubbles allow the user to see what they have planned in the timeline
   // without waiting for the server to actually send the message.
   const sortedMessages = useMemo(() => {
+    // --- SAFETY GUARD: MESSAGE BOUNCER ---
+    // This ensures that we only render messages that belong to the current active conversation.
+    // Without this, during fast switching, React might render the old 'messages' array 
+    // with the new 'currentConversation' header for a split second (Ghosting).
+    const activeMessages = messages.filter(m => 
+      Number(m.conversation_id) === Number(conversationId) || 
+      (conversationId === 0 && m.conversation_id < 0) // Allow temporary negative IDs for pending messages
+    );
+
     // Collect all outgoing text bodies that have already been confirmed by the server
-    const sentOutgoingTexts = new Set(messages.filter(m => m.is_outgoing && m.telegram_message_id > 0).map(m => m.original_text?.trim()));
+    const sentOutgoingTexts = new Set(activeMessages.filter(m => m.is_outgoing && m.telegram_message_id > 0).map(m => m.original_text?.trim()));
 
     const virtualScheduled = scheduledMessages
       .filter(sm => {
@@ -623,7 +632,7 @@ export default function ChatWindow({
         scheduled_at: sm.scheduled_at,
       } as any));
 
-    return [...messages, ...virtualScheduled].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    return [...activeMessages, ...virtualScheduled].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [messages, scheduledMessages, currentAccount, currentConversation]);
 
   // --- LIST TRANSFORMATION ---

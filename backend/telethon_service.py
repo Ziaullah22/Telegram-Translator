@@ -800,17 +800,26 @@ class TelegramSession:
             
             if invite_hash:
                 logger.info(f"Joining chat via invite hash {invite_hash} for account {self.account_id}")
-                await self.client(ImportChatInviteRequest(invite_hash))
-                return True
+                from telethon.tl.types import Updates, UpdateNewMessage
+                result = await self.client(ImportChatInviteRequest(invite_hash))
+                
+                # Try to extract the peer_id from the updates result
+                if hasattr(result, 'chats') and result.chats:
+                    chat = result.chats[0]
+                    return {"peer_id": self._get_peer_id(chat), "type": self._get_conversation_type(chat)}
+                
+                # Fallback: if result didn't have chats, return True as success
+                return {"peer_id": 0}
                 
             entity = await self.client.get_entity(peer_id)
             
             # For channels and supergroups
             if isinstance(entity, Channel):
                 await self.client(JoinChannelRequest(entity))
-                return True
-            # For normal groups, you usually need an invite or to be added
-            return True
+                return {"peer_id": entity.id, "type": "channel" if entity.broadcast else "supergroup"}
+                
+            # For normal groups
+            return {"peer_id": entity.id, "type": "group"}
         except Exception as e:
             logger.error(f"Error joining chat {peer_id} for account {self.account_id}: {e}")
             raise
@@ -911,7 +920,9 @@ class TelegramSession:
         elif isinstance(entity, Chat):
             return -entity.id
         elif isinstance(entity, Channel):
-            return -1000000000000 - entity.id
+            # The standard -100 prefix for channels and supergroups
+            # Telethon utils get_peer_id is safer but we'll use a standard math approach
+            return int(f"-100{entity.id}")
         return 0
 
     def _get_conversation_type(self, entity) -> str:
