@@ -374,6 +374,9 @@ export default function ConversationList({
               </div>
             ) : (() => {
               const filteredGlobal = searchResults.filter(user => {
+                // If it's an invite link (id 0), it's never a local duplicate by ID
+                if (user.id === 0) return true;
+
                 // Remove duplicates that are already in local matches
                 const isAlreadyLocal = conversations.some(c => Number(c.telegram_peer_id) === Number(user.id));
                 if (isAlreadyLocal) return false;
@@ -395,11 +398,14 @@ export default function ConversationList({
 
               return filteredGlobal.map((user) => {
                 const displayName = user.title || user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.phone || 'Unknown';
-                const subtitle = user.username ? `@${user.username}` : user.title ? 'Channel/Group' : user.phone || '';
+                const subtitle = user.username ? `@${user.username}` : user.title ? (user.type === 'channel' ? 'Channel' : 'Group') : user.phone || '';
+                
+                // Use invite_hash as key for id 0 to avoid React duplicate key warnings
+                const resultKey = user.id === 0 ? `invite_${user.invite_hash}` : `peer_${user.id}`;
 
                 return (
                   <div
-                    key={user.id}
+                    key={resultKey}
                     onClick={() => handleUserSelect(user)}
                     className="flex items-center px-3 py-2.5 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5 last:border-0"
                   >

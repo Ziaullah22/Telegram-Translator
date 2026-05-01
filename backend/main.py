@@ -185,15 +185,24 @@ async def lifespan(app: FastAPI):
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
             payment_details TEXT,
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
+            );
 
-        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS ds_user_id VARCHAR(255);
-        ALTER TABLE instagram_warming_accounts ADD COLUMN IF NOT EXISTS full_cookies_json TEXT;
-        ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS ds_user_id VARCHAR(255);
-        ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS full_cookies_json TEXT;
+        -- Upgrade conversations unique constraint to support multiple pending invite links (id 0)
+        -- First drop the old strict constraint if it exists
+        ALTER TABLE conversations DROP CONSTRAINT IF EXISTS uq_conversations_account_peer;
+        ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_telegram_account_id_telegram_peer_id_key;
+        
+        -- Create a partial unique index: Only enforce uniqueness for REAL telegram IDs (not 0)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_peer_not_zero 
+        ON conversations (telegram_account_id, telegram_peer_id) 
+        WHERE telegram_peer_id != 0;
+
+        -- Ensure invite links are unique per account based on their hash when peer_id is 0
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_invite_hash 
+        ON conversations (telegram_account_id, invite_hash) 
+        WHERE telegram_peer_id = 0 AND invite_hash IS NOT NULL;
         """)
-        logger.info("Database migration (reply support & Campaign tables) completed")
+        logger.info("Database migration (Partial Unique Indexes for Conversations) completed")
     except Exception as e:
         logger.error(f"Migration error: {e}")
     

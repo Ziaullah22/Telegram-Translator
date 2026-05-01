@@ -964,213 +964,156 @@ class TelegramSession:
                     return base64.b64encode(thumb_bytes).decode('utf-8')
             except Exception as e:
                 logger.debug(f"Failed to download small thumb fallback: {e}")
-                
             return None
         except Exception as e:
             logger.debug(f"Thumbnail extraction failed: {e}")
             return None
 
     async def search_users(self, username: str, limit: int = 10):
-        """Search for Telegram users by username or phone number (with local fallback)"""
+        """
+        Universal Telegram Search & Link Resolver.
+        Supports: @usernames, t.me/links (+, joinchat, public), phone numbers, and tg:// links.
+        """
         if not self.client or not self.is_connected:
             return []
 
-        query = username.strip()
+        import urllib.parse
+        # Decode and normalize the query (handles browser encoding like %2B for +)
+        query = urllib.parse.unquote(username.strip())
+        logger.info(f"🔍 [SEARCH] Account {self.account_id} searching for: '{query}'")
+        
         if not query:
             return []
             
-        # 1. First, search in our local entity cache (instant results for people we know)
-        local_results = []
-        clean_query = query.lower().lstrip('@')
+        import re
+        results = []
+        seen_ids = set()
+        # --- STEP 1: Universal Link & Hash Resolver ---
+        # Pattern 1: Private Invite Hashes (t.me/+, t.me/joinchat/, tg://join?invite=)
+        # Handles: https://t.me/+hash, t.me/joinchat/hash, tg://join?invite=hash
+        invite_hashes = re.findall(r'(?:\+|joinchat/|invite=)([a-zA-Z0-9_\-\+]{10,})', query)
+        if not invite_hashes and ('/+' in query or 'joinchat/' in query):
+             # Fallback for very specific t.me links if findall missed them
+             h_match = re.search(r'(?:\+|joinchat/)([a-zA-Z0-9_\-\+]{10,})', query)
+             if h_match: invite_hashes = [h_match.group(1)]
 
-        # 1.2 Check for invite links (t.me/joinchat/ or t.me/+)
-        if 't.me/' in query or 'telegram.me/' in query:
-            results = []
+        for invite_hash in invite_hashes:
+            invite_hash = invite_hash.strip().lstrip('+')
             try:
-                import re
+                from telethon.tl.functions.messages import CheckChatInviteRequest
+                from telethon.tl.types import ChatInvite, ChatInviteAlready
+                invite_info = await self.client(CheckChatInviteRequest(invite_hash))
                 
-                # Find all private invite links
-                for invite_match in re.finditer(r'(?:t\.me|telegram\.me)/(?:\+|joinchat/)([a-zA-Z0-9_-]+)', query):
-                    invite_hash = invite_match.group(1)
-                    try:
-                        from telethon.tl.functions.messages import CheckChatInviteRequest
-                        invite_info = await self.client(CheckChatInviteRequest(invite_hash))
-                        from telethon.tl.types import ChatInvite, ChatInviteAlready
-                        if isinstance(invite_info, ChatInvite):
-                            results.append({
-                                "id": 0,
-                                "username": None,
-                                "title": invite_info.title,
-                                "type": "channel" if invite_info.channel else "group",
-                                "is_contact": False,
-                                "source": "invite_link",
-                                "invite_hash": invite_hash,
-                                "is_public": False
-                            })
-                        elif isinstance(invite_info, ChatInviteAlready):
-                            entity = invite_info.chat
-                            db_id = self._get_peer_id(entity)
-                            results.append({
-                                "id": db_id,
-                                "username": getattr(entity, 'username', None),
-                                "title": getattr(entity, 'title', None),
-                                "type": self._get_conversation_type(entity),
-                                "is_contact": False,
-                                "source": "invite_link",
-                                "is_public": False
-                            })
-                    except Exception as ie:
-                        logger.warning(f"Could not resolve invite hash {invite_hash}: {ie}")
-
-                # Find all public links
-                for public_match in re.finditer(r'(?:t\.me|telegram\.me)/([a-zA-Z0-9_]{4,})', query):
-                    username = public_match.group(1)
-                    if username.lower() == 'joinchat':
-                        continue
-                    try:
-                        from telethon.tl.functions.contacts import ResolveUsernameRequest
-                        resolved = await self.client(ResolveUsernameRequest(username))
-                        
-                        entity = None
-                        if resolved.chats:
-                            entity = resolved.chats[0]
-                        elif resolved.users:
-                            entity = resolved.users[0]
-                            
-                        if entity:
-                            db_id = self._get_peer_id(entity)
-                            # Avoid duplicates
-                            if not any(r.get('id') == db_id for r in results if r.get('id')):
-                                results.append({
-                                    "id": db_id,
-                                    "username": getattr(entity, 'username', None),
-                                    "title": getattr(entity, 'title', None) or getattr(entity, 'first_name', ''),
-                                    "type": self._get_conversation_type(entity),
-                                    "is_contact": False,
-                                    "source": "public_link",
-                                    "is_public": True
-                                })
-                    except Exception as pe:
-                        logger.error(f"TELEGRAM API REJECTED LINK '{username}': {pe}")
-                
-                if results:
-                    # If we found links, we still continue to local search to see if we have them in cache
-                    # but we don't return early anymore unless it's a very specific case
-                    pass
-            except Exception as e:
-                logger.error(f"Error resolving links in query: {e}")
-        
-        for peer_id, entity in self.entity_cache.items():
-            # Only match by name/username for strings
-            e_name = getattr(entity, 'first_name', '') or ''
-            e_last = getattr(entity, 'last_name', '') or ''
-            e_user = getattr(entity, 'username', '') or ''
-            e_title = getattr(entity, 'title', '') or ''
-            
-            fullname = f"{e_name} {e_last} {e_title}".lower()
-            if clean_query in fullname or clean_query in e_user.lower():
-                is_contact = getattr(entity, 'contact', False)
-                e_type = self._get_conversation_type(entity)
-                
-                local_results.append({
-                    "id": self._get_peer_id(entity),
-                    "username": e_user or None,
-                    "first_name": e_name or None,
-                    "last_name": e_last or None,
-                    "title": e_title or None,
-                    "type": e_type,
-                    "is_contact": is_contact,
-                    "source": "cache"
-                })
-                if len(local_results) >= limit:
-                    break
-
-        # 2. Check for local managed accounts by phone/username (internal discovery)
-        # Handle formats consistently
-        simple_query = query.replace(' ', '').replace('-', '').lstrip('+')
-        if simple_query:
-            # Search our own accounts for matching phone OR display_name OR real username
-            local_account = await db.fetchrow(
-                """SELECT id, account_name, display_name, username 
-                   FROM telegram_accounts 
-                   WHERE account_name LIKE $1 OR display_name LIKE $1 OR username LIKE $1""",
-                f"%{simple_query}%"
-            )
-            if local_account:
-                # Add to results
-                local_results.append({
-                    "id": 0, # Placeholder if ID not in cache
-                    "username": local_account['username'] or local_account['account_name'],
-                    "first_name": local_account['display_name'],
-                    "type": "user",
-                    "source": "internal_db"
-                })
-
-        # 3. Detect if this is a phone number search (Telegram Global)
-        full_phone = query if query.startswith('+') else '+' + query.replace(' ', '').replace('-', '')
-        # Only call Telegram's phone search if it looks like a real phone number
-        if (full_phone.startswith('+') and len(full_phone) > 8) or (query.isdigit() and len(query) > 7):
-            phone_results = await self._search_by_phone(full_phone, limit)
-            if phone_results:
-                seen_usernames = {r.get('username') for r in local_results if r.get('username')}
-                for pr in phone_results:
-                    if pr.get('username') not in seen_usernames:
-                        local_results.append(pr)
-                return local_results[:limit]
-
-        # 4. Global Telegram Search
-        try:
-            from telethon.tl.functions.contacts import SearchRequest
-            
-            # Remove @ for global search
-            global_query = query.lstrip('@')
-            if len(global_query) < 3 and not (global_query.isdigit()):
-                # Global search requires at least 3 chars or must be digits
-                return local_results
-
-            search_results = await self.client(SearchRequest(
-                q=global_query,
-                limit=limit
-            ))
-            
-            results = local_results # Start with local matches
-            seen_ids = {r['id'] for r in results}
-            
-            # Process users from global search
-            for user in search_results.users:
-                if isinstance(user, User) and not user.bot and user.id not in seen_ids:
+                if isinstance(invite_info, ChatInvite):
                     results.append({
-                        "id": user.id,
-                        "username": user.username,
-                        "first_name": user.first_name,
-                        "last_name": user.last_name,
-                        "phone": user.phone,
-                        "is_contact": user.contact or False,
-                        "type": "user",
-                        "source": "global"
+                        "id": 0, "username": None, "title": invite_info.title,
+                        "type": "channel" if invite_info.channel else "group",
+                        "is_contact": False, "source": "invite_link", "invite_hash": invite_hash, "is_public": False
                     })
-                    seen_ids.add(user.id)
-            
-            # Process chats/channels from global search
-            for chat in search_results.chats:
-                db_id = self._get_peer_id(chat)
-                if db_id not in seen_ids:
-                    chat_type = self._get_conversation_type(chat)
+                elif isinstance(invite_info, ChatInviteAlready):
+                    entity = invite_info.chat
+                    db_id = self._get_peer_id(entity)
                     results.append({
-                        "id": db_id,
-                        "username": getattr(chat, 'username', None),
-                        "title": getattr(chat, 'title', None) or getattr(chat, 'name', None),
-                        "type": chat_type,
-                        "is_contact": False,
-                        "source": "global"
+                        "id": db_id, "username": getattr(entity, 'username', None),
+                        "title": getattr(entity, 'title', None) or "Private Group",
+                        "type": self._get_conversation_type(entity),
+                        "is_contact": False, "source": "invite_link", "invite_hash": invite_hash, "is_public": False
                     })
                     seen_ids.add(db_id)
+            except Exception as ie:
+                logger.debug(f"Invite resolution failed: {ie}")
+
+        # Pattern 2: Public Usernames (t.me/username, @username, tg://resolve?domain=username)
+        # First, try to extract the domain/username if it's a known URL format
+        u_match = re.search(r'(?:t\.me/|telegram\.me/|domain=|@)([a-zA-Z0-9_]{4,})', query)
+        public_names = [u_match.group(1)] if u_match else []
+        
+        # Fallback: if it's just a plain word without any prefix
+        if not public_names and not invite_hashes and len(query.strip()) >= 4 and '.' not in query:
+            public_names = [query.strip().lstrip('@')]
+
+        for uname in public_names:
+            if uname.lower() in ('joinchat', 'addstickers', 'proxy', 'socks', 'join', 'resolve', 'plus'): continue
+            try:
+                entity = await self.client.get_entity(uname)
+                db_id = self._get_peer_id(entity)
+                if db_id not in seen_ids:
+                    results.append({
+                        "id": db_id, "username": getattr(entity, 'username', None),
+                        "title": self._get_entity_name(entity),
+                        "type": self._get_conversation_type(entity),
+                        "is_contact": False, "source": "global_search", "is_public": True
+                    })
+                    seen_ids.add(db_id)
+            except Exception: pass
+
+
+        # --- STEP 2: Phone Number Discovery ---
+        phone_match = re.search(r'(?:\+)?([0-9]{10,15})', query.replace(" ", "").replace("-", ""))
+        if phone_match:
+            phone = phone_match.group(1)
+            try:
+                entity = await self.client.get_entity(phone)
+                db_id = self._get_peer_id(entity)
+                if db_id not in seen_ids:
+                    results.append({
+                        "id": db_id, "username": getattr(entity, 'username', None),
+                        "title": self._get_entity_name(entity),
+                        "type": "private", "is_contact": False, "source": "phone_search", "is_public": False
+                    })
+                    seen_ids.add(db_id)
+            except Exception: pass
+
+        # --- STEP 3: Local Cache Search ---
+        clean_query = query.lower().lstrip('@')
+        for peer_id, entity in self.entity_cache.items():
+            db_id = self._get_peer_id(entity)
+            if db_id in seen_ids: continue
             
-            return results[:limit * 2]
-                
-        except Exception as e:
-            logger.error(f"Error searching users for {self.account_id}: {e}")
-            return local_results # Return at least local matches on failure
+            e_name = (getattr(entity, 'first_name', '') or '').lower()
+            e_last = (getattr(entity, 'last_name', '') or '').lower()
+            e_user = (getattr(entity, 'username', '') or '').lower()
+            e_title = (getattr(entity, 'title', '') or '').lower()
+            
+            if clean_query in e_name or clean_query in e_last or clean_query in e_user or clean_query in e_title:
+                results.append({
+                    "id": db_id, "username": e_user or None,
+                    "title": self._get_entity_name(entity),
+                    "type": self._get_conversation_type(entity),
+                    "is_contact": getattr(entity, 'contact', False), "source": "cache"
+                })
+                seen_ids.add(db_id)
+                if len(results) >= limit * 2: break
+
+        # --- STEP 4: Global Search (Fallback) ---
+        if not results and len(clean_query) >= 3:
+            try:
+                from telethon.tl.functions.contacts import SearchRequest
+                global_search = await self.client(SearchRequest(q=clean_query, limit=limit))
+                for user in global_search.users:
+                    if user.id not in seen_ids:
+                        results.append({
+                            "id": user.id, "username": user.username, "title": f"{user.first_name or ''} {user.last_name or ''}".strip(),
+                            "type": "user", "source": "global"
+                        })
+                        seen_ids.add(user.id)
+                for chat in global_search.chats:
+                    db_id = self._get_peer_id(chat)
+                    if db_id not in seen_ids:
+                        results.append({
+                            "id": db_id, "username": getattr(chat, 'username', None),
+                            "title": getattr(chat, 'title', None), "type": self._get_conversation_type(chat), "source": "global"
+                        })
+                        seen_ids.add(db_id)
+            except Exception as e:
+                logger.error(f"Global search error: {e}")
+
+        if results:
+            logger.info(f"✨ [SEARCH SUCCESS] Found {len(results)} results for query: '{query}'")
+        else:
+            logger.warning(f"⚠️ [SEARCH EMPTY] No results found for query: '{query}'")
+
+        return results[:limit * 2]
 
     async def _search_by_phone(self, phone: str, limit: int = 10):
         """Search by phone number using ImportContacts"""
@@ -1457,6 +1400,8 @@ class TelethonService:
                 if not is_duplicate:
                     final_results.append(res)
 
+        internal_count = len([r for r in final_results if r.get('source') == 'internal_active'])
+        logger.info(f"Search completed: {len(final_results)} total results (internal: {internal_count}, external: {len(final_results) - internal_count})")
         return final_results[:limit * 2]
 
     async def send_media(self, account_id: int, peer_id: int, file_path: str, caption: str = ""):

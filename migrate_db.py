@@ -97,7 +97,19 @@ async def migrate():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     last_message_at TIMESTAMPTZ
                 );
-                CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_account_peer ON conversations(telegram_account_id, telegram_peer_id);
+                -- Smart Search Indexes: Support for multiple pending invite links (id 0)
+                DROP INDEX IF EXISTS uq_conversations_account_peer;
+                DROP INDEX IF EXISTS conversations_telegram_account_id_telegram_peer_id_key;
+                
+                -- Only enforce uniqueness for REAL telegram IDs (not 0)
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_peer_not_zero 
+                ON conversations (telegram_account_id, telegram_peer_id) 
+                WHERE telegram_peer_id != 0;
+
+                -- Ensure invite links are unique per account based on their hash when peer_id is 0
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_invite_hash 
+                ON conversations (telegram_account_id, invite_hash) 
+                WHERE telegram_peer_id = 0 AND invite_hash IS NOT NULL;
             """)
             print("[OK] Table: conversations")
 
