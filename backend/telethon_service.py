@@ -797,19 +797,30 @@ class TelegramSession:
             from telethon.tl.functions.channels import JoinChannelRequest
             from telethon.tl.functions.messages import ImportChatInviteRequest
             from telethon.tl.types import Channel
+            from telethon.errors import UserAlreadyParticipantError
             
             if invite_hash:
                 logger.info(f"Joining chat via invite hash {invite_hash} for account {self.account_id}")
                 from telethon.tl.types import Updates, UpdateNewMessage
-                result = await self.client(ImportChatInviteRequest(invite_hash))
+                try:
+                    result = await self.client(ImportChatInviteRequest(invite_hash))
+                    
+                    # Extract the peer_id from the updates result
+                    if hasattr(result, 'chats') and result.chats:
+                        chat = result.chats[0]
+                        return {"peer_id": self._get_peer_id(chat), "type": self._get_conversation_type(chat)}
+                    
+                except UserAlreadyParticipantError:
+                    # Already a member — resolve entity directly using the invite hash
+                    logger.info(f"Already a participant via {invite_hash}, resolving entity directly.")
                 
-                # Try to extract the peer_id from the updates result
-                if hasattr(result, 'chats') and result.chats:
-                    chat = result.chats[0]
-                    return {"peer_id": self._get_peer_id(chat), "type": self._get_conversation_type(chat)}
-                
-                # Fallback: if result didn't have chats, return True as success
-                return {"peer_id": 0}
+                # Fallback: resolve via get_entity (works for already-joined channels)
+                try:
+                    entity = await self.client.get_entity(invite_hash)
+                    return {"peer_id": self._get_peer_id(entity), "type": self._get_conversation_type(entity)}
+                except Exception as fe:
+                    logger.warning(f"Could not resolve entity for hash {invite_hash}: {fe}")
+                    return {"peer_id": 0}
                 
             entity = await self.client.get_entity(peer_id)
             
@@ -823,6 +834,7 @@ class TelegramSession:
         except Exception as e:
             logger.error(f"Error joining chat {peer_id} for account {self.account_id}: {e}")
             raise
+
 
     async def get_history(self, peer_id: int, limit: int = 50):
         """Fetch message history for a peer without extra API calls to avoid SQLite lock"""

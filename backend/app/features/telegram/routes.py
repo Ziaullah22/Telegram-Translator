@@ -957,8 +957,15 @@ async def create_conversation(
         existing = None
 
     if existing:
+        # Always update invite_hash if we now have one and the record doesn't
+        if conversation_data.invite_hash and not existing['invite_hash']:
+            await db.execute(
+                "UPDATE conversations SET invite_hash = $1 WHERE id = $2",
+                conversation_data.invite_hash, existing['id']
+            )
+            existing = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", existing['id'])
         # If existing record is missing username or has a phone number title, update it
-        if not existing['username'] or (existing['title'] and existing['title'].startswith('+')):
+        elif not existing['username'] or (existing['title'] and existing['title'].startswith('+')):
             await db.execute(
                 "UPDATE conversations SET title = $1, username = $2 WHERE id = $3",
                 conversation_data.title or existing['title'],
