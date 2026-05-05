@@ -298,6 +298,9 @@ class UserSearchResult(BaseModel):
     title: Optional[str] = None
     type: str = "user" # "user", "group", "channel"
     photo_url: Optional[str] = None
+    invite_hash: Optional[str] = None
+    is_public: Optional[bool] = None
+    source: Optional[str] = None
 
 class ConversationCreate(BaseModel):
     telegram_peer_id: int
