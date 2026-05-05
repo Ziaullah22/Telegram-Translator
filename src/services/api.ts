@@ -202,7 +202,9 @@ export const telegramAPI = {
   },
 
   joinConversation: async (conversationId: number) => {
-    const response = await api.post(`/telegram/conversations/${conversationId}/join`);
+    const response = await api.post(`/telegram/conversations/${conversationId}/join`, null, {
+      timeout: 120000 // Joining can be slow if it involves resolving hashes
+    });
     return response.data;
   },
 
@@ -367,6 +369,7 @@ export const messagesAPI = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 300000, // 5 minutes for large videos
     });
     return response.data;
   },
