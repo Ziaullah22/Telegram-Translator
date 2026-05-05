@@ -219,6 +219,13 @@ async def lifespan(app: FastAPI):
             account_id = message_data['account_id']
             peer_id = message_data['peer_id']
 
+            # GUARD: Never process a message with peer_id=0.
+            # This means the channel hasn't been resolved yet — saving it
+            # would route it to the wrong conversation (the "mixed messages" bug).
+            if not peer_id or peer_id == 0:
+                logger.warning(f"Dropping message with unresolved peer_id=0 for account {account_id}")
+                return
+
             account = await db.fetchrow(
                 "SELECT user_id, target_language, source_language, translation_enabled FROM telegram_accounts WHERE id = $1",
                 account_id

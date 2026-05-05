@@ -1080,9 +1080,20 @@ async def join_conversation(
             conversation_id
         )
 
-    # Fetch previous history (last 50 messages) in background to prevent timeout
-    # Use the real_peer_id we just synchronized!
-    await telethon_service.fetch_and_save_history(conv['telegram_account_id'], real_peer_id if 'real_peer_id' in locals() else conv['telegram_peer_id'], limit=50)
+    # CRITICAL: Re-read the peer_id from DB AFTER the join attempt.
+    # This ensures we always use the real saved peer_id, never the stale 0.
+    updated_conv = await db.fetchrow(
+        "SELECT telegram_peer_id FROM conversations WHERE id = $1",
+        conversation_id
+    )
+    final_peer_id = updated_conv['telegram_peer_id'] if updated_conv else 0
+
+    # Only fetch history if we have a real peer_id — never fetch with 0
+    # (fetching with 0 returns wrong/random messages from Telegram)
+    if final_peer_id and final_peer_id != 0:
+        await telethon_service.fetch_and_save_history(conv['telegram_account_id'], final_peer_id, limit=50)
+    else:
+        logger.warning(f"Skipping history fetch for conversation {conversation_id}: peer_id is still 0 after join")
 
     # Insert a "You joined this group/channel" system message
     # Get conversation info to choose text
