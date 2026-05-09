@@ -35,16 +35,26 @@ class InstagramSessionManager:
             }
 
         # 2. Launch Browser
+        launch_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--no-sandbox'
+        ]
+        
+        if headless:
+            launch_args.append('--window-state=minimized')
+        else:
+            # 📱 POPUP STYLE: Centered mobile-sized window
+            launch_args.extend([
+                '--window-size=450,850',
+                '--window-position=600,50'
+            ])
+
         browser = await p_instance.chromium.launch(
             headless=headless,
             proxy=proxy,
-            args=[
-                '--start-maximized',
-                '--disable-blink-features=AutomationControlled',
-                '--no-first-run',
-                '--no-default-browser-check',
-                '--no-sandbox'
-            ] + (['--window-state=minimized'] if headless else [])
+            args=launch_args
         )
 
         # 3. Setup Context
