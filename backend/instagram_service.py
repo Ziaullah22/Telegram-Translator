@@ -747,6 +747,22 @@ class InstagramService:
         rows = await db.fetch("SELECT i.*, p.host as proxy_host FROM instagram_accounts i LEFT JOIN instagram_proxies p ON i.proxy_id = p.id WHERE i.user_id = $1", user_id)
         return [dict(row) for row in rows]
 
+    async def update_account_settings(self, user_id: int, account_id: int, target_language: str, source_language: str, is_translation_enabled: bool):
+        row = await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
+        if not row:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        await db.execute(
+            """
+            UPDATE instagram_accounts 
+            SET target_language = $1, source_language = $2, is_translation_enabled = $3, updated_at = NOW()
+            WHERE id = $4
+            """,
+            target_language, source_language, is_translation_enabled, account_id
+        )
+        return await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1", account_id)
+
     def _parse_proxy_str(self, p_str: str):
         """🚀 INDUSTRIAL PARSER: Supports host:port:user:pass, user:pass@host:port, etc."""
         if not p_str: return None
@@ -959,8 +975,8 @@ class InstagramService:
                             if 'sessionid=' in p:
                                 match = re.search(r'sessionid=([^; ]+)', p)
                                 if match: session_id = match.group(1)
-                            elif p_idx == 0 and p.isalnum() and len(p) >= 16:
-                                fa_secret = p
+                            elif p_idx == 0 and p.replace(" ", "").isalnum() and len(p.replace(" ", "")) >= 16:
+                                fa_secret = p.replace(" ", "").upper()
                             elif 'x-mid=' in p or 'ig-u-rur=' in p:
                                 match = re.search(r'sessionid=([^;|\s]+)', p)
                                 if match: session_id = match.group(1)
@@ -1254,7 +1270,7 @@ class InstagramService:
             v_code = None
             
             if v_code_raw:
-                if len(v_code_raw) > 10:
+                if len(v_code_raw.replace(" ", "")) > 10:
                     try:
                         totp = pyotp.TOTP(v_code_raw.replace(" ", ""))
                         v_code = totp.now()
@@ -1689,7 +1705,6 @@ class InstagramService:
             return {"success": False, "error_type": "crash"}
 
         return {"success": False, "error_type": "unknown"}
-        return {"success": False, "error_type": "unknown"}
 
     # --- Data Utils ---
 
@@ -1796,7 +1811,7 @@ class InstagramService:
                 
                 fa_secret = account_data.get('fa_secret') or account_data.get('verification_code')
                 
-                if (two_fa or split_boxes) and fa_secret:
+                if (two_fa or (split_boxes and len(split_boxes) > 0)) and fa_secret:
                     logger.info("🔐 2FA detected! Generating code from secret...")
                     import pyotp
                     try:

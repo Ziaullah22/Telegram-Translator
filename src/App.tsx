@@ -11,6 +11,8 @@ import Header from './components/Layout/Header';
 import Sidebar from './components/Layout/Sidebar';
 import ChatWindow from './components/Chat/ChatWindow';
 import ConversationList from './components/Layout/ConversationList';
+import InstagramConversationList from './components/InstagramChat/InstagramConversationList';
+import InstagramChatWindow from './components/InstagramChat/InstagramChatWindow';
 import AnalyticsPage from './components/Analytics/AnalyticsPage';
 import AddAccountModal from './components/Modals/AddAccountModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
@@ -25,13 +27,14 @@ import AdvancedSettings from './components/Settings/AdvancedSettings';
 import CRMDashboard from './components/CRM/CRMDashboard';
 import InstagramLeadGenerator from './components/Instagram/InstagramLeadGenerator';
 import InstagramWarmingDashboard from './components/InstagramWarming/InstagramWarmingDashboard';
+import InstagramAccountSettingsModal from './components/InstagramChat/InstagramAccountSettingsModal';
 
 // Services
-import { telegramAPI, conversationsAPI, messagesAPI } from './services/api';
+import { telegramAPI, conversationsAPI, messagesAPI, instagramAPI, instagramChatAPI } from './services/api';
 import { Zap, X } from 'lucide-react';
 
 // Types
-import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage } from './types';
+import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage, InstagramAccount, InstagramMessage, InstagramChat } from './types';
 
 /**
  * MAIN ENTRANCE OF THE APPLICATION (USER SIDE)
@@ -111,6 +114,16 @@ function App() {
   const messageCache = useRef<Record<number, { messages: TelegramMessage[], hasMore: boolean, lastViewed: number }>>({});
   const MAX_CACHE_SIZE = 5;
 
+  // --- MULTI-PLATFORM STATE ---
+  const [currentPlatform, setCurrentPlatform] = useState<'telegram' | 'instagram'>('telegram');
+  const [instagramAccounts, setInstagramAccounts] = useState<InstagramAccount[]>([]);
+  const [currentInstagramAccount, setCurrentInstagramAccount] = useState<InstagramAccount | null>(null);
+  const [instagramConversations, setInstagramConversations] = useState<InstagramChat[]>([]);
+  const [currentInstagramConversation, setCurrentInstagramConversation] = useState<InstagramChat | null>(null);
+  const [instagramMessages, setInstagramMessages] = useState<InstagramMessage[]>([]);
+  const [showInstagramSettingsModal, setShowInstagramSettingsModal] = useState(false);
+  const [editingInstagramAccount, setEditingInstagramAccount] = useState<InstagramAccount | null>(null);
+
   // Refs for current state
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
@@ -122,10 +135,98 @@ function App() {
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   useEffect(() => { accountsRef.current = accounts; }, [accounts]);
 
-  // Load accounts on mount
+  // Load accounts on mount and setup polling
   useEffect(() => {
-    if (isAuthenticated) loadAccounts();
+    if (isAuthenticated) {
+      loadAccounts();
+      loadInstagramAccounts();
+
+      // Setup background polling to keep connection status (Online/Offline) in sync
+      const interval = setInterval(() => {
+        loadAccounts();
+        loadInstagramAccounts();
+      }, 10000); // Every 10 seconds
+
+      return () => clearInterval(interval);
+    }
   }, [isAuthenticated]);
+
+  // --- INSTAGRAM BACKGROUND POLLING (Since we don't have WebSockets for IG) ---
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    // Only poll if we are on the Instagram tab and have an active account
+    if (currentPlatform === 'instagram' && currentInstagramAccount) {
+      interval = setInterval(async () => {
+        try {
+          // Poll the sidebar threads
+          const convs = await instagramChatAPI.getThreads(currentInstagramAccount.id);
+          setInstagramConversations(convs);
+          
+          // If a conversation is actively open, poll its messages too
+          if (currentConversationRef.current?.id || currentInstagramConversation) {
+             const activeConv = currentInstagramConversation;
+             if (activeConv && !activeConv.id.startsWith('new_')) {
+                const msgs = await instagramChatAPI.getMessages(currentInstagramAccount.id, activeConv.id);
+                // We use functional state update to prevent stale closures and avoid unnecessary re-renders
+                setInstagramMessages(prev => {
+                  // Only update if length changed or newest message ID changed to prevent flashing
+                  if (msgs.length !== prev.length || (msgs.length > 0 && prev.length > 0 && msgs[msgs.length-1].id !== prev[prev.length-1].id)) {
+                     return msgs;
+                  }
+                  return prev;
+                });
+             }
+          }
+        } catch (e) {
+          console.error("Instagram background poll failed:", e);
+        }
+      }, 2000); // Poll every 2 seconds for a "live" feel
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentPlatform, currentInstagramAccount, currentInstagramConversation]);
+
+  const loadInstagramAccounts = async () => {
+    try {
+      const list = await instagramAPI.getAccounts();
+      setInstagramAccounts(list);
+      // Keep the current selection in sync with the latest data (e.g. connection status)
+      setCurrentInstagramAccount(prev => {
+        if (!prev) return null;
+        return list.find(a => a.id === prev.id) || prev;
+      });
+    } catch (e) { console.error('Failed to load Instagram accounts:', e); }
+  };
+
+  const handleInstagramAccountSelect = async (acc: InstagramAccount) => {
+    setCurrentInstagramAccount(acc);
+    setInstagramMessages([]);
+    setCurrentInstagramConversation(null);
+    setInstagramConversations([]);
+    if (acc.is_connected) {
+      try {
+        const convs = await instagramChatAPI.getThreads(acc.id);
+        setInstagramConversations(convs);
+      } catch (e) { console.error('Failed to load Instagram threads:', e); }
+    }
+  };
+
+  const handleConnectInstagram = async (acc: InstagramAccount) => {
+    try {
+      await instagramAPI.connectAccount(acc.id);
+      await loadInstagramAccounts();
+    } catch (e) { console.error('Failed to connect Instagram:', e); }
+  };
+
+  const handleDisconnectInstagram = async (acc: InstagramAccount) => {
+    try {
+      await instagramAPI.disconnectAccount(acc.id);
+      await loadInstagramAccounts();
+    } catch (e) { console.error('Failed to disconnect Instagram:', e); }
+  };
 
   // Handle notification sound
   useEffect(() => {
@@ -149,6 +250,71 @@ function App() {
   }, []);
 
   // Handle deep-link navigation from Orders page
+  const handleInstagramConversationSelect = async (conv: InstagramChat) => {
+    setCurrentInstagramConversation(conv);
+    if (currentInstagramAccount) {
+      try {
+        const msgs = await instagramChatAPI.getMessages(currentInstagramAccount.id, conv.id);
+        setInstagramMessages(msgs);
+      } catch (e) { console.error('Failed to load Instagram messages:', e); }
+    }
+  };
+
+  const handleSendInstagramMessage = async (text: string) => {
+    if (!currentInstagramAccount || !currentInstagramConversation) return;
+    
+    // Optimistic UI update
+    const tempMsg: InstagramMessage = {
+      id: `temp-${Date.now()}`,
+      thread_id: currentInstagramConversation.id,
+      sender_id: 'me',
+      sender_name: 'Me',
+      text: text,
+      type: 'text',
+      created_at: new Date().toISOString(),
+      is_outgoing: true
+    };
+    setInstagramMessages(prev => [...prev, tempMsg]);
+
+    try {
+      const realMsg = await instagramChatAPI.sendMessage(currentInstagramAccount.id, currentInstagramConversation.id, text);
+      setInstagramMessages(prev => prev.map(m => m.id === tempMsg.id ? realMsg : m));
+      
+      // Update sidebar conversation list immediately
+      setInstagramConversations(prev => {
+        const index = prev.findIndex(c => c.id === (currentInstagramConversation?.id));
+        if (index === -1) return prev;
+        
+        const updated = [...prev];
+        const conversation = {
+          ...updated[index],
+          last_message: {
+            id: realMsg.id,
+            text: realMsg.translated_text || realMsg.text,
+            created_at: realMsg.created_at,
+            is_outgoing: true
+          }
+        };
+        
+        // Move to top
+        updated.splice(index, 1);
+        return [conversation, ...updated];
+      });
+
+      // IMPORTANT: Update conversation ID if it was a new thread
+      if (currentInstagramConversation.id.startsWith('new_') && realMsg.thread_id && !realMsg.thread_id.startsWith('new_')) {
+        setCurrentInstagramConversation(prev => prev ? { ...prev, id: realMsg.thread_id } : prev);
+        // Refresh sidebar to show the newly created real thread
+        const list = await instagramAPI.getAccounts();
+        const acc = list.find(a => a.id === currentInstagramAccount.id);
+        if (acc) handleInstagramAccountSelect(acc);
+      }
+    } catch (e) {
+      console.error('Failed to send Instagram message:', e);
+      setInstagramMessages(prev => prev.filter(m => m.id !== tempMsg.id));
+      alert('Failed to send message to Instagram');
+    }
+  };
   const handleNavigateToConversation = useCallback(async (openAccountId: number, openPeerId: number) => {
     try {
       const acc = accounts.find(a => Number(a.id) === openAccountId);
@@ -691,7 +857,7 @@ function App() {
           <Route path="/" element={
             <div className="flex-1 flex overflow-hidden relative">
               {/* Step 1: Account Selection (Sidebar) */}
-              <div className={`${currentAccount ? 'hidden xl:flex' : 'flex'} w-full xl:w-64 h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
+              <div className={`${(currentAccount || currentInstagramAccount) ? 'hidden xl:flex' : 'flex'} w-full xl:w-64 h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
                 <Sidebar
                   accounts={accounts}
                   currentAccount={currentAccount}
@@ -706,11 +872,20 @@ function App() {
                   unreadCounts={unreadCounts}
                   hideOriginal={hideOriginal}
                   onToggleHideOriginal={() => setHideOriginal(!hideOriginal)}
+                  // Platform Support
+                  currentPlatform={currentPlatform}
+                  onPlatformChange={setCurrentPlatform}
+                  instagramAccounts={instagramAccounts}
+                  currentInstagramAccount={currentInstagramAccount}
+                  onInstagramAccountSelect={handleInstagramAccountSelect}
+                  onConnectInstagram={handleConnectInstagram}
+                  onDisconnectInstagram={handleDisconnectInstagram}
+                  onEditInstagram={(account) => { setEditingInstagramAccount(account); setShowInstagramSettingsModal(true); }}
                 />
               </div>
 
               {/* Step 2: Chat Selection (ConversationList) */}
-              {currentAccount && (
+              {currentPlatform === 'telegram' && currentAccount && (
                 <div className={`${currentConversation ? 'hidden xl:flex' : 'flex'} w-full xl:w-[320px] 2xl:w-[360px] h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
                   <ConversationList
                     conversations={conversations}
@@ -728,47 +903,69 @@ function App() {
                 </div>
               )}
 
+              {currentPlatform === 'instagram' && currentInstagramAccount && (
+                <div className={`${currentInstagramConversation ? 'hidden xl:flex' : 'flex'} w-full xl:w-[320px] 2xl:w-[360px] h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
+                  <InstagramConversationList
+                    conversations={instagramConversations}
+                    currentConversation={currentInstagramConversation}
+                    onConversationSelect={handleInstagramConversationSelect}
+                    onBack={() => setCurrentInstagramAccount(null)}
+                    accountId={currentInstagramAccount.id}
+                  />
+                </div>
+              )}
+
               {/* Step 3: Message View (ChatWindow) */}
-              <div className={`${currentConversation ? 'flex' : 'hidden xl:flex'} flex-1 h-full flex-col`}>
-                <ChatWindow
-                  messages={messages}
-                  currentConversation={currentConversation}
-                  currentAccount={currentAccount}
-                  isConnected={currentAccount?.isConnected || false}
-                  sourceLanguage={currentAccount?.sourceLanguage || 'auto'}
-                  targetLanguage={currentAccount?.targetLanguage || 'en'}
-                  onSendMessage={handleSendMessage}
-                  onSendMedia={handleSendMedia}
-                  onJoinConversation={async (id) => {
-                    try {
-                      await telegramAPI.joinConversation(id);
-                      if (currentAccount) {
-                        await loadConversations(currentAccount.id);
-                        setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
-                        loadMessages(id);
-                        setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
-                      }
-                    } catch (e) { console.error(e); }
-                  }}
-                  onToggleMute={async (id) => {
-                    try {
-                      const result = await telegramAPI.toggleMute(id);
-                      setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
-                      setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
-                    } catch (e) { console.error(e); }
-                  }}
-                  onLeaveConversation={handleLeaveConversation}
-                  onDeleteMessages={handleDeleteMessages}
-                  hasMoreMessages={hasMoreMessages}
-                  onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
-                  onReact={handleReact}
-                  scheduledMessages={scheduledMessages}
-                  setScheduledMessages={setScheduledMessages}
-                  conversations={conversations}
-                  isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
-                  hideOriginal={hideOriginal}
-                  onBack={() => setCurrentConversation(null)}
-                />
+              <div className={`${(currentConversation || currentInstagramConversation) ? 'flex' : 'hidden xl:flex'} flex-1 h-full flex-col`}>
+                {currentPlatform === 'telegram' ? (
+                  <ChatWindow
+                    messages={messages}
+                    currentConversation={currentConversation}
+                    currentAccount={currentAccount}
+                    isConnected={currentAccount?.isConnected || false}
+                    sourceLanguage={currentAccount?.sourceLanguage || 'auto'}
+                    targetLanguage={currentAccount?.targetLanguage || 'en'}
+                    onSendMessage={handleSendMessage}
+                    onSendMedia={handleSendMedia}
+                    onJoinConversation={async (id) => {
+                      try {
+                        await telegramAPI.joinConversation(id);
+                        if (currentAccount) {
+                          await loadConversations(currentAccount.id);
+                          setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_hidden: false } : prev);
+                          loadMessages(id);
+                          setTimeout(() => { if (currentConversationRef.current?.id === id) loadMessages(id); }, 5000);
+                        }
+                      } catch (e) { console.error(e); }
+                    }}
+                    onToggleMute={async (id) => {
+                      try {
+                        const result = await telegramAPI.toggleMute(id);
+                        setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_muted: result.is_muted } : prev);
+                        setConversations(prev => prev.map(c => c.id === id ? { ...c, is_muted: result.is_muted } : c));
+                      } catch (e) { console.error(e); }
+                    }}
+                    onLeaveConversation={handleLeaveConversation}
+                    onDeleteMessages={handleDeleteMessages}
+                    hasMoreMessages={hasMoreMessages}
+                    onLoadMoreMessages={currentConversation ? () => loadMoreMessages(currentConversation.id) : undefined}
+                    onReact={handleReact}
+                    scheduledMessages={scheduledMessages}
+                    setScheduledMessages={setScheduledMessages}
+                    conversations={conversations}
+                    isTranslationEnabled={currentAccount?.isTranslationEnabled ?? true}
+                    hideOriginal={hideOriginal}
+                    onBack={() => setCurrentConversation(null)}
+                  />
+                ) : (
+                  <InstagramChatWindow
+                    messages={instagramMessages}
+                    currentConversation={currentInstagramConversation}
+                    currentAccount={currentInstagramAccount}
+                    onSendMessage={handleSendInstagramMessage}
+                    onBack={() => setCurrentInstagramConversation(null)}
+                  />
+                )}
               </div>
             </div>
           } />
@@ -799,6 +996,21 @@ function App() {
           type="danger"
         />
         <UserGuideTour isOpen={showTour} onClose={() => setShowTour(false)} hasAccounts={accounts.length > 0} hasConversation={!!currentConversation} currentStep={tourStep} onStepChange={setTourStep} />
+
+        {showInstagramSettingsModal && editingInstagramAccount && (
+          <InstagramAccountSettingsModal 
+            account={editingInstagramAccount}
+            onClose={() => { setShowInstagramSettingsModal(false); setEditingInstagramAccount(null); }}
+            onSave={(updated) => {
+              setInstagramAccounts(prev => prev.map(a => a.id === updated.id ? updated : a));
+              if (currentInstagramAccount?.id === updated.id) {
+                setCurrentInstagramAccount(updated);
+              }
+              setShowInstagramSettingsModal(false);
+              setEditingInstagramAccount(null);
+            }}
+          />
+        )}
 
         {notification && (
           <div className="fixed bottom-8 right-8 z-[9000] animate-slide-up pointer-events-none">

@@ -9,10 +9,10 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { aiService, AIStatus } from '../../services/aiService';
-import type { TelegramAccount } from '../../types';
+import type { TelegramAccount, InstagramAccount } from '../../types';
 
 interface SidebarProps {
   accounts: TelegramAccount[];
@@ -28,6 +28,16 @@ interface SidebarProps {
   unreadCounts: Record<number, Record<number, number>>; // accountId -> { conversationId: count }
   hideOriginal: boolean;
   onToggleHideOriginal: () => void;
+
+  // Multi-platform support
+  currentPlatform: 'telegram' | 'instagram';
+  onPlatformChange: (platform: 'telegram' | 'instagram') => void;
+  instagramAccounts: InstagramAccount[];
+  currentInstagramAccount: InstagramAccount | null;
+  onInstagramAccountSelect: (account: InstagramAccount) => void;
+  onConnectInstagram: (account: InstagramAccount) => void;
+  onDisconnectInstagram: (account: InstagramAccount) => void;
+  onEditInstagram: (account: InstagramAccount) => void;
 }
 
 export default function Sidebar({
@@ -44,6 +54,14 @@ export default function Sidebar({
   unreadCounts,
   hideOriginal,
   onToggleHideOriginal,
+  currentPlatform,
+  onPlatformChange,
+  instagramAccounts,
+  currentInstagramAccount,
+  onInstagramAccountSelect,
+  onConnectInstagram,
+  onDisconnectInstagram,
+  onEditInstagram,
 }: SidebarProps) {
   const [aiStatus, setAiStatus] = useState<AIStatus>(aiService.getStatus().status);
   const [aiProgress, setAiProgress] = useState(aiService.getStatus().progress);
@@ -74,42 +92,72 @@ export default function Sidebar({
 
   return (
     <div id="main-sidebar" className="w-full h-full bg-white dark:bg-[#17212b] border-r border-gray-100 dark:border-white/5 flex flex-col transition-colors duration-300 relative">
+      {/* Platform Switcher */}
       <div className="p-3 border-b border-gray-100 dark:border-white/5">
-        <button
-          id="add-account-btn"
-          onClick={onAddAccount}
-          className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-blue-600/20 text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Account</span>
-        </button>
+        <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-xl">
+          <button
+            onClick={() => onPlatformChange('telegram')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-all duration-300 ${
+              currentPlatform === 'telegram' 
+                ? 'bg-white dark:bg-white/10 shadow-sm text-blue-600' 
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span className="text-[11px] font-black uppercase tracking-widest">Telegram</span>
+          </button>
+          <button
+            onClick={() => onPlatformChange('instagram')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-all duration-300 ${
+              currentPlatform === 'instagram' 
+                ? 'bg-white dark:bg-white/10 shadow-sm text-pink-600' 
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            <Instagram className="w-4 h-4" />
+            <span className="text-[11px] font-black uppercase tracking-widest">Instagram</span>
+          </button>
+        </div>
       </div>
+
+      {currentPlatform === 'telegram' && (
+        <div className="p-3 border-b border-gray-100 dark:border-white/5">
+          <button
+            id="add-account-btn"
+            onClick={onAddAccount}
+            className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-blue-600/20 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Telegram</span>
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-3">
           <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-            Accounts
+            {currentPlatform === 'telegram' ? 'Telegram Accounts' : 'Instagram Accounts'}
           </h3>
 
           <div id="sidebar-accounts">
-
-            {accounts.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 dark:text-gray-500">
-                <Smartphone className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="text-xs font-semibold">No accounts yet</p>
-                <p className="text-[10px] mt-1">Click "Add Account" to start</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {sortedAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className={`p-3 rounded-xl border transition-all duration-300 cursor-pointer relative overflow-hidden ${currentAccount?.id === account.id
-                      ? 'bg-slate-200/90 dark:bg-white/10 border-slate-300 dark:border-white/20 text-gray-900 dark:text-white shadow-md'
-                      : 'bg-gray-50/50 dark:bg-transparent border-transparent text-gray-700 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark hover:shadow-sm'
-                      }`}
-                    onClick={() => onAccountSelect(account)}
-                  >
+            {currentPlatform === 'telegram' ? (
+              accounts.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+                  <Smartphone className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-xs font-semibold">No accounts yet</p>
+                  <p className="text-[10px] mt-1">Click "Add Account" to start</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sortedAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className={`p-3 rounded-xl border transition-all duration-300 cursor-pointer relative overflow-hidden ${currentAccount?.id === account.id
+                        ? 'bg-slate-200/90 dark:bg-white/10 border-slate-300 dark:border-white/20 text-gray-900 dark:text-white shadow-md'
+                        : 'bg-gray-50/50 dark:bg-transparent border-transparent text-gray-700 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark hover:shadow-sm'
+                        }`}
+                      onClick={() => onAccountSelect(account)}
+                    >
                     {currentAccount?.id === account.id && (
                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                     )}
@@ -247,63 +295,153 @@ export default function Sidebar({
                   </div>
                 ))}
               </div>
+            )) : (
+              instagramAccounts.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+                  <Instagram className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-xs font-semibold">No Instagram accounts</p>
+                  <p className="text-[10px] mt-1">Connect your first account to start</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {instagramAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className={`p-3 rounded-xl border transition-all duration-300 cursor-pointer relative overflow-hidden ${currentInstagramAccount?.id === account.id
+                        ? 'bg-slate-200/90 dark:bg-white/10 border-slate-300 dark:border-white/20 text-gray-900 dark:text-white shadow-md'
+                        : 'bg-gray-50/50 dark:bg-transparent border-transparent text-gray-700 dark:text-gray-300 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark hover:shadow-sm'
+                        }`}
+                      onClick={() => onInstagramAccountSelect(account)}
+                    >
+                      {currentInstagramAccount?.id === account.id && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-pink-600" />
+                      )}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2 truncate">
+                          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-[10px] text-white font-black shrink-0">
+                            {account.username.charAt(0).toUpperCase()}
+                          </div>
+                          <h4 className="font-bold truncate text-[13px]">@{account.username}</h4>
+                        </div>
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditInstagram(account);
+                            }}
+                            className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                            title="Translation Settings"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-blue-500" />
+                          </button>
+
+                          {account.is_connected ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDisconnectInstagram(account);
+                              }}
+                              className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                              title="Disconnect"
+                            >
+                              <Wifi className="w-3.5 h-3.5 text-green-500" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onConnectInstagram(account);
+                              }}
+                              className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                              title="Connect"
+                            >
+                              <WifiOff className="w-3.5 h-3.5 text-red-500" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-[10px]">
+                        <div className={`inline-flex items-center gap-1 rounded-lg px-1.5 py-0 shadow-sm border bg-black/5 border-black/5 dark:bg-white/5 dark:border-white/5`}>
+                          <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${currentInstagramAccount?.id === account.id ? 'text-gray-900 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'}`}>
+                            {(account.target_language || 'EN').toUpperCase()}
+                          </span>
+                          <div className={`flex items-center opacity-60 ${currentInstagramAccount?.id === account.id ? 'text-gray-500 dark:text-white/70' : 'text-gray-400'}`}>
+                            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 17H4L8 21" />
+                              <path d="M4 7H20L16 3" />
+                            </svg>
+                          </div>
+                          <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${currentInstagramAccount?.id === account.id ? 'text-gray-900 dark:text-white/90' : 'text-gray-600 dark:text-gray-300'}`}>
+                            {(account.source_language || 'AUTO').toUpperCase()}
+                          </span>
+                        </div>
+                        <span className={`font-black uppercase tracking-widest ${account.is_connected ? 'text-green-500' : 'text-red-500'}`}>
+                          {account.is_connected ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         </div>
       </div>
       
       {/* --- AI ENGINE CONTROL --- */}
-      <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex flex-col">
-            <span className="text-[11px] font-black uppercase tracking-tight text-gray-700 dark:text-gray-200">
-              AI Engine
-            </span>
-            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-1">
-              {aiStatus === 'idle' && 'Qwen-1.5B (Turbo GPU Mode)'}
-              {aiStatus === 'loading' && `Downloading Model: ${aiProgress}%`}
-              {aiStatus === 'ready' && 'AI Brain is Online'}
-              {aiStatus === 'error' && 'GPU Error: Check WebGPU'}
-            </p>
+      {currentPlatform === 'telegram' && (
+        <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-black uppercase tracking-tight text-gray-700 dark:text-gray-200">
+                AI Engine
+              </span>
+              <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-1">
+                {aiStatus === 'idle' && 'Qwen-1.5B (Turbo GPU Mode)'}
+                {aiStatus === 'loading' && `Downloading Model: ${aiProgress}%`}
+                {aiStatus === 'ready' && 'AI Brain is Online'}
+                {aiStatus === 'error' && 'GPU Error: Check WebGPU'}
+              </p>
+            </div>
+            <div className={`p-1.5 rounded-lg ${aiStatus === 'ready' ? 'bg-green-500/10 text-green-500' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
+              <Brain className={`w-4 h-4 ${aiStatus === 'loading' ? 'animate-pulse' : ''}`} />
+            </div>
           </div>
-          <div className={`p-1.5 rounded-lg ${aiStatus === 'ready' ? 'bg-green-500/10 text-green-500' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
-            <Brain className={`w-4 h-4 ${aiStatus === 'loading' ? 'animate-pulse' : ''}`} />
-          </div>
+
+          {aiStatus === 'loading' && (
+            <div className="space-y-1.5 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">System Sync</span>
+                <span className="text-[9px] font-black text-blue-500">{aiProgress}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-300" 
+                  style={{ width: `${aiProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {aiStatus === 'idle' || aiStatus === 'error' ? (
+            <button
+              onClick={() => aiService.init()}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+            >
+              <Zap className="w-3 h-3 fill-current" />
+              Initialize AI
+            </button>
+          ) : aiStatus === 'ready' ? (
+            <div className="w-full py-2 bg-green-500/10 text-green-600 dark:text-green-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center border border-green-500/20">
+              Engine Active
+            </div>
+          ) : (
+            <div className="w-full py-2 bg-gray-100 dark:bg-white/5 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center animate-pulse">
+              Please Wait...
+            </div>
+          )}
         </div>
-
-        {aiStatus === 'loading' && (
-          <div className="space-y-1.5 mb-3">
-            <div className="flex justify-between items-center">
-              <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">System Sync</span>
-              <span className="text-[9px] font-black text-blue-500">{aiProgress}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-300" 
-                style={{ width: `${aiProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {aiStatus === 'idle' || aiStatus === 'error' ? (
-          <button
-            onClick={() => aiService.init()}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
-          >
-            <Zap className="w-3 h-3 fill-current" />
-            Initialize AI
-          </button>
-        ) : aiStatus === 'ready' ? (
-          <div className="w-full py-2 bg-green-500/10 text-green-600 dark:text-green-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center border border-green-500/20">
-            Engine Active
-          </div>
-        ) : (
-          <div className="w-full py-2 bg-gray-100 dark:bg-white/5 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest text-center animate-pulse">
-            Please Wait...
-          </div>
-        )}
-      </div>
+      )}
 
       {/* --- ADDED FEATURE: FOCUS MODE TOGGLE --- */}
       <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">

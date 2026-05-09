@@ -468,6 +468,14 @@ class InstagramAccountCreate(BaseModel):
     two_factor_secret: Optional[str] = None
     email: Optional[str] = None
     verification_code: Optional[str] = None
+    target_language: Optional[str] = "en"
+    source_language: Optional[str] = "auto"
+    is_translation_enabled: Optional[bool] = True
+
+class InstagramAccountSettingsUpdate(BaseModel):
+    target_language: Optional[str] = None
+    source_language: Optional[str] = None
+    is_translation_enabled: Optional[bool] = None
 
 class InstagramAccountResponse(BaseModel):
     id: int
@@ -480,6 +488,9 @@ class InstagramAccountResponse(BaseModel):
     two_factor_secret: Optional[str] = None
     email: Optional[str] = None
     verification_code: Optional[str] = None
+    target_language: str = "en"
+    source_language: str = "auto"
+    is_translation_enabled: bool = True
     last_used: Optional[datetime] = None
     created_at: datetime
 

@@ -7,7 +7,7 @@
  */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair, Product, Order, SalesSettings } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair, Product, Order, SalesSettings, InstagramAccount, InstagramChat, InstagramMessage } from '../types';
 
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
@@ -880,6 +880,30 @@ export const instagramAPI = {
     const response = await api.delete(`/instagram/accounts/${accountId}`);
     return response.data;
   },
+  
+  updateAccountSettings: async (accountId: number, targetLanguage: string, sourceLanguage: string, isTranslationEnabled: boolean): Promise<any> => {
+    const response = await api.put(`/instagram/accounts/${accountId}/settings`, {
+      target_language: targetLanguage,
+      source_language: sourceLanguage,
+      is_translation_enabled: isTranslationEnabled
+    });
+    return response.data;
+  },
+
+  connectAccount: async (accountId: number): Promise<{ status: string }> => {
+    const response = await api.post(`/instagram/accounts/${accountId}/connect`);
+    return response.data;
+  },
+
+  disconnectAccount: async (accountId: number): Promise<{ status: string }> => {
+    const response = await api.post(`/instagram/accounts/${accountId}/disconnect`);
+    return response.data;
+  },
+
+  getConnectionStatus: async (accountId: number): Promise<{ connected: boolean }> => {
+    const response = await api.get(`/instagram/accounts/${accountId}/connection-status`);
+    return response.data;
+  },
 
   analyzeLead: async (leadId: number): Promise<any> => {
     // Stage 2 analysis can be slow due to external scraping
@@ -977,6 +1001,37 @@ export const instagramAPI = {
     formData.append('file', file);
     const response = await api.post('/instagram/bulk-proxies-file', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  }
+};
+
+// --- INSTAGRAM CHAT SERVICES ---
+export const instagramChatAPI = {
+  getThreads: async (accountId: number): Promise<InstagramChat[]> => {
+    const response = await api.get('/instagram/chat/threads', { params: { account_id: accountId } });
+    return response.data;
+  },
+
+  getMessages: async (accountId: number, threadId: string): Promise<InstagramMessage[]> => {
+    const response = await api.get(`/instagram/chat/threads/${threadId}/messages`, { params: { account_id: accountId } });
+    return response.data;
+  },
+  sendMessage: async (accountId: number, threadId: string, text: string): Promise<InstagramMessage> => {
+    const response = await api.post(`/instagram/chat/threads/${threadId}/send`, null, { 
+      params: { account_id: accountId, text: text } 
+    });
+    return response.data;
+  },
+  searchUsers: async (accountId: number, query: string): Promise<any[]> => {
+    const response = await api.get(`/instagram/chat/search-user`, { 
+      params: { account_id: accountId, query: query } 
+    });
+    return response.data;
+  },
+  createThread: async (accountId: number, username: string): Promise<InstagramChat> => {
+    const response = await api.post(`/instagram/chat/threads/create`, null, { 
+      params: { account_id: accountId, username: username } 
     });
     return response.data;
   }

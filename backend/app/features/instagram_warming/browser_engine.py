@@ -27,7 +27,7 @@ class InstagramBrowserEngine:
                     "password": account_data.get('proxy_pass'),
                 }
 
-            # 2. Launch Browser (Full Screen Maximized for better rendering)
+            # 2. Launch Browser (Headless for VPS deployment)
             browser = await p.chromium.launch(
                 headless=False,
                 proxy=proxy,
@@ -333,7 +333,7 @@ class InstagramBrowserEngine:
                     "password": proxy.get('p_pass'),
                 }
 
-            # 2. Launch Browser
+            # 2. Launch Browser (Headless for VPS deployment)
             browser = await p.chromium.launch(
                 headless=False,
                 proxy=playwright_proxy,

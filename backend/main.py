@@ -33,6 +33,7 @@ from app.features.campaign.routes import router as campaign_router
 from app.features.products.routes import router as products_router
 from app.features.sales.routes import router as sales_router
 from app.features.instagram.routes import router as instagram_router
+from app.features.instagram_chat.routes import router as instagram_chat_router
 from app.features.instagram_warming.routes import router as instagram_warming_router
 from auth import get_current_user
 from jose import jwt, JWTError
@@ -184,8 +185,16 @@ async def lifespan(app: FastAPI):
         CREATE TABLE IF NOT EXISTS sales_settings (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
-            payment_details TEXT,
-            );
+            payment_details TEXT
+        );
+
+        -- Instagram Accounts Enhancement
+        ALTER TABLE instagram_accounts 
+          ADD COLUMN IF NOT EXISTS full_cookies_json TEXT,
+          ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP,
+          ADD COLUMN IF NOT EXISTS target_language VARCHAR(50) DEFAULT 'en',
+          ADD COLUMN IF NOT EXISTS source_language VARCHAR(50) DEFAULT 'auto',
+          ADD COLUMN IF NOT EXISTS is_translation_enabled BOOLEAN DEFAULT TRUE;
 
         -- Upgrade conversations unique constraint to support multiple pending invite links (id 0)
         -- First drop the old strict constraint if it exists
@@ -683,19 +692,35 @@ async def lifespan(app: FastAPI):
     telethon_service.add_read_handler(handle_read)
     
     # Auto-connect accounts from database in the background
-    # Background task to automatically reconnect all active accounts on startup
     async def auto_connect_accounts():
         try:
-            accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
-            logger.info(f"Auto-connecting {len(accounts)} active account(s)...")
-            for account in accounts:
+            # 1. Telegram Auto-Connect
+            tg_accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
+            logger.info(f"Auto-connecting {len(tg_accounts)} active Telegram account(s)...")
+            for acc in tg_accounts:
                 try:
-                    await telethon_service.connect_session(account['id'])
-                    logger.info(f"\u2713 Connected account: {account['display_name']}")
+                    await telethon_service.connect_session(acc['id'])
+                    logger.info(f"✓ Connected Telegram: {acc['display_name']}")
                 except Exception as e:
-                    logger.error(f"\u2717 Error connecting account {account['display_name']}: {e}")
+                    logger.error(f"✗ Error connecting Telegram {acc['display_name']}: {e}")
+
+            # 2. Instagram Auto-Connect (Invisible/Background session recovery)
+            # Only connect accounts that have a session stored
+            from app.features.instagram.session_manager import instagram_session_manager
+            ig_accounts = await db.fetch("SELECT * FROM instagram_accounts WHERE full_cookies_json IS NOT NULL")
+            if ig_accounts:
+                logger.info(f"Auto-connecting {len(ig_accounts)} Instagram session(s)...")
+                for acc in ig_accounts:
+                    # For startup, we launch them but the user might not see them 
+                    # unless they click "Connect" in the UI to bring them to front
+                    # But we'll just run them so the 'Online' status is true
+                    try:
+                        await instagram_session_manager.connect(acc['id'], dict(acc))
+                        logger.info(f"✓ Connected Instagram: @{acc['username']}")
+                    except Exception as e:
+                        logger.error(f"✗ Error connecting Instagram @{acc['username']}: {e}")
         except Exception as e:
-            logger.error(f"Error fetching accounts for auto-connect: {e}")
+            logger.error(f"Error in auto_connect: {e}")
 
     # Fire and forget the connection task
     asyncio.create_task(auto_connect_accounts())
@@ -763,6 +788,7 @@ app.include_router(campaign_router)
 app.include_router(products_router)
 app.include_router(sales_router)
 app.include_router(instagram_router)
+app.include_router(instagram_chat_router)
 app.include_router(instagram_warming_router)
 
 # Health check endpoint for monitoring application status

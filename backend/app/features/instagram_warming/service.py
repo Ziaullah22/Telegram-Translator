@@ -1841,8 +1841,8 @@ class InstagramWarmingService:
                         if 'sessionid=' in p:
                             match = re.search(r'sessionid=([^; ]+)', p)
                             if match: session_id = match.group(1)
-                        elif p_idx == 0 and p.isalnum() and len(p) >= 16:
-                            fa_secret = p
+                        elif p_idx == 0 and p.replace(" ", "").isalnum() and len(p.replace(" ", "")) >= 16:
+                            fa_secret = p.replace(" ", "").upper()
                         elif 'x-mid=' in p or 'ig-u-rur=' in p:
                             match = re.search(r'sessionid=([^;|\s]+)', p)
                             if match: session_id = match.group(1)

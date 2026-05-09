@@ -24,8 +24,7 @@ import {
     Target,
     Filter,
     Sparkles,
-    Brain,
-    Copy
+    Brain
 } from 'lucide-react';
 import { instagramAPI } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
@@ -63,6 +62,8 @@ const InstagramLeadGenerator: React.FC = () => {
     const [isAutoPilotRunning, setIsAutoPilotRunning] = useState(false);
     const [restTimer, setRestTimer] = useState<number | null>(null);
     const [bulkUploading, setBulkUploading] = useState<'accounts' | 'proxies' | null>(null);
+    const [connectingIds, setConnectingIds] = useState<Set<number>>(new Set());
+    const [connectedIds, setConnectedIds] = useState<Set<number>>(new Set());
 
     // Modals
     const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
@@ -522,6 +523,40 @@ const InstagramLeadGenerator: React.FC = () => {
             fetchData();
         } catch (error) {
             console.error('Failed to delete account:', error);
+        }
+    };
+    
+    const handleConnectAccount = async (id: number) => {
+        setConnectingIds(prev => new Set(prev).add(id));
+        try {
+            const res = await instagramAPI.connectAccount(id);
+            if (res.status === 'connected' || res.status === 'already_connected') {
+                setConnectedIds(prev => new Set(prev).add(id));
+                notify('🌐 Browser Link Established! 🚀');
+            }
+        } catch (err) {
+            console.error(err);
+            notify('Failed to connect browser.', 'alert');
+        } finally {
+            setConnectingIds(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+    };
+
+    const handleDisconnectAccount = async (id: number) => {
+        try {
+            await instagramAPI.disconnectAccount(id);
+            setConnectedIds(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+            notify('🔌 Browser Link Severed.');
+        } catch (err) {
+            console.error(err);
         }
     };
 
@@ -1060,6 +1095,34 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     />
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        <div className="mt-4 pt-4 border-t border-gray-50 dark:border-white/5 flex items-center gap-2">
+                                            {connectedIds.has(acc.id) ? (
+                                                <button
+                                                    onClick={() => handleDisconnectAccount(acc.id)}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                                                >
+                                                    <X className="w-3.5 h-3.5" /> Disconnect
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleConnectAccount(acc.id)}
+                                                    disabled={connectingIds.has(acc.id)}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${
+                                                        connectingIds.has(acc.id) 
+                                                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed' 
+                                                        : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'
+                                                    }`}
+                                                >
+                                                    {connectingIds.has(acc.id) ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    ) : (
+                                                        <Play className="w-3.5 h-3.5" />
+                                                    )}
+                                                    {connectingIds.has(acc.id) ? 'Connecting...' : 'Connect Browser'}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );

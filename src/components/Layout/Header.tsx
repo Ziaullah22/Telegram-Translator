@@ -23,6 +23,8 @@ export default function Header({ onStartTour }: HeaderProps) {
     { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
     { path: '/products', label: 'Store', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
     { path: '/advanced-settings', label: 'Advanced', icon: <Settings className="w-3.5 h-3.5 text-blue-600" /> },
+    { path: '/instagram-leads', label: 'Scraper', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" /> },
+    { path: '/instagram-warming', label: 'Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-600" /> },
   ];
 
   return (
@@ -79,6 +81,32 @@ export default function Header({ onStartTour }: HeaderProps) {
                 </button>
               ))}
 
+              {/* Instagram Dropdown */}
+              <div className="relative group ml-1">
+                <button id="nav-instagram-group" className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${['/instagram-leads', '/instagram-warming'].includes(location.pathname) ? 'text-pink-600 dark:text-pink-500 bg-pink-50/50 dark:bg-white/5' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                   <Instagram className="w-3.5 h-3.5" />
+                   <span>Instagram</span>
+                   <ChevronDown className="w-3 h-3 transition-transform group-hover:rotate-180" />
+                </button>
+                <div className="absolute top-[80%] left-0 mt-2 w-48 z-[100] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/5 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 overflow-hidden py-1">
+                  {[
+                    { path: '/instagram-leads', label: 'Lead Scraper', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" />, id: 'nav-insta-scraper' },
+                    { path: '/instagram-warming', label: 'Account Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-600" />, id: 'nav-insta-warmer' }
+                  ].map(item => (
+                    <button
+                      key={item.path}
+                      id={item.id}
+                      onClick={() => navigate(item.path)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all hover:bg-gray-50 dark:hover:bg-white/5 ${
+                        location.pathname === item.path ? 'text-pink-600 dark:text-pink-500 bg-pink-50/50 dark:bg-pink-500/10' : 'text-gray-500 dark:text-gray-400'
+                      }`}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Manage Dropdown */}
               <div className="relative group ml-1">

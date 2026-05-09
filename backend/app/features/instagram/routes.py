@@ -4,8 +4,44 @@ from typing import List, Optional
 from models import TokenData, InstagramDiscoveryRequest, InstagramProxyCreate, InstagramAccountCreate
 from auth import get_current_user
 from instagram_service import instagram_service
+from .session_manager import instagram_session_manager
 
 router = APIRouter(prefix="/api/instagram", tags=["instagram"])
+
+@router.post("/accounts/{account_id}/connect")
+async def connect_account(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Launch a visible browser and connect the Instagram account."""
+    # Get account data from DB
+    from database import db
+    account = await db.fetchrow(
+        "SELECT a.*, p.host as proxy_host, p.port as proxy_port, p.username as proxy_user, p.password as proxy_pass "
+        "FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id "
+        "WHERE a.id = $1 AND a.user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    return await instagram_session_manager.connect(account_id, dict(account))
+
+@router.post("/accounts/{account_id}/disconnect")
+async def disconnect_account(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Close the visible browser for the Instagram account."""
+    return await instagram_session_manager.disconnect(account_id)
+
+@router.get("/accounts/{account_id}/connection-status")
+async def get_connection_status(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Check if a visible browser is currently open for this account."""
+    return {"connected": instagram_session_manager.is_connected(account_id)}
 
 @router.post("/discover")
 async def discover_leads(
@@ -81,7 +117,11 @@ async def bulk_upload_proxies_file(
 
 @router.get("/accounts")
 async def get_accounts(current_user: TokenData = Depends(get_current_user)):
-    return await instagram_service.get_accounts(current_user.user_id)
+    accounts = await instagram_service.get_accounts(current_user.user_id)
+    # Add real-time connection status from session manager
+    for acc in accounts:
+        acc['is_connected'] = instagram_session_manager.is_connected(acc['id'])
+    return accounts
 
 @router.post("/accounts")
 async def add_account(
@@ -117,6 +157,32 @@ async def delete_account(
     current_user: TokenData = Depends(get_current_user)
 ):
     return await instagram_service.delete_account(current_user.user_id, account_id)
+
+from models import InstagramAccountSettingsUpdate
+
+@router.put("/accounts/{account_id}/settings")
+async def update_account_settings(
+    account_id: int,
+    settings: InstagramAccountSettingsUpdate,
+    current_user: TokenData = Depends(get_current_user)
+):
+    # Fetch existing to avoid overriding with nulls if not provided
+    from database import db
+    existing = await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1 AND user_id = $2", account_id, current_user.user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Account not found")
+        
+    target = settings.target_language if settings.target_language is not None else existing['target_language']
+    source = settings.source_language if settings.source_language is not None else existing['source_language']
+    enabled = settings.is_translation_enabled if settings.is_translation_enabled is not None else existing['is_translation_enabled']
+    
+    return await instagram_service.update_account_settings(
+        current_user.user_id, 
+        account_id, 
+        target, 
+        source, 
+        enabled
+    )
 
 @router.delete("/proxies/{proxy_id}")
 async def delete_proxy(

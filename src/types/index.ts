@@ -362,3 +362,45 @@ export interface InstagramWarmingSettings {
   min_followers: number;
   max_followers: number;
 }
+
+export interface InstagramAccount {
+  id: number;
+  username: string;
+  status: string;
+  last_used?: string;
+  is_connected: boolean;
+  full_cookies_json?: string;
+  verification_code?: string;
+  proxy_id?: number;
+  target_language: string;
+  source_language: string;
+  is_translation_enabled: boolean;
+}
+
+export interface InstagramMessage {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  sender_name: string;
+  text: string;
+  original_text?: string;
+  translated_text?: string;
+  type: 'text' | 'media';
+  created_at: string;
+  is_outgoing: boolean;
+}
+
+export interface InstagramChat {
+  id: string;
+  title: string;
+  username?: string;
+  type: 'private' | 'group';
+  last_message?: {
+    id: string;
+    text: string;
+    created_at: string;
+    is_outgoing: boolean;
+  };
+  unread_count: number;
+  photo_url?: string;
+}
