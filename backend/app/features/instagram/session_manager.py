@@ -45,11 +45,11 @@ class InstagramSessionManager:
         if headless:
             launch_args.append('--window-state=minimized')
         else:
-            # 📱 PERFECT POPUP STYLE: Standalone app window, centered
+            # 📱 PERFECT POPUP STYLE: Standalone app window, centered, FULL HEIGHT
             launch_args.extend([
                 '--app=https://www.instagram.com',
-                '--window-size=450,950',
-                '--window-position=600,20',
+                '--window-size=450,1080',
+                '--window-position=600,0',
                 '--force-device-scale-factor=1' # Sharp UI
             ])
 
@@ -62,7 +62,7 @@ class InstagramSessionManager:
         # 3. Setup Context
         context_args = {
             "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "viewport": {'width': 450, 'height': 950},
+            "viewport": {'width': 450, 'height': 1080},
             "is_mobile": True,
             "has_touch": True,
             "permissions": ['geolocation', 'notifications']
