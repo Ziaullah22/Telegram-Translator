@@ -15,9 +15,9 @@ class InstagramSessionManager:
     def __init__(self):
         self.active_sessions: Dict[int, Dict[str, Any]] = {} # account_id -> {browser, context, page, p_instance}
 
-    async def connect(self, account_id: int, account_data: dict):
+    async def connect(self, account_id: int, account_data: dict, headless: bool = True):
         """
-        Launches a visible browser for the account and injects cookies.
+        Launches a browser for the account and injects cookies.
         """
         if account_id in self.active_sessions:
             logger.info(f"Session already active for account {account_id}")
@@ -36,7 +36,7 @@ class InstagramSessionManager:
 
         # 2. Launch Browser
         browser = await p_instance.chromium.launch(
-            headless=False,
+            headless=headless,
             proxy=proxy,
             args=[
                 '--start-maximized',
@@ -44,7 +44,7 @@ class InstagramSessionManager:
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--no-sandbox'
-            ]
+            ] + (['--window-state=minimized'] if headless else [])
         )
 
         # 3. Setup Context
@@ -133,6 +133,17 @@ class InstagramSessionManager:
         """Shared helper: Go to Instagram home, login if needed, clear popups."""
         await page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
         await page.bring_to_front() # Ensure window is visible
+        
+        # ⚡ FAST CHECK: Are we already logged in? 
+        # Check for icons that only appear when logged in (Direct, Explore, Home, etc.)
+        try:
+            logged_in_indicator = await page.query_selector('svg[aria-label*="Direct"], svg[aria-label*="Messenger"], div[role="menuitem"], a[href*="/direct/"]')
+            if logged_in_indicator:
+                logger.info(f"⚡ Fast-Connect: @{account_data.get('username')} is already logged in.")
+                await self._clear_popups(page)
+                return
+        except: pass
+
         await page.wait_for_timeout(2000) # Quick breath
 
         # 📱 MOBILE SPLASH SCREEN CHECK: Detect "Log in" link on landing page
@@ -141,7 +152,7 @@ class InstagramSessionManager:
             if login_link and await login_link.is_visible():
                 logger.info("📱 Detected mobile splash screen. Clicking Log in...")
                 await login_link.click()
-                await page.wait_for_timeout(random.randint(4000, 6000))
+                await page.wait_for_timeout(random.randint(2000, 3000))
         except: pass
 
         # Check if login is needed
@@ -231,8 +242,12 @@ class InstagramSessionManager:
                     logger.error(f"2FA Error: {e}")
 
         # 🧹 Clear generic popups (Run this whether we just logged in or were already logged in)
+        await self._clear_popups(page)
+
+    async def _clear_popups(self, page):
+        """Helper to scan and click common Instagram popups."""
         logger.info("🧹 Scanning for post-login popups...")
-        await page.wait_for_timeout(3000) # Give popups a moment to appear
+        await page.wait_for_timeout(2000)
         
         popup_texts = [
             "Not Now", "Not now", "Allow", "Save Info", "Save info", 
@@ -241,7 +256,6 @@ class InstagramSessionManager:
         
         for btn_text in popup_texts:
             try:
-                # Search for buttons or divs that act as buttons with the text
                 selectors = [
                     f'button:has-text("{btn_text}")',
                     f'div[role="button"]:has-text("{btn_text}")',
@@ -253,7 +267,7 @@ class InstagramSessionManager:
                         logger.info(f"   🔘 Clearing popup: {btn_text}")
                         await btn.click()
                         await asyncio.sleep(1.5)
-                        break # Move to next text if found
+                        break 
             except: pass
 
     async def disconnect(self, account_id: int):

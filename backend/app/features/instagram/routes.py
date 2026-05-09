@@ -35,6 +35,31 @@ async def disconnect_account(
     """Close the visible browser for the Instagram account."""
     return await instagram_session_manager.disconnect(account_id)
 
+@router.post("/accounts/{account_id}/monitor")
+async def monitor_account(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Launch a LIVE browser window for the user to see and interact with."""
+    from database import db
+    
+    # 1. Get account data
+    account = await db.fetchrow(
+        "SELECT a.*, p.host as proxy_host, p.port as proxy_port, p.username as proxy_user, p.password as proxy_pass "
+        "FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id "
+        "WHERE a.id = $1 AND a.user_id = $2",
+        account_id, current_user.user_id
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+        
+    # 2. If already connected in session manager, disconnect first to switch from headless to headful
+    if instagram_session_manager.is_connected(account_id):
+        await instagram_session_manager.disconnect(account_id)
+        
+    # 3. Connect again but with headless=False
+    return await instagram_session_manager.connect(account_id, dict(account), headless=False)
+
 @router.get("/accounts/{account_id}/connection-status")
 async def get_connection_status(
     account_id: int,

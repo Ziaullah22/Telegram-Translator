@@ -900,6 +900,11 @@ export const instagramAPI = {
     return response.data;
   },
 
+  monitorAccount: async (accountId: number): Promise<{ status: string }> => {
+    const response = await api.post(`/instagram/accounts/${accountId}/monitor`);
+    return response.data;
+  },
+
   getConnectionStatus: async (accountId: number): Promise<{ connected: boolean }> => {
     const response = await api.get(`/instagram/accounts/${accountId}/connection-status`);
     return response.data;

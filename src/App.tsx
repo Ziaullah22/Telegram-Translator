@@ -221,6 +221,12 @@ function App() {
     } catch (e) { console.error('Failed to connect Instagram:', e); }
   };
 
+  const handleMonitorInstagram = async (acc: InstagramAccount) => {
+    try {
+      await instagramAPI.monitorAccount(acc.id);
+    } catch (e) { console.error('Failed to monitor Instagram:', e); }
+  };
+
   const handleDisconnectInstagram = async (acc: InstagramAccount) => {
     try {
       await instagramAPI.disconnectAccount(acc.id);
@@ -879,6 +885,7 @@ function App() {
                   currentInstagramAccount={currentInstagramAccount}
                   onInstagramAccountSelect={handleInstagramAccountSelect}
                   onConnectInstagram={handleConnectInstagram}
+                  onMonitorInstagram={handleMonitorInstagram}
                   onDisconnectInstagram={handleDisconnectInstagram}
                   onEditInstagram={(account) => { setEditingInstagramAccount(account); setShowInstagramSettingsModal(true); }}
                 />

@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare, Eye } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { aiService, AIStatus } from '../../services/aiService';
 import type { TelegramAccount, InstagramAccount } from '../../types';
@@ -36,6 +36,7 @@ interface SidebarProps {
   currentInstagramAccount: InstagramAccount | null;
   onInstagramAccountSelect: (account: InstagramAccount) => void;
   onConnectInstagram: (account: InstagramAccount) => void;
+  onMonitorInstagram: (account: InstagramAccount) => void;
   onDisconnectInstagram: (account: InstagramAccount) => void;
   onEditInstagram: (account: InstagramAccount) => void;
 }
@@ -60,6 +61,7 @@ export default function Sidebar({
   currentInstagramAccount,
   onInstagramAccountSelect,
   onConnectInstagram,
+  onMonitorInstagram,
   onDisconnectInstagram,
   onEditInstagram,
 }: SidebarProps) {
@@ -336,16 +338,28 @@ export default function Sidebar({
                           </button>
 
                           {account.is_connected ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDisconnectInstagram(account);
-                              }}
-                              className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
-                              title="Disconnect"
-                            >
-                              <Wifi className="w-3.5 h-3.5 text-green-500" />
-                            </button>
+                            <div className="flex items-center space-x-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onMonitorInstagram(account);
+                                }}
+                                className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                                title="Open Browser"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-blue-500" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDisconnectInstagram(account);
+                                }}
+                                className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                                title="Disconnect"
+                              >
+                                <Wifi className="w-3.5 h-3.5 text-green-500" />
+                              </button>
+                            </div>
                           ) : (
                             <button
                               onClick={(e) => {

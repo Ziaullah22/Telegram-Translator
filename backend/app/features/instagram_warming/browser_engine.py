@@ -1,4 +1,5 @@
 import asyncio
+import os
 import random
 import time
 import logging
@@ -13,7 +14,7 @@ class InstagramBrowserEngine:
         self.pw = None
         self.browser = None
 
-    async def run_warming_session(self, account_data: dict, action_func: Callable):
+    async def run_warming_session(self, account_data: dict, action_func: Callable, headless: bool = True):
         """
         Launches a high-fidelity mobile browser session for Instagram.
         """
@@ -27,9 +28,9 @@ class InstagramBrowserEngine:
                     "password": account_data.get('proxy_pass'),
                 }
 
-            # 2. Launch Browser (Headless for VPS deployment)
+            # 2. Launch Browser
             browser = await p.chromium.launch(
-                headless=False,
+                headless=headless,
                 proxy=proxy,
                 args=[
                     '--start-maximized',
@@ -39,13 +40,11 @@ class InstagramBrowserEngine:
                     '--no-first-run',
                     '--no-default-browser-check',
                     '--no-sandbox',
-                    '--disable-extensions',
-                    '--window-state=minimized'
-                ]
+                    '--disable-extensions'
+                ] + (['--window-state=minimized'] if headless else [])
             )
 
             # 3. Create Mobile Context (iPhone 15 Pro Identity with Session Memory)
-            import os
             sessions_dir = "browser_sessions"
             if not os.path.exists(sessions_dir):
                 os.makedirs(sessions_dir)
@@ -319,9 +318,10 @@ class InstagramBrowserEngine:
             finally:
                 await browser.close()
 
-    async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False, proxy: dict = None):
+
+    async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False, proxy: dict = None, headless: bool = True):
         """
-        Launches a headful browser to visit Instagram ANONYMOUSLY (No Login).
+        Launches a browser to visit Instagram ANONYMOUSLY (No Login).
         """
         async with async_playwright() as p:
             # 1. Setup Proxy
@@ -333,9 +333,9 @@ class InstagramBrowserEngine:
                     "password": proxy.get('p_pass'),
                 }
 
-            # 2. Launch Browser (Headless for VPS deployment)
+            # 2. Launch Browser
             browser = await p.chromium.launch(
-                headless=False,
+                headless=headless,
                 proxy=playwright_proxy,
                 args=[
                     '--start-maximized', 
@@ -343,9 +343,8 @@ class InstagramBrowserEngine:
                     '--no-first-run',
                     '--no-default-browser-check',
                     '--no-sandbox',
-                    '--disable-extensions',
-                    '--window-state=minimized'
-                ]
+                    '--disable-extensions'
+                ] + (['--window-state=minimized'] if headless else [])
             )
 
             # 2. Context based on device type
@@ -364,13 +363,4 @@ class InstagramBrowserEngine:
 
             page = await context.new_page()
             
-            try:
-                result = await action_func(page, {'target_username': target_username})
-                return result
-            except Exception as e:
-                logger.error(f"Anonymous session error: {e}")
-                return {"success": False}
-            finally:
-                await browser.close()
-
 browser_engine = InstagramBrowserEngine()
