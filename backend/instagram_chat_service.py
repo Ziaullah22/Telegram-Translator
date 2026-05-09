@@ -327,25 +327,40 @@ class InstagramChatService:
                 raise e
         return []
 
-    async def create_thread_by_username(self, account_id: int, username: str) -> Dict[str, Any]:
+    async def create_thread_by_username(self, account_id: int, username: str, user_pk: str = None, full_name: str = None) -> Dict[str, Any]:
         """Find a user and create a thread (or find existing one)."""
         client = await self.get_client(account_id)
-        user_id = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: client.user_id_from_username(username)
-        )
         
-        user_info = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: client.user_info(user_id)
-        )
+        # Use provided ID or fetch it if missing
+        user_id = user_pk
+        if not user_id:
+            user_id = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: client.user_id_from_username(username)
+            )
+        
+        # Use provided name or fetch it if missing
+        title = full_name or username
+        photo_url = None
+        
+        # If we only have username/id, we might want to fetch full info, 
+        # but let's prioritize speed and skip it if we have the basics
+        if not full_name:
+            try:
+                user_info = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: client.user_info(user_id)
+                )
+                title = user_info.full_name or user_info.username
+                photo_url = user_info.profile_pic_url
+            except: pass
         
         return {
             "id": f"new_{user_id}", # Temporary ID for frontend
-            "title": user_info.full_name or user_info.username,
-            "username": user_info.username,
+            "title": title,
+            "username": username,
             "type": "private",
             "last_message": None,
             "unread_count": 0,
-            "photo_url": user_info.profile_pic_url
+            "photo_url": photo_url
         }
 
 instagram_chat_service = InstagramChatService()

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, MessageSquare, ChevronLeft, Loader2, UserPlus } from 'lucide-react';
 import type { InstagramChat } from '../../types';
 import { format } from 'date-fns';
@@ -6,7 +6,7 @@ import { instagramChatAPI } from '../../services/api';
 
 interface Props {
   conversations: InstagramChat[];
-  currentConversation: InstagramChat | null;
+  currentConversation: InstagramChat | undefined;
   onConversationSelect: (conv: InstagramChat) => void;
   onBack: () => void;
   accountId: number;
@@ -43,14 +43,26 @@ export default function InstagramConversationList({
     return () => clearTimeout(delayDebounce);
   }, [searchQuery, accountId]);
 
-  const handleStartNewChat = async (username: string) => {
+  const handleStartNewChat = async (user: any) => {
     try {
-      const newThread = await instagramChatAPI.createThread(accountId, username);
-      onConversationSelect(newThread);
+      // Optimistically create the virtual thread locally first
+      const virtualThread: InstagramChat = {
+        id: `new_${user.id}`,
+        title: user.full_name || user.username,
+        username: user.username,
+        type: 'private',
+        last_message: undefined,
+        unread_count: 0,
+        photo_url: undefined
+      };
+      
+      onConversationSelect(virtualThread);
       setSearchQuery('');
+      
+      // Still call backend to sync but we've already switched UI
+      await instagramChatAPI.createThread(accountId, user.username, user.id, user.full_name);
     } catch (e) {
       console.error('Failed to create thread:', e);
-      alert('Failed to start chat with @' + username);
     }
   };
 
@@ -100,10 +112,12 @@ export default function InstagramConversationList({
               searchResults.map((user) => (
                 <div
                   key={user.id}
-                  onClick={() => handleStartNewChat(user.username)}
+                  onClick={() => handleStartNewChat(user)}
                   className="flex items-center p-3 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5 transition-all group"
                 >
-                  <img src={user.photo_url} alt="" className="w-10 h-10 rounded-full border border-gray-100 dark:border-white/10" />
+                  <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 font-bold">
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
                   <div className="ml-3 flex-1 min-w-0">
                     <p className="text-sm font-bold truncate">{user.username}</p>
                     <p className="text-xs text-gray-500 truncate">{user.full_name}</p>

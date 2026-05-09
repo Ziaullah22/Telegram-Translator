@@ -94,6 +94,8 @@ async def search_users(
 async def create_thread(
     account_id: int,
     username: str,
+    user_pk: Optional[str] = None,
+    full_name: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user)
 ):
     """Initiate a thread with a user by username."""
@@ -107,6 +109,6 @@ async def create_thread(
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
             
-        return await instagram_chat_service.create_thread_by_username(account_id, username)
+        return await instagram_chat_service.create_thread_by_username(account_id, username, user_pk, full_name)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

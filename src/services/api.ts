@@ -1029,9 +1029,14 @@ export const instagramChatAPI = {
     });
     return response.data;
   },
-  createThread: async (accountId: number, username: string): Promise<InstagramChat> => {
+  createThread: async (accountId: number, username: string, userPk?: string, fullName?: string): Promise<InstagramChat> => {
     const response = await api.post(`/instagram/chat/threads/create`, null, { 
-      params: { account_id: accountId, username: username } 
+      params: { 
+        account_id: accountId, 
+        username: username,
+        user_pk: userPk,
+        full_name: fullName
+      } 
     });
     return response.data;
   }
