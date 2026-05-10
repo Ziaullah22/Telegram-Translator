@@ -363,4 +363,10 @@ class InstagramBrowserEngine:
 
             page = await context.new_page()
             
+            try:
+                result = await action_func(page, target_username)
+                return result
+            finally:
+                await browser.close()
+            
 browser_engine = InstagramBrowserEngine()

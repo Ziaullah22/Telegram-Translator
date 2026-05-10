@@ -32,7 +32,23 @@ class InstagramService:
 
     # --- Stage 1: Discovery ---
 
-    async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 50):
+    def _extract_leads_from_html(self, html_content: str) -> List[str]:
+        """Unified lead extraction from search result HTML."""
+        # 🔍 Robust extraction (Path + URL Encoded Path)
+        raw_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', html_content)
+        redirect_matches = re.findall(r'instagram\.com%2F([a-zA-Z0-9._]{3,30})', html_content)
+        
+        all_matches = list(set(raw_matches + redirect_matches))
+        leads = []
+        for u in all_matches:
+            u_clean = u.lower().strip('./_ ')
+            # 🛑 Filter Platform Noise
+            if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 'p.photos', 'tv', 'direct'}:
+                if len(u_clean) > 2:
+                    leads.append(u_clean)
+        return list(set(leads))
+
+    async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 100):
         discovery_results = []
         new_count = 0
         proxies_list = await self.get_proxies(user_id)
@@ -44,90 +60,105 @@ class InstagramService:
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         ]
         
-        for idx, keyword in enumerate(keywords):
+        for kw_idx, keyword in enumerate(keywords):
             # Rotate proxy per keyword
             p_url = None
             if proxies_list:
-                p = proxies_list[idx % len(proxies_list)]
+                p = proxies_list[kw_idx % len(proxies_list)]
                 p_auth = f"{p['username']}:{p['password']}@" if p['username'] else ""
                 p_url = f"{p['proxy_type']}://{p_auth}{p['host']}:{p['port']}"
 
-            # 🛠️ Direct Username Detection (If it's a single word with _ or .)
+            # 🛠️ Direct Username Detection
             kw_clean = keyword.strip().lstrip('@')
             if ' ' not in kw_clean and len(kw_clean) > 3:
                 logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
                 status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                 if status == "INSERT 0 1": new_count += 1
 
-            # 🛠️ Multi-Search Engine Engine (DuckDuckGo + Google Fallback)
-            kw_search_query = f'site:instagram.com "{keyword}"'
-            mirrors = [
-                f"https://html.duckduckgo.com/html/?q={quote(kw_search_query)}",
-                f"https://www.google.com/search?q={quote(kw_search_query)}"
-            ]
-
-            for search_url in mirrors:
-                # 🛠️ ATTEMPT 1: With Proxy
-                success = False
+            # 🛠️ Multi-Page Multi-Mirror Discovery
+            current_kw_results = 0
+            for page_num in range(1, 11): # Up to 10 pages deep
+                if current_kw_results >= limit_per_keyword: break
+                
+                msg = f"📄 Scanning Page {page_num}/10 for '{keyword}'..."
+                logger.info(msg)
                 try:
-                    headers = {"User-Agent": agents[idx % len(agents)], "Accept-Language": "en-US,en;q=0.9"}
-                    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0, proxy=p_url) as client:
-                        res = await client.get(search_url)
-                        if res.status_code == 200:
-                            # 🔍 Enhanced extraction (Catches redirects and direct links)
-                            raw_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
-                            # Also look for google-style redirects: /url?q=...instagram.com/ziaullah_khaan/
-                            redirect_matches = re.findall(r'instagram\.com%2F([a-zA-Z0-9._]{3,30})', res.text)
-                            
-                            all_matches = list(set(raw_matches + redirect_matches))
-                            logger.info(f"Scan found {len(all_matches)} leads on {search_url}")
-                            
-                            # --- DISCOVERY WAVE LOGIC ---
-                            for idx_u, u in enumerate(all_matches):
-                                u_clean = u.lower().strip('./_ ')
-                                if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 'p.photos'}:
-                                    if len(u_clean) > 2:
-                                        logger.info(f"✅ Saving: @{u_clean}")
-                                        discovery_results.append(u_clean)
-                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u_clean, keyword)
-                                        if status == "INSERT 0 1": new_count += 1
-                                
-                                # 🌬️ DISCOVERY BREATHE: Every 15 profiles (Human Pattern)
-                                if (idx_u + 1) % 15 == 0:
-                                    breathe = random.uniform(3.0, 5.0)
-                                    logger.info(f"--- 🍃 Discovery-Breathe: Pausing {breathe:.1f}s for result wave... ---")
-                                    await asyncio.sleep(breathe)
-                            success = True
-                except Exception as e:
-                    logger.warning(f"Proxy failed on {search_url}, attempting Smart Bypass (Local IP)...")
+                    await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                except: pass
 
-                # 💡 ATTEMPT 2: Smart Bypass (Local IP)
-                if not success:
+                # Prepare mirrors for this specific page
+                mirrors = [
+                    f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&start={(page_num-1)*10}",
+                    f"https://www.bing.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&first={(page_num-1)*10 + 1}",
+                    f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{keyword}\"')}" if page_num == 1 else None
+                ]
+
+                for search_url in filter(None, mirrors):
+                    success = False
+                    headers = {"User-Agent": random.choice(agents), "Accept-Language": "en-US,en;q=0.9"}
+                    
+                    # 🚀 ATTEMPT 1: Fast HTTP (httpx) with Proxy
                     try:
-                        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as client:
+                        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0, proxy=p_url) as client:
                             res = await client.get(search_url)
                             if res.status_code == 200:
-                                matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
-                                for u in matches:
-                                    u_clean = u.lower().strip('./_ ')
-                                    if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories'}:
-                                        if len(u_clean) > 2:
-                                            logger.info(f"✅ Extracted & Saving (Bypass): @{u_clean}")
-                                            await db.execute("""
-                                                INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) 
-                                                VALUES ($1, $2, $3, 'discovered') 
-                                                ON CONFLICT (user_id, instagram_username) DO UPDATE SET 
-                                                    discovery_keyword = EXCLUDED.discovery_keyword,
-                                                    status = 'discovered',
-                                                    updated_at = NOW()
-                                            """, user_id, u_clean, keyword)
-                                            discovery_results.append(u_clean)
+                                leads = self._extract_leads_from_html(res.text)
+                                if leads:
+                                    logger.info(f"✅ Found {len(leads)} leads via HTTP on {search_url.split('/')[2]}")
+                                    for u in leads:
+                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                                        if status == "INSERT 0 1": 
                                             new_count += 1
+                                            current_kw_results += 1
+                                    success = True
                     except Exception as e:
-                        logger.error(f"Discovery total failure on {search_url}: {e}")
+                        logger.warning(f"⚠️ Mirror failed (HTTP): {search_url.split('/')[2]}")
+
+                    # 🚀 ATTEMPT 2: Playwright Fallback (If blocked or 0 results)
+                    if not success or current_kw_results < (page_num * 5):
+                        logger.info(f"🕵️ Using Playwright fallback for {search_url.split('/')[2]}...")
+                        try:
+                            async def scrape_search(page_obj, _):
+                                await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                                await asyncio.sleep(random.uniform(2, 4))
+                                # Click "I agree" or similar if needed
+                                try:
+                                    btns = await page_obj.query_selector_all('button:has-text("Accept"), button:has-text("I agree"), button:has-text("Agree")')
+                                    if btns: await btns[0].click(); await asyncio.sleep(1)
+                                except: pass
+                                return await page_obj.content()
+
+                            html = await browser_engine.run_anonymous_session(keyword, scrape_search, is_desktop=True, headless=True)
+                            if html:
+                                leads = self._extract_leads_from_html(html)
+                                if leads:
+                                    logger.info(f"✨ Playwright recovered {len(leads)} leads on {search_url.split('/')[2]}")
+                                    for u in leads:
+                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                                        if status == "INSERT 0 1": 
+                                            new_count += 1
+                                            current_kw_results += 1
+                        except Exception as e:
+                            logger.error(f"❌ Playwright discovery failed: {e}")
+
+                    # 🌬️ Page Breathe
+                    await asyncio.sleep(random.uniform(2.0, 5.0))
+            
+            # Mission Breathe (between keywords)
+            if kw_idx < len(keywords) - 1:
+                await asyncio.sleep(random.uniform(5.0, 10.0))
         
-        # 🏁 RETURN SUMMARY: Show total matches vs actually new
-        logger.info(f"📊 Mission Summary: Found {len(discovery_results)} total matches, {new_count} were NEW leads.")
+        # 🏁 Mission Summary
+        msg_final = f"📊 Discovery Mission Complete: {new_count} NEW leads deployed to database."
+        logger.info(msg_final)
+        try:
+            await manager.send_personal_message({
+                "type": "discovery_complete", 
+                "message": msg_final,
+                "new_leads_count": new_count
+            }, user_id)
+        except: pass
+        
         return new_count
 
     # --- Stage 2: Analysis ---

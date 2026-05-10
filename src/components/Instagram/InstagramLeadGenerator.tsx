@@ -358,7 +358,7 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
             const result = await instagramAPI.discoverLeads(keywordList);
-            setNotification({ msg: `Success! 🎉 Scraped ${result.new_leads_found} leads.`, type: 'success' });
+            setNotification({ msg: result.message || `Success! 🎉 Scraped ${result.new_leads_found} leads.`, type: 'success' });
             setShowDiscoveryModal(false);
             setKeywords('');
             fetchData();
