@@ -4,6 +4,7 @@ import random
 import time
 import logging
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 import json
 from typing import Callable, Any
 
@@ -72,6 +73,7 @@ class InstagramBrowserEngine:
                 context_args["storage_state"] = storage_path
             
             context = await browser.new_context(**context_args)
+            await stealth_async(context)
 
             # 💉 HYPER-INJECTION: Clone the FULL session state from the original cookies
             if account_data.get('full_cookies_json'):
@@ -334,33 +336,49 @@ class InstagramBrowserEngine:
                 }
 
             # 2. Launch Browser
+            # 🚀 Use System Chrome to bypass all 'Blank Page' and bot detection issues
+            chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+            import os
+            if not os.path.exists(chrome_path):
+                chrome_path = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
+
             browser = await p.chromium.launch(
+                executable_path=chrome_path if os.path.exists(chrome_path) else None,
                 headless=headless,
                 proxy=playwright_proxy,
                 args=[
-                    '--start-maximized', 
+                    '--start-minimized', # 🕵️ Stay in taskbar, don't jump up
+                    '--window-position=2000,2000', # 👻 Spawn off-screen
                     '--disable-blink-features=AutomationControlled',
+                    '--disable-gpu',
                     '--no-first-run',
                     '--no-default-browser-check',
-                    '--no-sandbox',
-                    '--disable-extensions'
-                ] + (['--window-state=minimized'] if headless else [])
+                    '--no-sandbox'
+                ]
             )
 
             # 2. Context based on device type
+            context_args = {}
             if is_desktop:
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    viewport={'width': 1920, 'height': 1080}
-                )
+                context_args.update({
+                    # 💡 Don't override user_agent if using System Chrome (let it use its own real one)
+                    "viewport": {'width': 1920, 'height': 1080},
+                    "locale": "en-US",
+                    "timezone_id": "America/New_York"
+                })
             else:
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-                    viewport={'width': 393, 'height': 852},
-                    is_mobile=True,
-                    has_touch=True
-                )
-
+                context_args.update({
+                    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                    "viewport": {'width': 393, 'height': 852},
+                    "is_mobile": True,
+                    "has_touch": True,
+                    "locale": "en-US"
+                })
+            
+            context = await browser.new_context(**context_args)
+            # 🛑 Don't use stealth_async if using System Chrome + no automation flags
+            # it sometimes causes blank pages due to property overrides
+            # await stealth_async(context) 
             page = await context.new_page()
             
             try:

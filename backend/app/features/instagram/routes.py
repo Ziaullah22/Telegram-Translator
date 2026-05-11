@@ -71,21 +71,16 @@ async def get_connection_status(
 @router.post("/discover")
 async def discover_leads(
     request: InstagramDiscoveryRequest,
-    background_tasks: BackgroundTasks,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Stage 1: Discover Instagram leads from keywords (Background Mode)."""
-    # 🚀 Run in background so the UI doesn't hang for 5 minutes
-    background_tasks.add_task(
-        instagram_service.discover_leads_google,
+    """Stage 1: Discover Instagram leads from keywords (Professional Mode: Blocking)."""
+    # 🌀 Pro Mode: Wait for complete results to give the final count
+    new_count = await instagram_service.discover_leads_google(
         current_user.user_id, 
         request.keywords, 
         request.limit_per_keyword
     )
-    return {
-        "status": "success", 
-        "message": "🔍 Discovery mission launched in background! New leads will appear in your table shortly."
-    }
+    return {"status": "success", "new_leads_found": new_count}
 
 @router.get("/leads")
 async def get_leads(

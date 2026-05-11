@@ -33,41 +33,46 @@ class InstagramService:
     # --- Stage 1: Discovery ---
 
     def _extract_leads_from_html(self, html_content: str) -> List[str]:
-        """Unified lead extraction from search result HTML."""
-        # 🔍 Robust extraction (Path + URL Encoded Path)
-        raw_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', html_content)
-        redirect_matches = re.findall(r'instagram\.com%2F([a-zA-Z0-9._]{3,30})', html_content)
+        """Unified lead extraction from search result HTML and AI Chat responses."""
+        # 🔍 Robust extraction (URL Path + URL Encoded + @Handles)
+        patterns = [
+            r'instagram\.com/([a-zA-Z0-9._]{3,30})',
+            r'instagram\.com%2F([a-zA-Z0-9._]{3,30})',
+            r'instagram\.com\/([a-zA-Z0-9._]{3,30})',
+            r'instagram\.com%2f([a-zA-Z0-9._]{3,30})',
+            r'@([a-zA-Z0-9._]{3,30})' # 🤖 Catch AI handles like @username
+        ]
         
-        all_matches = list(set(raw_matches + redirect_matches))
+        all_matches = []
+        for pattern in patterns:
+            # Use CaseInsensitive to catch everything
+            matches = re.findall(pattern, html_content, re.IGNORECASE)
+            all_matches.extend(matches)
+            
+        all_matches = list(set(all_matches))
         leads = []
         for u in all_matches:
-            u_clean = u.lower().strip('./_ ')
-            # 🛑 Filter Platform Noise
-            if u_clean and u_clean not in {'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 'p.photos', 'tv', 'direct'}:
+            u_clean = u.lower().strip('./_ @')
+            # 🛑 Filter Platform Noise & AI common words
+            noise = {
+                'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 
+                'p.photos', 'tv', 'direct', 'explore', 'tags', 'accounts', 'instagram',
+                'username', 'profile', 'user', 'link', 'none', 'null'
+            }
+            if u_clean and u_clean not in noise:
                 if len(u_clean) > 2:
                     leads.append(u_clean)
         return list(set(leads))
 
     async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 100):
-        discovery_results = []
+        # 🧪 Grok AI Discovery Engine
         new_count = 0
-        proxies_list = await self.get_proxies(user_id)
-        
-        # 🕵️ Random Agents for stealth
         agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         ]
         
         for kw_idx, keyword in enumerate(keywords):
-            # Rotate proxy per keyword
-            p_url = None
-            if proxies_list:
-                p = proxies_list[kw_idx % len(proxies_list)]
-                p_auth = f"{p['username']}:{p['password']}@" if p['username'] else ""
-                p_url = f"{p['proxy_type']}://{p_auth}{p['host']}:{p['port']}"
-
             # 🛠️ Direct Username Detection
             kw_clean = keyword.strip().lstrip('@')
             if ' ' not in kw_clean and len(kw_clean) > 3:
@@ -75,90 +80,61 @@ class InstagramService:
                 status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                 if status == "INSERT 0 1": new_count += 1
 
-            # 🛠️ Multi-Page Multi-Mirror Discovery
-            current_kw_results = 0
-            for page_num in range(1, 11): # Up to 10 pages deep
-                if current_kw_results >= limit_per_keyword: break
-                
-                msg = f"📄 Scanning Page {page_num}/10 for '{keyword}'..."
-                logger.info(msg)
+            # 🛠️ Perplexity AI Discovery Session
+            msg = f"🤖 Asking Perplexity AI for '{keyword}' leads..."
+            logger.info(msg)
+            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+            except: pass
+
+            async def perplexity_session_func(page_obj, _):
+                current_kw_new = 0
                 try:
-                    await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                except: pass
-
-                # Prepare mirrors for this specific page
-                mirrors = [
-                    f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&start={(page_num-1)*10}",
-                    f"https://www.bing.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&first={(page_num-1)*10 + 1}",
-                    f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{keyword}\"')}" if page_num == 1 else None
-                ]
-
-                for search_url in filter(None, mirrors):
-                    success = False
-                    headers = {"User-Agent": random.choice(agents), "Accept-Language": "en-US,en;q=0.9"}
+                    # 1. Go directly to Perplexity Search with a SUPER-PROMPT
+                    super_prompt = (
+                        f"SEARCH THE LIVE WEB for 50 ACTIVE Instagram profiles in the niche: '{keyword}'. "
+                        "Focus on micro-influencers, active business accounts, and real users, NOT just famous celebrities. "
+                        "Return ONLY a clean list of their @usernames so I can extract them. "
+                        "Ensure they are current and niche-relevant."
+                    )
+                    search_url = f"https://www.perplexity.ai/search?q={quote(super_prompt)}"
+                    logger.info(f"🌐 Navigating to Perplexity with Super-Prompt: {keyword}")
+                    await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     
-                    # 🚀 ATTEMPT 1: Fast HTTP (httpx) with Proxy
-                    try:
-                        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0, proxy=p_url) as client:
-                            res = await client.get(search_url)
-                            if res.status_code == 200:
-                                leads = self._extract_leads_from_html(res.text)
-                                if leads:
-                                    logger.info(f"✅ Found {len(leads)} leads via HTTP on {search_url.split('/')[2]}")
-                                    for u in leads:
-                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                                        if status == "INSERT 0 1": 
-                                            new_count += 1
-                                            current_kw_results += 1
-                                    success = True
-                    except Exception as e:
-                        logger.warning(f"⚠️ Mirror failed (HTTP): {search_url.split('/')[2]}")
+                    # 2. Wait for AI to search and type (Perplexity is fast but needs time to browse)
+                    logger.info("⏳ Waiting for Perplexity to browse and respond (approx 30s)...")
+                    await asyncio.sleep(30)
+                    
+                    # 3. Extract
+                    html = await page_obj.content()
+                    leads = self._extract_leads_from_html(html)
+                    if leads:
+                        logger.info(f"✨ AI found {len(leads)} leads for '{keyword}'")
+                        for u in leads:
+                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                            if status == "INSERT 0 1": 
+                                nonlocal new_count
+                                new_count += 1
+                                current_kw_new += 1
+                    else:
+                        logger.warning("⚠️ Perplexity returned no leads. Saving debug screenshot...")
+                        await page_obj.screenshot(path=f"scratch/perplexity_fail_{keyword}.png")
 
-                    # 🚀 ATTEMPT 2: Playwright Fallback (If blocked or 0 results)
-                    if not success or current_kw_results < (page_num * 5):
-                        logger.info(f"🕵️ Using Playwright fallback for {search_url.split('/')[2]}...")
-                        try:
-                            async def scrape_search(page_obj, _):
-                                await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-                                await asyncio.sleep(random.uniform(2, 4))
-                                # Click "I agree" or similar if needed
-                                try:
-                                    btns = await page_obj.query_selector_all('button:has-text("Accept"), button:has-text("I agree"), button:has-text("Agree")')
-                                    if btns: await btns[0].click(); await asyncio.sleep(1)
-                                except: pass
-                                return await page_obj.content()
+                except Exception as e:
+                    logger.error(f"❌ Perplexity session failed: {e}")
+                
+                return current_kw_new
 
-                            html = await browser_engine.run_anonymous_session(keyword, scrape_search, is_desktop=True, headless=True)
-                            if html:
-                                leads = self._extract_leads_from_html(html)
-                                if leads:
-                                    logger.info(f"✨ Playwright recovered {len(leads)} leads on {search_url.split('/')[2]}")
-                                    for u in leads:
-                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                                        if status == "INSERT 0 1": 
-                                            new_count += 1
-                                            current_kw_results += 1
-                        except Exception as e:
-                            logger.error(f"❌ Playwright discovery failed: {e}")
+            try:
+                # Use local IP + Headful (Better for Perplexity)
+                await browser_engine.run_anonymous_session(keyword, perplexity_session_func, is_desktop=True, headless=False, proxy=None)
+            except Exception as e:
+                logger.error(f"❌ discovery_leads_google crashed: {e}")
 
-                    # 🌬️ Page Breathe
-                    await asyncio.sleep(random.uniform(2.0, 5.0))
-            
-            # Mission Breathe (between keywords)
-            if kw_idx < len(keywords) - 1:
-                await asyncio.sleep(random.uniform(5.0, 10.0))
-        
+            # Mission Breathe
+            await asyncio.sleep(random.uniform(5.0, 10.0))
+                
         # 🏁 Mission Summary
-        msg_final = f"📊 Discovery Mission Complete: {new_count} NEW leads deployed to database."
-        logger.info(msg_final)
-        try:
-            await manager.send_personal_message({
-                "type": "discovery_complete", 
-                "message": msg_final,
-                "new_leads_count": new_count
-            }, user_id)
-        except: pass
-        
+        logger.info(f"📊 Grok AI Mission Summary: {new_count} NEW leads found.")
         return new_count
 
     # --- Stage 2: Analysis ---
@@ -1535,9 +1511,9 @@ class InstagramService:
         if await self._check_for_challenge(page, account_data):
             raise InstagramChallengeException(f"🚨 CHALLENGE DETECTED for @{account_username} on target profile.")
 
-    async def _perform_anonymous_analysis(self, page, account_data):
+    async def _perform_anonymous_analysis(self, page, target_username):
         """Playwright scraper using AnonyIG/Picuki — No login, reliable data."""
-        target_username = account_data['target_username']
+        # target_username is passed directly as a string from browser_engine
 
         # ─── STRATEGY A: AnonyIG (Search-based, shows everything) ───
         try:
