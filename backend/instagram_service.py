@@ -163,8 +163,8 @@ class InstagramService:
                 return current_kw_new
 
             try:
-                # 📱 Use Mobile View + Headless (Quiet & Stable)
-                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=True, proxy=None)
+                # 📱 Use Mobile View + Headful (Highest Reliability)
+                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=False, proxy=None)
             except Exception as e:
                 logger.error(f"❌ discovery_leads_google crashed: {e}")
 
