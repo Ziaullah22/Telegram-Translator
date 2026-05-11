@@ -124,8 +124,8 @@ class InstagramService:
                 return current_kw_new
 
             try:
-                # Use local IP + Headful (Better for Perplexity)
-                await browser_engine.run_anonymous_session(keyword, perplexity_session_func, is_desktop=True, headless=False, proxy=None)
+                # Use local IP + Headless (Stay quiet on Linux)
+                await browser_engine.run_anonymous_session(keyword, perplexity_session_func, is_desktop=True, headless=True, proxy=None)
             except Exception as e:
                 logger.error(f"❌ discovery_leads_google crashed: {e}")
 
