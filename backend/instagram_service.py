@@ -74,92 +74,53 @@ class InstagramService:
         Uses targeted DuckDuckGo scraping with strict filtering for Instagram handles.
         """
         new_count = 0
-        async def google_scraper_session_func(page_obj, _):
+        async def ddg_scraper_session_func(page_obj, _):
             nonlocal new_count
             for kw_idx, keyword in enumerate(keywords):
-                # 🛠️ Direct Username Detection (Pre-check)
+                # 🛠️ Direct Username Detection
                 kw_clean = keyword.strip().lstrip('@')
                 if ' ' not in kw_clean and len(kw_clean) > 3:
                     logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
                     status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                     if status == "INSERT 0 1": new_count += 1
 
-                msg = f"🔍 Searching Instagram for '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                msg = f"🔍 [DDG] Searching Instagram for '{keyword}' ({kw_idx+1}/{len(keywords)})..."
                 logger.info(msg)
                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                 except: pass
 
                 current_kw_new = 0
                 try:
-                    # 1. Navigate directly via URL (No searchbox typing)
+                    # 1. DuckDuckGo Strict Search URL
                     search_query = f"{keyword} site:instagram.com"
-                    search_url = f"https://www.google.com/search?q={quote(search_query)}"
+                    search_url = f"https://duckduckgo.com/?q={quote(search_query)}&ia=web"
                     
-                    logger.info(f"🌐 Navigating to Google: {search_query}")
+                    logger.info(f"🌐 Navigating to DuckDuckGo: {search_query}")
                     await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     
-                    # 🛑 CAPTCHA WATCHDOG
-                    for _ in range(5):
-                        try:
-                            captcha = await page_obj.query_selector('#captcha-form, iframe[src*="recaptcha"], :has-text("unusual traffic")')
-                            if captcha:
-                                msg = "⚠️ CAPTCHA DETECTED! Please solve it in the browser window now..."
-                                logger.error(msg)
-                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                except: pass
-                                for second in range(300):
-                                    await asyncio.sleep(1)
-                                    try:
-                                        solved = not await page_obj.query_selector('#captcha-form, iframe[src*="recaptcha"], :has-text("unusual traffic")')
-                                        if solved:
-                                            logger.info("✅ CAPTCHA Solved! Resuming...")
-                                            await page_obj.wait_for_load_state("networkidle")
-                                            try: await page_obj.wait_for_selector('#search, div.g', timeout=15000)
-                                            except: pass
-                                            break
-                                    except: continue 
-                                break
-                        except:
-                            await asyncio.sleep(2)
-                            continue
-                        await asyncio.sleep(1)
-
-                    await asyncio.sleep(random.uniform(5.0, 8.0))
-                    
-                    # 2. Deep Scrape: Scroll and click "More results"
+                    # 2. Deep Scrape: Scroll and click "More Results"
                     for i in range(10): 
                         if current_kw_new >= limit_per_keyword:
-                            logger.info(f"🛑 Limit of {limit_per_keyword} reached for '{keyword}'.")
+                            logger.info(f"🛑 Limit reached for '{keyword}'.")
                             break
 
                         logger.info(f"📜 Deep Scrape Loop {i+1}/10 for '{keyword}'")
-                        for _ in range(5):
-                            await page_obj.evaluate("window.scrollBy(0, 1000)")
-                            await asyncio.sleep(random.uniform(0.5, 1.0))
+                        await page_obj.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await asyncio.sleep(random.uniform(2.5, 4.0)) 
                         
                         try:
-                            more_selectors = [
-                                'span:has-text("More results")',
-                                'div[role="button"]:has-text("More results")',
-                                '[aria-label="More results"]',
-                                'a:has-text("Next")',
-                                '#pnnext'
-                            ]
-                            found_btn = None
-                            for sel in more_selectors:
-                                try:
-                                    btn = await page_obj.query_selector(sel)
-                                    if btn and await btn.is_visible():
-                                        found_btn = btn
-                                        break
-                                except: continue
-
-                            if found_btn:
-                                await found_btn.scroll_into_view_if_needed()
-                                await asyncio.sleep(random.uniform(1.5, 3.0))
-                                await found_btn.click()
-                                await asyncio.sleep(random.uniform(4.0, 7.0))
-                            else: break
+                            # DDG More Results button
+                            more_btn = await page_obj.query_selector('button:has-text("More Results"), #more-results')
+                            if more_btn:
+                                await more_btn.scroll_into_view_if_needed()
+                                await asyncio.sleep(1.5)
+                                await more_btn.click()
+                                await asyncio.sleep(random.uniform(3.0, 5.0)) 
+                            else: 
+                                # Try one more scroll
+                                await page_obj.evaluate("window.scrollBy(0, 500)")
+                                await asyncio.sleep(2)
+                                break
                         except: break
                     
                     # 3. Final Extraction
@@ -175,20 +136,19 @@ class InstagramService:
                                 new_count += 1
                                 current_kw_new += 1
                     else:
-                        logger.warning(f"⚠️ No leads found for '{keyword}'.")
+                        logger.warning(f"⚠️ No leads found on DDG for '{keyword}'.")
 
                 except Exception as e:
-                    logger.error(f"❌ Google Search failed for '{keyword}': {e}")
+                    logger.error(f"❌ DuckDuckGo Search failed: {e}")
                 
-                # Breath between keywords in the SAME window
-                logger.info(f"😴 Finished '{keyword}'. Waiting before next keyword...")
-                await asyncio.sleep(random.uniform(10.0, 15.0))
+                # Breath between keywords
+                await asyncio.sleep(random.uniform(5.0, 10.0))
 
             return new_count
 
         try:
             # 📱 Single Session for ALL keywords
-            await browser_engine.run_anonymous_session("multi_keyword_mission", google_scraper_session_func, is_desktop=False, headless=False, proxy=None)
+            await browser_engine.run_anonymous_session("multi_keyword_mission", ddg_scraper_session_func, is_desktop=False, headless=False, proxy=None)
         except Exception as e:
             logger.error(f"❌ Discovery mission crashed: {e}")
                 
