@@ -486,8 +486,7 @@ class InstagramService:
             logger.info(f"🕶️ Strategy 2: Attempting Anonymous Playwright Capture for @{username}...")
             result = await browser_engine.run_anonymous_session(
                 username,
-                self._perform_anonymous_analysis,
-                headless=False
+                self._perform_anonymous_analysis
             )
 
             if result and result.get('success'):
