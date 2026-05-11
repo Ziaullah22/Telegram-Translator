@@ -353,7 +353,9 @@ class InstagramBrowserEngine:
                 args=[
                     '--start-maximized', 
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-gpu',
+                    '--disable-gpu',           # 🐧 Critical for Linux Headless
+                    '--disable-software-rasterizer', # 🐧 Critical for Linux Headless
+                    '--disable-features=IsolateOrigins,site-per-process', # 🐧 Fixes some rendering issues
                     '--no-first-run',
                     '--no-default-browser-check',
                     '--no-sandbox',

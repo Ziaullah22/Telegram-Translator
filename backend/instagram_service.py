@@ -163,8 +163,8 @@ class InstagramService:
                 return current_kw_new
 
             try:
-                # 📱 Use Mobile View + Headful (User requested to see it)
-                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=False, proxy=None)
+                # 📱 Use Mobile View + Headless (Quiet & Stable)
+                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=True, proxy=None)
             except Exception as e:
                 logger.error(f"❌ discovery_leads_google crashed: {e}")
 
@@ -486,7 +486,8 @@ class InstagramService:
             logger.info(f"🕶️ Strategy 2: Attempting Anonymous Playwright Capture for @{username}...")
             result = await browser_engine.run_anonymous_session(
                 username,
-                self._perform_anonymous_analysis
+                self._perform_anonymous_analysis,
+                headless=False # 📺 Make analysis visible for verification
             )
 
             if result and result.get('success'):
