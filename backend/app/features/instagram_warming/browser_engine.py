@@ -351,18 +351,15 @@ class InstagramBrowserEngine:
                 headless=headless,
                 proxy=playwright_proxy,
                 args=[
-                    '--start-minimized', 
-                    '--window-position=-10000,-10000', 
-                    '--window-size=1,1', 
+                    '--start-maximized', 
                     '--disable-blink-features=AutomationControlled',
                     '--disable-gpu',
                     '--no-first-run',
                     '--no-default-browser-check',
-                    '--no-sandbox',           # 🐧 Critical for Linux
-                    '--disable-setuid-sandbox', # 🐧 Critical for Linux
-                    '--disable-dev-shm-usage', # 🐧 Critical for Linux/Docker
-                    '--disable-infobars',
-                    '--window-state=minimized'
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-infobars'
                 ]
             )
 

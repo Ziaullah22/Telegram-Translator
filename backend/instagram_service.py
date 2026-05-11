@@ -80,52 +80,91 @@ class InstagramService:
                 status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                 if status == "INSERT 0 1": new_count += 1
 
-            # 🛠️ Perplexity AI Discovery Session
-            msg = f"🤖 Asking Perplexity AI for '{keyword}' leads..."
+            # 🛠️ DuckDuckGo AI Discovery Session (Stable & No Login)
+            msg = f"🤖 Asking DuckDuckGo AI for '{keyword}' leads..."
             logger.info(msg)
             try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
             except: pass
 
-            async def perplexity_session_func(page_obj, _):
+            async def ddg_ai_session_func(page_obj, _):
                 current_kw_new = 0
                 try:
-                    # 1. Go directly to Perplexity Search with a SUPER-PROMPT
-                    super_prompt = (
-                        f"Search the web and provide a list of 50 active Instagram @usernames for the niche: '{keyword}'. "
-                        "Do not worry about absolute verification, just provide the most relevant handles found in your current search results. "
-                        "Format: Just a simple list of @handles."
+                    # 1. Go to DuckDuckGo AI
+                    logger.info("🌐 Navigating to DuckDuckGo AI (Mobile View)...")
+                    await page_obj.goto("https://duckduckgo.com/aichat", wait_until="networkidle", timeout=60000)
+                    await asyncio.sleep(4)
+                    
+                    # 2. Handle Modals (including "Agree and continue")
+                    try:
+                        modal_selectors = [
+                            'button:has-text("Get Started")',
+                            'button:has-text("I Agree")',
+                            'button:has-text("Agree and continue")',
+                            'button:has-text("Accept")',
+                            'button:has-text("Continue")'
+                        ]
+                        for sel in modal_selectors:
+                            btn = await page_obj.query_selector(sel)
+                            if btn:
+                                logger.info(f"🖱️ Clicking modal button: {sel}")
+                                await btn.click()
+                                await asyncio.sleep(2)
+                    except: pass
+                    
+                    # 3. Type the prompt (Zero-Talk Mode)
+                    prompt = (
+                        f"Search the web and PROVIDE A LIST of 50 active Instagram @usernames for the niche: {keyword}. "
+                        "LIST ONLY. NO PREAMBLE. NO QUESTIONS. NO EXPLANATIONS. "
+                        "Format: Just the @usernames, one per line."
                     )
-                    search_url = f"https://www.perplexity.ai/search?q={quote(super_prompt)}"
-                    logger.info(f"🌐 Navigating to Perplexity with Super-Prompt: {keyword}")
-                    await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     
-                    # 2. Wait for AI to search and type (Perplexity is fast but needs time to browse)
-                    logger.info("⏳ Waiting for Perplexity to browse and respond (approx 30s)...")
-                    await asyncio.sleep(30)
-                    
-                    # 3. Extract
-                    html = await page_obj.content()
-                    leads = self._extract_leads_from_html(html)
-                    if leads:
-                        logger.info(f"✨ AI found {len(leads)} leads for '{keyword}'")
-                        for u in leads:
-                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                            if status == "INSERT 0 1": 
-                                nonlocal new_count
-                                new_count += 1
-                                current_kw_new += 1
+                    logger.info("🔍 Looking for DDG AI input box...")
+                    search_input = await page_obj.wait_for_selector('textarea, [contenteditable="true"]', timeout=10000, state="visible")
+
+                    if search_input:
+                        logger.info(f"⌨️ Prompting DuckDuckGo AI: {keyword}")
+                        await search_input.click()
+                        await asyncio.sleep(1)
+                        await page_obj.keyboard.type(prompt, delay=70)
+                        await asyncio.sleep(1)
+                        await page_obj.keyboard.press("Enter")
+                        
+                        # 4. Fallback: Click the 'Send' button manually if Enter didn't work
+                        try:
+                            send_btn = await page_obj.query_selector('button[aria-label="Send message"], button[type="submit"], .chat-send-button, .chat-input-send')
+                            if send_btn:
+                                logger.info("🖱️ Clicking manual Send button...")
+                                await send_btn.click()
+                        except: pass
+                        
+                        # 5. Wait for AI to finish
+                        logger.info("⏳ Waiting for response (approx 35s)...")
+                        await asyncio.sleep(35)
+                        
+                        # 6. Extract
+                        html = await page_obj.content()
+                        leads = self._extract_leads_from_html(html)
+                        if leads:
+                            logger.info(f"✨ DDG AI found {len(leads)} leads for '{keyword}'")
+                            for u in leads:
+                                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                                if status == "INSERT 0 1": 
+                                    nonlocal new_count
+                                    new_count += 1
+                                    current_kw_new += 1
+                        else:
+                            logger.warning("⚠️ DDG AI returned no leads.")
                     else:
-                        logger.warning("⚠️ Perplexity returned no leads. Saving debug screenshot...")
-                        await page_obj.screenshot(path=f"scratch/perplexity_fail_{keyword}.png")
+                        logger.error("❌ Could not find DDG AI input box.")
 
                 except Exception as e:
-                    logger.error(f"❌ Perplexity session failed: {e}")
+                    logger.error(f"❌ DDG AI session failed: {e}")
                 
                 return current_kw_new
 
             try:
-                # Use local IP + Headless (Stay quiet on Linux)
-                await browser_engine.run_anonymous_session(keyword, perplexity_session_func, is_desktop=True, headless=True, proxy=None)
+                # 📱 Use Mobile View + Headless (Quiet & Stable)
+                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=True, proxy=None)
             except Exception as e:
                 logger.error(f"❌ discovery_leads_google crashed: {e}")
 
