@@ -126,60 +126,41 @@ class InstagramService:
 
                     await asyncio.sleep(random.uniform(5.0, 8.0))
                     
-                    # 2. Deep Scrape: Scroll and click "More results" / "Next"
+                    # 2. Deep Scrape: Scroll and click "More results"
                     for i in range(10): 
                         if current_kw_new >= limit_per_keyword:
-                            logger.info(f"🛑 Limit reached for '{keyword}'.")
+                            logger.info(f"🛑 Limit of {limit_per_keyword} reached for '{keyword}'.")
                             break
 
                         logger.info(f"📜 Deep Scrape Loop {i+1}/10 for '{keyword}'")
+                        for _ in range(5):
+                            await page_obj.evaluate("window.scrollBy(0, 1000)")
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
                         
-                        # 🖱️ Persistent Scroll to absolute bottom
-                        for scroll_step in range(8):
-                            await page_obj.evaluate("window.scrollBy(0, 1200)")
-                            await asyncio.sleep(random.uniform(0.6, 1.2))
-                        
-                        # Extra scroll to be SURE
-                        await page_obj.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await asyncio.sleep(2)
-
                         try:
-                            # 🎯 Enhanced Selectors for Google Pagination
                             more_selectors = [
                                 'span:has-text("More results")',
                                 'div[role="button"]:has-text("More results")',
-                                'h3:has-text("More results")',
                                 '[aria-label="More results"]',
                                 'a:has-text("Next")',
-                                'a[aria-label="Next page"]',
-                                '#pnnext',
-                                'a[href*="start="]' # Any pagination link
+                                '#pnnext'
                             ]
-                            
                             found_btn = None
                             for sel in more_selectors:
                                 try:
-                                    btns = await page_obj.query_selector_all(sel)
-                                    for b in btns:
-                                        if await b.is_visible():
-                                            found_btn = b
-                                            break
-                                    if found_btn: break
+                                    btn = await page_obj.query_selector(sel)
+                                    if btn and await btn.is_visible():
+                                        found_btn = btn
+                                        break
                                 except: continue
 
                             if found_btn:
                                 await found_btn.scroll_into_view_if_needed()
-                                await asyncio.sleep(random.uniform(2.0, 4.0))
-                                logger.info(f"🖱️ Clicking pagination element for '{keyword}'...")
+                                await asyncio.sleep(random.uniform(1.5, 3.0))
                                 await found_btn.click()
-                                # Wait for new content
-                                await asyncio.sleep(random.uniform(5.0, 8.0))
-                            else: 
-                                logger.info(f"🏁 No more pagination buttons visible for '{keyword}' at loop {i+1}.")
-                                break
-                        except Exception as e:
-                            logger.warning(f"⚠️ Pagination error: {e}")
-                            break
+                                await asyncio.sleep(random.uniform(4.0, 7.0))
+                            else: break
+                        except: break
                     
                     # 3. Final Extraction
                     html = await page_obj.content()
