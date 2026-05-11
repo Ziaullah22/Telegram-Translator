@@ -111,11 +111,11 @@ class InstagramService:
                                 await asyncio.sleep(2)
                     except: pass
                     
-                    # 3. Type the prompt (Zero-Talk Mode)
+                    # 3. Type the prompt (Natural Mode to bypass Linux filters)
                     prompt = (
-                        f"Search the web and PROVIDE A LIST of 50 active Instagram @usernames for the niche: {keyword}. "
-                        "LIST ONLY. NO PREAMBLE. NO QUESTIONS. NO EXPLANATIONS. "
-                        "Format: Just the @usernames, one per line."
+                        f"Please help me find 50 active Instagram @usernames for the niche: '{keyword}'. "
+                        "I am looking for a mix of influencers and business accounts. "
+                        "Just list the usernames clearly, one per line. Thank you!"
                     )
                     
                     logger.info("🔍 Looking for DDG AI input box...")
