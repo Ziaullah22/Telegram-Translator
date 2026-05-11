@@ -4,7 +4,11 @@ import random
 import time
 import logging
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+try:
+    from playwright_stealth import stealth_async
+except ImportError:
+    # 🐧 Fallback for some Linux/older environments where stealth_async is missing
+    from playwright_stealth import stealth as stealth_async
 import json
 from typing import Callable, Any
 
