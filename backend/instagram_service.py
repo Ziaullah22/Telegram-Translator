@@ -32,147 +32,168 @@ class InstagramService:
 
     # --- Stage 1: Discovery ---
 
-    def _extract_leads_from_html(self, html_content: str) -> List[str]:
-        """Unified lead extraction from search result HTML and AI Chat responses."""
-        # 🔍 Robust extraction (URL Path + URL Encoded + @Handles)
+    def _extract_leads_from_html(self, html):
+        """Extracts potential Instagram usernames from HTML content with strict filtering."""
+        import re
+        
+        # 1. Broad patterns to capture URLs and @mentions
         patterns = [
-            r'instagram\.com/([a-zA-Z0-9._]{3,30})',
-            r'instagram\.com%2F([a-zA-Z0-9._]{3,30})',
-            r'instagram\.com\/([a-zA-Z0-9._]{3,30})',
-            r'instagram\.com%2f([a-zA-Z0-9._]{3,30})',
-            r'@([a-zA-Z0-9._]{3,30})' # 🤖 Catch AI handles like @username
+            r'instagram\.com/([a-zA-Z0-9._]{3,30})/?',
+            r'@([a-zA-Z0-9._]{3,30})',
+            r'Handle:\s*@?([a-zA-Z0-9._]{3,30})',
+            r'Username:\s*@?([a-zA-Z0-9._]{3,30})'
         ]
         
-        all_matches = []
+        # 2. Words that are definitely NOT usernames
+        blacklist = {
+            'reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'login', 'about', 
+            'privacy', 'terms', 'help', 'api', 'jobs', 'directory', 'topics', 'tags',
+            'developer', 'business', 'press', 'contact', 'blog', 'support', 'settings',
+            'archive', 'highlights', 'saved', 'igtv', 'shop', 'guides', 'activity',
+            'notifications', 'emails', 'password', 'security', 'ads', 'marketing',
+            'legal', 'cookies', 'safety', 'community', 'guidelines', 'verification',
+            'verified', 'meta', 'facebook', 'whatsapp', 'messenger', 'oculus', 'portal',
+            'instagram', 'home', 'search', 'profile', 'edit', 'following', 'followers',
+            'tv', 'link', 'none', 'null'
+        }
+        
+        found = set()
         for pattern in patterns:
-            # Use CaseInsensitive to catch everything
-            matches = re.findall(pattern, html_content, re.IGNORECASE)
-            all_matches.extend(matches)
-            
-        all_matches = list(set(all_matches))
-        leads = []
-        for u in all_matches:
-            u_clean = u.lower().strip('./_ @')
-            # 🛑 Filter Platform Noise & AI common words
-            noise = {
-                'reels', 'about', 'legal', 'terms', 'privacy', 'p', 'explore', 'stories', 
-                'p.photos', 'tv', 'direct', 'explore', 'tags', 'accounts', 'instagram',
-                'username', 'profile', 'user', 'link', 'none', 'null'
-            }
-            if u_clean and u_clean not in noise:
-                if len(u_clean) > 2:
-                    leads.append(u_clean)
-        return list(set(leads))
-
-    async def discover_leads_google(self, user_id: int, keywords: List[str], limit_per_keyword: int = 100):
-        # 🧪 Grok AI Discovery Engine
-        new_count = 0
-        agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-        ]
+            matches = re.findall(pattern, html)
+            for m in matches:
+                m_clean = m.lower().strip().strip('./_ @')
+                # Only add if it's not in the blacklist and meets length requirements
+                if m_clean and m_clean not in blacklist and len(m_clean) >= 3:
+                    found.add(m_clean)
         
-        for kw_idx, keyword in enumerate(keywords):
-            # 🛠️ Direct Username Detection
-            kw_clean = keyword.strip().lstrip('@')
-            if ' ' not in kw_clean and len(kw_clean) > 3:
-                logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
-                if status == "INSERT 0 1": new_count += 1
+        return list(found)
 
-            # 🛠️ DuckDuckGo AI Discovery Session (Stable & No Login)
-            msg = f"🤖 Asking DuckDuckGo AI for '{keyword}' leads..."
-            logger.info(msg)
-            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-            except: pass
+    async def discover_leads_google(self, user_id, keywords, limit_per_keyword=100):
+        """
+        🚀 High-Precision Discovery Engine
+        Uses targeted DuckDuckGo scraping with strict filtering for Instagram handles.
+        """
+        new_count = 0
+        async def google_scraper_session_func(page_obj, _):
+            nonlocal new_count
+            for kw_idx, keyword in enumerate(keywords):
+                # 🛠️ Direct Username Detection (Pre-check)
+                kw_clean = keyword.strip().lstrip('@')
+                if ' ' not in kw_clean and len(kw_clean) > 3:
+                    logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
+                    status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                    if status == "INSERT 0 1": new_count += 1
 
-            async def ddg_ai_session_func(page_obj, _):
+                msg = f"🔍 Searching Instagram for '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                logger.info(msg)
+                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                except: pass
+
                 current_kw_new = 0
                 try:
-                    # 1. Go to DuckDuckGo AI
-                    logger.info("🌐 Navigating to DuckDuckGo AI (Mobile View)...")
-                    await page_obj.goto("https://duckduckgo.com/aichat", wait_until="networkidle", timeout=60000)
-                    await asyncio.sleep(4)
+                    # 1. Navigate directly via URL (No searchbox typing)
+                    search_query = f"{keyword} site:instagram.com"
+                    search_url = f"https://www.google.com/search?q={quote(search_query)}"
                     
-                    # 2. Handle Modals (including "Agree and continue")
-                    try:
-                        modal_selectors = [
-                            'button:has-text("Get Started")',
-                            'button:has-text("I Agree")',
-                            'button:has-text("Agree and continue")',
-                            'button:has-text("Accept")',
-                            'button:has-text("Continue")'
-                        ]
-                        for sel in modal_selectors:
-                            btn = await page_obj.query_selector(sel)
-                            if btn:
-                                logger.info(f"🖱️ Clicking modal button: {sel}")
-                                await btn.click()
-                                await asyncio.sleep(2)
-                    except: pass
+                    logger.info(f"🌐 Navigating to Google: {search_query}")
+                    await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     
-                    # 3. Type the prompt (Natural Mode to bypass Linux filters)
-                    prompt = (
-                        f"Please help me find 50 active Instagram @usernames for the niche: '{keyword}'. "
-                        "I am looking for a mix of influencers and business accounts. "
-                        "Just list the usernames clearly, one per line. Thank you!"
-                    )
-                    
-                    logger.info("🔍 Looking for DDG AI input box...")
-                    search_input = await page_obj.wait_for_selector('textarea, [contenteditable="true"]', timeout=10000, state="visible")
-
-                    if search_input:
-                        logger.info(f"⌨️ Prompting DuckDuckGo AI: {keyword}")
-                        await search_input.click()
-                        await asyncio.sleep(1)
-                        await page_obj.keyboard.type(prompt, delay=70)
-                        await asyncio.sleep(1)
-                        await page_obj.keyboard.press("Enter")
-                        
-                        # 4. Fallback: Click the 'Send' button manually if Enter didn't work
+                    # 🛑 CAPTCHA WATCHDOG
+                    for _ in range(5):
                         try:
-                            send_btn = await page_obj.query_selector('button[aria-label="Send message"], button[type="submit"], .chat-send-button, .chat-input-send')
-                            if send_btn:
-                                logger.info("🖱️ Clicking manual Send button...")
-                                await send_btn.click()
-                        except: pass
+                            captcha = await page_obj.query_selector('#captcha-form, iframe[src*="recaptcha"], :has-text("unusual traffic")')
+                            if captcha:
+                                msg = "⚠️ CAPTCHA DETECTED! Please solve it in the browser window now..."
+                                logger.error(msg)
+                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                except: pass
+                                for second in range(300):
+                                    await asyncio.sleep(1)
+                                    try:
+                                        solved = not await page_obj.query_selector('#captcha-form, iframe[src*="recaptcha"], :has-text("unusual traffic")')
+                                        if solved:
+                                            logger.info("✅ CAPTCHA Solved! Resuming...")
+                                            await page_obj.wait_for_load_state("networkidle")
+                                            try: await page_obj.wait_for_selector('#search, div.g', timeout=15000)
+                                            except: pass
+                                            break
+                                    except: continue 
+                                break
+                        except:
+                            await asyncio.sleep(2)
+                            continue
+                        await asyncio.sleep(1)
+
+                    await asyncio.sleep(random.uniform(5.0, 8.0))
+                    
+                    # 2. Deep Scrape: Scroll and click "More results"
+                    for i in range(10): 
+                        if current_kw_new >= limit_per_keyword:
+                            logger.info(f"🛑 Limit of {limit_per_keyword} reached for '{keyword}'.")
+                            break
+
+                        logger.info(f"📜 Deep Scrape Loop {i+1}/10 for '{keyword}'")
+                        for _ in range(5):
+                            await page_obj.evaluate("window.scrollBy(0, 1000)")
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
                         
-                        # 5. Wait for AI to finish
-                        logger.info("⏳ Waiting for response (approx 35s)...")
-                        await asyncio.sleep(35)
-                        
-                        # 6. Extract
-                        html = await page_obj.content()
-                        leads = self._extract_leads_from_html(html)
-                        if leads:
-                            logger.info(f"✨ DDG AI found {len(leads)} leads for '{keyword}'")
-                            for u in leads:
-                                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                                if status == "INSERT 0 1": 
-                                    nonlocal new_count
-                                    new_count += 1
-                                    current_kw_new += 1
-                        else:
-                            logger.warning("⚠️ DDG AI returned no leads.")
+                        try:
+                            more_selectors = [
+                                'span:has-text("More results")',
+                                'div[role="button"]:has-text("More results")',
+                                '[aria-label="More results"]',
+                                'a:has-text("Next")',
+                                '#pnnext'
+                            ]
+                            found_btn = None
+                            for sel in more_selectors:
+                                try:
+                                    btn = await page_obj.query_selector(sel)
+                                    if btn and await btn.is_visible():
+                                        found_btn = btn
+                                        break
+                                except: continue
+
+                            if found_btn:
+                                await found_btn.scroll_into_view_if_needed()
+                                await asyncio.sleep(random.uniform(1.5, 3.0))
+                                await found_btn.click()
+                                await asyncio.sleep(random.uniform(4.0, 7.0))
+                            else: break
+                        except: break
+                    
+                    # 3. Final Extraction
+                    html = await page_obj.content()
+                    leads = self._extract_leads_from_html(html)
+                    
+                    if leads:
+                        logger.info(f"✨ Found {len(leads)} leads for '{keyword}'")
+                        for u in leads:
+                            if current_kw_new >= limit_per_keyword: break
+                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                            if status == "INSERT 0 1": 
+                                new_count += 1
+                                current_kw_new += 1
                     else:
-                        logger.error("❌ Could not find DDG AI input box.")
+                        logger.warning(f"⚠️ No leads found for '{keyword}'.")
 
                 except Exception as e:
-                    logger.error(f"❌ DDG AI session failed: {e}")
+                    logger.error(f"❌ Google Search failed for '{keyword}': {e}")
                 
-                return current_kw_new
+                # Breath between keywords in the SAME window
+                logger.info(f"😴 Finished '{keyword}'. Waiting before next keyword...")
+                await asyncio.sleep(random.uniform(10.0, 15.0))
 
-            try:
-                # 📱 Use Mobile View + Headful (Highest Reliability)
-                await browser_engine.run_anonymous_session(keyword, ddg_ai_session_func, is_desktop=False, headless=False, proxy=None)
-            except Exception as e:
-                logger.error(f"❌ discovery_leads_google crashed: {e}")
+            return new_count
 
-            # Mission Breathe
-            await asyncio.sleep(random.uniform(5.0, 10.0))
+        try:
+            # 📱 Single Session for ALL keywords
+            await browser_engine.run_anonymous_session("multi_keyword_mission", google_scraper_session_func, is_desktop=False, headless=False, proxy=None)
+        except Exception as e:
+            logger.error(f"❌ Discovery mission crashed: {e}")
                 
         # 🏁 Mission Summary
-        logger.info(f"📊 Grok AI Mission Summary: {new_count} NEW leads found.")
+        logger.info(f"📊 Mission Summary: {new_count} NEW leads found total.")
         return new_count
 
     # --- Stage 2: Analysis ---
