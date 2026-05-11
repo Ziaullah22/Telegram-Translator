@@ -98,6 +98,31 @@ class InstagramService:
                     logger.info(f"🌐 Navigating to DuckDuckGo: {search_query}")
                     await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     
+                    # 🛑 CAPTCHA WATCHDOG (DDG Robot Check)
+                    for _ in range(3):
+                        try:
+                            # DDG typically shows "Check this box" or similar if they think you're a bot
+                            captcha = await page_obj.query_selector('iframe[src*="captcha"], #captcha, :has-text("robot"), :has-text("human")')
+                            if captcha:
+                                msg = "⚠️ DDG CAPTCHA DETECTED! Please solve it in the window..."
+                                logger.error(msg)
+                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                except: pass
+                                
+                                for second in range(300):
+                                    await asyncio.sleep(1)
+                                    try:
+                                        solved = not await page_obj.query_selector('iframe[src*="captcha"], #captcha, :has-text("robot"), :has-text("human")')
+                                        if solved:
+                                            logger.info("✅ DDG Resolved! Continuing...")
+                                            await page_obj.wait_for_load_state("networkidle")
+                                            break
+                                    except: continue
+                                break
+                        except:
+                            await asyncio.sleep(1)
+                            continue
+
                     # 2. Deep Scrape: Scroll and click "More Results"
                     for i in range(10): 
                         if current_kw_new >= limit_per_keyword:
