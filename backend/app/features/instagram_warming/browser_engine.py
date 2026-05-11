@@ -352,7 +352,8 @@ class InstagramBrowserEngine:
                 proxy=playwright_proxy,
                 args=[
                     '--start-minimized', # 🕵️ Stay in taskbar, don't jump up
-                    '--window-position=2000,2000', # 👻 Spawn off-screen
+                    '--window-position=-10000,-10000', # 👻 Spawn deep off-screen (Better for Linux/Windows)
+                    '--window-size=1,1', # 🤏 Tiny window
                     '--disable-blink-features=AutomationControlled',
                     '--disable-gpu',
                     '--no-first-run',

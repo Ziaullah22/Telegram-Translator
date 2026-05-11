@@ -91,10 +91,9 @@ class InstagramService:
                 try:
                     # 1. Go directly to Perplexity Search with a SUPER-PROMPT
                     super_prompt = (
-                        f"SEARCH THE LIVE WEB for 50 ACTIVE Instagram profiles in the niche: '{keyword}'. "
-                        "Focus on micro-influencers, active business accounts, and real users, NOT just famous celebrities. "
-                        "Return ONLY a clean list of their @usernames so I can extract them. "
-                        "Ensure they are current and niche-relevant."
+                        f"Search the web and provide a list of 50 active Instagram @usernames for the niche: '{keyword}'. "
+                        "Do not worry about absolute verification, just provide the most relevant handles found in your current search results. "
+                        "Format: Just a simple list of @handles."
                     )
                     search_url = f"https://www.perplexity.ai/search?q={quote(super_prompt)}"
                     logger.info(f"🌐 Navigating to Perplexity with Super-Prompt: {keyword}")
