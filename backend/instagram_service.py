@@ -1560,10 +1560,10 @@ class InstagramService:
         """Playwright scraper using AnonyIG/Picuki — No login, reliable data."""
         # target_username is passed directly as a string from browser_engine
 
-        # ─── STRATEGY A: AnonyIG (Search-based, shows everything) ───
+        # ─── STRATEGY A: InstaCognito (Search-based, reliable data) ───
         try:
-            logger.info(f"🔍 Trying AnonyIG for @{target_username}...")
-            await page.goto("https://anonyig.com/en/instagram-profile-viewer/", wait_until="domcontentloaded", timeout=30000)
+            logger.info(f"🔍 Trying InstaCognito for @{target_username}...")
+            await page.goto("https://instacognito.com/", wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(random.randint(2000, 3000))
 
             # Type the profile URL into the search box
@@ -1583,20 +1583,19 @@ class InstagramService:
                 else:
                     await page.keyboard.press("Enter")
 
-                logger.info(f"⏳ Waiting for AnonyIG to load @{target_username}...")
+                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username}...")
                 
                 # --- STEP 0: NOT FOUND CHECK ---
-                await page.wait_for_timeout(6000) # Increased wait for full page load
+                await page.wait_for_timeout(6000) 
                 not_found_detected = await page.evaluate("""() => {
                     const text = document.body.innerText.toLowerCase();
                     return text.includes('user not found') || 
                            text.includes('profile not found') || 
                            text.includes('not found') ||
-                           text.includes('something went wrong') ||
-                           text.includes('entered an incorrect link');
+                           text.includes('something went wrong');
                 }""")
                 if not_found_detected:
-                    logger.warning(f"🚫 @{target_username} NOT FOUND on AnonyIG. Marking as error.")
+                    logger.warning(f"🚫 @{target_username} NOT FOUND on InstaCognito.")
                     return {"success": False, "error_type": "not_found"}
 
                 await page.wait_for_timeout(2000)
@@ -1971,9 +1970,9 @@ class InstagramService:
             return False
         except: return False
 
-    async def _perform_easycomment_harvest(self, page, account_data):
+    async def _perform_easycomment_harvest(self, page, target_username):
         """Anonymous harvest via InstaCognito."""
-        target_username = account_data['target_username']
+        # target_username is passed directly as a string from browser_engine.run_anonymous_session
         url = "https://instacognito.com/en/followed"
         logger.info(f"🛰️ Navigating to {url} (High-Stealth Mobile)...")
         
