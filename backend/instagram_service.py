@@ -12,7 +12,6 @@ import asyncio
 import random
 from urllib.parse import quote
 from typing import List, Optional, Union, Callable
-from scrapling.fetchers import StealthyFetcher
 from database import db
 from websocket_manager import manager
 from app.features.instagram_warming.browser_engine import browser_engine
