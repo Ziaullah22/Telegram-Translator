@@ -502,9 +502,16 @@ class InstagramService:
             logger.info(f"🚀 Opening profile: {url}")
             await page.goto(url, wait_until="domcontentloaded")
             
-            # 1. Wait for Profile to load (Wait for Bio or Header)
-            logger.info("⏳ Waiting for profile data to appear (15s Deep Breath)...")
-            await asyncio.sleep(15) # Increased to 15 seconds for stability
+            # 1. Wait for Profile to load (Smart Watchdog)
+            logger.info("⏳ Waiting for profile header to appear...")
+            try:
+                # Wait for header or main content area
+                await page.wait_for_selector("header, section", timeout=30000)
+                logger.info("✅ Header detected!")
+            except:
+                logger.warning("⚠️ Header not detected after 30s, proceeding anyway...")
+            
+            await asyncio.sleep(5) # Final settle
             
             # 2. Human Scroll (Triggers post loading)
             logger.info("⏬ Scrolling profile to see posts...")
@@ -512,9 +519,16 @@ class InstagramService:
                 await page.evaluate("window.scrollBy(0, 500)")
                 await asyncio.sleep(random.uniform(1.0, 2.0))
             
-            # 2.5 Second Wait for Posts
-            logger.info("⏳ Waiting for posts to load (Second 15s Deep Breath)...")
-            await asyncio.sleep(15)
+            # 2.5 Wait for Posts Grid (Smart Watchdog)
+            logger.info("⏳ Waiting for posts grid to pop up...")
+            try:
+                # Wait for the post grid/articles
+                await page.wait_for_selector("article, div[role='button']", timeout=30000)
+                logger.info("✅ Posts detected!")
+            except:
+                logger.warning("⚠️ Posts grid not detected after 30s...")
+
+            await asyncio.sleep(5) # Final deep breath
             
             # 3. Extract Data
             content = await page.content()
@@ -1634,10 +1648,11 @@ class InstagramService:
                 else:
                     await page.keyboard.press("Enter")
 
-                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username}...")
-                
-                # --- STEP 0: NOT FOUND CHECK ---
-                await page.wait_for_timeout(6000) 
+                # ── STEP 1: THE SEARCH WAIT (15s) ──
+                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username} (15s Search Wait)...")
+                await asyncio.sleep(15) 
+
+                # --- STEP 1.1: NOT FOUND CHECK ---
                 not_found_detected = await page.evaluate("""() => {
                     const text = document.body.innerText.toLowerCase();
                     return text.includes('user not found') || 
@@ -1649,10 +1664,8 @@ class InstagramService:
                     logger.warning(f"🚫 @{target_username} NOT FOUND on InstaCognito.")
                     return {"success": False, "error_type": "not_found"}
 
-                await page.wait_for_timeout(2000)
-
-                # ── STEP 1: Read the profile header with RETRIES for data population ──
-                logger.info(f"👁️ Reading profile header for @{target_username} carefully...")
+                # ── STEP 1.2: Read Profile Header (Bio/Stats) ──
+                logger.info(f"👁️ Scrapping profile data for @{target_username}...")
                 
                 header_data = {"bio": "", "followers": "0", "following": "0", "is_private": False}
                 
@@ -1730,13 +1743,16 @@ class InstagramService:
                         "is_private": True
                     }
 
-                # ── STEP 3: Public Account — Scroll for Posts ──
-                logger.info(f"✅ @{target_username} is PUBLIC — scrolling to posts...")
-                for _ in range(5):
-                    await page.mouse.wheel(0, random.randint(300, 500))
-                    await asyncio.sleep(random.uniform(1.2, 2.0))
+                # ── STEP 3: Public Account — The "Nudge" & Post Wait ──
+                logger.info(f"✅ @{target_username} is PUBLIC — nudging page down...")
+                await page.evaluate("window.scrollBy(0, 300)") # A little nudge
                 
-                await page.wait_for_timeout(3000)
+                logger.info("⏳ Waiting for posts to appear (15s Post Wait)...")
+                await asyncio.sleep(15) 
+
+                # Final scroll to ensure they are visible
+                await page.evaluate("window.scrollBy(0, 600)")
+                await asyncio.sleep(2)
 
                 # ── STEP 4: Extract Posts ──
                 profile_img_src = await page.evaluate("""() =>
