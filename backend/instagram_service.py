@@ -10,7 +10,8 @@ import json
 import logging
 import asyncio
 import random
-from urllib.parse import quote
+from urllib.parse import quote, unquote
+from fastapi import HTTPException
 from typing import List, Optional, Union, Callable
 from database import db
 from websocket_manager import manager
@@ -29,6 +30,27 @@ class InstagramService:
     _harvest_tasks = {} # user_id: current_lead_id
     workers = {} # user_id: bool (auto-pilot status)
     active_pages = {} # username: page object
+
+    def _is_valid_username(self, u: str) -> bool:
+        """
+        🛡️ SMART VALIDATOR: Checks if a username looks like a real human/business lead.
+        """
+        if not u or len(u) < 4 or len(u) > 30: return False
+        
+        # 1. Ignore pure numbers or hex-like random strings
+        if u.isdigit() or re.match(r'^[0-9a-f]{8,}$', u): return False
+        
+        # 2. Ignore too many special characters (likely junk)
+        if (u.count('.') + u.count('_')) > 3: return False
+        
+        # 3. List of junk keywords to ignore
+        junk = ['instagram', 'help', 'login', 'about', 'privacy', 'blog', 'reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'terms', 'legal', 'support', 'business']
+        if u in junk: return False
+        
+        # 4. Must contain at least one letter
+        if not any(c.isalpha() for c in u): return False
+        
+        return True
 
     # --- Stage 1: Discovery ---
 
@@ -63,7 +85,7 @@ class InstagramService:
             for m in matches:
                 m_clean = m.lower().strip().strip('./_ @')
                 # Only add if it's not in the blacklist and meets length requirements
-                if m_clean and m_clean not in blacklist and len(m_clean) >= 3:
+                if m_clean and m_clean not in blacklist and len(m_clean) >= 3 and self._is_valid_username(m_clean):
                     found.add(m_clean)
         
         return list(found)
@@ -79,7 +101,7 @@ class InstagramService:
             for kw_idx, keyword in enumerate(keywords):
                 # 🛠️ Direct Username Detection
                 kw_clean = keyword.strip().lstrip('@')
-                if ' ' not in kw_clean and len(kw_clean) > 3:
+                if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
                     logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
                     status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                     if status == "INSERT 0 1": new_count += 1
@@ -138,17 +160,19 @@ class InstagramService:
             )
             page = await context.new_page()
 
-            for page_num in range(5):
+            # 🚀 MAX RESULTS MODE (Up to 20 pages or until results end)
+            for page_num in range(20):
                 if len(found_usernames) >= limit: break
                 start_idx = page_num * 10
-                logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Slow Scroll Mode) for '{keyword}'...")
+                logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
 
                 search_query = f"{keyword} site:instagram.com"
                 url = f"https://www.google.com/search?q={quote(search_query)}&num=100&start={start_idx}"
 
                 try:
                     await page.goto(url, wait_until="domcontentloaded")
-                    await asyncio.sleep(random.uniform(3, 5))
+                    logger.info("⏳ Waiting for Google Results (15s Deep Breath)...")
+                    await asyncio.sleep(15) 
 
                     # 🛡️ Robot Check detection
                     content = (await page.content()).lower()
@@ -181,21 +205,19 @@ class InstagramService:
                             match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
                             if match:
                                 u = match.group(1).strip().strip('./_').lower()
-                                if u not in ['reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'login', 'about', 'privacy', 'reel', 'legal', 'blog', 'help'] and u not in seen:
+                                if self._is_valid_username(u) and u not in seen:
                                     logger.info(f"✨ Found Link Lead: @{u}")
                                     found_usernames.append(u)
                                     seen.add(u)
 
                     # 2. Scrape from Text Snippets (Deep Scan)
-                    # We look for @mentions or patterns like "instagram.com/username" in the text
                     snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
                     for u in snippets:
                         u = u.strip().strip('./_')
-                        if u not in ['reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'login', 'about', 'privacy', 'reel', 'legal', 'blog', 'help'] and u not in seen:
-                            if len(u) > 2:
-                                logger.info(f"✨ Found Snippet Lead: @{u}")
-                                found_usernames.append(u)
-                                seen.add(u)
+                        if self._is_valid_username(u) and u not in seen:
+                            logger.info(f"✨ Found Snippet Lead: @{u}")
+                            found_usernames.append(u)
+                            seen.add(u)
                     
                     # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
@@ -439,83 +461,6 @@ class InstagramService:
         if not lead: return {"error": "Lead not found"}
         username = lead['instagram_username']
 
-        # 1. Strategy 1: Ghost Pool Teamwork (Single Account Attempt) - TEMPORARILY DISABLED FOR TESTING
-        """
-        account = await db.fetchrow(f\"\"\"
-            SELECT a.*, p.host, p.port, p.username as p_user, p.password as p_pass, p.proxy_type 
-            FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id
-            WHERE a.user_id = $1 AND a.status = 'active' 
-            ORDER BY last_used_at ASC NULLS FIRST LIMIT 1
-        \"\"\", user_id)
-
-        if not account:
-            logger.warning(f"⚠️ No active Ghost accounts available for {user_id}")
-            return {"error": "No accounts available"}
-
-        sender = account['username']
-        try:
-            logger.info(f"🛰️ Ghost Mission: Using @{sender} for @{username}")
-
-            # ── SAFETY CHECK: 24h LOCK & 36h FREEZE ──
-            if await self._check_usage_limit(account['id']):
-                logger.warning(f"⏳ Account @{sender} is currently locked (Usage Limit).")
-                return {"error": "Account locked"}
-
-            if account.get('frozen_until') and account['frozen_until'] > datetime.now(account['frozen_until'].tzinfo):
-                logger.warning(f"❄️ Account @{sender} is FROZEN.")
-                return {"error": "Account frozen"}
-
-            # 🚀 DEPLOY GHOST BROWSER
-            account_data = {
-                'id': account['id'],
-                'username': account['username'],
-                'password': account['password'],
-                'proxy_host': account['host'],
-                'proxy_port': account['port'],
-                'proxy_user': account['p_user'],
-                'proxy_pass': account['p_pass'],
-                'fa_secret': account.get('verification_code'),
-                'target_username': username
-            }
-
-            result = await browser_engine.run_warming_session(
-                account_data,
-                self._perform_ghost_analysis
-            )
-
-            if result and result.get('success'):
-                await db.execute("UPDATE instagram_accounts SET warming_session_count = warming_session_count + 1, last_used_at = NOW() WHERE id = $1", account['id'])
-                await self._record_usage(account['id'])
-                
-                await self._qualify_and_update(lead_id, user_id, 
-                                             result['bio'], 
-                                             result['followers'], 
-                                             result['following'], 
-                                             result['full_name'], 
-                                             result['posts'],
-                                             is_private=result['is_private'])
-                
-                try:
-                   await db.execute("UPDATE instagram_leads SET assigned_account_id = $1, assigned_account_name = $2 WHERE id = $3", account['id'], account['username'], lead_id)
-                except: pass
-
-                logger.info(f"🚀 Ghost Analysis Complete: '@{username}' identified via Browser.")
-                return {"success": True, "method": f"ghost_browser (@{account['username']})"}
-            else:
-                raise Exception("Ghost analysis returned no data")
-        """
-
-        # Strategy 1 Block Disabled
-        """
-        except InstagramChallengeException as ce:
-            logger.error(f"❄️ CHALLENGE DETECTED: Freezing @{sender} for 36h.")
-            await self._freeze_account(account['id'])
-            # Don't return, fall through to Strategy 2
-        except Exception as e:
-            logger.warning(f"⚠️ Ghost account @{sender} failed: {e}. Attempting Anonymous Fallback...")
-            # Don't return, fall through to Strategy 2
-        """
-
         # 2. Strategy 2: Anonymous Playwright Extraction (No Account Fallback)
         try:
             logger.info(f"🕶️ Strategy 2: Attempting Anonymous Playwright Capture for @{username}...")
@@ -537,15 +482,94 @@ class InstagramService:
                 logger.info(f"✨ Anonymous Capture successful for @{username}!")
                 return {"success": True, "new_status": new_status, "source": "anonymous_playwright"}
             
-            # 🚨 HARD ABORT: If AnonyIG says not found or fails, don't try Fallbacks!
-            logger.warning(f"🚫 Profile @{username} analysis failed or not found. Aborting.")
+            # 🚨 HARD ABORT
+            logger.warning(f"🚫 Profile @{username} analysis failed. Aborting.")
             await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
             return {"error": "Analysis Failed", "status": "error"}
 
         except Exception as e:
-            logger.error(f"⚠️ Strategy 2 (Anonymous) CRITICAL failure for @{username}: {e}")
+            logger.error(f"⚠️ Strategy 2 (Anonymous) failure for @{username}: {e}")
             await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
             return {"error": str(e), "status": "error"}
+
+    async def _perform_anonymous_analysis(self, page, username: str):
+        """
+        🕵️‍♂️ DEEP PROFILE ANALYSIS
+        Wait for bio, scroll for posts, and capture everything.
+        """
+        try:
+            url = f"https://www.instagram.com/{username}/"
+            logger.info(f"🚀 Opening profile: {url}")
+            await page.goto(url, wait_until="domcontentloaded")
+            
+            # 1. Wait for Profile to load (Wait for Bio or Header)
+            logger.info("⏳ Waiting for profile data to appear (15s Deep Breath)...")
+            await asyncio.sleep(15) # Increased to 15 seconds for stability
+            
+            # 2. Human Scroll (Triggers post loading)
+            logger.info("⏬ Scrolling profile to see posts...")
+            for _ in range(2):
+                await page.evaluate("window.scrollBy(0, 500)")
+                await asyncio.sleep(random.uniform(1.0, 2.0))
+            
+            # 2.5 Second Wait for Posts
+            logger.info("⏳ Waiting for posts to load (Second 15s Deep Breath)...")
+            await asyncio.sleep(15)
+            
+            # 3. Extract Data
+            content = await page.content()
+            
+            # Use regex for stats (more reliable in anonymous mode)
+            followers = 0
+            following = 0
+            posts_count = 0
+            is_private = False
+            
+            # Search for stats in JSON or Text
+            stats_match = re.search(r'"edge_followed_by":{"count":(\d+)}', content)
+            if stats_match: followers = int(stats_match.group(1))
+            
+            follow_match = re.search(r'"edge_follow":{"count":(\d+)}', content)
+            if follow_match: following = int(follow_match.group(1))
+            
+            # Check Privacy
+            if '"is_private":true' in content.lower() or "this account is private" in content.lower():
+                is_private = True
+            
+            # Extract Full Name and Bio from Meta tags
+            full_name = username
+            bio = ""
+            
+            name_match = re.search(r'<meta property="og:title" content="([^"]+)"', content)
+            if name_match:
+                title = name_match.group(1)
+                if '(@' in title: full_name = title.split('(@')[0].strip()
+            
+            bio_match = re.search(r'<meta property="og:description" content="([^"]+)"', content)
+            if bio_match: bio = bio_match.group(1)
+            
+            # 4. Scrape Posts (Grid check)
+            recent_posts = []
+            post_links = await page.query_selector_all('a[href*="/p/"]')
+            for link in post_links[:6]: # Last 6 posts
+                href = await link.get_attribute('href')
+                if href: recent_posts.append({"url": f"https://www.instagram.com{href}"})
+            
+            logger.info(f"✅ Scraped: @{username} | {followers} Followers | {len(recent_posts)} Posts")
+            
+            return {
+                "success": True,
+                "full_name": full_name,
+                "bio": bio,
+                "followers": followers,
+                "following": following,
+                "posts": recent_posts,
+                "is_private": is_private
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Analysis error: {e}")
+            return {"success": False, "error": str(e)}
 
     # --- Data Utils ---
 
@@ -695,7 +719,7 @@ class InstagramService:
                         if res.status_code == 200:
                             m_matches = re.findall(r'instagram\.com/([a-zA-Z0-9._]{3,30})', res.text)
                             for m_user in set(m_matches):
-                                if m_user.lower() not in {username.lower(), 'reels', 'about', 'legal', 'terms', 'privacy'}:
+                                if m_user.lower() not in {username.lower(), 'reels', 'about', 'legal', 'terms', 'privacy'} and self._is_valid_username(m_user):
                                     try:
                                         await db.execute("""
                                             INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
@@ -831,7 +855,6 @@ class InstagramService:
     async def update_account_settings(self, user_id: int, account_id: int, target_language: str, source_language: str, is_translation_enabled: bool):
         row = await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
         if not row:
-            from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Account not found")
 
         await db.execute(
@@ -910,8 +933,7 @@ class InstagramService:
         try:
             # OPTION A: MANUAL SESSION BYPASS (Tunnel Mode)
             if manual_session and len(manual_session) > 5:
-                import urllib.parse
-                clean_session_str = urllib.parse.unquote(manual_session)
+                clean_session_str = unquote(manual_session)
                 logger.info(f"🛰️ Attempting Absolute-Bypass for @{username}...")
                 
                 # 🎭 BROWSER IDENTITY LOCK
