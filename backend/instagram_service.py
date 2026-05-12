@@ -12,6 +12,7 @@ import asyncio
 import random
 from urllib.parse import quote
 from typing import List, Optional, Union, Callable
+from scrapling.fetchers import StealthyFetcher
 from database import db
 from websocket_manager import manager
 from app.features.instagram_warming.browser_engine import browser_engine
@@ -84,88 +85,26 @@ class InstagramService:
                     status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
                     if status == "INSERT 0 1": new_count += 1
 
-                msg = f"🔍 [DDG] Searching Instagram for '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
                 logger.info(msg)
                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                 except: pass
 
                 current_kw_new = 0
+                
+                # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
                 try:
-                    # 1. DuckDuckGo Strict Search URL
-                    search_query = f"{keyword} site:instagram.com"
-                    search_url = f"https://duckduckgo.com/?q={quote(search_query)}&ia=web"
-                    
-                    logger.info(f"🌐 Navigating to DuckDuckGo: {search_query}")
-                    await page_obj.goto(search_url, wait_until="domcontentloaded", timeout=60000)
-                    
-                    # 🛑 CAPTCHA WATCHDOG (DDG Robot Check)
-                    for _ in range(3):
-                        try:
-                            # DDG typically shows "Check this box" or similar if they think you're a bot
-                            captcha = await page_obj.query_selector('iframe[src*="captcha"], #captcha, :has-text("robot"), :has-text("human")')
-                            if captcha:
-                                msg = "⚠️ DDG CAPTCHA DETECTED! Please solve it in the window..."
-                                logger.error(msg)
-                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                except: pass
-                                
-                                for second in range(300):
-                                    await asyncio.sleep(1)
-                                    try:
-                                        solved = not await page_obj.query_selector('iframe[src*="captcha"], #captcha, :has-text("robot"), :has-text("human")')
-                                        if solved:
-                                            logger.info("✅ DDG Resolved! Continuing...")
-                                            await page_obj.wait_for_load_state("networkidle")
-                                            break
-                                    except: continue
-                                break
-                        except:
-                            await asyncio.sleep(1)
-                            continue
-
-                    # 2. Deep Scrape: Scroll and click "More Results"
-                    for i in range(10): 
-                        if current_kw_new >= limit_per_keyword:
-                            logger.info(f"🛑 Limit reached for '{keyword}'.")
-                            break
-
-                        logger.info(f"📜 Deep Scrape Loop {i+1}/10 for '{keyword}'")
-                        await page_obj.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await asyncio.sleep(random.uniform(2.5, 4.0)) 
-                        
-                        try:
-                            # DDG More Results button
-                            more_btn = await page_obj.query_selector('button:has-text("More Results"), #more-results')
-                            if more_btn:
-                                await more_btn.scroll_into_view_if_needed()
-                                await asyncio.sleep(1.5)
-                                await more_btn.click()
-                                await asyncio.sleep(random.uniform(3.0, 5.0)) 
-                            else: 
-                                # Try one more scroll
-                                await page_obj.evaluate("window.scrollBy(0, 500)")
-                                await asyncio.sleep(2)
-                                break
-                        except: break
-                    
-                    # 3. Final Extraction
-                    html = await page_obj.content()
-                    leads = self._extract_leads_from_html(html)
-                    
-                    if leads:
-                        logger.info(f"✨ Found {len(leads)} leads for '{keyword}'")
-                        for u in leads:
+                    surge_leads = await self._perform_scrapling_discovery(keyword, limit=limit_per_keyword)
+                    if surge_leads:
+                        for u in surge_leads:
                             if current_kw_new >= limit_per_keyword: break
                             status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
                             if status == "INSERT 0 1": 
                                 new_count += 1
                                 current_kw_new += 1
-                    else:
-                        logger.warning(f"⚠️ No leads found on DDG for '{keyword}'.")
-
                 except Exception as e:
-                    logger.error(f"❌ DuckDuckGo Search failed: {e}")
-                
+                    logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
+
                 # Breath between keywords
                 await asyncio.sleep(random.uniform(5.0, 10.0))
 
@@ -180,6 +119,97 @@ class InstagramService:
         # 🏁 Mission Summary
         logger.info(f"📊 Mission Summary: {new_count} NEW leads found total.")
         return new_count
+
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50):
+        """
+        🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
+        Uses raw patchright for total control and visible navigation.
+        """
+        from patchright.async_api import async_playwright
+        found_usernames = []
+        seen = set()
+
+        async with async_playwright() as p:
+            # 🖥️ LAUNCH MAXIMIZED
+            browser = await p.chromium.launch(headless=False, args=["--start-maximized"])
+            # 🖼️ NO VIEWPORT (Let it use the full screen)
+            context = await browser.new_context(
+                no_viewport=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+
+            for page_num in range(5):
+                if len(found_usernames) >= limit: break
+                start_idx = page_num * 10
+                logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Slow Scroll Mode) for '{keyword}'...")
+
+                search_query = f"{keyword} site:instagram.com"
+                url = f"https://www.google.com/search?q={quote(search_query)}&num=100&start={start_idx}"
+
+                try:
+                    await page.goto(url, wait_until="domcontentloaded")
+                    await asyncio.sleep(random.uniform(3, 5))
+
+                    # 🛡️ Robot Check detection
+                    content = (await page.content()).lower()
+                    if "unusual traffic" in content or "captcha" in content:
+                        logger.warning("🚨 GOOGLE CAPTCHA! Please solve it in the window...")
+                        for _ in range(60):
+                            await asyncio.sleep(5)
+                            content = (await page.content()).lower()
+                            if "unusual traffic" not in content and "captcha" not in content:
+                                logger.info("✅ CAPTCHA Resolved!")
+                                break
+
+                    # 📜 HUMAN SCROLLING (Slow & Steady)
+                    logger.info("⏬ Scrolling results like a human...")
+                    for _ in range(random.randint(5, 8)):
+                        scroll_step = random.randint(300, 600)
+                        await page.evaluate(f"window.scrollBy(0, {scroll_step})")
+                        await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
+
+                    # 🎯 AGGRESSIVE EXTRACTION
+                    page_content = await page.content()
+                    
+                    # 1. Scrape from Links
+                    links = await page.query_selector_all('a[href*="instagram.com"]')
+                    for link in links:
+                        href = await link.get_attribute('href')
+                        if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
+                        if href:
+                            # Catch both profile links and mentions
+                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                            if match:
+                                u = match.group(1).strip().strip('./_').lower()
+                                if u not in ['reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'login', 'about', 'privacy', 'reel', 'legal', 'blog', 'help'] and u not in seen:
+                                    logger.info(f"✨ Found Link Lead: @{u}")
+                                    found_usernames.append(u)
+                                    seen.add(u)
+
+                    # 2. Scrape from Text Snippets (Deep Scan)
+                    # We look for @mentions or patterns like "instagram.com/username" in the text
+                    snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
+                    for u in snippets:
+                        u = u.strip().strip('./_')
+                        if u not in ['reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'login', 'about', 'privacy', 'reel', 'legal', 'blog', 'help'] and u not in seen:
+                            if len(u) > 2:
+                                logger.info(f"✨ Found Snippet Lead: @{u}")
+                                found_usernames.append(u)
+                                seen.add(u)
+                    
+                    # Extra pause before next page
+                    await asyncio.sleep(random.uniform(4, 7))
+                    
+                    if len(links) < 5: break
+                except Exception as e:
+                    logger.error(f"❌ Google Scrape Error: {e}")
+                    break
+
+            await browser.close()
+        
+        logger.info(f"🎯 [ULTRA SURGE] Finished. Found {len(found_usernames)} unique Google leads.")
+        return found_usernames[:limit]
 
     # --- Stage 2: Analysis ---
 
