@@ -73,6 +73,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [showAuditModal, setShowAuditModal] = useState(false);
+    const [showVncModal, setShowVncModal] = useState(false);
     const [selectedLead, setSelectedLead] = useState<any>(null);
 
     // Form States
@@ -1097,14 +1098,23 @@ const InstagramLeadGenerator: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 pt-4 border-t border-gray-50 dark:border-white/5 flex items-center gap-2">
+                                        <div className="mt-4 pt-4 border-t border-gray-50 dark:border-white/5 flex flex-col gap-2">
                                             {connectedIds.has(acc.id) ? (
-                                                <button
-                                                    onClick={() => handleDisconnectAccount(acc.id)}
-                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-all"
-                                                >
-                                                    <X className="w-3.5 h-3.5" /> Disconnect
-                                                </button>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => setShowVncModal(true)}
+                                                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                                                    >
+                                                        <Eye className="w-3.5 h-3.5" /> View Live
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDisconnectAccount(acc.id)}
+                                                        className="p-2.5 rounded-xl bg-red-500 text-white shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                                                        title="Disconnect"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             ) : (
                                                 <button
                                                     onClick={() => handleConnectAccount(acc.id)}
@@ -1894,6 +1904,52 @@ const InstagramLeadGenerator: React.FC = () => {
                                     ) : 'Deploy Shield Pool 🛡️'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Live Browser VNC Modal */}
+            {showVncModal && (
+                <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-5xl h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
+                        <div className="p-6 pb-2 shrink-0 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-pink-500/10 rounded-2xl">
+                                    <Eye className="w-6 h-6 text-pink-500" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Live Browser Stream</h2>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Direct Link to Ghost Identity</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowVncModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                                <X className="w-6 h-6 text-gray-400" />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 bg-black/20 m-6 mt-2 rounded-3xl overflow-hidden border border-gray-100 dark:border-white/5 relative group">
+                            <iframe 
+                                src={`http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`}
+                                className="w-full h-full border-none shadow-inner"
+                                title="Live Browser Stream"
+                            />
+                            {/* HUD Overlay for the stream */}
+                            <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-[9px] font-black text-green-400 uppercase tracking-widest border border-green-500/20 flex items-center gap-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                                Live Surge active
+                            </div>
+                        </div>
+
+                        <div className="px-8 pb-8 flex items-center justify-between">
+                            <p className="text-[10px] font-bold text-gray-500 italic max-w-md">
+                                💡 Tip: You can click and type inside this window to solve Instagram challenges or approve logins.
+                            </p>
+                            <button 
+                                onClick={() => setShowVncModal(false)}
+                                className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest transition-transform active:scale-95"
+                            >
+                                Hide View
+                            </button>
                         </div>
                     </div>
                 </div>
