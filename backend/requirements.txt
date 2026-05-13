@@ -75,3 +75,4 @@ pyotp==2.9.0
 playwright
 playwright-stealth==1.0.6
 aiohttp==3.11.12
+setuptools
