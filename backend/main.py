@@ -781,6 +781,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/api/health")
+async def health_check():
+    """
+    Standard Health Check endpoint for production monitoring.
+    Verifies API status and Database connectivity.
+    """
+    db_status = "unhealthy"
+    try:
+        # Simple query to check DB connection
+        await db.fetchval("SELECT 1")
+        db_status = "healthy"
+    except Exception as e:
+        logger.error(f"Health check DB error: {e}")
+
+    return {
+        "status": "online" if db_status == "healthy" else "degraded",
+        "timestamp": datetime.now().isoformat(),
+        "database": db_status,
+        "environment": "production" if "nip.io" in str(settings.database_url) or "165.154.225.233" in str(settings.database_url) else "development"
+    }
+
 app.include_router(auth_router)
 app.include_router(telegram_router)
 app.include_router(messages_router)
