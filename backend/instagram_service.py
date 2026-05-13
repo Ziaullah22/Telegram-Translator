@@ -3,7 +3,17 @@ import io
 import time
 from datetime import datetime
 import PIL.Image
-import imagehash
+try:
+    import imagehash
+except ImportError:
+    imagehash = None  # pip install imagehash on server
+try:
+    from fastapi import HTTPException
+except ImportError:
+    class HTTPException(Exception):  # type: ignore
+        def __init__(self, status_code=500, detail=""):
+            self.status_code = status_code
+            self.detail = detail
 import httpx
 import re
 import json
@@ -11,7 +21,6 @@ import logging
 import asyncio
 import random
 from urllib.parse import quote, unquote
-from fastapi import HTTPException
 from typing import List, Optional, Union, Callable
 from database import db
 from websocket_manager import manager
@@ -1064,6 +1073,7 @@ class InstagramService:
                     if fa_match: fa_secret = fa_match.group(1)
                     
                     # Detect JSON Cookie Array
+                    cookie_json_match = re.search(r'Cookies?:\s*(\[.*?\])', line, re.I | re.S)
                     if cookie_json_match:
                         full_cookies_json = cookie_json_match.group(1)
                         try:

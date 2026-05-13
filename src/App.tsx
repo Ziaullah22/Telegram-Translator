@@ -153,7 +153,7 @@ function App() {
 
   // --- INSTAGRAM BACKGROUND POLLING (Since we don't have WebSockets for IG) ---
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     
     // Only poll if we are on the Instagram tab and have an active account
     if (currentPlatform === 'instagram' && currentInstagramAccount) {
@@ -223,8 +223,22 @@ function App() {
 
   const handleMonitorInstagram = async (acc: InstagramAccount) => {
     try {
+      // 1. Send the command to the backend
       await instagramAPI.monitorAccount(acc.id);
-    } catch (e) { console.error('Failed to monitor Instagram:', e); }
+      
+      // 2. INSTANT UI UPDATE: Toggle the state locally so the icon changes immediately
+      const updatedAccount = { ...acc, is_hidden: !acc.is_hidden };
+      
+      setInstagramAccounts(prev => prev.map(a => a.id === acc.id ? updatedAccount : a));
+      
+      if (currentInstagramAccount?.id === acc.id) {
+        setCurrentInstagramAccount(updatedAccount);
+      }
+    } catch (e) { 
+      console.error('Failed to monitor Instagram:', e); 
+      // Refresh list to ensure consistency if error occurs
+      loadInstagramAccounts();
+    }
   };
 
   const handleDisconnectInstagram = async (acc: InstagramAccount) => {
@@ -818,6 +832,63 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  const handleAddInstagramAccount = () => {
+    // Create a hidden file input and trigger it immediately (same as scrapper bulk import)
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const Cookies = (await import('js-cookie')).default;
+        const token = Cookies.get('auth_token');
+        const res = await fetch('/api/instagram/bulk-accounts-file', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(`✅ Import done! Added: ${data.success ?? '?'}, Failed: ${data.failed ?? '?'}`);
+          // Refresh the sidebar accounts list
+          const list = await fetch('/api/instagram/accounts', { headers: { Authorization: `Bearer ${token}` } });
+          const accounts = await list.json();
+          setInstagramAccounts(accounts);
+        } else {
+          alert(`❌ Import failed: ${data.detail || 'Unknown error'}`);
+        }
+      } catch (err) {
+        console.error('Bulk Instagram import error:', err);
+        alert('❌ Import failed. Check console.');
+      }
+    };
+    input.click();
+  };
+
+  const handleDeleteInstagram = async (account: InstagramAccount) => {
+    if (!confirm(`Delete @${account.username}? This cannot be undone.`)) return;
+    try {
+      const Cookies = (await import('js-cookie')).default;
+      const token = Cookies.get('auth_token');
+      await fetch(`/api/instagram/accounts/${account.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setInstagramAccounts(prev => prev.filter(a => a.id !== account.id));
+      if (currentInstagramAccount?.id === account.id) {
+        setCurrentInstagramAccount(null);
+        setInstagramConversations([]);
+        setCurrentInstagramConversation(null);
+      }
+    } catch (e) {
+      console.error('Failed to delete Instagram account:', e);
+      alert('❌ Failed to delete account.');
+    }
+  };
+
   const handleDeleteMessages = async (id: number, mids: number[], revoke: boolean) => {
     try { await messagesAPI.deleteMessages(id, mids, revoke); setMessages(prev => prev.filter(m => !mids.includes(m.id))); } catch (e) { throw e; }
   };
@@ -888,6 +959,8 @@ function App() {
                   onMonitorInstagram={handleMonitorInstagram}
                   onDisconnectInstagram={handleDisconnectInstagram}
                   onEditInstagram={(account) => { setEditingInstagramAccount(account); setShowInstagramSettingsModal(true); }}
+                  onDeleteInstagram={handleDeleteInstagram}
+                  onAddInstagramAccount={handleAddInstagramAccount}
                 />
               </div>
 
@@ -914,7 +987,7 @@ function App() {
                 <div className={`${currentInstagramConversation ? 'hidden xl:flex' : 'flex'} w-full xl:w-[320px] 2xl:w-[360px] h-full shrink-0 border-r border-gray-100 dark:border-white/5 flex-col`}>
                   <InstagramConversationList
                     conversations={instagramConversations}
-                    currentConversation={currentInstagramConversation}
+                    currentConversation={currentInstagramConversation ?? undefined}
                     onConversationSelect={handleInstagramConversationSelect}
                     onBack={() => setCurrentInstagramAccount(null)}
                     accountId={currentInstagramAccount.id}

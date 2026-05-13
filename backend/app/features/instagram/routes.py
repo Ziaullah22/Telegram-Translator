@@ -13,8 +13,7 @@ async def connect_account(
     account_id: int,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Launch a visible browser and connect the Instagram account."""
-    # Get account data from DB
+    """Launch a browser for the account. It starts minimized and logs in automatically."""
     from database import db
     account = await db.fetchrow(
         "SELECT a.*, p.host as proxy_host, p.port as proxy_port, p.username as proxy_user, p.password as proxy_pass "
@@ -24,8 +23,16 @@ async def connect_account(
     )
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    
-    return await instagram_session_manager.connect(account_id, dict(account))
+
+    # Disconnect any existing stale session first
+    if instagram_session_manager.is_connected(account_id):
+        await instagram_session_manager.disconnect(account_id)
+
+    # Launch browser minimized (headless=True = login then auto-minimize via CDP)
+    result = await instagram_session_manager.connect(account_id, dict(account), headless=True)
+    from instagram_chat_service import instagram_chat_service
+    instagram_chat_service.clients.pop(account_id, None)
+    return result
 
 @router.post("/accounts/{account_id}/disconnect")
 async def disconnect_account(
@@ -40,10 +47,20 @@ async def monitor_account(
     account_id: int,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Launch a LIVE browser window for the user to see and interact with."""
+    """Toggle browser window visibility (Show/Hide)."""
     from database import db
-    
-    # 1. Get account data
+
+    # If already connected — toggle the visibility
+    if instagram_session_manager.is_connected(account_id):
+        session = instagram_session_manager.active_sessions[account_id]
+        if session.get('is_hidden', True):
+            await instagram_session_manager.show_window(account_id)
+            return {"status": "shown", "is_hidden": False}
+        else:
+            await instagram_session_manager.hide_window(account_id)
+            return {"status": "hidden", "is_hidden": True}
+
+    # Not connected yet — connect and immediately show it
     account = await db.fetchrow(
         "SELECT a.*, p.host as proxy_host, p.port as proxy_port, p.username as proxy_user, p.password as proxy_pass "
         "FROM instagram_accounts a LEFT JOIN instagram_proxies p ON a.proxy_id = p.id "
@@ -52,13 +69,12 @@ async def monitor_account(
     )
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-        
-    # 2. If already connected in session manager, disconnect first to switch from headless to headful
-    if instagram_session_manager.is_connected(account_id):
-        await instagram_session_manager.disconnect(account_id)
-        
-    # 3. Connect again but with headless=False
-    return await instagram_session_manager.connect(account_id, dict(account), headless=False)
+
+    # headless=False means: connect AND keep window visible (no auto-minimize)
+    result = await instagram_session_manager.connect(account_id, dict(account), headless=False)
+    from instagram_chat_service import instagram_chat_service
+    instagram_chat_service.clients.pop(account_id, None)
+    return result
 
 @router.get("/accounts/{account_id}/connection-status")
 async def get_connection_status(
@@ -146,6 +162,9 @@ async def get_accounts(current_user: TokenData = Depends(get_current_user)):
     # Add real-time connection status from session manager
     for acc in accounts:
         acc['is_connected'] = instagram_session_manager.is_connected(acc['id'])
+        # Also include visibility state
+        session = instagram_session_manager.active_sessions.get(acc['id'])
+        acc['is_hidden'] = session.get('is_hidden', True) if session else True
     return accounts
 
 @router.post("/accounts")

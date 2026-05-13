@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare, Eye } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { aiService, AIStatus } from '../../services/aiService';
 import type { TelegramAccount, InstagramAccount } from '../../types';
@@ -39,6 +39,8 @@ interface SidebarProps {
   onMonitorInstagram: (account: InstagramAccount) => void;
   onDisconnectInstagram: (account: InstagramAccount) => void;
   onEditInstagram: (account: InstagramAccount) => void;
+  onDeleteInstagram: (account: InstagramAccount) => void;
+  onAddInstagramAccount: () => void;
 }
 
 export default function Sidebar({
@@ -64,6 +66,8 @@ export default function Sidebar({
   onMonitorInstagram,
   onDisconnectInstagram,
   onEditInstagram,
+  onDeleteInstagram,
+  onAddInstagramAccount,
 }: SidebarProps) {
   const [aiStatus, setAiStatus] = useState<AIStatus>(aiService.getStatus().status);
   const [aiProgress, setAiProgress] = useState(aiService.getStatus().progress);
@@ -131,6 +135,19 @@ export default function Sidebar({
           >
             <Plus className="w-4 h-4" />
             <span>Add Telegram</span>
+          </button>
+        </div>
+      )}
+
+      {currentPlatform === 'instagram' && (
+        <div className="p-3 border-b border-gray-100 dark:border-white/5">
+          <button
+            id="add-instagram-account-btn"
+            onClick={onAddInstagramAccount}
+            className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-pink-500/20 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Instagram</span>
           </button>
         </div>
       )}
@@ -337,6 +354,17 @@ export default function Sidebar({
                             <Pencil className="w-3.5 h-3.5 text-blue-500" />
                           </button>
 
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteInstagram(account);
+                            }}
+                            className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
+                            title="Delete Account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          </button>
+
                           {account.is_connected ? (
                             <div className="flex items-center space-x-1">
                               <button
@@ -345,9 +373,13 @@ export default function Sidebar({
                                   onMonitorInstagram(account);
                                 }}
                                 className={`p-1 rounded-lg transition-colors ${currentInstagramAccount?.id === account.id ? 'hover:bg-slate-300 dark:hover:bg-white/20' : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'}`}
-                                title="Open Browser"
+                                title={account.is_hidden ? "Show Browser" : "Hide Browser"}
                               >
-                                <Eye className="w-3.5 h-3.5 text-blue-500" />
+                                {account.is_hidden ? (
+                                  <EyeOff className="w-3.5 h-3.5 text-gray-400 hover:text-blue-500" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5 text-blue-500" />
+                                )}
                               </button>
                               <button
                                 onClick={(e) => {
