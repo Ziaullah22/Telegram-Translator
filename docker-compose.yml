@@ -11,23 +11,31 @@ services:
       POSTGRES_PASSWORD: zia_ultra_secure_pass_99
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telegram_translator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # The Backend API
   backend:
     build: 
       context: ./backend
+    command: sh -c "python migrate_db.py && ./start.sh"
     restart: always
     environment:
       DATABASE_URL: postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator
       JWT_SECRET: super_secret_warming_key
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
       - ./backend/media:/app/media
       - ./backend/sessions:/app/sessions
       - ./backend/browser_sessions:/app/browser_sessions
+      - ./migrate_db.py:/app/migrate_db.py
 
   # The User Frontend
   frontend:
