@@ -456,6 +456,8 @@ async def migrate():
                     user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                     username TEXT NOT NULL UNIQUE,
                     password TEXT NOT NULL,
+                    full_name TEXT,
+                    ds_user_id TEXT,
                     proxy_id BIGINT REFERENCES instagram_proxies(id) ON DELETE SET NULL,
                     status TEXT DEFAULT 'active',
                     last_used TIMESTAMPTZ,
@@ -667,6 +669,8 @@ async def migrate():
                 END $$;
 
                 -- Instagram Accounts: Support for sessions, 2FA, and extra data
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS ds_user_id TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS full_name TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS session_id TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS user_id_cookie TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS two_factor_secret TEXT;
