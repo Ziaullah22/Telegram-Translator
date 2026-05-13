@@ -29,6 +29,13 @@ jobs:
         # This checks for syntax errors
         python -m compileall backend/
 
+    - name: Run Backend Tests
+      run: |
+        cd backend
+        # We need to install pytest and async support
+        pip install pytest httpx pytest-asyncio
+        pytest tests/
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
