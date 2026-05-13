@@ -123,6 +123,7 @@ function App() {
   const [instagramMessages, setInstagramMessages] = useState<InstagramMessage[]>([]);
   const [showInstagramSettingsModal, setShowInstagramSettingsModal] = useState(false);
   const [editingInstagramAccount, setEditingInstagramAccount] = useState<InstagramAccount | null>(null);
+  const [showVncModal, setShowVncModal] = useState(false);
 
   // Refs for current state
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
@@ -222,13 +223,14 @@ function App() {
   };
 
   const handleMonitorInstagram = async (acc: InstagramAccount) => {
+    // 1. Open the modal immediately for a responsive feel
+    setShowVncModal(true);
+    
     try {
-      // 1. Send the command to the backend
+      // 2. Optional: If we want to toggle the backend 'hidden' state too
       await instagramAPI.monitorAccount(acc.id);
       
-      // 2. INSTANT UI UPDATE: Toggle the state locally so the icon changes immediately
       const updatedAccount = { ...acc, is_hidden: !acc.is_hidden };
-      
       setInstagramAccounts(prev => prev.map(a => a.id === acc.id ? updatedAccount : a));
       
       if (currentInstagramAccount?.id === acc.id) {
@@ -236,7 +238,6 @@ function App() {
       }
     } catch (e) { 
       console.error('Failed to monitor Instagram:', e); 
-      // Refresh list to ensure consistency if error occurs
       loadInstagramAccounts();
     }
   };
@@ -1120,6 +1121,52 @@ function App() {
                   className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-1"
                 >
                   <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Live Browser VNC Modal */}
+        {showVncModal && (
+          <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+            <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-5xl h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
+              <div className="p-6 pb-2 shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-pink-500/10 rounded-2xl">
+                    <Eye className="w-6 h-6 text-pink-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Live Browser Stream</h2>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Remote Session Control</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowVncModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6 text-gray-400" />
+                </button>
+              </div>
+              
+              <div className="flex-1 bg-black/20 m-6 mt-2 rounded-3xl overflow-hidden border border-gray-100 dark:border-white/5 relative group">
+                <iframe 
+                  src={`http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`}
+                  className="w-full h-full border-none shadow-inner"
+                  title="Live Browser Stream"
+                />
+                <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-[9px] font-black text-green-400 uppercase tracking-widest border border-green-500/20 flex items-center gap-2 pointer-events-none">
+                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                  Remote Active
+                </div>
+              </div>
+
+              <div className="px-8 pb-8 flex items-center justify-between">
+                <p className="text-[10px] font-bold text-gray-500 italic max-w-md">
+                  💡 Tip: You can interact with the browser here to solve challenges or approve logins.
+                </p>
+                <button 
+                  onClick={() => setShowVncModal(false)}
+                  className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest transition-transform active:scale-95 shadow-lg"
+                >
+                  Close Stream
                 </button>
               </div>
             </div>
