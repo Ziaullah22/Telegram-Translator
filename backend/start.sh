@@ -13,5 +13,8 @@ sleep 2
 # 4. Set the DISPLAY environment variable
 export DISPLAY=:99
 
-# 5. Start the backend
+# 5. Force install setuptools at runtime to fix pkg_resources error
+pip install setuptools --quiet
+
+# 6. Start the backend
 uvicorn main:app --host 0.0.0.0 --port 8000
