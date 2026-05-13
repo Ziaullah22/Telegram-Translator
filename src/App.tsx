@@ -1131,7 +1131,11 @@ function App() {
 
         {/* Live Browser VNC Modal */}
         {showVncModal && (() => {
-          const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`;
+          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          const vncUrl = isLocal 
+            ? `http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`
+            : `https://${window.location.hostname}/vnc/vnc.html?path=websockify&autoconnect=1&resize=scale&quality=6`;
+            
           return (
             <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
               <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
