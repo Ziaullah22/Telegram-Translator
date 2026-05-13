@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import random
 import time
 import logging
@@ -34,8 +35,11 @@ class InstagramBrowserEngine:
                 }
 
             # 2. Launch Browser
+            # 🐧 Visible on Windows, Hidden on VPS Linux
+            launch_headless = headless if headless is not True else (sys.platform != "win32")
+
             browser = await p.chromium.launch(
-                headless=headless,
+                headless=launch_headless,
                 proxy=proxy,
                 args=[
                     '--start-maximized',
@@ -342,13 +346,15 @@ class InstagramBrowserEngine:
             # 2. Launch Browser
             # 🚀 Use System Chrome to bypass all 'Blank Page' and bot detection issues
             chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-            import os
             if not os.path.exists(chrome_path):
                 chrome_path = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
 
+            # 🐧 Visible on Windows, Hidden on VPS Linux
+            launch_headless = headless if headless is not True else (sys.platform != "win32")
+
             browser = await p.chromium.launch(
                 executable_path=chrome_path if os.path.exists(chrome_path) else None,
-                headless=headless,
+                headless=launch_headless,
                 proxy=playwright_proxy,
                 args=[
                     '--start-maximized', 
@@ -369,7 +375,6 @@ class InstagramBrowserEngine:
             context_args = {}
             if is_desktop:
                 context_args.update({
-                    # 💡 Don't override user_agent if using System Chrome (let it use its own real one)
                     "viewport": {'width': 1920, 'height': 1080},
                     "locale": "en-US",
                     "timezone_id": "America/New_York"
@@ -384,9 +389,6 @@ class InstagramBrowserEngine:
                 })
             
             context = await browser.new_context(**context_args)
-            # 🛑 Don't use stealth_async if using System Chrome + no automation flags
-            # it sometimes causes blank pages due to property overrides
-            # await stealth_async(context) 
             page = await context.new_page()
             
             try:

@@ -30,7 +30,7 @@ class InstagramSessionManager:
     def __init__(self):
         self.active_sessions: Dict[int, Dict[str, Any]] = {} # account_id -> {browser, context, page, p_instance, window_id, browser_cdp}
 
-    async def connect(self, account_id: int, account_data: dict, headless: bool = True):
+    async def connect(self, account_id: int, account_data: dict, headless: bool = False):
         """
         Launches a browser for the account and injects cookies.
         """
@@ -49,11 +49,8 @@ class InstagramSessionManager:
                 "password": account_data.get('proxy_pass'),
             }
 
-        # 2. Launch Browser — ALWAYS visible (headless=False)
+        # 2. Launch Browser — VISIBLE (headless=False)
         # We start it off-screen (-10000, -10000) so it never flashes on your screen
-        if sys.platform != "win32":
-            headless = True
-            
         browser = await p_instance.chromium.launch(
             headless=headless,
             proxy=proxy,
@@ -62,7 +59,7 @@ class InstagramSessionManager:
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--no-sandbox',
-                '--window-position=-10000,-10000',
+                '--window-position=100,50',
                 '--window-size=420,800'
             ]
         )

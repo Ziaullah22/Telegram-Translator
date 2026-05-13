@@ -28,8 +28,8 @@ async def connect_account(
     if instagram_session_manager.is_connected(account_id):
         await instagram_session_manager.disconnect(account_id)
 
-    # Launch browser minimized (headless=True = login then auto-minimize via CDP)
-    result = await instagram_session_manager.connect(account_id, dict(account), headless=True)
+    # Launch browser visible (headless=False)
+    result = await instagram_session_manager.connect(account_id, dict(account), headless=False)
     from instagram_chat_service import instagram_chat_service
     instagram_chat_service.clients.pop(account_id, None)
     return result
