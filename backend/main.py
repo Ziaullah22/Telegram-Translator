@@ -4,6 +4,13 @@ import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+# 🛠️ VPS FIX: Mock pkg_resources which is missing in Python 3.12
+try:
+    import pkg_resources
+except ImportError:
+    from unittest.mock import MagicMock
+    sys.modules["pkg_resources"] = MagicMock()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
