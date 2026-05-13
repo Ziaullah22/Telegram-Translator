@@ -223,16 +223,18 @@ function App() {
   };
 
   const handleMonitorInstagram = async (acc: InstagramAccount) => {
-    // 1. Open the modal immediately for a responsive feel
-    setShowVncModal(true);
-    
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    if (!isLocal) {
+      // On VPS: open the Live Browser Stream popup
+      setShowVncModal(true);
+    }
+    // On localhost: the physical Chrome window opens on the desktop — no popup needed
+
     try {
-      // 2. Optional: If we want to toggle the backend 'hidden' state too
       await instagramAPI.monitorAccount(acc.id);
-      
       const updatedAccount = { ...acc, is_hidden: !acc.is_hidden };
       setInstagramAccounts(prev => prev.map(a => a.id === acc.id ? updatedAccount : a));
-      
       if (currentInstagramAccount?.id === acc.id) {
         setCurrentInstagramAccount(updatedAccount);
       }
