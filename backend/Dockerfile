@@ -36,5 +36,5 @@ RUN playwright install --with-deps chromium
 COPY . .
 
 # Start the engine with Xvfb (Virtual Display) so headful mode works on Linux
-# Added -a to automatically find a free display number
-CMD ["xvfb-run", "-a", "--server-args=-screen 0 1280x1024x24", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Using shell-form CMD for better handling of arguments
+CMD xvfb-run -a --server-args="-screen 0 1280x1024x24" uvicorn main:app --host 0.0.0.0 --port 8000
