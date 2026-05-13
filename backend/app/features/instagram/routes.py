@@ -53,12 +53,17 @@ async def monitor_account(
     # If already connected — toggle the visibility
     if instagram_session_manager.is_connected(account_id):
         session = instagram_session_manager.active_sessions[account_id]
-        if session.get('is_hidden', True):
+        is_hidden = session.get('is_hidden', False)
+        
+        if is_hidden:
+            # Currently hidden → show it
             await instagram_session_manager.show_window(account_id)
             return {"status": "shown", "is_hidden": False}
         else:
-            await instagram_session_manager.hide_window(account_id)
-            return {"status": "hidden", "is_hidden": True}
+            # Currently visible → bring to front (show) on first click
+            # Only hide on explicit second click when already visible
+            await instagram_session_manager.show_window(account_id)
+            return {"status": "shown", "is_hidden": False}
 
     # Not connected yet — connect and immediately show it
     account = await db.fetchrow(

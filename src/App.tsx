@@ -1130,50 +1130,62 @@ function App() {
         )}
 
         {/* Live Browser VNC Modal */}
-        {showVncModal && (
-          <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
-            <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-5xl h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
-              <div className="p-6 pb-2 shrink-0 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-pink-500/10 rounded-2xl">
-                    <Eye className="w-6 h-6 text-pink-500" />
+        {showVncModal && (() => {
+          const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`;
+          return (
+            <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+              <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
+                <div className="p-8 pb-4 shrink-0 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-pink-500/10 rounded-2xl">
+                      <Eye className="w-6 h-6 text-pink-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Live Browser Stream</h2>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Remote Session Control</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Live Browser Stream</h2>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Remote Session Control</p>
-                  </div>
+                  <button onClick={() => setShowVncModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                    <X className="w-6 h-6 text-gray-400" />
+                  </button>
                 </div>
-                <button onClick={() => setShowVncModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
-                  <X className="w-6 h-6 text-gray-400" />
-                </button>
-              </div>
-              
-              <div className="flex-1 bg-black/20 m-6 mt-2 rounded-3xl overflow-hidden border border-gray-100 dark:border-white/5 relative group">
-                <iframe 
-                  src={`http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`}
-                  className="w-full h-full border-none shadow-inner"
-                  title="Live Browser Stream"
-                />
-                <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-[9px] font-black text-green-400 uppercase tracking-widest border border-green-500/20 flex items-center gap-2 pointer-events-none">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                  Remote Active
-                </div>
-              </div>
 
-              <div className="px-8 pb-8 flex items-center justify-between">
-                <p className="text-[10px] font-bold text-gray-500 italic max-w-md">
-                  💡 Tip: You can interact with the browser here to solve challenges or approve logins.
-                </p>
-                <button 
-                  onClick={() => setShowVncModal(false)}
-                  className="px-10 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest transition-transform active:scale-95 shadow-lg"
-                >
-                  Close Stream
-                </button>
+                <div className="px-8 pb-8 flex flex-col gap-4">
+                  {/* Status */}
+                  <div className="flex items-center gap-3 p-4 bg-green-500/5 border border-green-500/20 rounded-2xl">
+                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
+                    <div>
+                      <p className="text-sm font-black text-green-600 dark:text-green-400">Remote Display Active</p>
+                      <p className="text-[10px] text-gray-400 font-medium mt-0.5">Xvfb + x11vnc + noVNC running on port 6080</p>
+                    </div>
+                  </div>
+
+                  {/* Main Button */}
+                  <a
+                    href={vncUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-pink-500/20 active:scale-95 transition-all hover:from-pink-600 hover:to-purple-700"
+                  >
+                    <Eye className="w-5 h-5" />
+                    Open Live View in New Tab
+                  </a>
+
+                  <p className="text-[10px] font-medium text-gray-400 italic text-center">
+                    💡 A new tab will open showing the live Instagram browser. You can click, type and interact with it directly.
+                  </p>
+
+                  <button
+                    onClick={() => setShowVncModal(false)}
+                    className="py-3 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 hover:bg-gray-200 dark:hover:bg-white/10"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </Router>
   );
