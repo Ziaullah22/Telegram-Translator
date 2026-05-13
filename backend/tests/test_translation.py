@@ -16,9 +16,11 @@ async def test_translation_logic_flow():
     """Test the translation service logic (mocking the external API)"""
     service = TranslationService()
     
-    # Mock the internal translator to return an object with a .text attribute
+    # Mock the internal translator to return an object with a .text and .src attribute
     mock_result = MagicMock()
     mock_result.text = "Hola Mundo"
+    mock_result.src = "en"
+    mock_result.dest = "es"
     service.translator.translate = MagicMock(return_value=mock_result)
     
     # Mock detection
