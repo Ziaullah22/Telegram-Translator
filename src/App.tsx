@@ -31,7 +31,7 @@ import InstagramAccountSettingsModal from './components/InstagramChat/InstagramA
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI, instagramAPI, instagramChatAPI } from './services/api';
-import { Zap, X } from 'lucide-react';
+import { Zap, X, Eye } from 'lucide-react';
 
 // Types
 import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage, InstagramAccount, InstagramMessage, InstagramChat } from './types';
