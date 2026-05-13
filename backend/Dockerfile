@@ -35,6 +35,8 @@ RUN playwright install --with-deps chromium
 # Copy the rest of the backend code
 COPY . .
 
-# Start the engine with Xvfb (Virtual Display) so headful mode works on Linux
-# Using shell-form CMD for better handling of arguments
-CMD xvfb-run -a --server-args="-screen 0 1280x1024x24" uvicorn main:app --host 0.0.0.0 --port 8000
+# Make sure the startup script is executable
+RUN chmod +x /app/start.sh
+
+# Start the engine using our robust startup script
+CMD ["/app/start.sh"]
