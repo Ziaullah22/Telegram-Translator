@@ -170,7 +170,7 @@ class SalesService:
             if len(parts) >= 2:
                 prefix = parts[0]
                 idx = parts[1]
-                clean_pattern = re.compile(f"__\s*{prefix}\s*_\s*{idx}\s*__", re.IGNORECASE)
+                clean_pattern = re.compile(rf"__\s*{prefix}\s*_\s*{idx}\s*__", re.IGNORECASE)
                 result_text = clean_pattern.sub(replacement, result_text)
 
         return result_text
