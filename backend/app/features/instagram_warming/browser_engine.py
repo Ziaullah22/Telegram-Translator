@@ -90,7 +90,9 @@ class InstagramBrowserEngine:
                 "device_scale_factor": 1,
                 "is_mobile": True,
                 "has_touch": True,
-                "permissions": ['geolocation', 'notifications']
+                "permissions": ['geolocation', 'notifications'],
+                "ignore_https_errors": True,
+                "proxy": proxy
             }
             
             if os.path.exists(storage_path):

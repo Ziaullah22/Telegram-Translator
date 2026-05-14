@@ -88,7 +88,9 @@ class InstagramSessionManager:
             "viewport": {'width': 393, 'height': 852},
             "is_mobile": True,
             "has_touch": True,
-            "permissions": ['geolocation', 'notifications']
+            "permissions": ['geolocation', 'notifications'],
+            "ignore_https_errors": True,
+            "proxy": proxy
         }
         
         # 📂 PERSISTENT SESSION: Load storage state from DB if available
