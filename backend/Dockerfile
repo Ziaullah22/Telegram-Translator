@@ -34,7 +34,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir setuptools && pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright browsers and their system deps
-RUN playwright install --with-deps chromium
+RUN playwright install --with-deps chromium firefox
 
 # Copy the rest of the backend code
 COPY . .

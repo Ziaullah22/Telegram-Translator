@@ -88,18 +88,12 @@ class InstagramSessionManager:
             except: pass
 
         # 🚀 LAUNCH WITH PROXY EXTENSION (The VPS "Silver Bullet")
+        # Note: Firefox uses different flags than Chromium
         launch_args = [
-            '--disable-blink-features=AutomationControlled',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--no-sandbox',
-            '--window-position=100,50',
-            '--window-size=420,800'
+            '--no-remote',  # Firefox equivalent of some isolated settings
         ]
 
         if proxy:
-            # Parse proxy server to get host and port
-            # Server format: http://host:port
             from urllib.parse import urlparse
             parsed = urlparse(proxy['server'])
             ext_dir = f"proxy_ext_{account_id}_{random.randint(100,999)}"
@@ -115,22 +109,31 @@ class InstagramSessionManager:
                 f'--disable-extensions-except={os.path.abspath(ext_dir)}',
             ])
             logger.info(f"🧩 Proxy Extension Loaded for account {account_id}")
-        else:
-            # If no proxy, we can still use normal launch or just empty extension
-            pass
 
         # Use persistent context to support extensions properly
         profile_dir = f"profile_{random.randint(1000,9999)}"
-        context = await p_instance.chromium.launch_persistent_context(
+        
+        # Remove storage_state safely
+        storage_state = context_args.pop("storage_state", None) if "storage_state" in context_args else None
+        
+        context = await p_instance.firefox.launch_persistent_context(
             user_data_dir=profile_dir,
             headless=headless,
             args=launch_args,
             **context_args
         )
         
-        # In persistent context, the browser is part of the context
+        # Define browser immediately after launch
         browser = context.browser
         page = context.pages[0] if context.pages else await context.new_page()
+
+        # Manually add cookies if storage_state was provided
+        if storage_state and isinstance(storage_state, dict) and "cookies" in storage_state:
+            try:
+                await context.add_cookies(storage_state["cookies"])
+                logger.info(f"🍪 Manually injected {len(storage_state['cookies'])} cookies")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to inject cookies: {e}")
 
         # 💉 Inject Cookies if provided as a raw list (Legacy Support)
         if account_data.get('full_cookies_json') and "storage_state" not in context_args:
@@ -171,20 +174,30 @@ class InstagramSessionManager:
             logger.info(f"🛑 Browser disconnected for account {account_id}. Cleaning up session.")
             self.active_sessions.pop(account_id, None)
         
-        browser.on("disconnected", on_disconnect)
+        if browser:
+            browser.on("disconnected", on_disconnect)
+        else:
+            # For persistent context, browser might be None, so we monitor the context
+            context.on("close", on_disconnect)
 
         # 🪟 Get CDP window handle so we can show/hide later
-        try:
-            browser_cdp = await browser.new_browser_cdp_session()
-            page_cdp = await context.new_cdp_session(page)
-            target_info = await page_cdp.send('Target.getTargetInfo')
-            target_id = target_info['targetInfo']['targetId']
-            window_info = await browser_cdp.send('Browser.getWindowForTarget', {'targetId': target_id})
-            self.active_sessions[account_id]['window_id'] = window_info['windowId']
-            self.active_sessions[account_id]['browser_cdp'] = browser_cdp
-            logger.info(f"🪟 CDP window handle acquired (windowId={window_info['windowId']})")
-        except Exception as e:
-            logger.warning(f"⚠️ CDP window handle failed (hide/show won't work): {e}")
+        # NOTE: CDP is Chromium-only. We skip this for Firefox.
+        is_chromium = "chromium" in str(type(p_instance.chromium)).lower() # Very rough check
+        # Better check: 
+        if hasattr(p_instance, 'chromium') and browser and "chromium" in str(type(browser)).lower():
+            try:
+                browser_cdp = await browser.new_browser_cdp_session()
+                page_cdp = await context.new_cdp_session(page)
+                target_info = await page_cdp.send('Target.getTargetInfo')
+                target_id = target_info['targetInfo']['targetId']
+                window_info = await browser_cdp.send('Browser.getWindowForTarget', {'targetId': target_id})
+                self.active_sessions[account_id]['window_id'] = window_info['windowId']
+                self.active_sessions[account_id]['browser_cdp'] = browser_cdp
+                logger.info(f"🪟 CDP window handle acquired (windowId={window_info['windowId']})")
+            except Exception as e:
+                logger.warning(f"⚠️ CDP window handle failed (hide/show won't work): {e}")
+        else:
+            logger.info("ℹ️ Skipping CDP handle (Firefox/Persistent Context detected)")
 
         # Navigate to Instagram and login if needed
         try:
@@ -598,7 +611,11 @@ class InstagramSessionManager:
             )
             logger.info(f"💾 Final session state for account {account_id} saved to DB.")
             
-            await session['browser'].close()
+            if session.get('browser'):
+                await session['browser'].close()
+            elif session.get('context'):
+                await session['context'].close()
+                
             await session['p_instance'].stop()
         except Exception as e:
             logger.error(f"Error disconnecting account {account_id}: {e}")
