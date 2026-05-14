@@ -4,9 +4,9 @@
 DB_NAME="telegram_translator"
 DB_USER="postgres"
 BACKUP_DIR="/home/deploy/app/backups"
-REMOTE_USER="deploy"                   # Change to your 2nd VPS username
-REMOTE_HOST="REPLACE_WITH_REMOTE_IP"    # Change to your 2nd VPS IP
-REMOTE_DIR="/home/deploy/backups"       # Path on the 2nd VPS
+REMOTE_USER="root"
+REMOTE_HOST="165.154.203.191"           # Singapore Backup Server
+REMOTE_DIR="/root/backups"              # Path on the Singapore VPS
 TIMESTAMP=$(date +"%Y-%m-%d")
 FILENAME="db_backup_$TIMESTAMP.sql.gz"
 
