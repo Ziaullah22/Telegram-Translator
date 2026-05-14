@@ -52,11 +52,9 @@ class InstagramBrowserEngine:
                 logger.info(f"🛡️ Using pool proxy for warming @{account_data['username']}: {account_data['proxy_host']}")
 
             # 2. Launch Browser
-            # 🐧 Visible on Windows, Hidden on VPS Linux
-            launch_headless = headless if headless is not True else (sys.platform != "win32")
-
+            # Even on Linux VPS, we can use headful mode because we have Xvfb/NoVNC
             browser = await p.chromium.launch(
-                headless=launch_headless,
+                headless=False,
                 proxy=proxy,
                 args=[
                     '--start-maximized',
@@ -66,8 +64,9 @@ class InstagramBrowserEngine:
                     '--no-first-run',
                     '--no-default-browser-check',
                     '--no-sandbox',
+                    '--disable-setuid-sandbox',
                     '--disable-extensions'
-                ] + (['--window-state=minimized'] if headless else [])
+                ]
             )
 
             # 3. Create Mobile Context (iPhone 15 Pro Identity with Session Memory)
@@ -85,16 +84,15 @@ class InstagramBrowserEngine:
                 except: pass
 
             context_args = {
-                "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-                "viewport": {'width': 393, 'height': 852},
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "viewport": {'width': 1280, 'height': 720},
                 "device_scale_factor": 1,
-                "is_mobile": True,
-                "has_touch": True,
+                "is_mobile": False,
+                "has_touch": False,
                 "permissions": ['geolocation', 'notifications'],
                 "ignore_https_errors": True,
                 "proxy": proxy
             }
-            
             if os.path.exists(storage_path):
                 logger.info(f"🍪 Memory Recall: Loading session cookies for @{account_data['username']}...")
                 context_args["storage_state"] = storage_path

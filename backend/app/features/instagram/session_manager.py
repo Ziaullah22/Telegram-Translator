@@ -68,26 +68,28 @@ class InstagramSessionManager:
             logger.info(f"🛡️ Using pool proxy for account {account_id}: {account_data['proxy_host']}")
 
         # 2. Launch Browser — VISIBLE (headless=False)
-        # We start it off-screen (-10000, -10000) so it never flashes on your screen
+        # Even on Linux VPS, we can use headful mode because we have Xvfb/NoVNC
         browser = await p_instance.chromium.launch(
-            headless=headless,
+            headless=False,
             proxy=proxy,
             args=[
                 '--disable-blink-features=AutomationControlled',
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--no-sandbox',
-                '--window-position=100,50',
-                '--window-size=420,800'
+                '--disable-setuid-sandbox',
+                '--window-position=0,0',
+                '--window-size=1280,720'
             ]
         )
 
         # 3. Setup Context
         context_args = {
-            "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "viewport": {'width': 393, 'height': 852},
-            "is_mobile": True,
-            "has_touch": True,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "viewport": {'width': 1280, 'height': 720},
+            "device_scale_factor": 1,
+            "is_mobile": False,
+            "has_touch": False,
             "permissions": ['geolocation', 'notifications'],
             "ignore_https_errors": True,
             "proxy": proxy
@@ -126,7 +128,10 @@ class InstagramSessionManager:
                     await context.add_cookies(cookies_to_inject)
             except: pass
 
+        # 🕵️ Apply Stealth
+        from playwright_stealth import stealth_async
         page = await context.new_page()
+        await stealth_async(page)
         
         # 👻 GHOST TITLE: Set a unique secret title so we can find this window on Windows
         secret_title = f"GHOST_IG_{account_id}_{random.randint(1000, 9999)}"
