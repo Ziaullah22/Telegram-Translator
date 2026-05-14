@@ -12,11 +12,18 @@ venv/
 backend/venv/
 backend/.env
 
-# Browser Sessions (Instagram Stealth Junk)
+# Browser Profiles & Automation Junk
+chrome_profile/
+profile_*/
+test_chrome_profile/
+test_proxy_ext*/
+proxy_auth_ext/
+proxy_ext/
 browser_sessions/
 backend/browser_sessions/
 sessions/
 backend/sessions/
+*.zip
 *.log
 *.png
 debug_error.png
