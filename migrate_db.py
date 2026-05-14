@@ -460,7 +460,11 @@ async def migrate():
                     ds_user_id TEXT,
                     proxy_id BIGINT REFERENCES instagram_proxies(id) ON DELETE SET NULL,
                     status TEXT DEFAULT 'active',
+                    proxy TEXT,
+                    daily_usage_count INTEGER DEFAULT 0,
+                    last_usage_reset TIMESTAMPTZ DEFAULT NOW(),
                     last_used TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
 
@@ -676,6 +680,10 @@ async def migrate():
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS two_factor_secret TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS email TEXT;
                 ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS verification_code TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS proxy TEXT;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS daily_usage_count INTEGER DEFAULT 0;
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS last_usage_reset TIMESTAMPTZ DEFAULT NOW();
+                ALTER TABLE instagram_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
                 -- Instagram Filter & Scoring Additions
                 ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS recent_posts JSONB DEFAULT '[]';
