@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Save, Languages } from 'lucide-react';
+import { X, Save, Languages, Shield } from 'lucide-react';
 import type { InstagramAccount } from '../../types';
 import { instagramAPI } from '../../services/api';
 
@@ -23,6 +23,7 @@ export default function InstagramAccountSettingsModal({ account, onClose, onSave
   const [isTranslationEnabled, setIsTranslationEnabled] = useState(account.is_translation_enabled !== false);
   const [sourceLanguage, setSourceLanguage] = useState(account.source_language || 'auto');
   const [targetLanguage, setTargetLanguage] = useState(account.target_language || 'en');
+  const [proxy, setProxy] = useState(account.proxy || '');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
@@ -32,7 +33,8 @@ export default function InstagramAccountSettingsModal({ account, onClose, onSave
         account.id,
         targetLanguage,
         sourceLanguage,
-        isTranslationEnabled
+        isTranslationEnabled,
+        proxy
       );
       
       onSave({
@@ -40,6 +42,7 @@ export default function InstagramAccountSettingsModal({ account, onClose, onSave
         is_translation_enabled: isTranslationEnabled,
         source_language: sourceLanguage,
         target_language: targetLanguage,
+        proxy: proxy,
       });
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -109,10 +112,27 @@ export default function InstagramAccountSettingsModal({ account, onClose, onSave
               >
                 <option value="auto">Auto-Detect</option>
                 {COMMON_LANGUAGES.map(lang => (
-                  <option key={lang.code} value={lang.code}>{lang.name}</option>
+                   <option key={lang.code} value={lang.code}>{lang.name}</option>
                 ))}
               </select>
               <p className="text-[10px] text-gray-500 mt-1">Outgoing messages will be translated TO this language. Incoming messages will be translated FROM this language.</p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 dark:border-white/5">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5 uppercase tracking-wider flex items-center gap-2">
+                <Shield className="w-3 h-3 text-blue-500" />
+                Manual Proxy Configuration
+              </label>
+              <input
+                type="text"
+                value={proxy}
+                onChange={(e) => setProxy(e.target.value)}
+                placeholder="username:password:host:port"
+                className="w-full px-4 py-2.5 bg-white dark:bg-[#242f3d] border border-gray-200 dark:border-white/10 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 dark:text-white transition-shadow font-mono"
+              />
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                Format: <code className="bg-gray-100 dark:bg-black/20 px-1 py-0.5 rounded text-blue-600 dark:text-blue-400">user:pass:host:port</code>
+              </p>
             </div>
           </div>
         </div>

@@ -221,13 +221,15 @@ async def update_account_settings(
     target = settings.target_language if settings.target_language is not None else existing['target_language']
     source = settings.source_language if settings.source_language is not None else existing['source_language']
     enabled = settings.is_translation_enabled if settings.is_translation_enabled is not None else existing['is_translation_enabled']
+    proxy = settings.proxy if settings.proxy is not None else existing['proxy']
     
     return await instagram_service.update_account_settings(
         current_user.user_id, 
         account_id, 
         target, 
         source, 
-        enabled
+        enabled,
+        proxy
     )
 
 @router.delete("/proxies/{proxy_id}")

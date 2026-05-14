@@ -881,11 +881,12 @@ export const instagramAPI = {
     return response.data;
   },
   
-  updateAccountSettings: async (accountId: number, targetLanguage: string, sourceLanguage: string, isTranslationEnabled: boolean): Promise<any> => {
+  updateAccountSettings: async (accountId: number, targetLanguage: string, sourceLanguage: string, isTranslationEnabled: boolean, proxy?: string): Promise<any> => {
     const response = await api.put(`/instagram/accounts/${accountId}/settings`, {
       target_language: targetLanguage,
       source_language: sourceLanguage,
-      is_translation_enabled: isTranslationEnabled
+      is_translation_enabled: isTranslationEnabled,
+      proxy: proxy
     });
     return response.data;
   },

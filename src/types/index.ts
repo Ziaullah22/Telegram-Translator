@@ -376,6 +376,7 @@ export interface InstagramAccount {
   source_language: string;
   is_translation_enabled: boolean;
   is_hidden: boolean;
+  proxy?: string;
 }
 
 export interface InstagramMessage {

@@ -471,11 +471,13 @@ class InstagramAccountCreate(BaseModel):
     target_language: Optional[str] = "en"
     source_language: Optional[str] = "auto"
     is_translation_enabled: Optional[bool] = True
+    proxy: Optional[str] = None
 
 class InstagramAccountSettingsUpdate(BaseModel):
     target_language: Optional[str] = None
     source_language: Optional[str] = None
     is_translation_enabled: Optional[bool] = None
+    proxy: Optional[str] = None
 
 class InstagramAccountResponse(BaseModel):
     id: int
@@ -491,6 +493,7 @@ class InstagramAccountResponse(BaseModel):
     target_language: str = "en"
     source_language: str = "auto"
     is_translation_enabled: bool = True
+    proxy: Optional[str] = None
     last_used: Optional[datetime] = None
     created_at: datetime
 

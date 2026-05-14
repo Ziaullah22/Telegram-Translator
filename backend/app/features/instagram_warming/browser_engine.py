@@ -27,12 +27,29 @@ class InstagramBrowserEngine:
         async with async_playwright() as p:
             # 1. Setup Proxy
             proxy = None
-            if account_data.get('proxy_host'):
+            
+            # Priority 1: Manual proxy string on the account
+            manual_proxy_str = account_data.get('proxy')
+            if manual_proxy_str:
+                from instagram_service import InstagramService
+                svc = InstagramService()
+                p_data = svc._parse_proxy_str(manual_proxy_str)
+                if p_data:
+                    proxy = {
+                        "server": f"http://{p_data['host']}:{p_data['port']}",
+                        "username": p_data['user'],
+                        "password": p_data['pass'],
+                    }
+                    logger.info(f"🛰️ Using manual proxy for warming @{account_data['username']}: {p_data['host']}")
+
+            # Priority 2: Linked proxy from pool
+            if not proxy and account_data.get('proxy_host'):
                 proxy = {
                     "server": f"http://{account_data['proxy_host']}:{account_data['proxy_port']}",
                     "username": account_data.get('proxy_user'),
                     "password": account_data.get('proxy_pass'),
                 }
+                logger.info(f"🛡️ Using pool proxy for warming @{account_data['username']}: {account_data['proxy_host']}")
 
             # 2. Launch Browser
             # 🐧 Visible on Windows, Hidden on VPS Linux

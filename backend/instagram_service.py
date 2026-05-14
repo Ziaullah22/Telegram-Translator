@@ -875,7 +875,7 @@ class InstagramService:
         rows = await db.fetch("SELECT i.*, p.host as proxy_host FROM instagram_accounts i LEFT JOIN instagram_proxies p ON i.proxy_id = p.id WHERE i.user_id = $1", user_id)
         return [dict(row) for row in rows]
 
-    async def update_account_settings(self, user_id: int, account_id: int, target_language: str, source_language: str, is_translation_enabled: bool):
+    async def update_account_settings(self, user_id: int, account_id: int, target_language: str, source_language: str, is_translation_enabled: bool, proxy: Optional[str] = None):
         row = await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1 AND user_id = $2", account_id, user_id)
         if not row:
             raise HTTPException(status_code=404, detail="Account not found")
@@ -883,10 +883,10 @@ class InstagramService:
         await db.execute(
             """
             UPDATE instagram_accounts 
-            SET target_language = $1, source_language = $2, is_translation_enabled = $3, updated_at = NOW()
-            WHERE id = $4
+            SET target_language = $1, source_language = $2, is_translation_enabled = $3, proxy = $4, updated_at = NOW()
+            WHERE id = $5
             """,
-            target_language, source_language, is_translation_enabled, account_id
+            target_language, source_language, is_translation_enabled, proxy, account_id
         )
         return await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1", account_id)
 
@@ -1006,18 +1006,21 @@ class InstagramService:
             
             # SUCCESS: Save the Authorized identity
             db_proxy_id = int(proxy_id) if proxy_id and str(proxy_id).isdigit() else None
+            manual_proxy = getattr(account_data, 'proxy', None)
+            
             await db.execute("""
-                INSERT INTO instagram_accounts (user_id, username, password, proxy_id, status, session_id, verification_code, last_used_at)
-                VALUES ($1, $2, $3, $4, 'active', $5, $6, NOW())
+                INSERT INTO instagram_accounts (user_id, username, password, proxy_id, proxy, status, session_id, verification_code, last_used_at)
+                VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())
                 ON CONFLICT (username) DO UPDATE SET
                     user_id = EXCLUDED.user_id,
                     password = EXCLUDED.password,
                     proxy_id = EXCLUDED.proxy_id,
+                    proxy = EXCLUDED.proxy,
                     status = 'active',
                     session_id = EXCLUDED.session_id,
                     verification_code = EXCLUDED.verification_code,
                     last_used_at = NOW()
-            """, user_id, username, password, db_proxy_id, session_id, v_code)
+            """, user_id, username, password, db_proxy_id, manual_proxy, session_id, v_code)
             
             logger.info(f"✅ Ghost @{username} AUTHORIZED via Tunnel.")
             return {"status": "success", "message": "Account Authorized! ✨"}
@@ -1187,6 +1190,7 @@ class InstagramService:
                   ADD COLUMN IF NOT EXISTS frozen_until TIMESTAMP,
                   ADD COLUMN IF NOT EXISTS daily_usage_count INTEGER DEFAULT 0,
                   ADD COLUMN IF NOT EXISTS last_usage_reset TIMESTAMP DEFAULT NOW(),
+                  ADD COLUMN IF NOT EXISTS proxy TEXT,
                   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             """)
         except Exception as e:
