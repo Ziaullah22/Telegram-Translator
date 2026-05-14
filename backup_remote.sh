@@ -4,9 +4,9 @@
 DB_NAME="telegram_translator"
 DB_USER="postgres"
 BACKUP_DIR="/home/deploy/app/backups"
-REMOTE_USER="root"
+REMOTE_USER="ubuntu"
 REMOTE_HOST="165.154.203.191"           # Singapore Backup Server
-REMOTE_DIR="/root/backups"              # Path on the Singapore VPS
+REMOTE_DIR="/home/ubuntu/backups"       # Path on the Singapore VPS
 TIMESTAMP=$(date +"%Y-%m-%d")
 FILENAME="db_backup_$TIMESTAMP.sql.gz"
 
