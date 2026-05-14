@@ -101,12 +101,10 @@ class InstagramSessionManager:
                 # Check if it's a Playwright storage state (has 'cookies' or 'origins')
                 if isinstance(state_data, dict) and ('cookies' in state_data or 'origins' in state_data):
                     context_args["storage_state"] = state_data
-                else:
-                    # Fallback: if it's just a list of cookies, we'll inject them later
-                    pass
             except: pass
         
         context = await browser.new_context(**context_args)
+        page = await context.new_page()
 
         # 💉 Inject Cookies if provided as a raw list (Legacy Support)
         if account_data.get('full_cookies_json') and "storage_state" not in context_args:
@@ -126,8 +124,6 @@ class InstagramSessionManager:
                     await context.add_cookies(cookies_to_inject)
             except: pass
 
-        page = await context.new_page()
-        
         # 👻 GHOST TITLE: Set a unique secret title so we can find this window on Windows
         secret_title = f"GHOST_IG_{account_id}_{random.randint(1000, 9999)}"
         await page.evaluate(f"document.title = '{secret_title}'")
