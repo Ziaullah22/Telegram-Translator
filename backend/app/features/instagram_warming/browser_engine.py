@@ -36,7 +36,7 @@ class InstagramBrowserEngine:
                 p_data = svc._parse_proxy_str(manual_proxy_str)
                 if p_data:
                     proxy = {
-                        "server": f"http://{p_data['host']}:{p_data['port']}",
+                        "server": f"http://{p_data['user']}:{p_data['pass']}@{p_data['host']}:{p_data['port']}",
                         "username": p_data['user'],
                         "password": p_data['pass'],
                     }
