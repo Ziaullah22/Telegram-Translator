@@ -5,6 +5,8 @@ import random
 import sys
 from typing import Dict, Any
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from .proxy_utils import create_proxy_auth_extension
+import json
 
 # Windows-only imports
 if sys.platform == "win32":
@@ -67,22 +69,7 @@ class InstagramSessionManager:
             }
             logger.info(f"🛡️ Using pool proxy for account {account_id}: {account_data['proxy_host']}")
 
-        # 2. Launch Browser — VISIBLE (headless=False)
-        # We start it off-screen (-10000, -10000) so it never flashes on your screen
-        browser = await p_instance.chromium.launch(
-            headless=headless,
-            proxy=proxy,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--no-first-run',
-                '--no-default-browser-check',
-                '--no-sandbox',
-                '--window-position=100,50',
-                '--window-size=420,800'
-            ]
-        )
-
-        # 3. Setup Context
+        # 2. Setup Context Args
         context_args = {
             "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
             "viewport": {'width': 393, 'height': 852},
@@ -90,21 +77,60 @@ class InstagramSessionManager:
             "has_touch": True,
             "permissions": ['geolocation', 'notifications'],
             "ignore_https_errors": True,
-            "proxy": proxy
         }
-        
+
         # 📂 PERSISTENT SESSION: Load storage state from DB if available
-        import json
         if account_data.get('full_cookies_json'):
             try:
                 state_data = json.loads(account_data['full_cookies_json'])
-                # Check if it's a Playwright storage state (has 'cookies' or 'origins')
                 if isinstance(state_data, dict) and ('cookies' in state_data or 'origins' in state_data):
                     context_args["storage_state"] = state_data
             except: pass
+
+        # 🚀 LAUNCH WITH PROXY EXTENSION (The VPS "Silver Bullet")
+        launch_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--no-sandbox',
+            '--window-position=100,50',
+            '--window-size=420,800'
+        ]
+
+        if proxy:
+            # Parse proxy server to get host and port
+            # Server format: http://host:port
+            from urllib.parse import urlparse
+            parsed = urlparse(proxy['server'])
+            ext_dir = f"proxy_ext_{account_id}_{random.randint(100,999)}"
+            create_proxy_auth_extension(
+                proxy_host=parsed.hostname,
+                proxy_port=parsed.port or 80,
+                proxy_user=proxy.get('username', ''),
+                proxy_pass=proxy.get('password', ''),
+                extension_dir=ext_dir
+            )
+            launch_args.extend([
+                f'--load-extension={os.path.abspath(ext_dir)}',
+                f'--disable-extensions-except={os.path.abspath(ext_dir)}',
+            ])
+            logger.info(f"🧩 Proxy Extension Loaded for account {account_id}")
+        else:
+            # If no proxy, we can still use normal launch or just empty extension
+            pass
+
+        # Use persistent context to support extensions properly
+        profile_dir = f"profile_{random.randint(1000,9999)}"
+        context = await p_instance.chromium.launch_persistent_context(
+            user_data_dir=profile_dir,
+            headless=headless,
+            args=launch_args,
+            **context_args
+        )
         
-        context = await browser.new_context(**context_args)
-        page = await context.new_page()
+        # In persistent context, the browser is part of the context
+        browser = context.browser
+        page = context.pages[0] if context.pages else await context.new_page()
 
         # 💉 Inject Cookies if provided as a raw list (Legacy Support)
         if account_data.get('full_cookies_json') and "storage_state" not in context_args:
