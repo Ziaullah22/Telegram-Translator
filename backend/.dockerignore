@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Browser Profiles & Automation Junk
+browser_profiles/
+chrome_profile/
+profile_*/
+test_chrome_profile/
+test_proxy_ext*/
+proxy_auth_ext/
+proxy_ext/
+browser_sessions/
+sessions/
+temp/
+*.png
+*.zip
+*.log
