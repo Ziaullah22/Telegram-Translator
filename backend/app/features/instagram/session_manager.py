@@ -409,26 +409,42 @@ class InstagramSessionManager:
                 await submit_btn.click()
                 logger.info("🖱️ Submit clicked. Waiting for login result or 2FA...")
                 
-                # 3. Handle 2FA
+                # 3. Handle 2FA Challenge
                 try:
-                    # Check for 2FA input field (Wait up to 10s)
-                    two_fa_input = page.locator('input[name="verificationCode"], input[placeholder*="code"]').first
-                    if await two_fa_input.is_visible(timeout=10000):
+                    logger.info("🔍 Scanning for 2FA challenge...")
+                    # UNIVERSAL 2FA SELECTOR: Name, Placeholder, Aria-Label, or Number-type input
+                    two_fa_selector = 'input[name="verificationCode"], input[placeholder*="code"], input[aria-label*="Code"], input[type="tel"]'
+                    
+                    # Wait up to 15s for the challenge to appear
+                    two_fa_field = page.locator(two_fa_selector).first
+                    if await two_fa_field.is_visible(timeout=15000):
                         two_fa_secret = account_data.get('two_factor_secret')
-                        if two_fa_secret:
+                        if two_fa_secret and len(two_fa_secret.strip()) > 5:
                             import pyotp
-                            logger.info(f"🛡️ 2FA Detected! Generating TOTP code...")
-                            totp = pyotp.TOTP(two_fa_secret.replace(" ", ""))
+                            logger.info(f"🛡️ 2FA CHALLENGE DETECTED! Secret: {two_fa_secret[:4]}***")
+                            
+                            # Clean the secret and generate code
+                            clean_secret = two_fa_secret.replace(" ", "").strip()
+                            totp = pyotp.TOTP(clean_secret)
                             code = totp.now()
-                            await two_fa_input.click()
+                            
+                            logger.info(f"⌨️ Typing 2FA Code: {code}")
+                            await two_fa_field.click()
                             await self._human_type(page, code)
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(1.5)
                             await page.keyboard.press("Enter")
-                            logger.info("✅ 2FA code submitted.")
+                            
+                            # Check for a "Confirm" or "Submit" button if Enter doesn't work
+                            confirm_btn = page.locator('button:has-text("Confirm"), button:has-text("Submit"), button:has-text("Log In")').first
+                            if await confirm_btn.is_visible(timeout=2000):
+                                await confirm_btn.click()
+                                
+                            logger.info("✅ 2FA code submitted. Waiting for dashboard...")
                             await asyncio.sleep(5)
                         else:
-                            logger.warning("⚠️ 2FA required but no secret found. Please enter code manually!")
-                except: pass
+                            logger.warning(f"⚠️ 2FA required for @{username} but no valid secret found in database!")
+                except Exception as e:
+                    logger.debug(f"ℹ️ No 2FA challenge found or error: {e}")
 
                 # 4. Final verification
                 await asyncio.sleep(8)
@@ -445,6 +461,55 @@ class InstagramSessionManager:
                 
         except Exception as e:
             logger.error(f"❌ Direct login flow failed: {e}")
+        except:
+            logger.error("❌ Login form did not appear after 20s.")
+            return
+
+        user_val = account_data.get('username', '')
+        pass_val = account_data.get('password', '')
+
+        if not user_val or not pass_val:
+            logger.error(f"❌ No username/password for account {account_data.get('username')}. Cannot auto-login.")
+            return
+
+        logger.info(f"🔑 Auto-Login: Typing credentials for @{user_val}...")
+
+        # --- Step 1: Type Username ---
+        user_input = await page.query_selector('input[name="username"]')
+        if user_input:
+            await user_input.click()
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
+            await self._human_type(page, user_val)
+            await asyncio.sleep(random.uniform(0.8, 1.2))
+
+        # --- Step 2: Type Password ---
+        pass_input = await page.query_selector('input[name="password"]')
+        if pass_input:
+            await pass_input.click()
+            await self._human_type(page, pass_val)
+            await asyncio.sleep(random.uniform(0.8, 1.2))
+
+        # --- Step 3: Click the Login Button ---
+        logger.info("🖱️ Clicking the Log In button...")
+        await asyncio.sleep(1)  # Let Instagram's JS enable the button
+
+        clicked = False
+        for selector in [
+            'button[type="submit"]',
+            'button:has-text("Log in")',
+            'div[role="button"]:has-text("Log in")',
+        ]:
+            try:
+                await page.click(selector, timeout=4000)
+                clicked = True
+                logger.info(f"✅ Login button clicked via: {selector}")
+                break
+            except Exception as e:
+                logger.warning(f"   ↳ Selector '{selector}' failed: {e}")
+
+        # Wait for page to navigate after login button click
+        logger.info("⏳ Waiting for page to navigate after login...")
         try:
             await page.wait_for_url(
                 lambda url: '/accounts/login' not in url or '/two_factor' in url or '/challenge' in url,
