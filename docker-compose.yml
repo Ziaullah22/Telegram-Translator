@@ -25,7 +25,7 @@ services:
     restart: always
     environment:
       DATABASE_URL: postgresql://postgres:zia_ultra_secure_pass_99@db:5432/telegram_translator
-      JWT_SECRET: super_secret_warming_key
+      JWT_SECRET_KEY: super_secret_warming_key
     depends_on:
       db:
         condition: service_healthy
