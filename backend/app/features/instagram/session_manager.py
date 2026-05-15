@@ -445,55 +445,6 @@ class InstagramSessionManager:
                 
         except Exception as e:
             logger.error(f"❌ Direct login flow failed: {e}")
-        except:
-            logger.error("❌ Login form did not appear after 20s.")
-            return
-
-        user_val = account_data.get('username', '')
-        pass_val = account_data.get('password', '')
-
-        if not user_val or not pass_val:
-            logger.error(f"❌ No username/password for account {account_data.get('username')}. Cannot auto-login.")
-            return
-
-        logger.info(f"🔑 Auto-Login: Typing credentials for @{user_val}...")
-
-        # --- Step 1: Type Username ---
-        user_input = await page.query_selector('input[name="username"]')
-        if user_input:
-            await user_input.click()
-            await page.keyboard.press("Control+A")
-            await page.keyboard.press("Backspace")
-            await self._human_type(page, user_val)
-            await asyncio.sleep(random.uniform(0.8, 1.2))
-
-        # --- Step 2: Type Password ---
-        pass_input = await page.query_selector('input[name="password"]')
-        if pass_input:
-            await pass_input.click()
-            await self._human_type(page, pass_val)
-            await asyncio.sleep(random.uniform(0.8, 1.2))
-
-        # --- Step 3: Click the Login Button ---
-        logger.info("🖱️ Clicking the Log In button...")
-        await asyncio.sleep(1)  # Let Instagram's JS enable the button
-
-        clicked = False
-        for selector in [
-            'button[type="submit"]',
-            'button:has-text("Log in")',
-            'div[role="button"]:has-text("Log in")',
-        ]:
-            try:
-                await page.click(selector, timeout=4000)
-                clicked = True
-                logger.info(f"✅ Login button clicked via: {selector}")
-                break
-            except Exception as e:
-                logger.warning(f"   ↳ Selector '{selector}' failed: {e}")
-
-        # Wait for page to navigate after login button click
-        logger.info("⏳ Waiting for page to navigate after login...")
         try:
             await page.wait_for_url(
                 lambda url: '/accounts/login' not in url or '/two_factor' in url or '/challenge' in url,
