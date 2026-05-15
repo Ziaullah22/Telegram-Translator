@@ -1,0 +1,17 @@
+11
+1
+0
+-1
+
+https://whatismyipaddress.com/
+https://whatismyipaddress.com/OneSignalSDKWorker.js?appId=a5cb4a66-0f3f-4bb2-9acb-2541624adfe0&sdkVersion=151607
+false
+{f707e63a-ae49-48a4-9b09-a8f8152bd8d4}
+0
+1778824352766119
+1778824353077165
+1778824352330693
+0
+true
+0
+#

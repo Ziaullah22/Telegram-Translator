@@ -27,3 +27,24 @@ chmod +x backup_db.sh restore_db.sh rollback.sh
 
 ./backup_db.sh
 ./rollback.sh
+
+
+Your public key has been saved in /home/deploy/.ssh/id_rsa.pub
+The key fingerprint is:
+SHA256:d8YyipwGdG17C6XzpSvMntPw5WBobdyeHg31zCJgUZA deploy@10-7-36-4
+The key's randomart image is:
++---[RSA 4096]----+
+|          o+.    |
+|       .  E.     |
+|    . . o +   .  |
+|   . . . = o . + |
+|    .   S+=.B . +|
+|     o o+B*Oo+ . |
+|      =+.*+=...  |
+|     .  =.o.+.   |
+|       .oo...    |
++----[SHA256]-----+
+# ?? CHECK BACKUP STATUS:
+# 1. See the schedule: crontab -l
+# 2. See the logs:     cat /home/deploy/app/backup.log
+# 3. Run manually:     bash /home/deploy/app/backup_remote.sh

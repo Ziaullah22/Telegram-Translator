@@ -1,0 +1,17 @@
+11
+5
+0
+-1
+
+https://www.instagram.com/
+https://www.instagram.com/www-service-worker.js?s=push&__d=www&enableAddToHomeScreen=true&zenon_device_id=6b268652-56ce-4a06-b83d-a98761317b36
+false
+{78924c43-de88-4187-a6b7-625010501c72}
+1
+1778782477686368
+1778782477692126
+1778782477476489
+0
+true
+0
+#

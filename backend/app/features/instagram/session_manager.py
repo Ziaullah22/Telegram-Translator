@@ -70,12 +70,9 @@ class InstagramSessionManager:
             logger.info(f"🛡️ Using pool proxy for account {account_id}: {account_data['proxy_host']}")
 
         # 2. Setup Context Args
+        # Matching the exact settings from the working scratch script
         context_args = {
-            "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "viewport": {'width': 393, 'height': 852},
-            "is_mobile": True,
-            "has_touch": True,
-            "permissions": ['geolocation', 'notifications'],
+            "viewport": {'width': 420, 'height': 800},
             "ignore_https_errors": True,
         }
 
@@ -93,65 +90,45 @@ class InstagramSessionManager:
             '--no-remote',  # Firefox equivalent of some isolated settings
         ]
 
+        # 🚀 PROXY SETUP (Native Playwright Method for Firefox)
+        proxy_config = None
         if proxy:
             from urllib.parse import urlparse
             parsed = urlparse(proxy['server'])
-            ext_dir = f"proxy_ext_{account_id}_{random.randint(100,999)}"
-            create_proxy_auth_extension(
-                proxy_host=parsed.hostname,
-                proxy_port=parsed.port or 80,
-                proxy_user=proxy.get('username', ''),
-                proxy_pass=proxy.get('password', ''),
-                extension_dir=ext_dir
-            )
-            launch_args.extend([
-                f'--load-extension={os.path.abspath(ext_dir)}',
-                f'--disable-extensions-except={os.path.abspath(ext_dir)}',
-            ])
-            logger.info(f"🧩 Proxy Extension Loaded for account {account_id}")
+            proxy_config = {
+                "server": f"{parsed.scheme or 'http'}://{parsed.hostname}:{parsed.port or 80}",
+                "username": proxy.get('username', ''),
+                "password": proxy.get('password', '')
+            }
+            logger.info(f"🛰️ Using native Playwright proxy for account {account_id}: {parsed.hostname}")
 
-        # Use persistent context to support extensions properly
-        profile_dir = f"profile_{random.randint(1000,9999)}"
+        # Use persistent context to support extensions and persistent sessions
+        # 📁 PERMANENT PROFILE: Using a consistent folder per account so it stays logged in!
+        profile_base_dir = os.path.abspath("browser_profiles")
+        if not os.path.exists(profile_base_dir):
+            os.makedirs(profile_base_dir, exist_ok=True)
+            
+        profile_dir = os.path.join(profile_base_dir, f"account_{account_id}")
         
         # Remove storage_state safely
         storage_state = context_args.pop("storage_state", None) if "storage_state" in context_args else None
         
+        logger.info(f"🚀 Launching Firefox with PERSISTENT Profile: {profile_dir}")
         context = await p_instance.firefox.launch_persistent_context(
             user_data_dir=profile_dir,
             headless=headless,
+            proxy=proxy_config,
             args=launch_args,
             **context_args
         )
-        
+
         # Define browser immediately after launch
         browser = context.browser
         page = context.pages[0] if context.pages else await context.new_page()
 
-        # Manually add cookies if storage_state was provided
-        if storage_state and isinstance(storage_state, dict) and "cookies" in storage_state:
-            try:
-                await context.add_cookies(storage_state["cookies"])
-                logger.info(f"🍪 Manually injected {len(storage_state['cookies'])} cookies")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to inject cookies: {e}")
+        # COOKIE INJECTION DISABLED BY USER REQUEST FOR CLEAN LOGIN
 
-        # 💉 Inject Cookies if provided as a raw list (Legacy Support)
-        if account_data.get('full_cookies_json') and "storage_state" not in context_args:
-            try:
-                raw_cookies = json.loads(account_data['full_cookies_json'])
-                if isinstance(raw_cookies, list):
-                    cookies_to_inject = []
-                    for c in raw_cookies:
-                        clean_c = {
-                            "name": c.get('name'),
-                            "value": c.get('value'),
-                            "domain": c.get('domain', '.instagram.com'),
-                            "path": c.get('path', '/'),
-                            "secure": True
-                        }
-                        cookies_to_inject.append(clean_c)
-                    await context.add_cookies(cookies_to_inject)
-            except: pass
+        # (Legacy session loading disabled)
 
         # 👻 GHOST TITLE: Set a unique secret title so we can find this window on Windows
         secret_title = f"GHOST_IG_{account_id}_{random.randint(1000, 9999)}"
@@ -367,43 +344,109 @@ class InstagramSessionManager:
             await asyncio.sleep(random.uniform(delay_range[0] / 1000, delay_range[1] / 1000))
 
     async def _goto_instagram_home_and_login(self, page: Page, account_data: dict):
-        """Shared helper: Go to Instagram home, login if needed, clear popups."""
-        import json
-
-        has_cookies = bool(account_data.get('full_cookies_json') or account_data.get('session_id'))
-
-        if has_cookies:
-            # 🍪 COOKIE PATH: Use the login-redirect trick to bypass the mobile splash
-            # Navigating to /accounts/login/?next=/ with valid cookies = Instagram auto-redirects to home
-            logger.info(f"🍪 Cookies found for @{account_data.get('username')} — using cookie bypass trick...")
-            await page.goto("https://www.instagram.com/accounts/login/?next=/", wait_until="domcontentloaded")
-            await page.bring_to_front()
-            # Give Instagram time to detect cookies and auto-redirect
+        """Shared helper: Go to Instagram, login via Google search if needed (Stealth)."""
+        
+        logger.info(f"🔍 Checking session status for @{account_data.get('username')}...")
+        try:
+            await page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(5000)
-
-            final_url = page.url
-            logger.info(f"   📍 Final URL after cookie check: {final_url}")
-
-            # If we were redirected AWAY from the login/signup pages, cookies worked!
-            if '/accounts/login' not in final_url and '/accounts/emailsignup' not in final_url:
-                logger.info(f"✅ Cookie login successful for @{account_data.get('username')}! (redirected to {final_url})")
+            
+            # Check for elements that ONLY exist when logged in
+            # (e.g. Home icon, Search icon, or Profile link)
+            is_logged_in = False
+            
+            # Look for navigation items or profile link
+            nav_exists = await page.locator('svg[aria-label="Home"], svg[aria-label="Search"], a[href*="/direct/inbox/"]').count()
+            if nav_exists > 0:
+                is_logged_in = True
+                
+            if is_logged_in:
+                logger.info(f"✅ Verified: Already logged in for @{account_data.get('username')}!")
                 await self._clear_popups(page)
                 return
+            else:
+                logger.info(f"🔑 Not logged in (Login UI detected) for @{account_data.get('username')}")
+        except Exception as e:
+            logger.warning(f"⚠️ Initial check failed: {e}")
 
-            # Cookies didn't work → fall back to credential login
-            logger.warning(f"⚠️ Cookies did NOT work for @{account_data.get('username')}. Falling back to password login...")
-
-
-        # 🔑 CREDENTIAL PATH: Go directly to the login page (skips splash/signup screen)
-        logger.info(f"🔑 Navigating directly to login page for @{account_data.get('username')}...")
-        await page.goto("https://www.instagram.com/accounts/login/", wait_until="domcontentloaded")
-        await page.bring_to_front()
-
-        # Wait up to 10s for the username field to actually appear
+        # 🚀 START DIRECT STEALTH LOGIN FLOW
+        logger.info(f"🕵️ Starting Direct Human Login flow for @{account_data.get('username')}...")
         try:
-            await page.wait_for_selector('input[name="username"]', timeout=10000)
+            # 1. Go directly to Login Page
+            await page.goto("https://www.instagram.com/accounts/login/", wait_until="networkidle", timeout=60000)
+            await page.bring_to_front()
+            
+            # 🍪 Handle Cookie Popups if they appear
+            try:
+                cookie_btn = page.locator('button:has-text("Allow all cookies"), button:has-text("Only allow essential cookies"), button:has-text("Accept")').first
+                if await cookie_btn.is_visible(timeout=5000):
+                    logger.info("🍪 Clearing cookie popup...")
+                    await cookie_btn.click()
+                    await asyncio.sleep(1)
+            except: pass
+
+            # 2. Fill credentials with human typing
+            username = account_data.get('username')
+            password = account_data.get('password')
+            
+            if username and password:
+                # Wait for username field (using multi-selector for mobile/desktop)
+                user_input = page.locator('input[name="username"], input[aria-label*="username"], input[placeholder*="username"], input[type="text"]').first
+                await user_input.wait_for(state="visible", timeout=20000)
+                
+                logger.info(f"⌨️ Typing credentials for @{username}...")
+                await user_input.click()
+                await self._human_type(page, username)
+                await asyncio.sleep(random.uniform(0.5, 1.2))
+                
+                pass_input = page.locator('input[name="password"], input[aria-label*="password"], input[placeholder*="Password"], input[type="password"]').first
+                await pass_input.click()
+                await self._human_type(page, password)
+                await asyncio.sleep(random.uniform(0.8, 1.5))
+                
+                # Submit button can be type="submit" or just a button with "Log in" text
+                submit_btn = page.locator('button[type="submit"], button:has-text("Log in"), div[role="button"]:has-text("Log in")').first
+                await submit_btn.click()
+                logger.info("🖱️ Submit clicked. Waiting for login result or 2FA...")
+                
+                # 3. Handle 2FA
+                try:
+                    # Check for 2FA input field (Wait up to 10s)
+                    two_fa_input = page.locator('input[name="verificationCode"], input[placeholder*="code"]').first
+                    if await two_fa_input.is_visible(timeout=10000):
+                        two_fa_secret = account_data.get('two_factor_secret')
+                        if two_fa_secret:
+                            import pyotp
+                            logger.info(f"🛡️ 2FA Detected! Generating TOTP code...")
+                            totp = pyotp.TOTP(two_fa_secret.replace(" ", ""))
+                            code = totp.now()
+                            await two_fa_input.click()
+                            await self._human_type(page, code)
+                            await asyncio.sleep(1)
+                            await page.keyboard.press("Enter")
+                            logger.info("✅ 2FA code submitted.")
+                            await asyncio.sleep(5)
+                        else:
+                            logger.warning("⚠️ 2FA required but no secret found. Please enter code manually!")
+                except: pass
+
+                # 4. Final verification
+                await asyncio.sleep(8)
+                # Check for "Home" or "Search" to confirm login
+                nav_exists = await page.locator('svg[aria-label="Home"], svg[aria-label="Search"], a[href*="/direct/inbox/"]').count()
+                
+                if nav_exists > 0 or 'login' not in page.url:
+                    logger.info("🎉 Login successful!")
+                    await self._clear_popups(page)
+                else:
+                    logger.warning("⚠️ Still on login page. Check for errors or 2FA.")
+            else:
+                logger.error("❌ Missing credentials for auto-login.")
+                
+        except Exception as e:
+            logger.error(f"❌ Direct login flow failed: {e}")
         except:
-            logger.error("❌ Login form did not appear after 10s. Instagram may be showing a challenge.")
+            logger.error("❌ Login form did not appear after 20s.")
             return
 
         user_val = account_data.get('username', '')

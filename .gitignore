@@ -13,16 +13,9 @@ backend/venv/
 backend/.env
 
 # Browser Profiles & Automation Junk
+browser_profiles/
+backend/browser_profiles/
 chrome_profile/
-profile_*/
-test_chrome_profile/
-test_proxy_ext*/
-proxy_auth_ext/
-proxy_ext/
-browser_sessions/
-backend/browser_sessions/
-sessions/
-backend/sessions/
 *.zip
 *.log
 *.png

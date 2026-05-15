@@ -36,6 +36,7 @@ services:
       - ./backend/media:/app/media
       - ./backend/sessions:/app/sessions
       - ./backend/browser_sessions:/app/browser_sessions
+      - ./backend/browser_profiles:/app/browser_profiles
       - ./migrate_db.py:/app/migrate_db.py
 
   # The User Frontend
