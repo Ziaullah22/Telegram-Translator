@@ -17,7 +17,7 @@ echo "🚀 Starting Encrypted Backup Process..."
 
 # 2. Dump Database and Compress (Encrypted stream)
 # We use docker exec to pull the data from the running container
-docker exec app_backend_1 pg_dump -U $DB_USER $DB_NAME | gzip > $BACKUP_DIR/$FILENAME
+docker exec app_db_1 pg_dump -U $DB_USER $DB_NAME | gzip > $BACKUP_DIR/$FILENAME
 
 if [ $? -eq 0 ]; then
     echo "✅ Local backup created: $FILENAME"
