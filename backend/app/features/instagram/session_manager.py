@@ -407,18 +407,60 @@ class InstagramSessionManager:
                 # Submit button can be type="submit" or just a button with "Log in" text
                 submit_btn = page.locator('button[type="submit"], button:has-text("Log in"), div[role="button"]:has-text("Log in")').first
                 await submit_btn.click()
-                logger.info("🖱️ Submit clicked. Waiting for login result or 2FA...")
+                logger.info("🖱️ Submit clicked. Waiting for navigation...")
+                
+                # Wait for navigation to either 2FA page or Dashboard
+                try:
+                    await page.wait_for_url(
+                        lambda url: "/accounts/login" not in url or "two_factor" in url or "challenge" in url,
+                        timeout=15000
+                    )
+                except: pass
                 
                 # 3. Handle 2FA Challenge
                 try:
                     logger.info("🔍 Scanning for 2FA challenge...")
                     # UNIVERSAL 2FA SELECTOR: Name, Placeholder, Aria-Label, or Number-type input
-                    two_fa_selector = 'input[name="verificationCode"], input[placeholder*="code"], input[aria-label*="Code"], input[type="tel"]'
+                    two_fa_selectors = [
+                        'input[name="verificationCode"]',
+                        'input[name="one_time_code"]',
+                        'input[autocomplete="one-time-code"]',
+                        'input[aria-label="Code"]',
+                        'input[aria-label="Security Code"]',
+                        'input[aria-label*="code" i]',
+                        'input[placeholder="Code"]',
+                        'input[placeholder*="code" i]',
+                        'input[type="tel"]',
+                        'input[type="number"][maxlength="6"]',
+                        'input[type="text"][maxlength="6"]'
+                    ]
                     
-                    # Wait up to 15s for the challenge to appear
-                    two_fa_field = page.locator(two_fa_selector).first
-                    if await two_fa_field.is_visible(timeout=15000):
-                        two_fa_secret = account_data.get('two_factor_secret')
+                    await page.wait_for_timeout(2000) # Wait for JS components to settle
+                    
+                    two_fa_field = None
+                    for sel in two_fa_selectors:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=1000):
+                                two_fa_field = el
+                                logger.info(f"🛡️ 2FA Input identified via: {sel}")
+                                break
+                        except: pass
+                    
+                    if not two_fa_field:
+                        # Final panic check: URL indicates 2FA, try any visible input
+                        logger.info("🛡️ Entering 2FA Panic Mode: Searching for ANY visible input...")
+                        if any(x in page.url.lower() for x in ['two_factor', 'challenge', 'security_code', 'verification']):
+                            # Try finding the first visible input that isn't hidden
+                            all_inputs = await page.locator('input:visible').all()
+                            for inp in all_inputs:
+                                if await inp.is_visible():
+                                    two_fa_field = inp
+                                    logger.info("🛡️ Panic Mode found a visible input field!")
+                                    break
+
+                    if two_fa_field:
+                        two_fa_secret = account_data.get('two_factor_secret') or account_data.get('verification_code')
                         if two_fa_secret and len(two_fa_secret.strip()) > 5:
                             import pyotp
                             logger.info(f"🛡️ 2FA CHALLENGE DETECTED! Secret: {two_fa_secret[:4]}***")
@@ -430,13 +472,14 @@ class InstagramSessionManager:
                             
                             logger.info(f"⌨️ Typing 2FA Code: {code}")
                             await two_fa_field.click()
+                            await two_fa_field.fill("") # Clear first
                             await self._human_type(page, code)
                             await asyncio.sleep(1.5)
                             await page.keyboard.press("Enter")
                             
                             # Check for a "Confirm" or "Submit" button if Enter doesn't work
-                            confirm_btn = page.locator('button:has-text("Confirm"), button:has-text("Submit"), button:has-text("Log In")').first
-                            if await confirm_btn.is_visible(timeout=2000):
+                            confirm_btn = page.locator('button:has-text("Confirm"), button:has-text("Submit"), button:has-text("Log In"), button[type="submit"]').first
+                            if await confirm_btn.is_visible(timeout=3000):
                                 await confirm_btn.click()
                                 
                             logger.info("✅ 2FA code submitted. Waiting for dashboard...")
@@ -454,6 +497,7 @@ class InstagramSessionManager:
                 if nav_exists > 0 or 'login' not in page.url:
                     logger.info("🎉 Login successful!")
                     await self._clear_popups(page)
+                    return
                 else:
                     logger.warning("⚠️ Still on login page. Check for errors or 2FA.")
             else:
@@ -461,167 +505,8 @@ class InstagramSessionManager:
                 
         except Exception as e:
             logger.error(f"❌ Direct login flow failed: {e}")
-        except:
-            logger.error("❌ Login form did not appear after 20s.")
-            return
-
-        user_val = account_data.get('username', '')
-        pass_val = account_data.get('password', '')
-
-        if not user_val or not pass_val:
-            logger.error(f"❌ No username/password for account {account_data.get('username')}. Cannot auto-login.")
-            return
-
-        logger.info(f"🔑 Auto-Login: Typing credentials for @{user_val}...")
-
-        # --- Step 1: Type Username ---
-        user_input = await page.query_selector('input[name="username"]')
-        if user_input:
-            await user_input.click()
-            await page.keyboard.press("Control+A")
-            await page.keyboard.press("Backspace")
-            await self._human_type(page, user_val)
-            await asyncio.sleep(random.uniform(0.8, 1.2))
-
-        # --- Step 2: Type Password ---
-        pass_input = await page.query_selector('input[name="password"]')
-        if pass_input:
-            await pass_input.click()
-            await self._human_type(page, pass_val)
-            await asyncio.sleep(random.uniform(0.8, 1.2))
-
-        # --- Step 3: Click the Login Button ---
-        logger.info("🖱️ Clicking the Log In button...")
-        await asyncio.sleep(1)  # Let Instagram's JS enable the button
-
-        clicked = False
-        for selector in [
-            'button[type="submit"]',
-            'button:has-text("Log in")',
-            'div[role="button"]:has-text("Log in")',
-        ]:
-            try:
-                await page.click(selector, timeout=4000)
-                clicked = True
-                logger.info(f"✅ Login button clicked via: {selector}")
-                break
-            except Exception as e:
-                logger.warning(f"   ↳ Selector '{selector}' failed: {e}")
-
-        # Wait for page to navigate after login button click
-        logger.info("⏳ Waiting for page to navigate after login...")
-        try:
-            await page.wait_for_url(
-                lambda url: '/accounts/login' not in url or '/two_factor' in url or '/challenge' in url,
-                timeout=10000
-            )
-        except:
-            pass  # If timeout, just continue with where we are
-
-        # Log where we ended up
-        current_url = page.url
-        page_title = await page.title()
-        logger.info(f"📍 Post-login URL: {current_url} | Title: {page_title}")
-
-        # Dismiss any "Unexpected Error" or "Try again" popups
-        try:
-            err_ok = await page.query_selector('button:has-text("OK"), button:has-text("Dismiss"), button:has-text("Try again")')
-            if err_ok and await err_ok.is_visible():
-                logger.warning("⚠️ Detected error popup after login. Dismissing...")
-                await err_ok.click()
-                await asyncio.sleep(2)
-        except: pass
-
-        # --- Step 4: Handle 2FA ---
-        # First check by URL (most reliable)
-        is_2fa_page = '/two_factor' in current_url or '/challenge' in current_url or 'security_code' in current_url
-        logger.info(f"🛡️ Scanning for 2FA checkpoint... (URL-based detected: {is_2fa_page})")
-        await page.wait_for_timeout(2000)
-
-        # Then check for 2FA input elements (cast a wide net)
-        two_fa = None
-        try:
-            two_fa = await page.wait_for_selector(
-                'input[name="verificationCode"], '
-                'input[name="one_time_code"], '
-                'input[autocomplete="one-time-code"], '
-                'input[aria-label="Security Code"], '
-                'input[aria-label*="digit"], '
-                'input[aria-label*="code" i], '
-                'input[placeholder*="code" i], '
-                'input[placeholder*="digit" i], '
-                'input[type="number"][maxlength="6"], '
-                'input[type="text"][maxlength="6"]',
-                timeout=5000
-            )
-        except:
-            pass  # No 2FA input found within 5s
-
-        split_boxes = []
-        try:
-            split_boxes = await page.query_selector_all(
-                'input[autocomplete="one-time-code"], '
-                'input[id*="verificationCode"], '
-                'input[type="number"][maxlength="1"]'
-            )
-        except: pass
-
-        fa_secret = account_data.get('two_factor_secret') or account_data.get('verification_code')
-        logger.info(f"🔐 2FA status: input_found={two_fa is not None}, split_boxes={len(split_boxes)}, has_secret={bool(fa_secret)}")
-
-        if (two_fa or len(split_boxes) > 0 or is_2fa_page) and fa_secret:
-            logger.info("🔐 2FA detected! Auto-filling TOTP code...")
-            import pyotp
-            try:
-                clean_secret = fa_secret.strip().replace(" ", "").upper()
-                totp = pyotp.TOTP(clean_secret)
-                code = totp.now()
-                logger.info(f"🔐 Generated TOTP code: {code}")
-
-                if split_boxes and len(split_boxes) >= 6:
-                    # Split-box 2FA (6 individual input boxes)
-                    for i, char in enumerate(code):
-                        if i < len(split_boxes):
-                            await split_boxes[i].click()
-                            await split_boxes[i].type(char, delay=120)
-                elif two_fa:
-                    # Single input field
-                    await two_fa.click()
-                    await two_fa.fill("")  # Clear first
-                    await self._human_type(page, code)
-                else:
-                    # 2FA page but no input found yet — try clicking any visible input
-                    any_input = await page.query_selector('input[type="text"], input[type="number"]')
-                    if any_input:
-                        await any_input.click()
-                        await self._human_type(page, code)
-
-                await asyncio.sleep(1)
-
-                # Click Confirm/Continue/Submit button
-                for confirm_sel in [
-                    'button:has-text("Confirm")',
-                    'button:has-text("Continue")',
-                    'button:has-text("Trust")',
-                    'button[type="submit"]',
-                    'div[role="button"]:has-text("Confirm")',
-                ]:
-                    try:
-                        await page.click(confirm_sel, timeout=3000)
-                        logger.info(f"🔐 2FA Confirm clicked via: {confirm_sel}")
-                        break
-                    except: pass
-                else:
-                    await page.keyboard.press("Enter")
-
-                await page.wait_for_timeout(5000)
-                logger.info("✅ 2FA code submitted!")
-            except Exception as e:
-                logger.error(f"❌ 2FA Error: {e}")
-        elif two_fa or len(split_boxes) > 0 or is_2fa_page:
-            logger.warning("⚠️ 2FA page detected but NO secret stored for this account! Manual entry needed.")
-
-        # 🧹 Clear popups
+        
+        # 🧹 Cleanup popups even if flow didn't finish perfectly
         await self._clear_popups(page)
 
 

@@ -869,6 +869,27 @@ class InstagramService:
                 logger.error(f"Bulk proxy error: {e}")
                 results["failed"] += 1
         
+        # --- 🚀 AUTO-RESCUE: Assign to accounts with NO proxy ---
+        if results["success"] > 0:
+            accounts_without_proxy = await db.fetch("SELECT id FROM instagram_accounts WHERE user_id = $1 AND proxy_id IS NULL", user_id)
+            if accounts_without_proxy:
+                logger.info(f"🆘 Found {len(accounts_without_proxy)} accounts without proxy. Rescuing...")
+                # Fetch all available proxies now
+                proxy_rows = await db.fetch("SELECT * FROM instagram_proxies WHERE user_id = $1 ORDER BY id ASC", user_id)
+                if proxy_rows:
+                    proxies = [dict(p) for p in proxy_rows]
+                    for i, acc in enumerate(accounts_without_proxy):
+                        p = proxies[i % len(proxies)]
+                        # Format the proxy string for the manual box
+                        p_str = f"{p['host']}:{p['port']}"
+                        if p['username']: p_str += f":{p['username']}:{p['password']}"
+                        
+                        await db.execute(
+                            "UPDATE instagram_accounts SET proxy_id = $1, proxy = $2 WHERE id = $3",
+                            p['id'], p_str, acc['id']
+                        )
+                logger.info("✅ Auto-Rescue complete!")
+
         return results
 
     async def get_accounts(self, user_id: int):
@@ -1052,6 +1073,16 @@ class InstagramService:
 
         results = {"success": 0, "failed": 0, "errors": []}
         
+        # --- 🛡️ PROXY ROTATION LOGIC ---
+        available_proxies = []
+        if not proxy_id:
+            # Fetch all proxies owned by this user
+            proxy_rows = await db.fetch("SELECT id FROM instagram_proxies WHERE user_id = $1 ORDER BY id ASC", user_id)
+            available_proxies = [r['id'] for r in proxy_rows]
+            logger.info(f"🔄 Proxy Rotation: Found {len(available_proxies)} proxies for Round-Robin assignment.")
+
+        proxy_index = 0
+        
         for line in lines:
             line = line.strip()
             if not line: continue
@@ -1115,19 +1146,35 @@ class InstagramService:
                     results["failed"] += 1
                     continue
 
+                # --- 🎯 ASSIGN PROXY (Round-Robin) ---
+                current_proxy_id = proxy_id
+                current_proxy_str = None
+                
+                if not current_proxy_id and available_proxies:
+                    current_proxy_id = available_proxies[proxy_index % len(available_proxies)]
+                    proxy_index += 1
+                
+                if current_proxy_id:
+                    # Fetch proxy details to sync the string field for the manual box
+                    p = await db.fetchrow("SELECT * FROM instagram_proxies WHERE id = $1", current_proxy_id)
+                    if p:
+                        current_proxy_str = f"{p['host']}:{p['port']}"
+                        if p['username']: current_proxy_str += f":{p['username']}:{p['password']}"
+
                 await db.execute("""
-                    INSERT INTO instagram_accounts (user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, verification_code, status) 
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+                    INSERT INTO instagram_accounts (user_id, username, password, proxy_id, proxy, session_id, ds_user_id, full_cookies_json, verification_code, status) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
                     ON CONFLICT (username) DO UPDATE SET
                         password = EXCLUDED.password,
                         proxy_id = COALESCE(EXCLUDED.proxy_id, instagram_accounts.proxy_id),
+                        proxy = COALESCE(EXCLUDED.proxy, instagram_accounts.proxy),
                         session_id = COALESCE(EXCLUDED.session_id, instagram_accounts.session_id),
                         ds_user_id = COALESCE(EXCLUDED.ds_user_id, instagram_accounts.ds_user_id),
                         full_cookies_json = COALESCE(EXCLUDED.full_cookies_json, instagram_accounts.full_cookies_json),
                         verification_code = COALESCE(EXCLUDED.verification_code, instagram_accounts.verification_code),
                         status = 'active',
                         updated_at = NOW()
-                """, user_id, username, password, proxy_id, session_id, ds_user_id, full_cookies_json, fa_secret)
+                """, user_id, username, password, current_proxy_id, current_proxy_str, session_id, ds_user_id, full_cookies_json, fa_secret)
                 results["success"] += 1
             except Exception as e:
                 logger.error(f"Bulk add error on line '{line}': {e}")

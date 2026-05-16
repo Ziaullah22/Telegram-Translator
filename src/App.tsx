@@ -28,6 +28,7 @@ import CRMDashboard from './components/CRM/CRMDashboard';
 import InstagramLeadGenerator from './components/Instagram/InstagramLeadGenerator';
 import InstagramWarmingDashboard from './components/InstagramWarming/InstagramWarmingDashboard';
 import InstagramAccountSettingsModal from './components/InstagramChat/InstagramAccountSettingsModal';
+import InstagramProxyModal from './components/Modals/InstagramProxyModal';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI, instagramAPI, instagramChatAPI } from './services/api';
@@ -122,6 +123,7 @@ function App() {
   const [currentInstagramConversation, setCurrentInstagramConversation] = useState<InstagramChat | null>(null);
   const [instagramMessages, setInstagramMessages] = useState<InstagramMessage[]>([]);
   const [showInstagramSettingsModal, setShowInstagramSettingsModal] = useState(false);
+  const [showInstagramProxyModal, setShowInstagramProxyModal] = useState(false);
   const [editingInstagramAccount, setEditingInstagramAccount] = useState<InstagramAccount | null>(null);
   const [showVncModal, setShowVncModal] = useState(false);
 
@@ -964,6 +966,7 @@ function App() {
                   onEditInstagram={(account) => { setEditingInstagramAccount(account); setShowInstagramSettingsModal(true); }}
                   onDeleteInstagram={handleDeleteInstagram}
                   onAddInstagramAccount={handleAddInstagramAccount}
+                  onManageProxies={() => setShowInstagramProxyModal(true)}
                 />
               </div>
 
@@ -1094,6 +1097,11 @@ function App() {
             }}
           />
         )}
+
+        <InstagramProxyModal 
+          isOpen={showInstagramProxyModal} 
+          onClose={() => setShowInstagramProxyModal(false)} 
+        />
 
         {notification && (
           <div className="fixed bottom-8 right-8 z-[9000] animate-slide-up pointer-events-none">

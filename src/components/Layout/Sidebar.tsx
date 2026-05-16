@@ -41,6 +41,7 @@ interface SidebarProps {
   onEditInstagram: (account: InstagramAccount) => void;
   onDeleteInstagram: (account: InstagramAccount) => void;
   onAddInstagramAccount: () => void;
+  onManageProxies: () => void;
 }
 
 export default function Sidebar({
@@ -68,6 +69,7 @@ export default function Sidebar({
   onEditInstagram,
   onDeleteInstagram,
   onAddInstagramAccount,
+  onManageProxies,
 }: SidebarProps) {
   const [aiStatus, setAiStatus] = useState<AIStatus>(aiService.getStatus().status);
   const [aiProgress, setAiProgress] = useState(aiService.getStatus().progress);
@@ -140,14 +142,22 @@ export default function Sidebar({
       )}
 
       {currentPlatform === 'instagram' && (
-        <div className="p-3 border-b border-gray-100 dark:border-white/5">
+        <div className="p-3 border-b border-gray-100 dark:border-white/5 space-y-2">
           <button
             id="add-instagram-account-btn"
             onClick={onAddInstagramAccount}
-            className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-pink-500/20 text-sm"
+            className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-3 py-2 rounded-lg transition-all duration-300 shadow-md shadow-pink-500/20 text-sm font-bold"
           >
             <Plus className="w-4 h-4" />
             <span>Add Instagram</span>
+          </button>
+          
+          <button
+            onClick={onManageProxies}
+            className="w-full flex items-center justify-center space-x-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg transition-all duration-300 text-xs font-black uppercase tracking-widest"
+          >
+            <Shield className="w-4 h-4 text-blue-500" />
+            <span>Manage Proxies</span>
           </button>
         </div>
       )}
