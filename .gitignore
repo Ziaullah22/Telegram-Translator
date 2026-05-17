@@ -30,6 +30,10 @@ startup_error.log
 tmp/
 backend/temp/
 
+# Media Uploads
+backend/media/
+backend/backend/media/
+
 # IDE
 .vscode/
 .idea/
