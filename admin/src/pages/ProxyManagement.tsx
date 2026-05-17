@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Globe, Plus, RefreshCw, Trash2, CheckCircle, XCircle, Search, Info, Upload } from 'lucide-react';
+import { Globe, RefreshCw, Trash2, CheckCircle, XCircle, Search, Info, Upload } from 'lucide-react';
 import { adminApi } from '../services/api';
 
 interface GlobalProxy {
@@ -17,7 +17,7 @@ const ProxyManagement = () => {
   const [proxies, setProxies] = useState<GlobalProxy[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-  const [isRebalancing, setIsRebalancing] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -41,7 +41,7 @@ const ProxyManagement = () => {
     if (!confirm('Are you sure you want to delete this proxy? The system will automatically rebalance all users.')) return;
     
     try {
-      setIsRebalancing(true);
+
       setStatusMessage(null);
       await adminApi.deleteGlobalProxy(id);
       setStatusMessage({ type: 'success', text: 'Proxy deleted and system rebalanced.' });
@@ -50,7 +50,7 @@ const ProxyManagement = () => {
       console.error('Delete failed:', error);
       setStatusMessage({ type: 'error', text: 'Failed to delete proxy.' });
     } finally {
-      setIsRebalancing(false);
+
     }
   };
 
