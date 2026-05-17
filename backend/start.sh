@@ -15,6 +15,10 @@ sleep 3
 # 4. Set the DISPLAY environment variable
 export DISPLAY=:99
 
+# 4.5 Start the Window Manager (Fluxbox) so wmctrl works!
+fluxbox &
+echo "✅ Fluxbox window manager started"
+
 # 5. Force install setuptools at runtime to fix pkg_resources error
 pip install setuptools --quiet
 

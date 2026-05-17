@@ -27,6 +27,9 @@ RUN apt-get update && apt-get install -y \
     x11vnc \
     novnc \
     websockify \
+    fluxbox \
+    wmctrl \
+    xdotool \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
