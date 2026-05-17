@@ -860,6 +860,26 @@ async def migrate():
             """)
             print("[OK] Instagram Warming Module tables added.")
 
+            # --- 9. GLOBAL PROXY MANAGEMENT ---
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS instagram_global_proxies (
+                    id BIGSERIAL PRIMARY KEY,
+                    host TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    username TEXT,
+                    password TEXT,
+                    proxy_type TEXT DEFAULT 'http',
+                    is_working BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                -- Link user proxies to global ones for tracking
+                ALTER TABLE instagram_proxies ADD COLUMN IF NOT EXISTS global_proxy_id BIGINT REFERENCES instagram_global_proxies(id) ON DELETE SET NULL;
+                ALTER TABLE instagram_proxies ADD COLUMN IF NOT EXISTS is_admin_assigned BOOLEAN DEFAULT FALSE;
+            """)
+            print("[OK] Global Proxy Management support added.")
+
 
             print("\nDatabase initialization/synchronization completed successfully.")
             

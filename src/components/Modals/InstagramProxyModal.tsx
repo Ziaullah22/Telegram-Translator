@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Shield, Plus, Trash2, Upload, AlertCircle, Loader, CheckCircle } from 'lucide-react';
+import { X, Shield, Plus, Trash2, Upload, AlertCircle, Loader, CheckCircle, Info } from 'lucide-react';
 import { instagramAPI } from '../../services/api';
 
 interface Proxy {
@@ -9,6 +9,7 @@ interface Proxy {
   username?: string;
   password?: string;
   proxy_type: string;
+  is_admin_assigned: boolean;
 }
 
 interface InstagramProxyModalProps {
@@ -116,55 +117,34 @@ export default function InstagramProxyModal({ isOpen, onClose }: InstagramProxyM
         className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] max-w-2xl w-full shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[85vh] border border-white/10"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="p-8 pb-4 shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 rounded-2xl">
-              <Shield className="w-6 h-6 text-blue-500" />
+        {/* Header Section */}
+        <div className="p-8 pb-4 shrink-0">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                <Shield className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-gray-900 dark:text-white">Managed Proxies</h2>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Global Connection Pool</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Proxy Management</h2>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Global Instagram Shield</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
-            <X className="w-6 h-6 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Action Bar */}
-        <div className="px-8 pb-4 shrink-0">
-          <div className="flex flex-col md:flex-row gap-4">
             <button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-              className="flex-1 flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-blue-500/20 active:scale-95 transition-all hover:brightness-110"
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-all"
             >
-              <Upload className="w-5 h-5" />
-              Upload Proxies (.txt)
+              <X className="w-6 h-6" />
             </button>
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              accept=".txt" 
-              className="hidden" 
-              onChange={handleFileUpload}
-            />
           </div>
 
-          {error && (
-            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <p className="text-sm font-bold">{error}</p>
+          <div className="bg-blue-500/5 border border-blue-500/10 rounded-2xl p-4">
+            <div className="flex gap-3">
+              <Info className="w-5 h-5 text-blue-500 shrink-0" />
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-bold">
+                These proxies are automatically assigned to your accounts by the administrator. <span className="text-blue-600">Users cannot modify these settings.</span>
+              </p>
             </div>
-          )}
-
-          {success && (
-            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-3 text-green-500">
-              <CheckCircle className="w-5 h-5 shrink-0" />
-              <p className="text-sm font-bold">{success}</p>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Content */}
@@ -193,20 +173,27 @@ export default function InstagramProxyModal({ isOpen, onClose }: InstagramProxyM
                         {proxy.proxy_type.toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-black text-gray-900 dark:text-white truncate">
-                          {proxy.host}:{proxy.port}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-black text-gray-900 dark:text-white truncate">
+                            {proxy.host}:{proxy.port}
+                          </p>
+                          {proxy.is_admin_assigned && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-500 text-white uppercase tracking-tighter">Managed</span>
+                          )}
+                        </div>
                         <p className="text-[10px] font-medium text-gray-400 truncate">
                           {proxy.username ? `Auth: ${proxy.username}` : 'No Auth'}
                         </p>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => handleDeleteProxy(proxy.id)}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {!proxy.is_admin_assigned && (
+                      <button 
+                        onClick={() => handleDeleteProxy(proxy.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

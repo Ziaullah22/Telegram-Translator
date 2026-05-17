@@ -132,9 +132,13 @@ function App() {
   const currentConversationRef = useRef<TelegramChat | null>(currentConversation);
   const conversationsRef = useRef<TelegramChat[]>(conversations);
   const accountsRef = useRef<TelegramAccount[]>(accounts);
+  const currentInstagramConversationRef = useRef<InstagramChat | null>(currentInstagramConversation);
+  const instagramMessagesRef = useRef<InstagramMessage[]>(instagramMessages);
 
   useEffect(() => { currentAccountRef.current = currentAccount; }, [currentAccount]);
   useEffect(() => { currentConversationRef.current = currentConversation; }, [currentConversation]);
+  useEffect(() => { currentInstagramConversationRef.current = currentInstagramConversation; }, [currentInstagramConversation]);
+  useEffect(() => { instagramMessagesRef.current = instagramMessages; }, [instagramMessages]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   useEffect(() => { accountsRef.current = accounts; }, [accounts]);
 
@@ -167,12 +171,18 @@ function App() {
           setInstagramConversations(convs);
           
           // If a conversation is actively open, poll its messages too
-          if (currentConversationRef.current?.id || currentInstagramConversation) {
-             const activeConv = currentInstagramConversation;
-             if (activeConv && !activeConv.id.startsWith('new_')) {
-                const msgs = await instagramChatAPI.getMessages(currentInstagramAccount.id, activeConv.id);
-                // We use functional state update to prevent stale closures and avoid unnecessary re-renders
+          const activeConv = currentInstagramConversationRef.current;
+          if (activeConv && !activeConv.id.startsWith('new_')) {
+             const msgs = await instagramChatAPI.getMessages(currentInstagramAccount.id, activeConv.id);
+             
+             // GUARD: Check if we are STILL on the same conversation after the fetch
+             if (currentInstagramConversationRef.current?.id === activeConv.id) {
                 setInstagramMessages(prev => {
+                  // GUARD: If we have a temporary optimistic message, DON'T overwrite it with a shorter API list
+                  // This prevents the "disappearing message" bug while sending.
+                  const hasTempMsg = prev.some(m => m.id.toString().startsWith('temp-'));
+                  if (hasTempMsg) return prev;
+
                   // Only update if length changed or newest message ID changed to prevent flashing
                   if (msgs.length !== prev.length || (msgs.length > 0 && prev.length > 0 && msgs[msgs.length-1].id !== prev[prev.length-1].id)) {
                      return msgs;
@@ -190,7 +200,7 @@ function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [currentPlatform, currentInstagramAccount, currentInstagramConversation]);
+  }, [currentPlatform, currentInstagramAccount]);
 
   const loadInstagramAccounts = async () => {
     try {
@@ -276,11 +286,22 @@ function App() {
 
   // Handle deep-link navigation from Orders page
   const handleInstagramConversationSelect = async (conv: InstagramChat) => {
+    // Clear messages immediately if switching to a DIFFERENT conversation to avoid stale UI
+    if (currentInstagramConversationRef.current?.id !== conv.id) {
+      setInstagramMessages([]);
+    }
+    
     setCurrentInstagramConversation(conv);
+    currentInstagramConversationRef.current = conv; // Update ref immediately for the poll logic
+
     if (currentInstagramAccount) {
       try {
         const msgs = await instagramChatAPI.getMessages(currentInstagramAccount.id, conv.id);
-        setInstagramMessages(msgs);
+        
+        // GUARD: Only set messages if we are STILL on this conversation
+        if (currentInstagramConversationRef.current?.id === conv.id) {
+          setInstagramMessages(msgs);
+        }
       } catch (e) { console.error('Failed to load Instagram messages:', e); }
     }
   };
@@ -328,16 +349,24 @@ function App() {
 
       // IMPORTANT: Update conversation ID if it was a new thread
       if (currentInstagramConversation.id.startsWith('new_') && realMsg.thread_id && !realMsg.thread_id.startsWith('new_')) {
-        setCurrentInstagramConversation(prev => prev ? { ...prev, id: realMsg.thread_id } : prev);
-        // Refresh sidebar to show the newly created real thread
-        const list = await instagramAPI.getAccounts();
-        const acc = list.find(a => a.id === currentInstagramAccount.id);
-        if (acc) handleInstagramAccountSelect(acc);
+        const newThreadId = realMsg.thread_id;
+        
+        // Update current conversation state first so the window stays open with the right ID
+        setCurrentInstagramConversation(prev => prev ? { ...prev, id: newThreadId } : prev);
+        
+        // Silently refresh the threads list to replace the virtual one with the real one in the sidebar
+        try {
+          const convs = await instagramChatAPI.getThreads(currentInstagramAccount.id);
+          setInstagramConversations(convs);
+        } catch (e) {
+          console.error('Failed to silently refresh Instagram threads:', e);
+        }
       }
     } catch (e) {
       console.error('Failed to send Instagram message:', e);
       setInstagramMessages(prev => prev.filter(m => m.id !== tempMsg.id));
-      alert('Failed to send message to Instagram');
+      const errorMsg = e instanceof Error ? e.message : 'Failed to send message to Instagram';
+      alert(errorMsg);
     }
   };
   const handleNavigateToConversation = useCallback(async (openAccountId: number, openPeerId: number) => {

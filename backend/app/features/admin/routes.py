@@ -50,6 +50,9 @@ class EncryptionSettingsResponse(BaseModel):
     total_messages: int
     encrypted_messages: int
 
+class ProxyBulkUpload(BaseModel):
+    proxies_text: str
+
 # Authentication Routes
 # Authenticate an admin user and return a signed JWT access token if the password is valid
 @router.post("/auth/login", response_model=AdminLoginResponse)
@@ -162,6 +165,14 @@ async def create_colleague(data: ColleagueCreate, admin = Depends(get_current_ad
         RETURNING id
     """, data.username, password_hash, data.email)
     
+    # --- 🚀 AUTO-PROXY ASSIGNMENT ---
+    try:
+        from instagram_service import instagram_service
+        await instagram_service.assign_global_proxies_to_user(colleague_id)
+        logger.info(f"✅ Automatically assigned global proxies to new colleague {data.username}")
+    except Exception as e:
+        logger.error(f"Failed to auto-assign proxies to new colleague: {e}")
+
     return {"id": colleague_id, "message": "Colleague created successfully"}
 
 @router.put("/colleagues/{colleague_id}")
@@ -616,3 +627,37 @@ async def update_encryption_settings(
         "message": f"Encryption {'enabled' if data.encryption_enabled else 'disabled'} successfully",
         "encryption_enabled": data.encryption_enabled
     }
+
+# Global Proxy Management Routes
+@router.get("/proxies")
+async def get_global_proxies(admin = Depends(get_current_admin)):
+    """Get all proxies in the global pool"""
+    proxies = await db.fetch("SELECT * FROM instagram_global_proxies ORDER BY created_at DESC")
+    return [dict(p) for p in proxies]
+
+@router.post("/proxies/bulk")
+async def bulk_upload_global_proxies(data: ProxyBulkUpload, admin = Depends(get_current_admin)):
+    """Upload proxies to global pool and rebalance"""
+    from instagram_service import instagram_service
+    results = await instagram_service.bulk_add_global_proxies(data.proxies_text)
+    return {
+        "status": "success",
+        "results": results,
+        "message": f"Successfully added {results['success']} global proxies and rebalanced all users."
+    }
+
+@router.delete("/proxies/{proxy_id}")
+async def delete_global_proxy(proxy_id: int, admin = Depends(get_current_admin)):
+    """Delete a proxy from the global pool and rebalance"""
+    from instagram_service import instagram_service
+    await db.execute("DELETE FROM instagram_global_proxies WHERE id = $1", proxy_id)
+    # Rebalance after deletion to ensure users don't have broken links
+    await instagram_service.rebalance_global_proxies()
+    return {"status": "success", "message": "Proxy deleted and rebalanced."}
+
+@router.post("/proxies/rebalance")
+async def manual_rebalance_proxies(admin = Depends(get_current_admin)):
+    """Manually trigger a rebalance of global proxies"""
+    from instagram_service import instagram_service
+    await instagram_service.rebalance_global_proxies()
+    return {"status": "success", "message": "Global proxy rebalance completed."}

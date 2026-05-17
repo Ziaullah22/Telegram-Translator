@@ -7,6 +7,7 @@ import Leaderboard from './pages/Leaderboard';
 import ColleagueManagement from './pages/ColleagueManagement';
 import MessageReview from './pages/MessageReview';
 import SecuritySettings from './pages/SecuritySettings';
+import ProxyManagement from './pages/ProxyManagement';
 import Layout from './components/Layout';
 
 /**
@@ -41,6 +42,7 @@ function AppRoutes() {
           <Route path="messages" element={<MessageReview />} />
           <Route path="messages/:userId" element={<MessageReview />} />
           <Route path="security" element={<SecuritySettings />} />
+          <Route path="proxies" element={<ProxyManagement />} />
         </Route>
       </Routes>
     </Router>

@@ -52,7 +52,7 @@ export default function InstagramAccountSettingsModal({ account, onClose, onSave
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[99999] p-4">
       <div className="bg-white dark:bg-[#1c2733] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-gray-100 dark:border-white/10 animate-fade-in-up">
         <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/10">
           <div className="flex items-center space-x-3">

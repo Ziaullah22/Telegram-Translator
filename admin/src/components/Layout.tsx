@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Users, MessageSquare, LayoutDashboard, LogOut, Shield, Trophy } from 'lucide-react';
+import { Users, MessageSquare, LayoutDashboard, LogOut, Shield, Trophy, Globe } from 'lucide-react';
 import { useAuth } from '../hooks/useAuthContext';
 
 const Layout = () => {
@@ -12,6 +12,7 @@ const Layout = () => {
     { name: 'Colleagues', href: '/colleagues', icon: Users },
     { name: 'Messages', href: '/messages', icon: MessageSquare },
     { name: 'Security', href: '/security', icon: Shield },
+    { name: 'Proxies', href: '/proxies', icon: Globe },
   ];
 
   return (

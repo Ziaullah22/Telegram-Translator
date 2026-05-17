@@ -257,26 +257,35 @@ class InstagramChatService:
                 logger.error(f"Failed to translate outgoing Instagram message: {e}")
         
         # Check if this is a 'new' thread by username
-        if str(thread_id).startswith("new_"):
-            user_id = thread_id.replace("new_", "")
-            item = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: client.direct_send(translated_text, user_ids=[user_id])
-            )
-            
-            # The direct_send response doesn't reliably contain the thread_id.
-            # We must fetch the latest inbox to get the real thread_id we just created.
-            try:
-                latest = await self.get_threads(account_id, amount=1)
-                if latest:
-                    thread_id = latest[0]["id"]
-            except Exception as e:
-                logger.error(f"Failed to fetch new thread ID: {e}")
-                # Fallback to the item's thread_id if available
-                thread_id = getattr(item, "thread_id", thread_id)
-        else:
-            item = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: client.direct_send(translated_text, thread_ids=[thread_id])
-            )
+        try:
+            if str(thread_id).startswith("new_"):
+                user_id = thread_id.replace("new_", "")
+                item = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: client.direct_send(translated_text, user_ids=[user_id])
+                )
+                
+                # The direct_send response doesn't reliably contain the thread_id.
+                # We must fetch the latest inbox to get the real thread_id we just created.
+                try:
+                    latest = await self.get_threads(account_id, amount=1)
+                    if latest:
+                        thread_id = latest[0]["id"]
+                except Exception as e:
+                    logger.error(f"Failed to fetch new thread ID: {e}")
+                    # Fallback to the item's thread_id if available
+                    thread_id = getattr(item, "thread_id", thread_id)
+            else:
+                item = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: client.direct_send(translated_text, thread_ids=[thread_id])
+                )
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "wait for the reply" in err_msg or "one message" in err_msg or "400" in err_msg:
+                raise Exception("Instagram Limit: You can only send ONE message to a new user until they accept your request.")
+            elif "login_required" in err_msg:
+                self.clients.pop(account_id, None)
+                raise Exception("Instagram Session Expired: Please reconnect your account.")
+            raise e
         
         msg_id = str(getattr(item, "id", f"temp-{datetime.now().timestamp()}"))
         

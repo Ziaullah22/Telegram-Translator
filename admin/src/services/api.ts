@@ -95,6 +95,13 @@ export const adminApi = {
   getEncryptionSettings: () => api.get('/admin/encryption/settings'),
   updateEncryptionSettings: (data: { encryption_enabled: boolean }) =>
     api.put('/admin/encryption/settings', data),
+
+  // --- GROUP 6: GLOBAL PROXY MANAGEMENT ---
+  // Manage the global pool of proxies distributed across all users.
+  getGlobalProxies: () => api.get('/admin/proxies'),
+  bulkUploadGlobalProxies: (proxies_text: string) => api.post('/admin/proxies/bulk', { proxies_text }),
+  rebalanceGlobalProxies: () => api.post('/admin/proxies/rebalance'),
+  deleteGlobalProxy: (id: number) => api.delete(`/admin/proxies/${id}`),
 };
 
 export default api;
