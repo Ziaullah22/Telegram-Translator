@@ -86,6 +86,14 @@ async def get_connection_status(
     """Check if a visible browser is currently open for this account."""
     return {"connected": instagram_session_manager.is_connected(account_id)}
 
+@router.post("/accounts/{account_id}/focus")
+async def focus_account(
+    account_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Bring the specific account's browser window to the front of the screen."""
+    return await instagram_session_manager.focus_window(account_id)
+
 @router.post("/discover")
 async def discover_leads(
     request: InstagramDiscoveryRequest,

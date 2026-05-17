@@ -243,6 +243,29 @@ class InstagramSessionManager:
         except Exception as e:
             logger.warning(f"⚠️ Could not show window: {e}")
 
+    async def focus_window(self, account_id: int):
+        """Brings the specific browser window to the front of the virtual display (or physical monitor)."""
+        session = self.active_sessions.get(account_id)
+        if not session or not session.get('page'):
+            return {"status": "error", "message": "Browser session not active"}
+            
+        try:
+            # 1. Ask Playwright to bring the page to the front
+            await session['page'].bring_to_front()
+            
+            # 2. Windows specific fallback to ensure it pops up locally
+            if sys.platform == "win32":
+                hwnds = self._get_window_handles(account_id, session.get('secret_title'))
+                for hwnd in hwnds:
+                    ctypes.windll.user32.ShowWindow(hwnd, SW_SHOW)
+                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+                    
+            logger.info(f"🎯 Focused window for account {account_id}")
+            return {"status": "success"}
+        except Exception as e:
+            logger.error(f"⚠️ Could not focus window for {account_id}: {e}")
+            return {"status": "error", "message": str(e)}
+
     async def hide_window(self, account_id: int):
         """Hide the browser window completely (Windows only)."""
         if sys.platform != "win32": 

@@ -125,7 +125,7 @@ function App() {
   const [showInstagramSettingsModal, setShowInstagramSettingsModal] = useState(false);
   const [showInstagramProxyModal, setShowInstagramProxyModal] = useState(false);
   const [editingInstagramAccount, setEditingInstagramAccount] = useState<InstagramAccount | null>(null);
-  const [showVncModal, setShowVncModal] = useState(false);
+
 
   // Refs for current state
   const currentAccountRef = useRef<TelegramAccount | null>(currentAccount);
@@ -235,15 +235,16 @@ function App() {
   };
 
   const handleMonitorInstagram = async (acc: InstagramAccount) => {
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-    if (!isLocal) {
-      // On VPS: open the Live Browser Stream popup
-      setShowVncModal(true);
-    }
-    // On localhost: the physical Chrome window opens on the desktop — no popup needed
-
     try {
+      await instagramAPI.focusAccount(acc.id);
+      
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (!isLocal) {
+        const vncHost = window.location.hostname;
+        const vncUrl = `http://${vncHost}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`;
+        window.open(vncUrl, '_blank');
+      }
+
       await instagramAPI.monitorAccount(acc.id);
       const updatedAccount = { ...acc, is_hidden: !acc.is_hidden };
       setInstagramAccounts(prev => prev.map(a => a.id === acc.id ? updatedAccount : a));
@@ -1166,67 +1167,7 @@ function App() {
           </div>
         )}
 
-        {/* Live Browser VNC Modal */}
-        {showVncModal && (() => {
-          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-          const vncUrl = isLocal 
-            ? `http://${window.location.hostname}:6080/vnc.html?autoconnect=1&resize=scale&quality=6`
-            : `https://${window.location.hostname}/vnc/vnc.html?path=websockify&autoconnect=1&resize=scale&quality=6`;
-            
-          return (
-            <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
-              <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col">
-                <div className="p-8 pb-4 shrink-0 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 bg-pink-500/10 rounded-2xl">
-                      <Eye className="w-6 h-6 text-pink-500" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Live Browser Stream</h2>
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Remote Session Control</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setShowVncModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
-                    <X className="w-6 h-6 text-gray-400" />
-                  </button>
-                </div>
 
-                <div className="px-8 pb-8 flex flex-col gap-4">
-                  {/* Status */}
-                  <div className="flex items-center gap-3 p-4 bg-green-500/5 border border-green-500/20 rounded-2xl">
-                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
-                    <div>
-                      <p className="text-sm font-black text-green-600 dark:text-green-400">Remote Display Active</p>
-                      <p className="text-[10px] text-gray-400 font-medium mt-0.5">Xvfb + x11vnc + noVNC running on port 6080</p>
-                    </div>
-                  </div>
-
-                  {/* Main Button */}
-                  <a
-                    href={vncUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-pink-500/20 active:scale-95 transition-all hover:from-pink-600 hover:to-purple-700"
-                  >
-                    <Eye className="w-5 h-5" />
-                    Open Live View in New Tab
-                  </a>
-
-                  <p className="text-[10px] font-medium text-gray-400 italic text-center">
-                    💡 A new tab will open showing the live Instagram browser. You can click, type and interact with it directly.
-                  </p>
-
-                  <button
-                    onClick={() => setShowVncModal(false)}
-                    className="py-3 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 hover:bg-gray-200 dark:hover:bg-white/10"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
       </div>
     </Router>
   );

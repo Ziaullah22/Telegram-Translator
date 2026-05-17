@@ -911,6 +911,11 @@ export const instagramAPI = {
     return response.data;
   },
 
+  focusAccount: async (accountId: number): Promise<{ status: string }> => {
+    const response = await api.post(`/instagram/accounts/${accountId}/focus`);
+    return response.data;
+  },
+
   analyzeLead: async (leadId: number): Promise<any> => {
     // Stage 2 analysis can be slow due to external scraping
     const response = await api.post(`/instagram/leads/${leadId}/analyze`, {}, { timeout: 60000 });

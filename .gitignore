@@ -16,6 +16,12 @@ backend/.env
 browser_profiles/
 backend/browser_profiles/
 chrome_profile/
+test_profile/
+test_profile_native/
+test_proxy_ext*/
+backend/sessions/
+backend/profile_*/
+backend/proxy_ext_*/
 *.zip
 *.log
 *.png
