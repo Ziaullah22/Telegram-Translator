@@ -253,12 +253,26 @@ class InstagramSessionManager:
             # 1. Ask Playwright to bring the page to the front
             await session['page'].bring_to_front()
             
-            # 2. Windows specific fallback to ensure it pops up locally
+            # 2. OS-specific window raising
             if sys.platform == "win32":
                 hwnds = self._get_window_handles(account_id, session.get('secret_title'))
                 for hwnd in hwnds:
                     ctypes.windll.user32.ShowWindow(hwnd, SW_SHOW)
                     ctypes.windll.user32.SetForegroundWindow(hwnd)
+            else:
+                # LINUX / VPS (Xvfb + Fluxbox)
+                import os
+                import asyncio
+                secret = session.get('secret_title', f"GHOST_IG_{account_id}")
+                # Temporarily change the page title so the X11 window title changes
+                await session['page'].evaluate(f"document.title = '{secret}'")
+                await asyncio.sleep(0.15) # Wait for X11 to register title change
+                
+                # Use wmctrl or xdotool to bring the window to the absolute front of the display
+                os.system(f"export DISPLAY=:99 && wmctrl -a '{secret}' || xdotool search --name '{secret}' windowactivate")
+                
+                # Change the title back to normal
+                await session['page'].evaluate("document.title = 'Instagram'")
                     
             logger.info(f"🎯 Focused window for account {account_id}")
             return {"status": "success"}
