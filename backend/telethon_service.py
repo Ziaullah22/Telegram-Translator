@@ -303,8 +303,16 @@ class TelegramSession:
                 
                 # Improved Title Fallback: if name is phone number, use username if we have it
                 title = dialog.title or dialog.name
-                if conv_type == 'private' and username and (not title or title.strip().startswith('+')):
-                    title = f"@{username}"
+                if conv_type == 'private':
+                    if not title or title.strip() == "" or title.lower() == 'unknown':
+                        first = getattr(dialog.entity, 'first_name', '') or ''
+                        last = getattr(dialog.entity, 'last_name', '') or ''
+                        fullname = f"{first} {last}".strip()
+                        title = fullname or username or getattr(dialog.entity, 'phone', None) or "Unknown User"
+                    elif username and title.strip().startswith('+'):
+                        title = f"@{username}"
+                elif not title:
+                    title = "Unknown Chat"
 
                 result.append({
                     "peer_id": peer_id,
@@ -946,6 +954,20 @@ class TelegramSession:
             return "channel" if entity.broadcast else "supergroup"
         return "private"
 
+    def _get_entity_name(self, entity) -> str:
+        if isinstance(entity, User):
+            first = getattr(entity, 'first_name', '') or ''
+            last = getattr(entity, 'last_name', '') or ''
+            username = getattr(entity, 'username', '') or ''
+            phone = getattr(entity, 'phone', '') or ''
+            
+            name = f"{first} {last}".strip()
+            if not name:
+                name = username or phone or "Unknown User"
+            return name
+        else:
+            return getattr(entity, 'title', None) or getattr(entity, 'name', None) or "Unknown Chat"
+
     async def _extract_thumbnail(self, msg) -> Optional[str]:
         """Extract a base64 encoded thumbnail from a message (stripped or smallest size)"""
         try:
@@ -1457,6 +1479,68 @@ class TelethonService:
             raise Exception("Session not connected")
 
         return await session.join_chat(peer_id, invite_hash)
+
+    async def sync_initial_dialogs(self, account_id: int, limit: int = 50):
+        """Fetch the most recent dialogs for a newly connected account and populate the DB"""
+        # Run in background
+        asyncio.create_task(self._do_sync_initial_dialogs(account_id, limit))
+        return True
+
+    async def _do_sync_initial_dialogs(self, account_id: int, limit: int):
+        from app.core.database import db
+        try:
+            session = self.sessions.get(account_id)
+            if not session:
+                logger.warning(f"Cannot sync dialogs: session {account_id} not connected")
+                return
+
+            logger.info(f"Starting initial dialog sync for account {account_id}")
+            
+            # 1. Fetch recent dialogs from Telegram
+            dialogs = await session.get_dialogs(limit=limit)
+            if not dialogs:
+                logger.info(f"No dialogs found for account {account_id}")
+                return
+
+            logger.info(f"Fetched {len(dialogs)} dialogs for account {account_id}")
+
+            # 2. Insert into DB if they don't exist
+            for dialog in dialogs:
+                peer_id = dialog['peer_id']
+                
+                # Check if conversation already exists
+                existing = await db.fetchrow(
+                    "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                    account_id,
+                    peer_id
+                )
+                
+                if not existing:
+                    # Create conversation
+                    await db.execute(
+                        """
+                        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted)
+                        VALUES ($1, $2, $3, $4, $5, false, false)
+                        """,
+                        account_id,
+                        peer_id,
+                        dialog['title'] or 'Unknown',
+                        dialog['type'],
+                        dialog['username']
+                    )
+                    logger.debug(f"Created new conversation record for peer {peer_id} ({dialog['title']})")
+                
+                # 3. Queue up history fetching for this peer (limit to 20 messages to be fast)
+                # fetch_and_save_history already spins up a background task
+                await self.fetch_and_save_history(account_id, peer_id, limit=20)
+                
+                # Small delay to prevent flooding the event loop / rate limits
+                await asyncio.sleep(0.5)
+                
+            logger.info(f"Completed initial dialog sync for account {account_id}")
+            
+        except Exception as e:
+            logger.error(f"Background dialog sync failed: {e}")
 
     # --- PHASE 3: SMART PREFETCHING (BACKEND) ---
     # This silently downloads latest messages in the background so there is zero wait time.

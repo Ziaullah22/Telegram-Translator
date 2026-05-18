@@ -420,6 +420,9 @@ async def create_account(
                     account_id
                 )
                 logger.info(f"Background connection successful for new account: {account_name}")
+                
+                # Sync initial dialogs from Telegram to populate the UI immediately
+                await telethon_service.sync_initial_dialogs(account_id)
             else:
                 logger.error(f"Background connection failed for new account: {account_name}")
         except Exception as e:
@@ -474,6 +477,9 @@ async def connect_account(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to connect to Telegram. Please check your session file.",
             )
+
+        # Sync initial dialogs in the background upon successful manual connection
+        await telethon_service.sync_initial_dialogs(account_id)
 
         return {"message": "Connected successfully", "connected": True}
     
