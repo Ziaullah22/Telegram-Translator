@@ -646,6 +646,17 @@ function App() {
       const list = await telegramAPI.getAccounts();
       setAccounts(list);
       setCurrentAccount(prev => prev ? list.find(a => a.id === prev.id) || prev : null);
+
+      // Initialize unread counts map from accounts data to show badges immediately on page load
+      setUnreadCounts(prev => {
+        const next = { ...prev };
+        list.forEach(a => {
+          if (!next[a.id] || Object.keys(next[a.id]).length === 0 || (Object.keys(next[a.id]).length === 1 && next[a.id][0] !== undefined)) {
+            next[a.id] = { 0: a.unreadCount ?? 0 };
+          }
+        });
+        return next;
+      });
     } catch (e) { console.error(e); }
   };
 
