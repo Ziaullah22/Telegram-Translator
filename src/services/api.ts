@@ -969,13 +969,33 @@ export const instagramAPI = {
     return response.data;
   },
 
-  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string }> => {
+  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string; minimax_api_key: string; enable_ai_filter: boolean; google_niche_filter: string; ai_model: string }> => {
     const response = await api.get('/instagram/filters/settings');
     return response.data;
   },
 
-  saveFilterSettings: async (bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[], visual_niche: string): Promise<any> => {
-    const response = await api.post('/instagram/filters/settings', { bio_keywords, min_followers, max_followers, sample_hashes, visual_niche });
+  saveFilterSettings: async (
+    bio_keywords: string, 
+    min_followers: number, 
+    max_followers: number, 
+    sample_hashes: string[], 
+    visual_niche: string,
+    minimax_api_key: string,
+    enable_ai_filter: boolean,
+    google_niche_filter: string,
+    ai_model: string
+  ): Promise<any> => {
+    const response = await api.post('/instagram/filters/settings', { 
+      bio_keywords, 
+      min_followers, 
+      max_followers, 
+      sample_hashes, 
+      visual_niche,
+      minimax_api_key,
+      enable_ai_filter,
+      google_niche_filter,
+      ai_model
+    });
     return response.data;
   },
 

@@ -105,6 +105,14 @@ class InstagramService:
         Uses targeted DuckDuckGo scraping with strict filtering for Instagram handles.
         """
         new_count = 0
+        
+        # Load AI filter settings
+        settings = await self.get_filter_settings(user_id)
+        enable_ai_filter = settings.get("enable_ai_filter", False)
+        google_niche_filter = settings.get("google_niche_filter", "")
+        ai_model = settings.get("ai_model", "minimax-text-01")
+        minimax_api_key = settings.get("minimax_api_key", "")
+
         async def ddg_scraper_session_func(page_obj, _):
             nonlocal new_count
             for kw_idx, keyword in enumerate(keywords):
@@ -124,7 +132,15 @@ class InstagramService:
                 
                 # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
                 try:
-                    surge_leads = await self._perform_scrapling_discovery(keyword, limit=limit_per_keyword)
+                    surge_leads = await self._perform_scrapling_discovery(
+                        keyword, 
+                        limit=limit_per_keyword,
+                        enable_ai_filter=enable_ai_filter,
+                        google_niche_filter=google_niche_filter,
+                        ai_model=ai_model,
+                        minimax_api_key=minimax_api_key,
+                        user_id=user_id
+                    )
                     if surge_leads:
                         for u in surge_leads:
                             if current_kw_new >= limit_per_keyword: break
@@ -150,7 +166,7 @@ class InstagramService:
         logger.info(f"📊 Mission Summary: {new_count} NEW leads found total.")
         return new_count
 
-    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50):
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None):
         """
         🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
         Uses raw patchright for total control and visible navigation.
@@ -201,37 +217,110 @@ class InstagramService:
                         await page.evaluate(f"window.scrollBy(0, {scroll_step})")
                         await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
 
-                    # 🎯 AGGRESSIVE EXTRACTION
-                    page_content = await page.content()
-                    
-                    # 1. Scrape from Links
-                    links = await page.query_selector_all('a[href*="instagram.com"]')
-                    for link in links:
-                        href = await link.get_attribute('href')
-                        if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
-                        if href:
-                            # Catch both profile links and mentions
-                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                            if match:
-                                u = match.group(1).strip().strip('./_').lower()
-                                if self._is_valid_username(u) and u not in seen:
-                                    logger.info(f"✨ Found Link Lead: @{u}")
-                                    found_usernames.append(u)
-                                    seen.add(u)
+                    # 🎯 CARD-BASED AI DISCOVERY WITH ROBUST FALLBACK
+                    cards = await page.query_selector_all('div.g, div[data-ved]')
+                    processed_card_leads = 0
 
-                    # 2. Scrape from Text Snippets (Deep Scan)
-                    snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
-                    for u in snippets:
-                        u = u.strip().strip('./_')
-                        if self._is_valid_username(u) and u not in seen:
-                            logger.info(f"✨ Found Snippet Lead: @{u}")
-                            found_usernames.append(u)
-                            seen.add(u)
+                    if cards and len(cards) > 0:
+                        logger.info(f"📋 Found {len(cards)} Google result cards. Starting card-based analysis...")
+                        for card in cards:
+                            if len(found_usernames) >= limit: break
+                            
+                            # Extract link
+                            link_el = await card.query_selector('a[href*="instagram.com"]')
+                            if not link_el:
+                                continue
+                            
+                            href = await link_el.get_attribute('href')
+                            if href and '/url?q=' in href: 
+                                href = href.split('/url?q=')[1].split('&')[0]
+                            
+                            if href:
+                                match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                                if match:
+                                    u = match.group(1).strip().strip('./_').lower()
+                                    if self._is_valid_username(u) and u not in seen:
+                                        processed_card_leads += 1
+                                        
+                                        # Extract title
+                                        title_el = await card.query_selector('h3')
+                                        title = await title_el.inner_text() if title_el else ""
+                                        
+                                        # Extract snippet
+                                        snippet = await card.inner_text()
+                                        if title and title in snippet:
+                                            snippet = snippet.replace(title, "").strip()
+
+                                        # Deep AI Filter logic
+                                        if enable_ai_filter and google_niche_filter:
+                                            msg = f"🧠 [AI Filter] Evaluating @{u} ({ai_model})..."
+                                            logger.info(msg)
+                                            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                            except: pass
+                                            
+                                            from app.features.instagram_scraper.ai_engine import instagram_ai
+                                            res = await instagram_ai.analyze_google_result(
+                                                title=title,
+                                                url=href,
+                                                snippet=snippet,
+                                                criteria=google_niche_filter,
+                                                model_choice=ai_model,
+                                                api_key=minimax_api_key
+                                            )
+                                            
+                                            is_match = res.get("match", False)
+                                            reason = res.get("reason", "No reason provided.")
+                                            
+                                            if not is_match:
+                                                msg = f"❌ [AI Filter] Skipped @{u} (Reason: {reason})"
+                                                logger.info(msg)
+                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                                except: pass
+                                                continue
+                                            else:
+                                                msg = f"✅ [AI Filter] MATCHED @{u} (Reason: {reason})"
+                                                logger.info(msg)
+                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                                except: pass
+                                        
+                                        logger.info(f"✨ Approved Lead: @{u}")
+                                        found_usernames.append(u)
+                                        seen.add(u)
+
+                    # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
+                    if processed_card_leads == 0:
+                        logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
+                        page_content = await page.content()
+                        
+                        # 1. Scrape from Links
+                        links = await page.query_selector_all('a[href*="instagram.com"]')
+                        for link in links:
+                            href = await link.get_attribute('href')
+                            if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
+                            if href:
+                                match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                                if match:
+                                    u = match.group(1).strip().strip('./_').lower()
+                                    if self._is_valid_username(u) and u not in seen:
+                                        logger.info(f"✨ Found Link Lead: @{u}")
+                                        found_usernames.append(u)
+                                        seen.add(u)
+
+                        # 2. Scrape from Text Snippets (Deep Scan)
+                        snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
+                        for u in snippets:
+                            u = u.strip().strip('./_')
+                            if self._is_valid_username(u) and u not in seen:
+                                logger.info(f"✨ Found Snippet Lead: @{u}")
+                                found_usernames.append(u)
+                                seen.add(u)
                     
                     # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
                     
-                    if len(links) < 5: break
+                    # If we found nothing at all on this page, stop early
+                    if processed_card_leads == 0 and len(links) < 5: 
+                        break
                 except Exception as e:
                     logger.error(f"❌ Google Scrape Error: {e}")
                     break
@@ -1325,6 +1414,10 @@ class InstagramService:
             await db.execute("""
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS visual_niche TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS sample_hashes TEXT DEFAULT '[]';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS minimax_api_key TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS enable_ai_filter BOOLEAN DEFAULT FALSE;
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS google_niche_filter TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'minimax-text-01';
             """)
             
             await db.execute("""
@@ -1348,16 +1441,27 @@ class InstagramService:
             res = dict(row)
             res['sample_hashes'] = json.loads(res.get('sample_hashes') or '[]')
             return res
-        return {"user_id": user_id, "bio_keywords": "", "min_followers": 0, "max_followers": 0, "sample_hashes": [], "visual_niche": ""}
+        return {
+            "user_id": user_id, 
+            "bio_keywords": "", 
+            "min_followers": 0, 
+            "max_followers": 0, 
+            "sample_hashes": [], 
+            "visual_niche": "",
+            "minimax_api_key": "",
+            "enable_ai_filter": False,
+            "google_niche_filter": "",
+            "ai_model": "minimax-text-01"
+        }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = ""):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01"):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:

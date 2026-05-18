@@ -173,4 +173,94 @@ class InstagramAIEngine:
                 print(f"❌ [Ollama] Vision error: {e}")
                 return {"match": False, "confidence": 0, "reason": "Connection Error"}
 
+    async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "minimax-text-01", api_key: str = "", ollama_url: str = None) -> dict:
+        """
+        Evaluate whether a Google Search Result matches the target lead criteria.
+        Supports both MiniMax 2.7 (cloud) and Ollama (local).
+        """
+        system_prompt = (
+            "You are an expert lead qualification assistant.\n"
+            "Evaluate whether the following Google Search Result matches the user's target lead criteria.\n"
+            "You MUST respond ONLY with a JSON object in this format:\n"
+            "{\n"
+            "  \"match\": true or false,\n"
+            "  \"reason\": \"A brief explanation of why the result matches or does not match\"\n"
+            "}"
+        )
+        
+        user_prompt = (
+            f"User Target Lead Criteria: \"{criteria}\"\n\n"
+            "Google Search Result to evaluate:\n"
+            f"- Title: {title}\n"
+            f"- URL: {url}\n"
+            f"- Description: {snippet}\n\n"
+            "Is this result a match for the lead criteria?"
+        )
+
+        if model_choice.startswith("minimax"):
+            if not api_key:
+                return {"match": False, "reason": "MiniMax API key not provided"}
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model_choice,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "response_format": {"type": "json_object"}
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.post(
+                        "https://api.minimax.chat/v1/chat/completions",
+                        json=payload,
+                        timeout=30
+                    ) as response:
+                        if response.status != 200:
+                            err_body = await response.text()
+                            logger.error(f"❌ MiniMax API error {response.status}: {err_body}")
+                            return {"match": False, "reason": f"MiniMax error: {response.status}"}
+                        
+                        data = await response.json()
+                        raw_content = data["choices"][0]["message"]["content"]
+                        return self._extract_json(raw_content)
+                except Exception as e:
+                    logger.error(f"❌ MiniMax request failed: {e}")
+                    return {"match": False, "reason": f"Request failed: {str(e)}"}
+        else:
+            # Local Ollama fallback
+            url_to_use = ollama_url or self.ollama_url
+            model_to_use = self.model  # e.g. "gemma4:e2b"
+            
+            prompt = f"{system_prompt}\n\n{user_prompt}"
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.post(
+                        f"{url_to_use}/api/generate",
+                        json={
+                            "model": model_to_use,
+                            "prompt": prompt,
+                            "stream": False,
+                            "options": {"temperature": 0.1}
+                        },
+                        timeout=30
+                    ) as response:
+                        if response.status != 200:
+                            err_body = await response.text()
+                            logger.error(f"❌ Ollama API error {response.status}: {err_body}")
+                            return {"match": False, "reason": f"Ollama error: {response.status}"}
+                        
+                        data = await response.json()
+                        raw_content = data.get("response", "{}")
+                        return self._extract_json(raw_content)
+                except Exception as e:
+                    logger.error(f"❌ Ollama request failed: {e}")
+                    return {"match": False, "reason": f"Request failed: {str(e)}"}
+
 instagram_ai = InstagramAIEngine()

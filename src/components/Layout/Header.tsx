@@ -81,8 +81,7 @@ export default function Header({ onStartTour }: HeaderProps) {
                 </button>
               ))}
 
-              {/* Instagram Dropdown (Temporarily Hidden) */}
-              {/*
+              {/* Instagram Dropdown */}
               <div className="relative group ml-1">
                 <button id="nav-instagram-group" className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${['/instagram-leads', '/instagram-warming'].includes(location.pathname) ? 'text-pink-600 dark:text-pink-500 bg-pink-50/50 dark:bg-white/5' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
                    <Instagram className="w-3.5 h-3.5" />
@@ -108,7 +107,6 @@ export default function Header({ onStartTour }: HeaderProps) {
                   ))}
                 </div>
               </div>
-              */}
 
               {/* Manage Dropdown */}
               <div className="relative group ml-1">

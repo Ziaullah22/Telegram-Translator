@@ -49,7 +49,27 @@ const InstagramLeadGenerator: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'campaign' | 'filters'>('leads');
     const [messageTemplate, setMessageTemplate] = useState('Hello [username], I saw your profile and loved your content! We help brands like yours grow. Would you be open to a quick chat?');
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
-    const [filterSettings, setFilterSettings] = useState<{ bio_keywords: string, min_followers: number, max_followers: number, sample_hashes: string[], visual_niche: string }>({ bio_keywords: '', min_followers: 0, max_followers: 0, sample_hashes: [], visual_niche: '' });
+    const [filterSettings, setFilterSettings] = useState<{ 
+        bio_keywords: string, 
+        min_followers: number, 
+        max_followers: number, 
+        sample_hashes: string[], 
+        visual_niche: string,
+        minimax_api_key: string,
+        enable_ai_filter: boolean,
+        google_niche_filter: string,
+        ai_model: string
+    }>({ 
+        bio_keywords: '', 
+        min_followers: 0, 
+        max_followers: 0, 
+        sample_hashes: [], 
+        visual_niche: '',
+        minimax_api_key: '',
+        enable_ai_filter: false,
+        google_niche_filter: '',
+        ai_model: 'minimax-text-01'
+    });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -185,7 +205,11 @@ const InstagramLeadGenerator: React.FC = () => {
                 min_followers: s.min_followers || 0,
                 max_followers: s.max_followers || 0,
                 sample_hashes: s.sample_hashes || [],
-                visual_niche: s.visual_niche || ''
+                visual_niche: s.visual_niche || '',
+                minimax_api_key: s.minimax_api_key || '',
+                enable_ai_filter: !!s.enable_ai_filter,
+                google_niche_filter: s.google_niche_filter || '',
+                ai_model: s.ai_model || 'minimax-text-01'
             }))
             .catch(() => { });
     }, [filterStatus, searchQuery]);
@@ -1296,6 +1320,77 @@ const InstagramLeadGenerator: React.FC = () => {
                                     </div>
                                 </div>
 
+                                <div className="space-y-4 p-6 bg-gradient-to-br from-purple-500/5 to-indigo-500/5 rounded-3xl border border-purple-500/10 mb-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-500">
+                                                <Brain className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-black text-gray-900 dark:text-white tracking-tight">Deep AI Search Result Filter</h3>
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Filter Google results using AI before analysis</p>
+                                            </div>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={filterSettings.enable_ai_filter} 
+                                                onChange={(e) => setFilterSettings(p => ({ ...p, enable_ai_filter: e.target.checked }))}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                                        </label>
+                                    </div>
+
+                                    {filterSettings.enable_ai_filter && (
+                                        <div className="space-y-4 pt-2 animate-in fade-in duration-300">
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                                    Target Lead Criteria Description
+                                                </label>
+                                                <textarea
+                                                    rows={3}
+                                                    placeholder="Specify what type of leads you look for in detail. AI will read Google's snippet and ignore results that don't match. E.g., 'Only show Instagram accounts of personal fitness coaches or premium Gyms, ignoring review lists or clothing brands.'"
+                                                    value={filterSettings.google_niche_filter}
+                                                    onChange={(e) => setFilterSettings(p => ({ ...p, google_niche_filter: e.target.value }))}
+                                                    className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 placeholder:text-gray-400"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                                                        AI Model Engine
+                                                    </label>
+                                                    <select
+                                                        value={filterSettings.ai_model}
+                                                        onChange={(e) => setFilterSettings(p => ({ ...p, ai_model: e.target.value }))}
+                                                        className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                                    >
+                                                        <option value="ollama-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Ollama (Local / FREE - No Key Required)</option>
+                                                        <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud / API Key Required)</option>
+                                                    </select>
+                                                </div>
+
+                                                {filterSettings.ai_model.startsWith('minimax') && (
+                                                    <div className="space-y-2 animate-in slide-in-from-left-2 duration-200">
+                                                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                                                            MiniMax API Key
+                                                        </label>
+                                                        <input
+                                                            type="password"
+                                                            placeholder="Enter MiniMax API Key"
+                                                            value={filterSettings.minimax_api_key}
+                                                            onChange={(e) => setFilterSettings(p => ({ ...p, minimax_api_key: e.target.value }))}
+                                                            className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 placeholder:text-gray-400"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
                                     <h3 className="text-xl font-black text-gray-900 dark:text-white mb-1 flex items-center gap-3">
                                         <Filter className="w-5 h-5 text-purple-500" /> Bio Keyword Filter
@@ -1365,7 +1460,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 filterSettings.min_followers,
                                                 filterSettings.max_followers,
                                                 filterSettings.sample_hashes,
-                                                filterSettings.visual_niche
+                                                filterSettings.visual_niche,
+                                                filterSettings.minimax_api_key,
+                                                filterSettings.enable_ai_filter,
+                                                filterSettings.google_niche_filter,
+                                                filterSettings.ai_model
                                             );
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }

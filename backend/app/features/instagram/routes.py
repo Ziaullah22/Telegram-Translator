@@ -349,6 +349,10 @@ class FilterSettingsRequest(BaseModel):
     max_followers: int = 0
     sample_hashes: List[str] = []
     visual_niche: str = ""
+    minimax_api_key: str = ""
+    enable_ai_filter: bool = False
+    google_niche_filter: str = ""
+    ai_model: str = "minimax-text-01"
 
 @router.get("/filters/settings")
 async def get_filter_settings(current_user: TokenData = Depends(get_current_user)):
@@ -359,7 +363,16 @@ async def get_filter_settings(current_user: TokenData = Depends(get_current_user
 async def save_filter_settings(req: FilterSettingsRequest, current_user: TokenData = Depends(get_current_user)):
     """💾 Save bio keyword, follower range, sample image hashes, and visual niche description."""
     return await instagram_service.save_filter_settings(
-        current_user.user_id, req.bio_keywords, req.min_followers, req.max_followers, req.sample_hashes, req.visual_niche
+        current_user.user_id, 
+        req.bio_keywords, 
+        req.min_followers, 
+        req.max_followers, 
+        req.sample_hashes, 
+        req.visual_niche,
+        req.minimax_api_key,
+        req.enable_ai_filter,
+        req.google_niche_filter,
+        req.ai_model
     )
 
 class ImageHashRequest(BaseModel):
