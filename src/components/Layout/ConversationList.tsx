@@ -505,7 +505,23 @@ export default function ConversationList({
                   onClick={() => onConversationSelect(conversation)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setContextMenu({ conversation, x: e.clientX, y: e.clientY });
+                    const menuHeight = 110; // Approximate menu height in pixels
+                    const menuWidth = 208;  // w-52 is 13rem = 208px
+                    
+                    let y = e.clientY;
+                    let x = e.clientX;
+                    
+                    // Adjust position if it overflows the bottom of the screen
+                    if (y + menuHeight > window.innerHeight) {
+                      y = window.innerHeight - menuHeight - 10; // 10px spacing buffer
+                    }
+                    
+                    // Adjust position if it overflows the right edge of the screen
+                    if (x + menuWidth > window.innerWidth) {
+                      x = window.innerWidth - menuWidth - 10;
+                    }
+                    
+                    setContextMenu({ conversation, x, y });
                   }}
                   className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group ${isActive
                     ? 'bg-blue-600 shadow-inner'
