@@ -91,6 +91,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Instagram lead cleanup skipped: {e}")
 
+    # One-time cleanup: Delete any leaked CSS, HTML, or programming-related junk leads
+    try:
+        deleted_junk = await db.execute("""
+            DELETE FROM instagram_leads 
+            WHERE instagram_username IN (
+                'media', 'keyframes', 'font', 'null', 'none', 'undefined', 'import', 'charset', 
+                'document', 'supports', 'page', 'namespace', 'viewport', 'container', 'theme', 
+                'root', 'var', 'selector', 'class', 'id', 'html', 'body', 'div', 'span', 'css', 
+                'js', 'true', 'false', 'reel', 'reels'
+            )
+        """)
+        logger.info(f"✅ Instagram junk lead cleanup done: {deleted_junk}")
+    except Exception as e:
+        logger.warning(f"Instagram junk lead cleanup skipped: {e}")
+
     # Run migration for reply support
     try:
         await db.execute("""

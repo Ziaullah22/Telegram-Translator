@@ -97,16 +97,25 @@ async def focus_account(
 @router.post("/discover")
 async def discover_leads(
     request: InstagramDiscoveryRequest,
+    background_tasks: BackgroundTasks,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Stage 1: Discover Instagram leads from keywords (Professional Mode: Blocking)."""
-    # 🌀 Pro Mode: Wait for complete results to give the final count
-    new_count = await instagram_service.discover_leads_google(
+    """Stage 1: Discover Instagram leads from keywords (Asynchronous Background Mode)."""
+    # 🚀 Run the scraping process in the background
+    background_tasks.add_task(
+        instagram_service.discover_leads_google,
         current_user.user_id, 
         request.keywords, 
         request.limit_per_keyword
     )
-    return {"status": "success", "new_leads_found": new_count}
+    return {"status": "success", "message": "Discovery started in background."}
+
+@router.get("/discovery/status")
+async def get_discovery_status(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """🚥 STATUS: Check if Stage 1 Google Discovery is currently active."""
+    return await instagram_service.get_discovery_status(current_user.user_id)
 
 @router.get("/leads")
 async def get_leads(

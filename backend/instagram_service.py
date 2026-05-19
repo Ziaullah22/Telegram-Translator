@@ -39,6 +39,7 @@ class InstagramService:
     _harvest_tasks = {} # user_id: current_lead_id
     workers = {} # user_id: bool (auto-pilot status)
     active_pages = {} # username: page object
+    _discovery_status = {} # user_id: {"active": bool, "progress": str}
 
     def _is_valid_username(self, u: str) -> bool:
         """
@@ -52,9 +53,16 @@ class InstagramService:
         # 2. Ignore too many special characters (likely junk)
         if (u.count('.') + u.count('_')) > 3: return False
         
-        # 3. List of junk keywords to ignore
-        junk = ['instagram', 'help', 'login', 'about', 'privacy', 'blog', 'reels', 'p', 'explore', 'stories', 'direct', 'accounts', 'terms', 'legal', 'support', 'business']
-        if u in junk: return False
+        # 3. List of junk keywords to ignore (includes common CSS rules and dev junk)
+        junk = {
+            'instagram', 'help', 'login', 'about', 'privacy', 'blog', 'reels', 'reel', 'p', 
+            'explore', 'stories', 'direct', 'accounts', 'terms', 'legal', 'support', 'business',
+            'media', 'keyframes', 'font', 'null', 'none', 'undefined', 'import', 'charset', 
+            'document', 'supports', 'page', 'namespace', 'viewport', 'container', 'theme', 
+            'root', 'var', 'selector', 'class', 'id', 'html', 'body', 'div', 'span', 'css', 
+            'js', 'true', 'false'
+        }
+        if u.lower() in junk: return False
         
         # 4. Must contain at least one letter
         if not any(c.isalpha() for c in u): return False
@@ -104,66 +112,81 @@ class InstagramService:
         🚀 High-Precision Discovery Engine
         Uses targeted DuckDuckGo scraping with strict filtering for Instagram handles.
         """
-        new_count = 0
+        self._discovery_status[user_id] = {
+            "active": True,
+            "progress": f"🚀 Initializing discovery for {len(keywords)} keyword(s)..."
+        }
         
-        # Load AI filter settings
-        settings = await self.get_filter_settings(user_id)
-        enable_ai_filter = settings.get("enable_ai_filter", False)
-        google_niche_filter = settings.get("google_niche_filter", "")
-        ai_model = settings.get("ai_model", "minimax-text-01")
-        minimax_api_key = settings.get("minimax_api_key", "")
-
-        async def ddg_scraper_session_func(page_obj, _):
-            nonlocal new_count
-            for kw_idx, keyword in enumerate(keywords):
-                # 🛠️ Direct Username Detection
-                kw_clean = keyword.strip().lstrip('@')
-                if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
-                    logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                    status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
-                    if status == "INSERT 0 1": new_count += 1
-
-                msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
-                logger.info(msg)
-                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                except: pass
-
-                current_kw_new = 0
-                
-                # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
-                try:
-                    surge_leads = await self._perform_scrapling_discovery(
-                        keyword, 
-                        limit=limit_per_keyword,
-                        enable_ai_filter=enable_ai_filter,
-                        google_niche_filter=google_niche_filter,
-                        ai_model=ai_model,
-                        minimax_api_key=minimax_api_key,
-                        user_id=user_id
-                    )
-                    if surge_leads:
-                        for u in surge_leads:
-                            if current_kw_new >= limit_per_keyword: break
-                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                            if status == "INSERT 0 1": 
-                                new_count += 1
-                                current_kw_new += 1
-                except Exception as e:
-                    logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
-
-                # Breath between keywords
-                await asyncio.sleep(random.uniform(5.0, 10.0))
-
-            return new_count
-
+        new_count = 0
         try:
+            # Load AI filter settings
+            settings = await self.get_filter_settings(user_id)
+            enable_ai_filter = settings.get("enable_ai_filter", False)
+            google_niche_filter = settings.get("google_niche_filter", "")
+            ai_model = settings.get("ai_model", "minimax-text-01")
+            minimax_api_key = settings.get("minimax_api_key", "")
+
+            async def ddg_scraper_session_func(page_obj, _):
+                nonlocal new_count
+                for kw_idx, keyword in enumerate(keywords):
+                    # 🛠️ Direct Username Detection
+                    kw_clean = keyword.strip().lstrip('@')
+                    if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
+                        logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
+                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                        if status == "INSERT 0 1": new_count += 1
+
+                    msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                    logger.info(msg)
+                    self._discovery_status[user_id]["progress"] = msg
+                    try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                    except: pass
+
+                    current_kw_new = 0
+                    
+                    # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
+                    try:
+                        surge_leads = await self._perform_scrapling_discovery(
+                            keyword, 
+                            limit=limit_per_keyword,
+                            enable_ai_filter=enable_ai_filter,
+                            google_niche_filter=google_niche_filter,
+                            ai_model=ai_model,
+                            minimax_api_key=minimax_api_key,
+                            user_id=user_id
+                        )
+                        if surge_leads:
+                            for u in surge_leads:
+                                if current_kw_new >= limit_per_keyword: break
+                                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                                if status == "INSERT 0 1": 
+                                    new_count += 1
+                                    current_kw_new += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
+
+                    # Breath between keywords
+                    await asyncio.sleep(random.uniform(5.0, 10.0))
+
+                return new_count
+
             # 📱 Single Session for ALL keywords
             await browser_engine.run_anonymous_session("multi_keyword_mission", ddg_scraper_session_func, is_desktop=False, headless=False, proxy=None)
         except Exception as e:
             logger.error(f"❌ Discovery mission crashed: {e}")
-                
-        # 🏁 Mission Summary
-        logger.info(f"📊 Mission Summary: {new_count} NEW leads found total.")
+        finally:
+            self._discovery_status[user_id] = {
+                "active": False,
+                "progress": ""
+            }
+            logger.info(f"📊 Mission Summary: {new_count} NEW leads found total.")
+            try:
+                await manager.send_personal_message({
+                    "type": "discovery_finished",
+                    "message": f"📊 Mission complete! Found {new_count} NEW leads total."
+                }, user_id)
+            except: pass
+            
         return new_count
 
     async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None):
@@ -176,8 +199,15 @@ class InstagramService:
         seen = set()
 
         async with async_playwright() as p:
-            # 🖥️ LAUNCH MAXIMIZED
-            browser = await p.chromium.launch(headless=False, args=["--start-maximized"])
+            # 🖥️ LAUNCH ACTUAL GOOGLE CHROME WITH STEALTH FLAGS
+            browser = await p.chromium.launch(
+                headless=False,
+                channel="chrome",
+                args=[
+                    "--start-maximized",
+                    "--disable-blink-features=AutomationControlled"
+                ]
+            )
             # 🖼️ NO VIEWPORT (Let it use the full screen)
             context = await browser.new_context(
                 no_viewport=True,
@@ -192,7 +222,7 @@ class InstagramService:
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
 
                 search_query = f"{keyword} site:instagram.com"
-                url = f"https://www.google.com/search?q={quote(search_query)}&num=100&start={start_idx}"
+                url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
 
                 try:
                     await page.goto(url, wait_until="domcontentloaded")
@@ -286,11 +316,31 @@ class InstagramService:
                                         logger.info(f"✨ Approved Lead: @{u}")
                                         found_usernames.append(u)
                                         seen.add(u)
+                                        
+                                        # Save lead to database immediately in real-time!
+                                        db_status = "discovered"
+                                        try:
+                                            new_id = await db.fetchval(
+                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                                                user_id, u, keyword, db_status
+                                            )
+                                            if new_id:
+                                                try:
+                                                    await manager.send_personal_message({
+                                                        "type": "new_lead_discovered",
+                                                        "lead_id": new_id,
+                                                        "status": db_status
+                                                    }, user_id)
+                                                except: pass
+                                        except Exception as db_err:
+                                            logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
 
                     # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
                     if processed_card_leads == 0:
                         logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
-                        page_content = await page.content()
+                        # 💡 VISIBLE TEXT ONLY: Extract inner text rather than HTML code to completely avoid CSS stylesheet leakage
+                        page_content = await page.evaluate("() => document.body.innerText")
                         
                         # 1. Scrape from Links
                         links = await page.query_selector_all('a[href*="instagram.com"]')
@@ -305,6 +355,24 @@ class InstagramService:
                                         logger.info(f"✨ Found Link Lead: @{u}")
                                         found_usernames.append(u)
                                         seen.add(u)
+                                        
+                                        # Save fallback link lead immediately!
+                                        try:
+                                            new_id = await db.fetchval(
+                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                                "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
+                                                user_id, u, keyword
+                                            )
+                                            if new_id:
+                                                try:
+                                                    await manager.send_personal_message({
+                                                        "type": "new_lead_discovered",
+                                                        "lead_id": new_id,
+                                                        "status": "discovered"
+                                                    }, user_id)
+                                                except: pass
+                                        except Exception as db_err:
+                                            logger.error(f"❌ Failed to insert fallback lead {u} in real-time: {db_err}")
 
                         # 2. Scrape from Text Snippets (Deep Scan)
                         snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
@@ -314,6 +382,24 @@ class InstagramService:
                                 logger.info(f"✨ Found Snippet Lead: @{u}")
                                 found_usernames.append(u)
                                 seen.add(u)
+                                
+                                # Save fallback snippet lead immediately!
+                                try:
+                                    new_id = await db.fetchval(
+                                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                        "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
+                                        user_id, u, keyword
+                                    )
+                                    if new_id:
+                                        try:
+                                            await manager.send_personal_message({
+                                                "type": "new_lead_discovered",
+                                                "lead_id": new_id,
+                                                "status": "discovered"
+                                            }, user_id)
+                                        except: pass
+                                except Exception as db_err:
+                                    logger.error(f"❌ Failed to insert snippet lead {u} in real-time: {db_err}")
                     
                     # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
@@ -1601,6 +1687,9 @@ class InstagramService:
 
     async def get_worker_status(self, user_id: int):
         return {"is_running": self.workers.get(user_id, False)}
+
+    async def get_discovery_status(self, user_id: int):
+        return self._discovery_status.get(user_id, {"active": False, "progress": ""})
 
     # --- Stage 4: Outreach ---
     

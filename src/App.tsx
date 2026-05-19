@@ -32,7 +32,7 @@ import InstagramProxyModal from './components/Modals/InstagramProxyModal';
 
 // Services
 import { telegramAPI, conversationsAPI, messagesAPI, instagramAPI, instagramChatAPI } from './services/api';
-import { Zap, X, Eye } from 'lucide-react';
+import { Zap, X } from 'lucide-react';
 
 // Types
 import type { TelegramAccount, TelegramMessage, TelegramChat, ScheduledMessage, InstagramAccount, InstagramMessage, InstagramChat } from './types';

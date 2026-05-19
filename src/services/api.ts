@@ -824,9 +824,13 @@ export const salesAPI = {
 
 // --- INSTAGRAM LEAD GENERATION SERVICES ---
 export const instagramAPI = {
-  discoverLeads: async (keywords: string[], limit_per_keyword: number = 50): Promise<{ status: string; new_leads_found: number }> => {
-    // 🌀 Pro Mode: Discovery can take several minutes with proxies/bypasses
-    const response = await api.post('/instagram/discover', { keywords, limit_per_keyword }, { timeout: 300000 });
+  discoverLeads: async (keywords: string[], limit_per_keyword: number = 50): Promise<{ status: string; message: string }> => {
+    const response = await api.post('/instagram/discover', { keywords, limit_per_keyword });
+    return response.data;
+  },
+
+  getDiscoveryStatus: async (): Promise<{ active: boolean; progress: string }> => {
+    const response = await api.get('/instagram/discovery/status');
     return response.data;
   },
 

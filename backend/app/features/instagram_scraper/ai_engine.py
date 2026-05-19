@@ -249,7 +249,7 @@ class InstagramAIEngine:
                             "stream": False,
                             "options": {"temperature": 0.1}
                         },
-                        timeout=30
+                        timeout=120
                     ) as response:
                         if response.status != 200:
                             err_body = await response.text()
@@ -260,7 +260,8 @@ class InstagramAIEngine:
                         raw_content = data.get("response", "{}")
                         return self._extract_json(raw_content)
                 except Exception as e:
-                    logger.error(f"❌ Ollama request failed: {e}")
-                    return {"match": False, "reason": f"Request failed: {str(e)}"}
+                    err_msg = str(e) or type(e).__name__ or "Timeout/Connection Error"
+                    logger.error(f"❌ Ollama request failed: {err_msg}")
+                    return {"match": False, "reason": f"Request failed: {err_msg}"}
 
 instagram_ai = InstagramAIEngine()

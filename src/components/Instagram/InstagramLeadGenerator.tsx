@@ -84,6 +84,11 @@ const InstagramLeadGenerator: React.FC = () => {
     const [bulkUploading, setBulkUploading] = useState<'accounts' | 'proxies' | null>(null);
     const [connectingIds, setConnectingIds] = useState<Set<number>>(new Set());
     const [connectedIds, setConnectedIds] = useState<Set<number>>(new Set());
+    
+    // Live Discovery HUD states
+    const [discoveryProgressMessage, setDiscoveryProgressMessage] = useState<string | null>(null);
+    const [discoveryStartTime, setDiscoveryStartTime] = useState<number | null>(null);
+    const [discoveryTimer, setDiscoveryTimer] = useState<string>('00:00');
 
     // Modals
     const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
@@ -184,6 +189,16 @@ const InstagramLeadGenerator: React.FC = () => {
             } else if (message.type === 'auto_analyze_resting') {
                 setRestTimer(message.duration);
                 setAutoAnalyzingId(null);
+            } else if (message.type === 'discovery_progress') {
+                setIsDiscovering(true);
+                setDiscoveryProgressMessage(message.message);
+                setDiscoveryStartTime(prev => prev || Date.now());
+            } else if (message.type === 'discovery_finished') {
+                setIsDiscovering(false);
+                setDiscoveryProgressMessage(null);
+                setDiscoveryStartTime(null);
+                setNotification({ msg: message.message, type: 'success' });
+                fetchData();
             }
         });
         return unsubscribe;
@@ -217,18 +232,51 @@ const InstagramLeadGenerator: React.FC = () => {
     useEffect(() => {
         const checkPilotStatus = async () => {
             try {
-                const [autoStatus, campStatus] = await Promise.all([
+                const [autoStatus, campStatus, discStatus] = await Promise.all([
                     instagramAPI.getAutoPilotStatus(),
-                    instagramAPI.getCampaignStatus()
+                    instagramAPI.getCampaignStatus(),
+                    instagramAPI.getDiscoveryStatus()
                 ]);
                 setIsAutoPilotRunning(autoStatus.is_running);
                 setIsCampaignRunning(campStatus.is_running);
+                
+                if (discStatus.active) {
+                    setIsDiscovering(true);
+                    setDiscoveryProgressMessage(discStatus.progress);
+                    setDiscoveryStartTime(prev => prev || Date.now());
+                } else {
+                    setIsDiscovering(false);
+                    setDiscoveryProgressMessage(null);
+                    setDiscoveryStartTime(null);
+                }
             } catch (error) {
                 console.error('Failed to get pilot status:', error);
             }
         };
         checkPilotStatus();
+        const pilotStatusInterval = setInterval(checkPilotStatus, 15000);
+        return () => clearInterval(pilotStatusInterval);
     }, []);
+
+    // ⏱️ Real-time Discovery Stopwatch Timer
+    useEffect(() => {
+        if (!isDiscovering || !discoveryStartTime) {
+            setDiscoveryTimer('00:00');
+            return;
+        }
+
+        const interval = setInterval(() => {
+            const elapsedMs = Date.now() - discoveryStartTime;
+            const totalSecs = Math.floor(elapsedMs / 1000);
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            const minStr = mins < 10 ? `0${mins}` : `${mins}`;
+            const secStr = secs < 10 ? `0${secs}` : `${secs}`;
+            setDiscoveryTimer(`${minStr}:${secStr}`);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [isDiscovering, discoveryStartTime]);
 
     useEffect(() => {
         let pollInterval: any;
@@ -380,18 +428,21 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleDiscover = async () => {
         if (!keywords.trim()) return;
         setIsDiscovering(true);
+        setDiscoveryStartTime(Date.now());
+        setDiscoveryProgressMessage('Initiating background lead discovery...');
+        setShowDiscoveryModal(false);
+        setKeywords('');
+        setNotification({ msg: '🚀 Discovery started in background! Live progress HUD active.', type: 'success' });
+        
         try {
             const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
-            const result = await instagramAPI.discoverLeads(keywordList);
-            setNotification({ msg: `Success! 🎉 Scraped ${result.new_leads_found} leads.`, type: 'success' });
-            setShowDiscoveryModal(false);
-            setKeywords('');
-            fetchData();
+            await instagramAPI.discoverLeads(keywordList);
         } catch (error: any) {
-            console.error('Discovery failed:', error);
-            setNotification({ msg: 'Scan failed.', type: 'alert' });
-        } finally {
+            console.error('Failed to trigger discovery:', error);
             setIsDiscovering(false);
+            setDiscoveryStartTime(null);
+            setDiscoveryProgressMessage(null);
+            setNotification({ msg: 'Failed to start scan.', type: 'alert' });
         }
     };
 
@@ -714,6 +765,46 @@ const InstagramLeadGenerator: React.FC = () => {
 
                 {activeTab === 'leads' && (
                     <div className="space-y-6">
+                        {/* 🛰️ Live Background Discovery HUD */}
+                        {isDiscovering && (
+                            <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 dark:from-pink-500/20 dark:via-purple-500/20 dark:to-indigo-500/20 border border-pink-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden animate-pulse">
+                                {/* Pulse light effect */}
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-pink-500/5 dark:bg-pink-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                                
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                                    <div className="flex items-center gap-4">
+                                        {/* Pulse indicator */}
+                                        <div className="relative flex h-5 w-5">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-5 w-5 bg-pink-500 flex items-center justify-center text-[10px] text-white font-black">🛰️</span>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-black text-gray-800 dark:text-white flex items-center gap-2">
+                                                <span>Live Lead Discovery Active</span>
+                                                <span className="bg-pink-500/20 text-pink-600 dark:text-pink-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider animate-bounce">
+                                                    Running
+                                                </span>
+                                            </h4>
+                                            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
+                                                <span className="inline-block w-1.5 h-1.5 bg-gray-400 dark:bg-gray-500 rounded-full"></span>
+                                                <span>{discoveryProgressMessage || 'Scraper starting up...'}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-4 self-end md:self-center">
+                                        <div className="bg-white/50 dark:bg-black/35 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2 flex items-center gap-2 text-xs font-black text-gray-700 dark:text-gray-300">
+                                            <span>⏱️ Elapsed:</span>
+                                            <span className="text-pink-600 dark:text-pink-400 font-mono tracking-wider">{discoveryTimer}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Pulse loader bar */}
+                                <div className="w-full bg-gray-200 dark:bg-black/40 rounded-full h-1 mt-4 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 h-1 rounded-full animate-[shimmer_1.5s_infinite] bg-[length:200%_100%]"></div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Interactive Filter Bar */}
                         <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
                             <div className="flex-1 min-w-[300px] relative">
