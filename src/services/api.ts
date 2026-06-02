@@ -973,7 +973,7 @@ export const instagramAPI = {
     return response.data;
   },
 
-  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string; minimax_api_key: string; enable_ai_filter: boolean; google_niche_filter: string; ai_model: string }> => {
+  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string; minimax_api_key: string; enable_ai_filter: boolean; google_niche_filter: string; ai_model: string; bio_exclude_keywords: string; bio_cities_whitelist: string }> => {
     const response = await api.get('/instagram/filters/settings');
     return response.data;
   },
@@ -987,7 +987,9 @@ export const instagramAPI = {
     minimax_api_key: string,
     enable_ai_filter: boolean,
     google_niche_filter: string,
-    ai_model: string
+    ai_model: string,
+    bio_exclude_keywords: string,
+    bio_cities_whitelist: string
   ): Promise<any> => {
     const response = await api.post('/instagram/filters/settings', { 
       bio_keywords, 
@@ -998,7 +1000,9 @@ export const instagramAPI = {
       minimax_api_key,
       enable_ai_filter,
       google_niche_filter,
-      ai_model
+      ai_model,
+      bio_exclude_keywords,
+      bio_cities_whitelist
     });
     return response.data;
   },
@@ -1038,7 +1042,58 @@ export const instagramAPI = {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
-  }
+  },
+
+  suggestKeywords: async (params: {
+    seed_keywords: string[];
+    conversation_history?: { role: string; content: string }[];
+    user_message?: string;
+    count?: number;
+  }): Promise<{
+    keywords: string[];
+    ai_message: string;
+    proxy_count: number;
+    mode: 'sequential' | 'parallel';
+    time_estimate: string;
+    estimated_seconds: number;
+    assistant_message: { role: string; content: string };
+  }> => {
+    const response = await api.post('/instagram/suggest-keywords', params, { timeout: 90000 });
+    return response.data;
+  },
+
+  deduplicateLeads: async (): Promise<{ status: string; removed: number; message: string }> => {
+    const response = await api.post('/instagram/leads/deduplicate');
+    return response.data;
+  },
+
+  suggestBadKeywords: async (params: {
+    seed_keywords: string[];
+    conversation_history?: { role: string; content: string }[];
+    user_message?: string;
+    count?: number;
+  }): Promise<{
+    keywords: string[];
+    ai_message: string;
+    assistant_message: { role: string; content: string };
+  }> => {
+    const response = await api.post('/instagram/suggest-bad-keywords', params, { timeout: 90000 });
+    return response.data;
+  },
+
+  suggestCities: async (params: {
+    region: string;
+    conversation_history?: { role: string; content: string }[];
+    user_message?: string;
+    count?: number;
+  }): Promise<{
+    cities: string[];
+    ai_message: string;
+    assistant_message: { role: string; content: string };
+  }> => {
+    const response = await api.post('/instagram/suggest-cities', params, { timeout: 90000 });
+    return response.data;
+  },
 };
 
 // --- INSTAGRAM CHAT SERVICES ---

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Instagram,
     Search,
@@ -24,7 +24,12 @@ import {
     Target,
     Filter,
     Sparkles,
-    Brain
+    Brain,
+    MessageSquare,
+    Wand2,
+    ChevronRight,
+    Hash,
+    Send
 } from 'lucide-react';
 import { instagramAPI } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
@@ -58,7 +63,9 @@ const InstagramLeadGenerator: React.FC = () => {
         minimax_api_key: string,
         enable_ai_filter: boolean,
         google_niche_filter: string,
-        ai_model: string
+        ai_model: string,
+        bio_exclude_keywords: string,
+        bio_cities_whitelist: string
     }>({ 
         bio_keywords: '', 
         min_followers: 0, 
@@ -68,7 +75,9 @@ const InstagramLeadGenerator: React.FC = () => {
         minimax_api_key: '',
         enable_ai_filter: false,
         google_niche_filter: '',
-        ai_model: 'minimax-text-01'
+        ai_model: 'minimax-text-01',
+        bio_exclude_keywords: '',
+        bio_cities_whitelist: ''
     });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -103,6 +112,54 @@ const InstagramLeadGenerator: React.FC = () => {
 
     // Form States
     const [keywords, setKeywords] = useState('');
+
+    // 🤖 AI Keyword Suggestion States
+    const [aiDiscoveryStep, setAiDiscoveryStep] = useState<'chat' | 'review'>('chat');
+    const [aiSeedInput, setAiSeedInput] = useState('');
+    const [aiChatHistory, setAiChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+    const [aiChatInput, setAiChatInput] = useState('');
+    const [aiSuggestedKeywords, setAiSuggestedKeywords] = useState<string[]>([]);
+    const [aiKeywordCount, setAiKeywordCount] = useState(20);
+    const [isAiThinking, setIsAiThinking] = useState(false);
+    const [aiProxyInfo, setAiProxyInfo] = useState<{ count: number; mode: string; time_estimate: string } | null>(null);
+    const [selectedKeywords, setSelectedKeywords] = useState<Set<string>>(new Set());
+    const aiChatEndRef = useRef<HTMLDivElement>(null);
+
+    // 🤖 AI Bad Keyword Suggestion States (Filter block list)
+    const [showBadKeywordsModal, setShowBadKeywordsModal] = useState(false);
+    const [badAiDiscoveryStep, setBadAiDiscoveryStep] = useState<'chat' | 'review'>('chat');
+    const [badAiSeedInput, setBadAiSeedInput] = useState('');
+    const [badAiChatHistory, setBadAiChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+    const [badAiChatInput, setBadAiChatInput] = useState('');
+    const [badAiSuggestedKeywords, setBadAiSuggestedKeywords] = useState<string[]>([]);
+    const [badAiKeywordCount, setBadAiKeywordCount] = useState(20);
+    const [isBadAiThinking, setIsBadAiThinking] = useState(false);
+    const [badSelectedKeywords, setBadSelectedKeywords] = useState<Set<string>>(new Set());
+    const badAiChatEndRef = useRef<HTMLDivElement>(null);
+
+    // 🤖 AI Cities Whitelist Suggestion States
+    const [showCitiesModal, setShowCitiesModal] = useState(false);
+    const [citiesAiDiscoveryStep, setCitiesAiDiscoveryStep] = useState<'chat' | 'review'>('chat');
+    const [citiesAiSeedInput, setCitiesAiSeedInput] = useState('');
+    const [citiesAiChatHistory, setCitiesAiChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+    const [citiesAiChatInput, setCitiesAiChatInput] = useState('');
+    const [citiesAiSuggestedKeywords, setCitiesAiSuggestedKeywords] = useState<string[]>([]);
+    const [citiesAiKeywordCount, setCitiesAiKeywordCount] = useState(50);
+    const [isCitiesAiThinking, setIsCitiesAiThinking] = useState(false);
+    const [citiesSelectedKeywords, setCitiesSelectedKeywords] = useState<Set<string>>(new Set());
+    const citiesAiChatEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (citiesAiChatEndRef.current) {
+            citiesAiChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [citiesAiChatHistory, isCitiesAiThinking]);
+
+    useEffect(() => {
+        if (badAiChatEndRef.current) {
+            badAiChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [badAiChatHistory, isBadAiThinking]);
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [notification, setNotification] = useState<{ msg: string, type: 'success' | 'alert' } | null>(null);
@@ -224,7 +281,9 @@ const InstagramLeadGenerator: React.FC = () => {
                 minimax_api_key: s.minimax_api_key || '',
                 enable_ai_filter: !!s.enable_ai_filter,
                 google_niche_filter: s.google_niche_filter || '',
-                ai_model: s.ai_model || 'minimax-text-01'
+                ai_model: s.ai_model || 'minimax-text-01',
+                bio_exclude_keywords: s.bio_exclude_keywords || '',
+                bio_cities_whitelist: s.bio_cities_whitelist || ''
             }))
             .catch(() => { });
     }, [filterStatus, searchQuery]);
@@ -437,6 +496,16 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
             await instagramAPI.discoverLeads(keywordList);
+            // 🧹 After discovery, auto-deduplicate in background
+            setTimeout(async () => {
+                try {
+                    const dedupResult = await instagramAPI.deduplicateLeads();
+                    if (dedupResult.removed > 0) {
+                        setNotification({ msg: `🧹 Auto-purged ${dedupResult.removed} duplicate leads!`, type: 'success' });
+                        fetchData();
+                    }
+                } catch { /* silent */ }
+            }, 5000);
         } catch (error: any) {
             console.error('Failed to trigger discovery:', error);
             setIsDiscovering(false);
@@ -444,6 +513,252 @@ const InstagramLeadGenerator: React.FC = () => {
             setDiscoveryProgressMessage(null);
             setNotification({ msg: 'Failed to start scan.', type: 'alert' });
         }
+    };
+
+    // 🤖 AI-powered discovery with selected keywords
+    const handleAiDiscover = async () => {
+        const kws = Array.from(selectedKeywords).filter(k => k.trim());
+        if (kws.length === 0) {
+            setNotification({ msg: 'Select at least 1 keyword to start!', type: 'alert' });
+            return;
+        }
+        setIsDiscovering(true);
+        setDiscoveryStartTime(Date.now());
+        setDiscoveryProgressMessage('Initiating background lead discovery...');
+        setShowDiscoveryModal(false);
+        // Reset AI modal state
+        setAiDiscoveryStep('chat');
+        setAiChatHistory([]);
+        setAiSuggestedKeywords([]);
+        setSelectedKeywords(new Set());
+        setAiSeedInput('');
+        setAiChatInput('');
+        setNotification({ msg: `🚀 Launched with ${kws.length} AI keywords! Live HUD active.`, type: 'success' });
+
+        try {
+            await instagramAPI.discoverLeads(kws, 50);
+            // 🧹 Auto-dedup after scraping
+            setTimeout(async () => {
+                try {
+                    const dedupResult = await instagramAPI.deduplicateLeads();
+                    if (dedupResult.removed > 0) {
+                        setNotification({ msg: `🧹 Auto-purged ${dedupResult.removed} duplicate leads!`, type: 'success' });
+                        fetchData();
+                    }
+                } catch { /* silent */ }
+            }, 5000);
+        } catch (error: any) {
+            console.error('Failed to trigger AI discovery:', error);
+            setIsDiscovering(false);
+            setDiscoveryStartTime(null);
+            setDiscoveryProgressMessage(null);
+            setNotification({ msg: 'Failed to start AI scan.', type: 'alert' });
+        }
+    };
+
+    // Send message to AI keyword chat
+    const handleAiKeywordChat = async (overrideMessage?: string) => {
+        const message = overrideMessage || aiChatInput.trim();
+        if (!message && !aiSeedInput.trim()) return;
+        
+        const seeds = aiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
+        const userMsg = message || `Generate ${aiKeywordCount} Instagram search keyword variations based on: ${seeds.join(', ')}`;
+        
+        const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
+            ...aiChatHistory,
+            { role: 'user', content: userMsg }
+        ];
+        setAiChatHistory(newHistory);
+        setAiChatInput('');
+        setIsAiThinking(true);
+
+        try {
+            const result = await instagramAPI.suggestKeywords({
+                seed_keywords: seeds.length > 0 ? seeds : ['instagram influencer'],
+                conversation_history: aiChatHistory,
+                user_message: userMsg,
+                count: aiKeywordCount
+            });
+
+            const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
+                ...newHistory,
+                { role: 'assistant', content: result.ai_message }
+            ];
+            setAiChatHistory(updatedHistory);
+
+            if (result.keywords && result.keywords.length > 0) {
+                setAiSuggestedKeywords(result.keywords);
+                setSelectedKeywords(new Set(result.keywords));
+                setAiDiscoveryStep('review');
+            }
+
+            setAiProxyInfo({
+                count: result.proxy_count,
+                mode: result.mode,
+                time_estimate: result.time_estimate
+            });
+        } catch (error: any) {
+            const errMsg = error?.response?.data?.detail || 'AI service unavailable. Try again.';
+            setAiChatHistory(prev => [
+                ...prev,
+                { role: 'assistant', content: `❌ ${errMsg} You can still type keywords manually.` }
+            ]);
+        } finally {
+            setIsAiThinking(false);
+            setTimeout(() => aiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+    };
+
+    // Send message to AI bad word chat
+    const handleBadAiKeywordChat = async (overrideMessage?: string) => {
+        const message = overrideMessage || badAiChatInput.trim();
+        if (!message && !badAiSeedInput.trim()) return;
+        
+        const seeds = badAiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
+        const userMsg = message || `Generate ${badAiKeywordCount} blacklist keywords to filter out unwanted profiles based on: ${seeds.join(', ')}`;
+        
+        const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
+            ...badAiChatHistory,
+            { role: 'user', content: userMsg }
+        ];
+        setBadAiChatHistory(newHistory);
+        setBadAiChatInput('');
+        setIsBadAiThinking(true);
+
+        try {
+            const result = await instagramAPI.suggestBadKeywords({
+                seed_keywords: seeds.length > 0 ? seeds : ['competitor', 'spam'],
+                conversation_history: badAiChatHistory,
+                user_message: userMsg,
+                count: badAiKeywordCount
+            });
+
+            const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
+                ...newHistory,
+                { role: 'assistant', content: result.ai_message }
+            ];
+            setBadAiChatHistory(updatedHistory);
+
+            if (result.keywords && result.keywords.length > 0) {
+                setBadAiSuggestedKeywords(result.keywords);
+                setBadSelectedKeywords(new Set(result.keywords));
+                setBadAiDiscoveryStep('review');
+            }
+        } catch (error: any) {
+            const errMsg = error?.response?.data?.detail || 'AI service unavailable. Try again.';
+            setBadAiChatHistory(prev => [
+                ...prev,
+                { role: 'assistant', content: `❌ ${errMsg} You can still enter keywords manually.` }
+            ]);
+        } finally {
+            setIsBadAiThinking(false);
+            setTimeout(() => badAiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+    };
+
+    // Apply the selected bad keywords to the exclude list field
+    const handleApplyBadKeywords = () => {
+        const selected = Array.from(badSelectedKeywords).filter(Boolean);
+        if (selected.length === 0) {
+            notify('Select at least one keyword.', 'alert');
+            return;
+        }
+
+        // Merge with existing exclude keywords
+        const existing = filterSettings.bio_exclude_keywords
+            ? filterSettings.bio_exclude_keywords.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : [];
+        const merged = Array.from(new Set([...existing, ...selected]));
+
+        setFilterSettings(prev => ({
+            ...prev,
+            bio_exclude_keywords: merged.join(', ')
+        }));
+
+        setShowBadKeywordsModal(false);
+        setBadAiChatHistory([]);
+        setBadAiSuggestedKeywords([]);
+        setBadSelectedKeywords(new Set());
+        setBadAiSeedInput('');
+        setBadAiChatInput('');
+        setBadAiDiscoveryStep('chat');
+        notify(`Added ${selected.length} keywords to block list!`);
+    };
+
+    // Send message to AI regional cities whitelist chat
+    const handleCitiesAiChat = async (overrideMessage?: string) => {
+        const message = overrideMessage || citiesAiChatInput.trim();
+        if (!message && !citiesAiSeedInput.trim()) return;
+        
+        const regionStr = citiesAiSeedInput.trim() || 'Australia';
+        const userMsg = message || `Generate a list of ${citiesAiKeywordCount} major cities, suburbs, or regions in: ${regionStr} for our profile location whitelist.`;
+        
+        const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
+            ...citiesAiChatHistory,
+            { role: 'user', content: userMsg }
+        ];
+        setCitiesAiChatHistory(newHistory);
+        setCitiesAiChatInput('');
+        setIsCitiesAiThinking(true);
+
+        try {
+            const result = await instagramAPI.suggestCities({
+                region: regionStr,
+                conversation_history: citiesAiChatHistory,
+                user_message: userMsg,
+                count: citiesAiKeywordCount
+            });
+
+            const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
+                ...newHistory,
+                { role: 'assistant', content: result.ai_message }
+            ];
+            setCitiesAiChatHistory(updatedHistory);
+
+            if (result.cities && result.cities.length > 0) {
+                setCitiesAiSuggestedKeywords(result.cities);
+                setCitiesSelectedKeywords(new Set(result.cities));
+                setCitiesAiDiscoveryStep('review');
+            }
+        } catch (error: any) {
+            const errMsg = error?.response?.data?.detail || 'AI service unavailable. Try again.';
+            setCitiesAiChatHistory(prev => [
+                ...prev,
+                { role: 'assistant', content: `❌ ${errMsg} You can still enter cities manually.` }
+            ]);
+        } finally {
+            setIsCitiesAiThinking(false);
+            setTimeout(() => citiesAiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+    };
+
+    // Apply the selected cities to the whitelist field
+    const handleApplyCities = () => {
+        const selected = Array.from(citiesSelectedKeywords).filter(Boolean);
+        if (selected.length === 0) {
+            notify('Select at least one city/region.', 'alert');
+            return;
+        }
+
+        // Merge with existing cities whitelist
+        const existing = filterSettings.bio_cities_whitelist
+            ? filterSettings.bio_cities_whitelist.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : [];
+        const merged = Array.from(new Set([...existing, ...selected]));
+
+        setFilterSettings(prev => ({
+            ...prev,
+            bio_cities_whitelist: merged.join(', ')
+        }));
+
+        setShowCitiesModal(false);
+        setCitiesAiChatHistory([]);
+        setCitiesAiSuggestedKeywords([]);
+        setCitiesSelectedKeywords(new Set());
+        setCitiesAiSeedInput('');
+        setCitiesAiChatInput('');
+        setCitiesAiDiscoveryStep('chat');
+        notify(`Added ${selected.length} cities/regions to target whitelist!`);
     };
 
     const handleAnalyze = async (leadId: number) => {
@@ -1484,7 +1799,7 @@ const InstagramLeadGenerator: React.FC = () => {
 
                                 <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
                                     <h3 className="text-xl font-black text-gray-900 dark:text-white mb-1 flex items-center gap-3">
-                                        <Filter className="w-5 h-5 text-purple-500" /> Bio Keyword Filter
+                                        <Filter className="w-5 h-5 text-purple-500" /> Bio Keyword Filter (Allow List)
                                     </h3>
                                     <p className="text-sm text-gray-500 mb-6">Only leads whose bio contains <span className="font-bold text-purple-500">at least one</span> of these words will be <span className="font-bold text-green-500">Qualified</span>. Leave empty to allow everyone.</p>
                                     <input
@@ -1495,6 +1810,60 @@ const InstagramLeadGenerator: React.FC = () => {
                                         className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500/50 outline-none transition-all"
                                     />
                                     <p className="text-xs text-gray-400 mt-2 ml-1">Separate keywords with commas. Case-insensitive.</p>
+                                </div>
+
+                                <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-3">
+                                            <X className="w-5 h-5 text-red-500" /> Exclude Keywords (Block List)
+                                        </h3>
+                                        <button
+                                            onClick={() => {
+                                                setBadAiDiscoveryStep('chat');
+                                                setShowBadKeywordsModal(true);
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-red-500/10 to-pink-500/10 border border-red-500/20 hover:border-red-500/40 text-red-500 rounded-xl text-xs font-black transition-all active:scale-95 animate-pulse"
+                                        >
+                                            <Wand2 className="w-3.5 h-3.5" />
+                                            🤖 AI Suggest
+                                        </button>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-6">Leads whose bio contains <span className="font-bold text-red-500">any</span> of these words will be <span className="font-bold text-red-500">Rejected</span> immediately.</p>
+                                    <input
+                                        type="text"
+                                        value={filterSettings.bio_exclude_keywords || ''}
+                                        onChange={e => setFilterSettings(p => ({ ...p, bio_exclude_keywords: e.target.value }))}
+                                        placeholder="scam, giveaway, bot, competitor, reseller..."
+                                        className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-4 focus:ring-red-500/10 focus:border-red-500/50 outline-none transition-all"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-2 ml-1">Separate keywords with commas. Case-insensitive.</p>
+                                </div>
+
+                                <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-3">
+                                            <Globe className="w-5 h-5 text-indigo-500" /> Target Cities Whitelist (Regional Whitelist)
+                                        </h3>
+                                        <button
+                                            onClick={() => {
+                                                setCitiesAiDiscoveryStep('chat');
+                                                setShowCitiesModal(true);
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-500 rounded-xl text-xs font-black transition-all active:scale-95 animate-pulse"
+                                        >
+                                            <Wand2 className="w-3.5 h-3.5" />
+                                            🤖 AI Suggest Cities
+                                        </button>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-6">Only leads whose bio contains <span className="font-bold text-indigo-500">at least one</span> of these cities/regions will be <span className="font-bold text-green-500">Qualified</span>. Leave empty to allow all locations.</p>
+                                    <input
+                                        type="text"
+                                        value={filterSettings.bio_cities_whitelist || ''}
+                                        onChange={e => setFilterSettings(p => ({ ...p, bio_cities_whitelist: e.target.value }))}
+                                        placeholder="Sydney, Melbourne, Brisbane, London, New York..."
+                                        className="w-full bg-gray-50 dark:bg-black/20 border-2 border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/50 outline-none transition-all"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-2 ml-1">Separate cities with commas. Case-insensitive.</p>
                                 </div>
 
                                 <div className="bg-white dark:bg-[#1e293b] rounded-3xl p-8 border border-gray-100 dark:border-white/5 shadow-sm">
@@ -1555,7 +1924,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 filterSettings.minimax_api_key,
                                                 filterSettings.enable_ai_filter,
                                                 filterSettings.google_niche_filter,
-                                                filterSettings.ai_model
+                                                filterSettings.ai_model,
+                                                filterSettings.bio_exclude_keywords,
+                                                filterSettings.bio_cities_whitelist
                                             );
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }
@@ -1575,8 +1946,16 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <h4 className="text-[10px] font-black uppercase tracking-widest mb-4 opacity-60">Active Rules Preview</h4>
                                     <div className="space-y-3">
                                         <div className="bg-white/10 rounded-xl p-3">
-                                            <p className="text-[10px] font-black uppercase opacity-60 mb-1">Bio Keywords</p>
+                                            <p className="text-[10px] font-black uppercase opacity-60 mb-1">Bio Keywords (Allow List)</p>
                                             <p className="font-bold text-sm">{filterSettings.bio_keywords || <span className="opacity-40 italic">None — all pass</span>}</p>
+                                        </div>
+                                        <div className="bg-white/10 rounded-xl p-3">
+                                            <p className="text-[10px] font-black uppercase opacity-60 mb-1">Exclude Keywords (Block List)</p>
+                                            <p className="font-bold text-sm">{filterSettings.bio_exclude_keywords || <span className="opacity-40 italic">None — no exclusions</span>}</p>
+                                        </div>
+                                        <div className="bg-white/10 rounded-xl p-3">
+                                            <p className="text-[10px] font-black uppercase opacity-60 mb-1">Target Cities Whitelist</p>
+                                            <p className="font-bold text-sm truncate">{filterSettings.bio_cities_whitelist || <span className="opacity-40 italic">None — all regions pass</span>}</p>
                                         </div>
                                         <div className="bg-white/10 rounded-xl p-3">
                                             <p className="text-[10px] font-black uppercase opacity-60 mb-1">Followers</p>
@@ -1731,23 +2110,785 @@ const InstagramLeadGenerator: React.FC = () => {
                 );
             })()}
 
-            {/* Modals */}
+            {/* 🤖 Enhanced AI-Powered Discovery Modal */}
             {showDiscoveryModal && (
-                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <div className="p-8">
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="p-3 bg-pink-100 dark:bg-pink-900/30 rounded-2xl"><Globe className="w-6 h-6 text-pink-600" /></div>
-                                <div><h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Stage 1 Discovery</h2><p className="text-gray-500 text-sm">Find profiles via Google/DDG Indexing.</p></div>
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 bg-gradient-to-tr from-pink-500 to-purple-600 rounded-2xl shadow-lg shadow-pink-500/20">
+                                        <Wand2 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">Stage 1: AI Keyword Engine</h2>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational keyword expansion • Google scraping</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => { setShowDiscoveryModal(false); setAiDiscoveryStep('chat'); setAiChatHistory([]); setAiSuggestedKeywords([]); setSelectedKeywords(new Set()); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                    <X className="w-5 h-5 text-gray-400" />
+                                </button>
                             </div>
-                            <textarea placeholder="e.g. Luxury Watches, Pizza Paris" className="w-full bg-gray-50 dark:bg-gray-800/50 border-none rounded-2xl p-4 text-sm text-gray-900 dark:text-white" rows={4} value={keywords} onChange={e => setKeywords(e.target.value)} disabled={isDiscovering} />
-                            <div className="flex items-center gap-3 mt-8">
-                                <button onClick={() => setShowDiscoveryModal(false)} className="flex-1 px-6 py-3 rounded-2xl font-bold text-sm text-gray-400 transition-colors">Cancel</button>
-                                <button onClick={handleDiscover} disabled={isDiscovering || !keywords.trim()} className="flex-[2] bg-pink-600 hover:bg-pink-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg shadow-pink-600/25 transition-all">
-                                    {isDiscovering ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Start Discovery'}
+
+                            {/* Step indicator */}
+                            <div className="flex items-center gap-2 mt-4">
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ aiDiscoveryStep === 'chat' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                    <MessageSquare className="w-3 h-3" /> AI Chat
+                                </div>
+                                <ChevronRight className="w-3 h-3 text-gray-300" />
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ aiDiscoveryStep === 'review' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                    <Hash className="w-3 h-3" /> Review Keywords
+                                </div>
+                                <ChevronRight className="w-3 h-3 text-gray-300" />
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-gray-100 dark:bg-white/5 text-gray-400">
+                                    <Play className="w-3 h-3" /> Launch
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* STEP 1: AI Chat */}
+                        {aiDiscoveryStep === 'chat' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                {/* Seed keywords input */}
+                                <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Your Niche / Seed Keywords</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Luxury Watches, Coffee Shop, Yoga Studio..."
+                                            value={aiSeedInput}
+                                            onChange={e => setAiSeedInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking) handleAiKeywordChat(); }}
+                                            className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-pink-400"
+                                        />
+                                        <div className="flex items-center gap-1">
+                                            <select
+                                                value={aiKeywordCount}
+                                                onChange={e => setAiKeywordCount(parseInt(e.target.value))}
+                                                className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-2 py-2.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none"
+                                            >
+                                                {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} kws</option>)}
+                                            </select>
+                                        </div>
+                                        <button
+                                            onClick={() => handleAiKeywordChat()}
+                                            disabled={isAiThinking || !aiSeedInput.trim()}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-pink-500/20 disabled:opacity-50"
+                                        >
+                                            {isAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                            {isAiThinking ? 'Thinking...' : 'Expand with AI'}
+                                        </button>
+                                    </div>
+
+                                    {/* Direct start option */}
+                                    {aiSeedInput.trim() && (
+                                        <div className="mt-2.5 flex items-center gap-2">
+                                            <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">or</span>
+                                            <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
+                                        </div>
+                                    )}
+                                    {aiSeedInput.trim() && (
+                                        <button
+                                            onClick={() => {
+                                                // Start directly with seed keywords — skip AI
+                                                const kws = aiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
+                                                if (kws.length === 0) return;
+                                                setIsDiscovering(true);
+                                                setDiscoveryStartTime(Date.now());
+                                                setDiscoveryProgressMessage('Initiating background lead discovery...');
+                                                setShowDiscoveryModal(false);
+                                                setAiDiscoveryStep('chat');
+                                                setAiChatHistory([]);
+                                                setAiSuggestedKeywords([]);
+                                                setSelectedKeywords(new Set());
+                                                setAiSeedInput('');
+                                                setNotification({ msg: `🚀 Started with ${kws.length} seed keyword(s)! Live HUD active.`, type: 'success' });
+                                                instagramAPI.discoverLeads(kws, 50)
+                                                    .then(() => {
+                                                        setTimeout(async () => {
+                                                            try {
+                                                                const d = await instagramAPI.deduplicateLeads();
+                                                                if (d.removed > 0) { setNotification({ msg: `🧹 Auto-purged ${d.removed} duplicates!`, type: 'success' }); fetchData(); }
+                                                            } catch { /* silent */ }
+                                                        }, 5000);
+                                                    })
+                                                    .catch(() => {
+                                                        setIsDiscovering(false);
+                                                        setDiscoveryStartTime(null);
+                                                        setDiscoveryProgressMessage(null);
+                                                        setNotification({ msg: 'Failed to start scan.', type: 'alert' });
+                                                    });
+                                            }}
+                                            disabled={isDiscovering}
+                                            className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 bg-gray-900 dark:bg-white/5 hover:bg-gray-800 dark:hover:bg-white/10 border border-gray-700 dark:border-white/10 text-white text-xs font-black rounded-xl transition-all"
+                                        >
+                                            <Play className="w-3.5 h-3.5 fill-current" />
+                                            Start Discovery with Seed Keywords Only (skip AI)
+                                        </button>
+                                    )}
+                                </div>
+
+
+                                {/* Chat messages */}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {aiChatHistory.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                                            <div className="w-16 h-16 bg-gradient-to-tr from-pink-500/20 to-purple-600/20 rounded-3xl flex items-center justify-center mb-4">
+                                                <Brain className="w-8 h-8 text-pink-500" />
+                                            </div>
+                                            <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Keyword Strategist Ready</h3>
+                                            <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                                                Enter your niche above and I'll generate <span className="text-pink-500 font-bold">{aiKeywordCount} relevant keyword variations</span> for Instagram scraping. You can have a conversation to refine them!
+                                            </p>
+                                            <div className="mt-4 grid grid-cols-2 gap-2 w-full max-w-xs">
+                                                {['Luxury Watches', 'Coffee Roasters', 'Yoga Studios', 'Real Estate Agents'].map(example => (
+                                                    <button
+                                                        key={example}
+                                                        onClick={() => { setAiSeedInput(example); }}
+                                                        className="text-[10px] font-bold text-pink-500 bg-pink-50 dark:bg-pink-500/10 border border-pink-200 dark:border-pink-500/20 rounded-xl px-3 py-2 hover:bg-pink-100 dark:hover:bg-pink-500/20 transition-all"
+                                                    >
+                                                        {example}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        aiChatHistory.map((msg, idx) => (
+                                            <div key={idx} className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' }`}>
+                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${
+                                                    msg.role === 'user'
+                                                        ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                }`}>
+                                                    {msg.role === 'assistant' && (
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <Sparkles className="w-3 h-3 text-pink-500" />
+                                                            <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Gemma AI</span>
+                                                        </div>
+                                                    )}
+                                                    {msg.content}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                    {isAiThinking && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Sparkles className="w-3 h-3 text-pink-500" />
+                                                    <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Gemma AI</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div ref={aiChatEndRef} />
+                                </div>
+
+                                {/* Refinement chat input (shown after first response) */}
+                                {aiChatHistory.length > 0 && (
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Refine: 'more local ones', 'add USA cities', 'focus on luxury'..."
+                                                value={aiChatInput}
+                                                onChange={e => setAiChatInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking && aiChatInput.trim()) handleAiKeywordChat(); }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-pink-400"
+                                            />
+                                            <button
+                                                onClick={() => handleAiKeywordChat()}
+                                                disabled={isAiThinking || !aiChatInput.trim()}
+                                                className="p-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                            >
+                                                <Send className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        {aiSuggestedKeywords.length > 0 && (
+                                            <button
+                                                onClick={() => setAiDiscoveryStep('review')}
+                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-purple-700 transition-all"
+                                            >
+                                                <ChevronRight className="w-4 h-4" />
+                                                Review {aiSuggestedKeywords.length} Keywords →
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* STEP 2: Keyword Review & Launch */}
+                        {aiDiscoveryStep === 'review' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                {/* Info bar */}
+                                {aiProxyInfo && (
+                                    <div className="px-5 py-3 bg-gradient-to-r from-pink-500/10 to-purple-500/10 border-b border-pink-500/10 flex-shrink-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-3">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                                                    aiProxyInfo.mode === 'parallel'
+                                                        ? 'bg-green-500/10 text-green-600 border border-green-500/20'
+                                                        : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                                                }`}>
+                                                    <Zap className="w-3 h-3" />
+                                                    {aiProxyInfo.mode === 'parallel' ? `⚡ Parallel (${aiProxyInfo.count} proxies)` : '📶 Sequential (No Proxies)'}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                                                    <Clock className="w-3 h-3" />
+                                                    Est: {aiProxyInfo.time_estimate}
+                                                </div>
+                                            </div>
+                                            <span className="text-[10px] font-black text-pink-500">{selectedKeywords.size}/{aiSuggestedKeywords.length} selected</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Keywords grid with checkboxes */}
+                                <div className="flex-1 overflow-y-auto p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">AI Generated Keywords — Click to toggle</p>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setSelectedKeywords(new Set(aiSuggestedKeywords))} className="text-[9px] font-black text-pink-500 uppercase tracking-widest hover:underline">All</button>
+                                            <span className="text-gray-300">·</span>
+                                            <button onClick={() => setSelectedKeywords(new Set())} className="text-[9px] font-black text-gray-400 uppercase tracking-widest hover:underline">None</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {aiSuggestedKeywords.map((kw, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setSelectedKeywords(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(kw)) next.delete(kw); else next.add(kw);
+                                                    return next;
+                                                })}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                                    selectedKeywords.has(kw)
+                                                        ? 'bg-pink-500 text-white border-pink-400 shadow-md shadow-pink-500/20'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-pink-300'
+                                                }`}
+                                            >
+                                                {selectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
+                                                <Hash className="w-3 h-3 opacity-50" />
+                                                {kw}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Add custom keywords */}
+                                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Add Manual Keywords</p>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Add your own keyword and press Enter..."
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                                                        const newKw = (e.target as HTMLInputElement).value.trim();
+                                                        setAiSuggestedKeywords(prev => [...prev, newKw]);
+                                                        setSelectedKeywords(prev => new Set([...prev, newKw]));
+                                                        (e.target as HTMLInputElement).value = '';
+                                                    }
+                                                }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-gray-700 dark:text-gray-300 outline-none focus:border-pink-400"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Footer actions */}
+                                <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setAiDiscoveryStep('chat')}
+                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-500 dark:text-gray-400 hover:border-pink-300 transition-all"
+                                        >
+                                            ← Back to Chat
+                                        </button>
+                                        <button
+                                            onClick={handleAiDiscover}
+                                            disabled={selectedKeywords.size === 0 || isDiscovering}
+                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-xl font-black text-sm shadow-xl shadow-pink-500/20 disabled:opacity-50 transition-all active:scale-95"
+                                        >
+                                            {isDiscovering ? (
+                                                <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
+                                            ) : (
+                                                <><Play className="w-4 h-4 fill-current" /> Launch with {selectedKeywords.size} Keywords 🚀</>
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p className="text-[9px] text-gray-400 text-center">
+                                        After scraping, duplicates will be <span className="text-pink-400 font-bold">auto-purged</span> and results loaded into your panel.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* 🤖 AI-Powered Bad Keywords Modal */}
+            {showBadKeywordsModal && (
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 bg-gradient-to-tr from-red-500 to-pink-600 rounded-2xl shadow-lg shadow-red-500/20">
+                                        <Wand2 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">AI Bad Result Keyword Builder</h2>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational negative keywords • Step 2 Bio Scan Filters</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => { setShowBadKeywordsModal(false); setBadAiDiscoveryStep('chat'); setBadAiChatHistory([]); setBadAiSuggestedKeywords([]); setBadSelectedKeywords(new Set()); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                    <X className="w-5 h-5 text-gray-400" />
+                                </button>
+                            </div>
+
+                            {/* Step indicator */}
+                            <div className="flex items-center gap-2 mt-4">
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ badAiDiscoveryStep === 'chat' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                    <MessageSquare className="w-3 h-3" /> AI Chat
+                                </div>
+                                <ChevronRight className="w-3 h-3 text-gray-300" />
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ badAiDiscoveryStep === 'review' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                    <Hash className="w-3 h-3" /> Review Keywords
+                                </div>
+                                <ChevronRight className="w-3 h-3 text-gray-300" />
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-gray-100 dark:bg-white/5 text-gray-400">
+                                    <Play className="w-3 h-3" /> Apply to Filter
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* STEP 1: AI Chat */}
+                        {badAiDiscoveryStep === 'chat' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                {/* Seed keywords input */}
+                                <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Describe What to Exclude (Niche / Competitors / Bot patterns)</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Competitors, bots, giveaway accounts, resellers, fake profiles..."
+                                            value={badAiSeedInput}
+                                            onChange={e => setBadAiSeedInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking) handleBadAiKeywordChat(); }}
+                                            className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-red-400"
+                                        />
+                                        <div className="flex items-center gap-1">
+                                            <select
+                                                value={badAiKeywordCount}
+                                                onChange={e => setBadAiKeywordCount(parseInt(e.target.value))}
+                                                className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-2 py-2.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none"
+                                            >
+                                                {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} kws</option>)}
+                                            </select>
+                                        </div>
+                                        <button
+                                            onClick={() => handleBadAiKeywordChat()}
+                                            disabled={isBadAiThinking || !badAiSeedInput.trim()}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
+                                        >
+                                            {isBadAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                            {isBadAiThinking ? 'Thinking...' : 'Get Bad Words'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Chat messages */}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {badAiChatHistory.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                                            <div className="w-16 h-16 bg-gradient-to-tr from-red-500/20 to-pink-600/20 rounded-3xl flex items-center justify-center mb-4">
+                                                <Brain className="w-8 h-8 text-red-500" />
+                                            </div>
+                                            <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Bad Result Filter Assistant</h3>
+                                            <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                                                Describe what profiles you want to filter out (e.g. replica sellers, dropshippers, spam accounts, giveaway channels) and I'll suggest negative keywords to block them.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        badAiChatHistory.map((msg, idx) => (
+                                            <div key={idx} className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' }`}>
+                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${
+                                                    msg.role === 'user'
+                                                        ? 'bg-gradient-to-br from-red-500 to-pink-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                }`}>
+                                                    {msg.role === 'assistant' && (
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <Sparkles className="w-3 h-3 text-red-500" />
+                                                            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Gemma AI</span>
+                                                        </div>
+                                                    )}
+                                                    {msg.content}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                    {isBadAiThinking && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Sparkles className="w-3 h-3 text-red-500" />
+                                                    <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Gemma AI</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div ref={badAiChatEndRef} />
+                                </div>
+
+                                {/* Refinement chat input (shown after first response) */}
+                                {badAiChatHistory.length > 0 && (
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Refine: 'add wholesale terms', 'focus on dropshipping'..."
+                                                value={badAiChatInput}
+                                                onChange={e => setBadAiChatInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking && badAiChatInput.trim()) handleBadAiKeywordChat(); }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-red-400"
+                                            />
+                                            <button
+                                                onClick={() => handleBadAiKeywordChat()}
+                                                disabled={isBadAiThinking || !badAiChatInput.trim()}
+                                                className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                            >
+                                                <Send className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        {badAiSuggestedKeywords.length > 0 && (
+                                            <button
+                                                onClick={() => setBadAiDiscoveryStep('review')}
+                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-red-500/20 hover:from-red-600 hover:to-pink-700 transition-all"
+                                            >
+                                                <ChevronRight className="w-4 h-4" />
+                                                Review {badAiSuggestedKeywords.length} Bad Keywords →
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* STEP 2: Keyword Review & Apply */}
+                        {badAiDiscoveryStep === 'review' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                {/* Keywords grid with checkboxes */}
+                                <div className="flex-1 overflow-y-auto p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">AI Suggested Bad Keywords — Toggle to select</p>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setBadSelectedKeywords(new Set(badAiSuggestedKeywords))} className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:underline">All</button>
+                                            <span className="text-gray-300">·</span>
+                                            <button onClick={() => setBadSelectedKeywords(new Set())} className="text-[9px] font-black text-gray-400 uppercase tracking-widest hover:underline">None</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {badAiSuggestedKeywords.map((kw, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setBadSelectedKeywords(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(kw)) next.delete(kw); else next.add(kw);
+                                                    return next;
+                                                })}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                                    badSelectedKeywords.has(kw)
+                                                        ? 'bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-red-300'
+                                                }`}
+                                            >
+                                                {badSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
+                                                <Hash className="w-3 h-3 opacity-50" />
+                                                {kw}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Add custom keywords */}
+                                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Add Manual Excluded Keywords</p>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Add custom bad word and press Enter..."
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                                                        const newKw = (e.target as HTMLInputElement).value.trim();
+                                                        setBadAiSuggestedKeywords(prev => [...prev, newKw]);
+                                                        setBadSelectedKeywords(prev => new Set([...prev, newKw]));
+                                                        (e.target as HTMLInputElement).value = '';
+                                                    }
+                                                }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-gray-700 dark:text-gray-300 outline-none focus:border-red-400"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Footer actions */}
+                                <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setBadAiDiscoveryStep('chat')}
+                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-500 dark:text-gray-400 hover:border-red-300 transition-all"
+                                        >
+                                            ← Back to Chat
+                                        </button>
+                                        <button
+                                            onClick={handleApplyBadKeywords}
+                                            disabled={badSelectedKeywords.size === 0}
+                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-xl font-black text-sm shadow-xl shadow-red-500/20 transition-all active:scale-95"
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" /> Add {badSelectedKeywords.size} Keywords to Block List
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showCitiesModal && (
+                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/20">
+                                        <Wand2 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">Step 2: Regional Whitelist Builder</h2>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational Whitelist suggester • Gemma AI</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowCitiesModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                    <X className="w-5 h-5 text-gray-400" />
                                 </button>
                             </div>
                         </div>
+
+                        {/* STEP 1: Conversational input / Chat */}
+                        {citiesAiDiscoveryStep === 'chat' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                                    {citiesAiChatHistory.length === 0 ? (
+                                        <div className="space-y-6 max-w-md mx-auto pt-6 text-center">
+                                            <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto text-indigo-500">
+                                                <Sparkles className="w-8 h-8" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-black text-gray-950 dark:text-white text-base">Generate Location Whitelist</h3>
+                                                <p className="text-xs text-gray-500 mt-1">Specify a target country or region, and Gemma AI will suggest up to 500 major cities, suburbs, and areas to include on the whitelist.</p>
+                                            </div>
+                                            <div className="space-y-4 text-left">
+                                                <div className="space-y-1">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Target Country or Region 📍</p>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. Australia, California, Germany..."
+                                                        value={citiesAiSeedInput}
+                                                        onChange={e => setCitiesAiSeedInput(e.target.value)}
+                                                        className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Suggested Locations count ({citiesAiKeywordCount})</p>
+                                                    <input
+                                                        type="range"
+                                                        min="20"
+                                                        max="500"
+                                                        step="10"
+                                                        value={citiesAiKeywordCount}
+                                                        onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
+                                                        className="w-full h-1.5 bg-gray-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                    <div className="flex justify-between text-[9px] text-gray-400 font-bold uppercase tracking-tight">
+                                                        <span>20 cities</span>
+                                                        <span>500 cities</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleCitiesAiChat()}
+                                                    disabled={isCitiesAiThinking || !citiesAiSeedInput.trim()}
+                                                    className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                                                >
+                                                    Generate Target Whitelist ✨
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        citiesAiChatHistory.map((msg, idx) => (
+                                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed shadow-sm ${
+                                                    msg.role === 'user'
+                                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                }`}>
+                                                    {msg.role === 'assistant' && (
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <Sparkles className="w-3 h-3 text-indigo-500" />
+                                                            <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Gemma AI</span>
+                                                        </div>
+                                                    )}
+                                                    {msg.content}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                    {isCitiesAiThinking && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Sparkles className="w-3 h-3 text-indigo-500" />
+                                                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Gemma AI</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div ref={citiesAiChatEndRef} />
+                                </div>
+
+                                {/* Refinement chat input */}
+                                {citiesAiChatHistory.length > 0 && (
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Refine: 'only major capital cities', 'add suburbs of Melbourne'..."
+                                                value={citiesAiChatInput}
+                                                onChange={e => setCitiesAiChatInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isCitiesAiThinking && citiesAiChatInput.trim()) handleCitiesAiChat(); }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
+                                            />
+                                            <button
+                                                onClick={() => handleCitiesAiChat()}
+                                                disabled={isCitiesAiThinking || !citiesAiChatInput.trim()}
+                                                className="p-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                            >
+                                                <Send className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        {citiesAiSuggestedKeywords.length > 0 && (
+                                            <button
+                                                onClick={() => setCitiesAiDiscoveryStep('review')}
+                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-purple-700 transition-all"
+                                            >
+                                                <ChevronRight className="w-4 h-4" />
+                                                Review {citiesAiSuggestedKeywords.length} Cities Whitelist →
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* STEP 2: Cities Review & Apply */}
+                        {citiesAiDiscoveryStep === 'review' && (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                <div className="flex-1 overflow-y-auto p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">AI Suggested Target Whitelist — Toggle to select</p>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setCitiesSelectedKeywords(new Set(citiesAiSuggestedKeywords))} className="text-[9px] font-black text-indigo-500 uppercase tracking-widest hover:underline">All</button>
+                                            <span className="text-gray-300">·</span>
+                                            <button onClick={() => setCitiesSelectedKeywords(new Set())} className="text-[9px] font-black text-gray-400 uppercase tracking-widest hover:underline">None</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {citiesAiSuggestedKeywords.map((kw, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setCitiesSelectedKeywords(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(kw)) next.delete(kw); else next.add(kw);
+                                                    return next;
+                                                })}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                                    citiesSelectedKeywords.has(kw)
+                                                        ? 'bg-indigo-500 text-white border-indigo-400 shadow-md shadow-indigo-500/20'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-indigo-300'
+                                                }`}
+                                            >
+                                                {citiesSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
+                                                <Globe className="w-3 h-3 opacity-50" />
+                                                {kw}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Add custom cities */}
+                                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Add Manual Whitelist Locations</p>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Add custom city/region and press Enter..."
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                                                        const newKw = (e.target as HTMLInputElement).value.trim();
+                                                        setCitiesAiSuggestedKeywords(prev => [...prev, newKw]);
+                                                        setCitiesSelectedKeywords(prev => new Set([...prev, newKw]));
+                                                        (e.target as HTMLInputElement).value = '';
+                                                    }
+                                                }}
+                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-400"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Footer actions */}
+                                <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setCitiesAiDiscoveryStep('chat')}
+                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-500 dark:text-gray-400 hover:border-indigo-300 transition-all"
+                                        >
+                                            ← Back to Chat
+                                        </button>
+                                        <button
+                                            onClick={handleApplyCities}
+                                            disabled={citiesSelectedKeywords.size === 0}
+                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-sm shadow-xl shadow-indigo-500/20 transition-all active:scale-95"
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" /> Add {citiesSelectedKeywords.size} Locations to Whitelist
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

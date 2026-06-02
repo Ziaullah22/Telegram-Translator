@@ -20,6 +20,11 @@ async def run():
       print('last_used_at timestamp verified.')
   except Exception as e:
       print(f'Timestamp check: {e}')
+  try:
+      await db.execute('ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_exclude_keywords TEXT DEFAULT \'\';')
+      print('bio_exclude_keywords column verified.')
+  except Exception as e:
+      print(f'Bio exclude check: {e}')
   await db.close()
   print('Database Synchronized for Linux Deployment.')
 

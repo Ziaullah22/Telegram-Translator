@@ -514,6 +514,30 @@ class InstagramService:
             logger.info(f"❌ AI Rejected lead: Intent Score {score}% is too low.")
             is_qualified = False
             
+        # 1.5 Exclude Bio Keyword Filter (Block list)
+        if is_qualified and bio:
+            bio_exclude = settings.get('bio_exclude_keywords', '')
+            if bio_exclude and bio_exclude.strip():
+                exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
+                bio_lower = bio.lower()
+                if any(kw in bio_lower for kw in exclude_kws):
+                    logger.info("❌ Exclude Keyword Filter rejected lead: Blacklisted keyword found in bio.")
+                    is_qualified = False
+
+        # 1.7 Bio Cities Whitelist Filter (Target regions)
+        if is_qualified:
+            bio_cities = settings.get('bio_cities_whitelist', '')
+            if bio_cities and bio_cities.strip():
+                if not bio:
+                    logger.info("❌ Cities Whitelist rejected lead: Whitelist set but lead has no bio.")
+                    is_qualified = False
+                else:
+                    cities_list = [c.strip().lower() for c in bio_cities.split(',') if c.strip()]
+                    bio_lower = bio.lower()
+                    if not any(city in bio_lower for city in cities_list):
+                        logger.info("❌ Cities Whitelist rejected lead: Target city/region not mentioned in bio.")
+                        is_qualified = False
+
         # 2. Bio Keyword Match (Acts as a secondary booster or filter)
         # If score is high (90+), we ignore keywords. Otherwise, we check them.
         if is_qualified and score < 90 and not self._check_bio_keywords(bio, settings['bio_keywords']):
@@ -1504,6 +1528,8 @@ class InstagramService:
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS enable_ai_filter BOOLEAN DEFAULT FALSE;
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS google_niche_filter TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'minimax-text-01';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_exclude_keywords TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_cities_whitelist TEXT DEFAULT '';
             """)
             
             await db.execute("""
@@ -1537,17 +1563,19 @@ class InstagramService:
             "minimax_api_key": "",
             "enable_ai_filter": False,
             "google_niche_filter": "",
-            "ai_model": "minimax-text-01"
+            "ai_model": "minimax-text-01",
+            "bio_exclude_keywords": "",
+            "bio_cities_whitelist": ""
         }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01"):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = ""):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:
@@ -2693,5 +2721,37 @@ class InstagramService:
         if required_phase == 3: return session_count >= 14
         if required_phase == 4: return session_count >= 21
         return False
+
+    async def deduplicate_leads(self, user_id: int):
+        """
+        🧹 Purge duplicate Instagram leads for a user.
+        Keeps the most complete record (highest follower_count, or latest discovered).
+        Returns count of removed duplicates.
+        """
+        # Find all duplicate usernames
+        dupes = await db.fetch("""
+            SELECT instagram_username, COUNT(*) as cnt, 
+                   array_agg(id ORDER BY follower_count DESC NULLS LAST, discovered_at DESC) as ids
+            FROM instagram_leads
+            WHERE user_id = $1
+            GROUP BY instagram_username
+            HAVING COUNT(*) > 1
+        """, user_id)
+
+        removed = 0
+        for row in dupes:
+            ids = row['ids']
+            keep_id = ids[0]          # Keep the most complete one (highest followers)
+            delete_ids = ids[1:]      # Delete the rest
+            if delete_ids:
+                await db.execute(
+                    "DELETE FROM instagram_leads WHERE id = ANY($1::int[]) AND user_id = $2",
+                    delete_ids, user_id
+                )
+                removed += len(delete_ids)
+
+        logger.info(f"🧹 Deduplicated {removed} duplicate leads for user {user_id}")
+        return {"status": "ok", "removed": removed, "message": f"✅ Removed {removed} duplicate leads."}
+
 
 instagram_service = InstagramService()
