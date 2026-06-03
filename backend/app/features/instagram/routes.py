@@ -648,10 +648,11 @@ async def suggest_bad_keywords(
 
     system_prompt = (
         f"You are an expert Instagram lead filtering strategist. "
-        f"Your job is to help the user build a list of {count} negative/blacklist keywords "
-        f"to filter OUT bad leads (e.g., competitors, bots, spam, incorrect niches, giveaway accounts) based on their profile bios. "
+        f"Your job is to help the user build a list of {count} negative/blacklist keywords (blocklist) "
+        f"to filter OUT unwanted leads based on their profile bios. "
+        f"You should generate direct synonyms, variations, hashtags, and closely related terms of the specific topics/seeds provided by the user. "
         f"Return ONLY a valid JSON object with a 'keywords' array of strings and a 'message' string explaining your choices. "
-        f"Example: {{\"keywords\": [\"giveaway\", \"reseller\", \"fake\", \"bot\", ...], \"message\": \"Here are ... variations...\"}}"
+        f"Example: {{\"keywords\": [\"weed\", \"vape juice\", \"dispensary\", \"marijuana\"], \"message\": \"Here are variations of the requested topics...\"}}"
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -663,8 +664,8 @@ async def suggest_bad_keywords(
         user_content = req.user_message
     else:
         user_content = (
-            f"Generate {count} bad/blacklist keyword variations to filter out unwanted leads based on these seeds/business niche description: {seeds_str}. "
-            f"Think of words commonly found in bios of spam accounts, bots, resellers, support channels, or irrelevant creators."
+            f"Generate {count} bad/blacklist keyword variations to filter out unwanted leads based on these specific seeds/topics to exclude: {seeds_str}. "
+            f"Generate direct synonyms, alternative spellings, hashtags, and closely related words matching these exact topics."
         )
     messages.append({"role": "user", "content": user_content})
 
