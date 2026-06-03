@@ -864,37 +864,40 @@ async def suggest_cities(
     ai_message = ""
     ai_used = False
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": "gemma4:e2b",
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"temperature": 0.5}
-                },
-                timeout=aiohttp.ClientTimeout(total=90)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    raw = data.get("message", {}).get("content", "{}")
-                    import re
-                    match = re.search(r'\{.*\}', raw, re.DOTALL)
-                    if match:
-                        try:
-                            parsed = json.loads(match.group(0))
-                            cts = parsed.get("cities", [])
-                            if cts:
-                                suggested_cities = cts
-                                ai_message = parsed.get("message", "Here are your suggested cities!")
-                                ai_used = True
-                        except json.JSONDecodeError:
-                            pass
-                    if not ai_used and raw.strip():
-                        ai_message = raw[:500]
-    except Exception as e:
-        logger.info(f"Ollama not reachable for cities (using smart fallback): {type(e).__name__}")
+    # 🚀 AI BYPASS: Generating > 100 cities/suburbs takes too long for local LLMs and causes timeouts.
+    # We bypass Ollama for counts > 100 and use the instant database fallback.
+    if count <= 100:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{ollama_url}/api/chat",
+                    json={
+                        "model": "gemma4:e2b",
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": 0.5}
+                    },
+                    timeout=aiohttp.ClientTimeout(total=90)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw = data.get("message", {}).get("content", "{}")
+                        import re
+                        match = re.search(r'\{.*\}', raw, re.DOTALL)
+                        if match:
+                            try:
+                                parsed = json.loads(match.group(0))
+                                cts = parsed.get("cities", [])
+                                if cts:
+                                    suggested_cities = cts
+                                    ai_message = parsed.get("message", "Here are your suggested cities!")
+                                    ai_used = True
+                            except json.JSONDecodeError:
+                                pass
+                        if not ai_used and raw.strip():
+                            ai_message = raw[:500]
+        except Exception as e:
+            logger.info(f"Ollama not reachable for cities (using smart fallback): {type(e).__name__}")
 
     # Fallback to algorithmic cities
     if not suggested_cities:
@@ -928,6 +931,7 @@ async def suggest_cities(
 
 def _generate_cities_variations(region: str, count: int) -> List[str]:
     """Smart algorithmic city lists generator for common countries/regions."""
+    import random
     region_lower = region.strip().lower()
     
     australia = [
@@ -1126,23 +1130,35 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         base_list = [f"{words[0]} City Center", f"North {words[0]}", f"South {words[0]}", f"East {words[0]}", f"West {words[0]}", f"Greater {words[0]}", f"{words[0]} Metro", f"{words[0]} Region", f"Downtown {words[0]}", f"Central {words[0]}"]
         base_list.extend(australia[:20])
 
-    import random
-    result = list(base_list)
+    # Deduplicate base list first
+    seen = set()
+    clean_base = []
+    for x in base_list:
+        x_norm = x.strip().lower()
+        if x_norm and x_norm not in seen:
+            seen.add(x_norm)
+            clean_base.append(x)
+            
+    result = list(clean_base)
     random.shuffle(result)
     
-    if region.title() not in result:
-        result.insert(0, region.title())
+    region_title = region.title()
+    region_norm = region_title.lower()
+    if region_norm not in seen:
+        seen.add(region_norm)
+        result.insert(0, region_title)
         
-    # If the list size is smaller than requested count, dynamically pad with sub-regions/directions
+    # If the list size is smaller than requested count, dynamically pad with unique sub-regions/directions
     if len(result) < count:
         directions = ["North", "South", "East", "West", "Greater", "Central", "Metro", "Valley", "Coast", "Heights"]
         extra = []
-        # Dynamically use the matched list's cities to generate sub-regions
-        sample_cities = base_list[:15] if len(base_list) >= 15 else base_list
+        sample_cities = result[:30] if len(result) >= 30 else result
         for city in sample_cities:
             for d in directions:
                 comb = f"{d} {city}"
-                if comb not in result and comb not in extra:
+                comb_norm = comb.lower()
+                if comb_norm not in seen:
+                    seen.add(comb_norm)
                     extra.append(comb)
         random.shuffle(extra)
         result.extend(extra)
