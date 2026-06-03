@@ -575,7 +575,7 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             const result = await instagramAPI.suggestKeywords({
                 seed_keywords: seeds.length > 0 ? seeds : ['instagram influencer'],
-                conversation_history: aiChatHistory,
+                conversation_history: newHistory,
                 user_message: userMsg,
                 count: aiKeywordCount
             });
@@ -589,7 +589,8 @@ const InstagramLeadGenerator: React.FC = () => {
             if (result.keywords && result.keywords.length > 0) {
                 setAiSuggestedKeywords(result.keywords);
                 setSelectedKeywords(new Set(result.keywords));
-                setAiDiscoveryStep('review');
+                // Allow user to converse first, they can proceed manually via the review button
+                // setAiDiscoveryStep('review');
             }
 
             setAiProxyInfo({
@@ -628,7 +629,7 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             const result = await instagramAPI.suggestBadKeywords({
                 seed_keywords: seeds.length > 0 ? seeds : ['competitor', 'spam'],
-                conversation_history: badAiChatHistory,
+                conversation_history: newHistory,
                 user_message: userMsg,
                 count: badAiKeywordCount
             });
@@ -642,7 +643,8 @@ const InstagramLeadGenerator: React.FC = () => {
             if (result.keywords && result.keywords.length > 0) {
                 setBadAiSuggestedKeywords(result.keywords);
                 setBadSelectedKeywords(new Set(result.keywords));
-                setBadAiDiscoveryStep('review');
+                // Allow user to converse first, they can proceed manually via the review button
+                // setBadAiDiscoveryStep('review');
             }
         } catch (error: any) {
             const errMsg = error?.response?.data?.detail || 'AI service unavailable. Try again.';
@@ -704,7 +706,7 @@ const InstagramLeadGenerator: React.FC = () => {
         try {
             const result = await instagramAPI.suggestCities({
                 region: regionStr,
-                conversation_history: citiesAiChatHistory,
+                conversation_history: newHistory,
                 user_message: userMsg,
                 count: citiesAiKeywordCount
             });
@@ -718,7 +720,8 @@ const InstagramLeadGenerator: React.FC = () => {
             if (result.cities && result.cities.length > 0) {
                 setCitiesAiSuggestedKeywords(result.cities);
                 setCitiesSelectedKeywords(new Set(result.cities));
-                setCitiesAiDiscoveryStep('review');
+                // Allow user to converse first, they can proceed manually via the review button
+                // setCitiesAiDiscoveryStep('review');
             }
         } catch (error: any) {
             const errMsg = error?.response?.data?.detail || 'AI service unavailable. Try again.';

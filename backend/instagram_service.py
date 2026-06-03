@@ -110,7 +110,8 @@ class InstagramService:
     async def discover_leads_google(self, user_id, keywords, limit_per_keyword=100):
         """
         🚀 High-Precision Discovery Engine
-        Uses targeted DuckDuckGo scraping with strict filtering for Instagram handles.
+        Uses targeted Google scraping with strict filtering for Instagram handles.
+        Can run in parallel if proxies are configured, otherwise runs sequentially.
         """
         self._discovery_status[user_id] = {
             "active": True,
@@ -118,6 +119,8 @@ class InstagramService:
         }
         
         new_count = 0
+        new_count_lock = asyncio.Lock()
+        
         try:
             # Load AI filter settings
             settings = await self.get_filter_settings(user_id)
@@ -126,52 +129,91 @@ class InstagramService:
             ai_model = settings.get("ai_model", "minimax-text-01")
             minimax_api_key = settings.get("minimax_api_key", "")
 
-            async def ddg_scraper_session_func(page_obj, _):
+            # Fetch proxies for user
+            proxy_rows = await db.fetch(
+                "SELECT host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1", user_id
+            )
+            proxies = [dict(r) for r in proxy_rows] if proxy_rows else []
+
+            async def run_single_keyword(keyword, kw_idx, proxy=None):
                 nonlocal new_count
-                for kw_idx, keyword in enumerate(keywords):
-                    # 🛠️ Direct Username Detection
-                    kw_clean = keyword.strip().lstrip('@')
-                    if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
-                        logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
-                        if status == "INSERT 0 1": new_count += 1
+                # 🛠️ Direct Username Detection
+                kw_clean = keyword.strip().lstrip('@')
+                if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
+                    logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
+                    status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                    if status == "INSERT 0 1":
+                        async with new_count_lock:
+                            new_count += 1
 
-                    msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
-                    logger.info(msg)
-                    self._discovery_status[user_id]["progress"] = msg
-                    try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                    except: pass
+                msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                if proxy:
+                    msg = f"🔍 [Parallel Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)}) using proxy {proxy.get('host')}..."
+                logger.info(msg)
+                self._discovery_status[user_id]["progress"] = msg
+                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                except: pass
 
-                    current_kw_new = 0
-                    
-                    # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
-                    try:
-                        surge_leads = await self._perform_scrapling_discovery(
-                            keyword, 
-                            limit=limit_per_keyword,
-                            enable_ai_filter=enable_ai_filter,
-                            google_niche_filter=google_niche_filter,
-                            ai_model=ai_model,
-                            minimax_api_key=minimax_api_key,
-                            user_id=user_id
-                        )
-                        if surge_leads:
-                            for u in surge_leads:
-                                if current_kw_new >= limit_per_keyword: break
-                                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                                if status == "INSERT 0 1": 
+                current_kw_new = 0
+                
+                # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
+                try:
+                    # Construct Playwright proxy settings if proxy is specified
+                    playwright_proxy = None
+                    if proxy:
+                        server_prefix = "socks5://" if proxy.get("proxy_type") == "socks5" else "http://"
+                        playwright_proxy = {
+                            "server": f"{server_prefix}{proxy['host']}:{proxy['port']}"
+                        }
+                        if proxy.get("username"):
+                            playwright_proxy["username"] = proxy["username"]
+                        if proxy.get("password"):
+                            playwright_proxy["password"] = proxy["password"]
+
+                    surge_leads = await self._perform_scrapling_discovery(
+                        keyword, 
+                        limit=limit_per_keyword,
+                        enable_ai_filter=enable_ai_filter,
+                        google_niche_filter=google_niche_filter,
+                        ai_model=ai_model,
+                        minimax_api_key=minimax_api_key,
+                        user_id=user_id,
+                        proxy=playwright_proxy
+                    )
+                    if surge_leads:
+                        for u in surge_leads:
+                            if current_kw_new >= limit_per_keyword: break
+                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                            if status == "INSERT 0 1": 
+                                async with new_count_lock:
                                     new_count += 1
-                                    current_kw_new += 1
-                    except Exception as e:
-                        logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
+                                current_kw_new += 1
+                except Exception as e:
+                    logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
 
-                    # Breath between keywords
+            if proxies:
+                # 🚀 Run concurrently up to min(len(proxies), 5) workers
+                max_workers = min(len(proxies), 5)
+                sem = asyncio.Semaphore(max_workers)
+                logger.info(f"🛰️ Parallel Discovery Mode: Running with {max_workers} concurrent tasks distributed across {len(proxies)} proxies.")
+
+                async def sem_worker(keyword, kw_idx, proxy):
+                    async with sem:
+                        await run_single_keyword(keyword, kw_idx, proxy)
+
+                tasks = []
+                for kw_idx, keyword in enumerate(keywords):
+                    assigned_proxy = proxies[kw_idx % len(proxies)]
+                    tasks.append(sem_worker(keyword, kw_idx, assigned_proxy))
+                
+                await asyncio.gather(*tasks)
+            else:
+                # 🔒 Run sequentially if no proxies (safety first)
+                logger.info("🔒 Sequential Discovery Mode: No proxies configured. Running sequentially.")
+                for kw_idx, keyword in enumerate(keywords):
+                    await run_single_keyword(keyword, kw_idx)
                     await asyncio.sleep(random.uniform(5.0, 10.0))
 
-                return new_count
-
-            # 📱 Single Session for ALL keywords
-            await browser_engine.run_anonymous_session("multi_keyword_mission", ddg_scraper_session_func, is_desktop=False, headless=False, proxy=None)
         except Exception as e:
             logger.error(f"❌ Discovery mission crashed: {e}")
         finally:
@@ -189,7 +231,7 @@ class InstagramService:
             
         return new_count
 
-    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None):
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None):
         """
         🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
         Uses raw patchright for total control and visible navigation.
@@ -200,14 +242,18 @@ class InstagramService:
 
         async with async_playwright() as p:
             # 🖥️ LAUNCH ACTUAL GOOGLE CHROME WITH STEALTH FLAGS
-            browser = await p.chromium.launch(
-                headless=False,
-                channel="chrome",
-                args=[
+            launch_args = {
+                "headless": False,
+                "channel": "chrome",
+                "args": [
                     "--start-maximized",
                     "--disable-blink-features=AutomationControlled"
                 ]
-            )
+            }
+            if proxy:
+                launch_args["proxy"] = proxy
+
+            browser = await p.chromium.launch(**launch_args)
             # 🖼️ NO VIEWPORT (Let it use the full screen)
             context = await browser.new_context(
                 no_viewport=True,
@@ -481,36 +527,41 @@ class InstagramService:
         is_qualified = True
         
         # 1. Follower Count Match
-        if settings['min_followers'] > 0 and followers < settings['min_followers']: is_qualified = False
-        if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']: is_qualified = False
+        if settings['min_followers'] > 0 and followers < settings['min_followers']:
+            logger.info(f"❌ Follower Filter rejected lead: {followers} followers is below min {settings['min_followers']}.")
+            is_qualified = False
+        if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']:
+            logger.info(f"❌ Follower Filter rejected lead: {followers} followers is above max {settings['max_followers']}.")
+            is_qualified = False
             
         # 2. Picture Visual Match (AI Vision + Hashing Fallback)
         visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
         
         # 🧠 DEEP AI ANALYSIS (Gemma Powered) - Moved up to be the PRIMARY judge
-        await update_ui("Gemma 4: Analyzing Bio & Intent...")
-        logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
-        ai_result = await instagram_ai.analyze_lead_deep({
-            "username": full_name,
-            "bio": bio,
-            "followers": followers
-        })
-        
-        if ai_result and "error" not in ai_result:
-            ai_analysis.update(ai_result)
-            score = ai_result.get("intent_score", 0)
-            if ai_result.get("quality") == "high":
-                score = max(score, 90)
-            logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
-        else:
-            logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
+        ai_analysis = {}
+        score = 0
+        if is_qualified:
+            await update_ui("Gemma 4: Analyzing Bio & Intent...")
+            logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
+            ai_result = await instagram_ai.analyze_lead_deep({
+                "username": full_name,
+                "bio": bio,
+                "followers": followers
+            })
+            
+            if ai_result and "error" not in ai_result:
+                ai_analysis.update(ai_result)
+                score = ai_result.get("intent_score", 0)
+                if ai_result.get("quality") == "high":
+                    score = max(score, 90)
+                logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+            else:
+                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
 
         # ⚖️ THE DECISION ENGINE: Use AI Score + Keywords
-        is_qualified = True
-        
         # 1. AI Score Filter (Must be > 70 if we have a score)
-        if score > 0 and score < 70:
+        if is_qualified and score > 0 and score < 70:
             logger.info(f"❌ AI Rejected lead: Intent Score {score}% is too low.")
             is_qualified = False
             
@@ -753,6 +804,42 @@ class InstagramService:
             
             follow_match = re.search(r'"edge_follow":{"count":(\d+)}', content)
             if follow_match: following = int(follow_match.group(1))
+
+            # 🛠️ ROBUST FALLBACK: Parse from meta description tag if stats returned 0
+            if followers == 0 or following == 0:
+                desc_match = re.search(r'<meta[^>]*content="([^"]*Followers, [^"]*Following[^"]*)"', content, re.IGNORECASE)
+                if not desc_match:
+                    desc_match = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', content, re.IGNORECASE)
+                
+                if desc_match:
+                    desc_text = desc_match.group(1)
+                    # Parse followers (e.g., "15.3K Followers" or "1,204 Followers")
+                    f_match = re.search(r'([0-9.,kKmM]+)\s*Followers', desc_text, re.IGNORECASE)
+                    if f_match:
+                        f_str = f_match.group(1).lower().replace(',', '')
+                        if 'k' in f_str:
+                            try: followers = int(float(f_str.replace('k', '')) * 1000)
+                            except: pass
+                        elif 'm' in f_str:
+                            try: followers = int(float(f_str.replace('m', '')) * 1000000)
+                            except: pass
+                        else:
+                            try: followers = int(float(f_str))
+                            except: pass
+                    
+                    # Parse following
+                    fol_match = re.search(r'([0-9.,kKmM]+)\s*Following', desc_text, re.IGNORECASE)
+                    if fol_match:
+                        fol_str = fol_match.group(1).lower().replace(',', '')
+                        if 'k' in fol_str:
+                            try: following = int(float(fol_str.replace('k', '')) * 1000)
+                            except: pass
+                        elif 'm' in fol_str:
+                            try: following = int(float(fol_str.replace('m', '')) * 1000000)
+                            except: pass
+                        else:
+                            try: following = int(float(fol_str))
+                            except: pass
             
             # Check Privacy
             if '"is_private":true' in content.lower() or "this account is private" in content.lower():

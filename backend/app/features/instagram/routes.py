@@ -488,7 +488,7 @@ async def suggest_keywords(
                     "stream": False,
                     "options": {"temperature": 0.7}
                 },
-                timeout=aiohttp.ClientTimeout(total=45)
+                timeout=aiohttp.ClientTimeout(total=90)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -683,7 +683,7 @@ async def suggest_bad_keywords(
                     "stream": False,
                     "options": {"temperature": 0.7}
                 },
-                timeout=aiohttp.ClientTimeout(total=45)
+                timeout=aiohttp.ClientTimeout(total=90)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -736,45 +736,69 @@ async def suggest_bad_keywords(
 
 
 def _generate_bad_keyword_variations(seeds: List[str], count: int) -> List[str]:
-    """Smart algorithmic negative/blacklist keyword generator."""
-    base_bad_words = [
-        "giveaway", "reseller", "promo", "discount", "coupon", "code", "shop", "store",
-        "dropship", "wholesale", "bot", "fake", "spam", "support", "helpdesk", "service",
-        "dm for promo", "dm to collab", "collab", "pr", "ambassador", "reps", "affiliate",
-        "click link", "link in bio", "buy here", "order now", "free shipping", "sales",
-        "customercare", "help", "official support", "competitor", "backup account",
-        "backup", "personal account", "private profile", "not active", "inactive",
-        "follow me", "follow4follow", "like4like", "follow back", "followback",
-        "sub4sub", "gain train", "gain followers", "unfollow", "spam account"
+    """Smart algorithmic negative/blacklist keyword generator based on seed category."""
+    spam_bots = [
+        "bot", "fake", "spam", "follow me", "follow4follow", "like4like", "follow back", 
+        "followback", "sub4sub", "gain train", "gain followers", "unfollow", "spam account",
+        "inactive", "not active", "backup account", "backup", "personal account"
     ]
+    commerce_promo = [
+        "giveaway", "reseller", "promo", "discount", "coupon", "code", "shop", "store",
+        "dropship", "wholesale", "dm for promo", "dm to collab", "collab", "pr", 
+        "ambassador", "reps", "affiliate", "click link", "link in bio", "buy here", 
+        "order now", "free shipping", "sales", "retailer", "stockist", "distributor"
+    ]
+    support_help = [
+        "support", "helpdesk", "service", "customercare", "help", "official support"
+    ]
+
+    seeds_lower = [s.lower() for s in seeds]
     
+    # Detect category from seeds
+    use_commerce = any(any(x in s for x in ["sell", "shop", "store", "reseller", "dropship", "wholesale", "promo", "collab", "affiliate", "sale", "buyer"]) for s in seeds_lower)
+    use_spam = any(any(x in s for x in ["bot", "fake", "spam", "follow", "gain", "personal", "backup", "unfollow"]) for s in seeds_lower)
+    use_support = any(any(x in s for x in ["support", "help", "service", "care", "customer"]) for s in seeds_lower)
+
+    # Pull contextual words from the detected category pools
+    pool = []
+    if use_commerce:
+        pool.extend(commerce_promo)
+    if use_spam:
+        pool.extend(spam_bots)
+    if use_support:
+        pool.extend(support_help)
+        
+    # If no category detected, or pool is too small, default to combining them
+    if not pool:
+        pool = commerce_promo + spam_bots + support_help
+
     variations = []
     seen = set()
     
-    # Add seeds first
+    # 1. Add clean seeds
     for seed in seeds:
         seed_clean = seed.strip().lower()
         if seed_clean and seed_clean not in seen:
             seen.add(seed_clean)
             variations.append(seed.strip())
             
-    # Add relevant base bad words
-    for w in base_bad_words:
+    # 2. Add relevant contextual words from the pool
+    for w in pool:
         if w not in seen:
             seen.add(w)
             variations.append(w)
             
-    # Mix and generate more combinations if needed
+    # 3. Generate seed combos
     for seed in seeds:
         seed_clean = seed.strip().lower()
         if not seed_clean:
             continue
         combos = [
-            f"{seed_clean} reseller",
             f"{seed_clean} store",
             f"dm for {seed_clean}",
             f"fake {seed_clean}",
-            f"scam {seed_clean}"
+            f"{seed_clean} business",
+            f"{seed_clean} reseller"
         ]
         for c in combos:
             if c not in seen:
@@ -849,7 +873,7 @@ async def suggest_cities(
                     "stream": False,
                     "options": {"temperature": 0.5}
                 },
-                timeout=aiohttp.ClientTimeout(total=45)
+                timeout=aiohttp.ClientTimeout(total=90)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -906,6 +930,7 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
     region_lower = region.strip().lower()
     
     australia = [
+        # Major Cities
         "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Gold Coast", "Newcastle", 
         "Canberra", "Sunshine Coast", "Wollongong", "Hobart", "Geelong", "Townsville", "Cairns", 
         "Darwin", "Toowoomba", "Ballarat", "Bendigo", "Albury", "Launceston", "Mackay", 
@@ -913,7 +938,100 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         "Mildura", "Shepparton", "Gladstone", "Port Macquarie", "Tamworth", "Orange", "Dubbo", 
         "Geraldton", "Nowra", "Bathurst", "Warrnambool", "Albany", "Kalgoorlie", "Mount Gambier", 
         "Lismore", "Nelson Bay", "Maryborough", "Gympie", "Alice Springs", "Devonport", 
-        "Burnie", "Mount Isa", "Broken Hill"
+        "Burnie", "Mount Isa", "Broken Hill", "Gawler", "Whyalla", "Murray Bridge", "Port Lincoln",
+        "Port Pirie", "Port Augusta", "Goulburn", "Armidale", "Griffith", "Cessnock", "Maitland",
+        "Tweed Heads", "Queanbeyan", "Grafton", "Ballina", "Singleton", "Raymond Terrace",
+        "Kurri Kurri", "Batemans Bay", "Ulladulla", "Lithgow", "Bowral", "Mittagong", "Moss Vale",
+        
+        # States & Territories
+        "New South Wales", "Victoria", "Queensland", "Western Australia", "South Australia",
+        "Tasmania", "Northern Territory", "Australian Capital Territory",
+        "NSW", "VIC", "QLD", "WA", "SA", "TAS", "NT", "ACT",
+        
+        # Regions
+        "Hunter Region", "Central Coast", "Illawarra", "Riverina", "New England", "Mid North Coast",
+        "Gippsland", "Goulburn Valley", "Wimmera", "Mallee", "Mornington Peninsula", "Yarra Valley",
+        "Barossa Valley", "Riverland", "Eyre Peninsula", "Yorke Peninsula", "Fleurieu Peninsula",
+        "Pilbara", "Kimberley", "Goldfields", "Mid West", "South West", "Great Southern",
+        "Darling Downs", "Wide Bay-Burnett", "Fitzroy", "Mackay-Whitsunday", "Northern Queensland",
+        "Far North Queensland",
+        
+        # Sydney Suburbs & Surrounds
+        "Parramatta", "Blacktown", "Penrith", "Campbelltown", "Liverpool", "Bankstown", "Hornsby",
+        "Chatswood", "Ryde", "Manly", "Bondi", "Cronulla", "Newtown", "Surry Hills", "Paddington",
+        "Coogee", "Randwick", "Marrickville", "Castle Hill", "Baulkham Hills", "Richmond", "Windsor",
+        "Brookvale", "Dee Why", "Narrabeen", "Mona Vale", "Palm Beach", "Epping", "Macquarie Park",
+        "Carlingford", "Auburn", "Lidcombe", "Strathfield", "Burwood", "Ashfield", "Leichhardt",
+        "Balmain", "Glebe", "Redfern", "Alexandria", "Mascot", "Kensington", "Kingsford", "Maroubra",
+        "Hurstville", "Kogarah", "Rockdale", "Sutherland", "Miranda", "Engadine", "Gymea", "Caringbah",
+        "St Marys", "Mount Druitt", "Quakers Hill", "Kellyville", "Rouse Hill", "Bella Vista",
+        "Stanmore", "Petersham", "Enmore", "Dulwich Hill", "Lewisham", "Summer Hill", "Haberfield",
+        "Five Dock", "Drummoyne", "Concord", "Rhodes", "Homebush", "Berala", "Regents Park",
+        "Chester Hill", "Villawood", "Yennora", "Guildford", "Merrylands", "Harris Park",
+        "Westmead", "Wentworthville", "Pendle Hill", "Toongabbie", "Seven Hills", "Kings Park",
+        "Lalor Park", "Doonside", "Rooty Hill", "Minchinbury", "Mount Druitt", "St Marys",
+        "Kingswood", "Werrington", "Emu Plains", "Glenmore Park", "Orchard Hills", "Colyton",
+        
+        # Melbourne Suburbs & Surrounds
+        "Richmond", "Fitzroy", "Collingwood", "Brunswick", "Carlton", "St Kilda", "South Yarra",
+        "Prahran", "Toorak", "Hawthorn", "Kew", "Camberwell", "Malvern", "Brighton", "Sandringham",
+        "Cheltenham", "Dandenong", "Frankston", "Werribee", "Footscray", "Sunshine", "St Albans",
+        "Keilor", "Essendon", "Moonee Ponds", "Coburg", "Preston", "Northcote", "Thornbury",
+        "Heidelberg", "Ivanhoe", "Doncaster", "Box Hill", "Ringwood", "Croydon", "Mooroolbark",
+        "Lilydale", "Warrandyte", "Eltham", "Greensborough", "Bundoora", "Reservoir", "Broadmeadows",
+        "Glenroy", "Tullamarine", "Sunbury", "Melton", "Bacchus Marsh", "Williamstown", "Altona",
+        "Port Melbourne", "Albert Park", "Middle Park", "Elsternwick", "Caulfield", "Carnegie",
+        "Murrumbeena", "Glen Huntly", "Ormond", "Bentleigh", "Moorabbin", "Highett", "Hampton",
+        "Black Rock", "Beaumaris", "Mentone", "Parkdale", "Mordialloc", "Aspendale", "Edithvale",
+        "Chelsea", "Bonbeach", "Carrum", "Seaford", "Kananook", "Langwarrin", "Somerville",
+        "Hastings VIC", "Flinders", "Portsea", "Sorrento", "Rye", "Rosebud", "Dromana", "Safety Beach",
+        "Mount Martha", "Mornington", "Mount Eliza", "Frankston South", "Karingal", "Patterson Lakes",
+        
+        # Brisbane Suburbs & Surrounds
+        "Fortitude Valley", "West End", "South Brisbane", "Paddington", "Spring Hill", "New Farm",
+        "Milton", "Auchenflower", "Toowong", "Indooroopilly", "St Lucia", "Graceville", "Sherwood",
+        "Corinda", "Sunnybank", "Mount Gravatt", "Carindale", "Wynnum", "Manly QLD", "Cleveland",
+        "Capalaba", "Redland Bay", "Victoria Point", "Chermside", "Nundah", "Clayfield", "Ascot",
+        "Hamilton QLD", "Bulimba", "Hawthorne QLD", "Morningside", "Cannon Hill", "Carina",
+        "Annerley", "Yeronga", "Moorooka", "Coopers Plains", "Acacia Ridge", "Inala", "Forest Lake",
+        "Ipswich", "Springfield Lakes", "Redbank Plains", "Goodna", "Kangaroo Point", "Woolloongabba",
+        "Dutton Park", "Highgate Hill", "Fairfield QLD", "Tennyson", "Yeerongpilly", "Rocklea",
+        "Salisbury QLD", "Archerfield", "Coopers Plains", "Macgregor", "Robertson", "Eight Mile Plains",
+        "Runcorn", "Kuraby", "Stretton", "Calamvale", "Algester", "Sunnybank Hills", "Pallara",
+        "Willawong", "Sherwood", "Graceville", "Chelmer", "Oxley", "Darra", "Jamboree Heights",
+        "Mount Ommaney", "Jindalee", "Kenmore", "Chapel Hill", "Fig Tree Pocket", "Bellbowrie",
+        
+        # Perth Suburbs & Surrounds
+        "Fremantle", "Joondalup", "Mandurah", "Subiaco", "Claremont", "Cottesloe", "Nedlands",
+        "Dalkeith", "Peppermint Grove", "Mosman Park", "Northbridge", "Leederville", "Mount Lawley",
+        "Victoria Park", "South Perth", "Applecross", "Como", "Belmont", "Midland", "Armadale WA",
+        "Kelmscott", "Rockingham", "Kwinana", "Baldivis", "Wanneroo", "Scarborough WA", "Innaloo",
+        "Osborne Park", "Morley", "Bayswater WA", "Bassendean", "Guildford WA", "Cannington",
+        "East Perth", "West Perth", "Highgate WA", "Mount Hawthorn", "Wembley", "Floreat",
+        "City Beach", "Swanbourne", "Shenton Park", "Karrakatta", "Crawley WA", "Attadale",
+        "Bicton", "Palmyra", "Melville", "Willagee", "Myaree", "Booragoon", "Ardross",
+        "Mount Pleasant WA", "Brentwood", "Bull Creek", "Bateman", "Winthrop", "Kardinya",
+        
+        # Adelaide Suburbs & Surrounds
+        "North Adelaide", "Glenelg", "Brighton SA", "Henley Beach", "Semaphores", "Port Adelaide",
+        "Norwood", "Burnside", "Unley", "Mitcham", "Marion", "Hallett Cove", "Noarlunga",
+        "Morphett Vale", "Aldinga", "Willunga", "McLaren Vale", "Stirling", "Crafers", "Mount Barker",
+        "Hahndorf", "Gumeracha", "Birdwood", "Lobethal", "Gawler East", "Elizabeth", "Salisbury SA",
+        "Mawson Lakes", "Golden Grove", "Modbury", "Tea Tree Gully", "Campbelltown SA", "Payneham",
+        "Walkerville", "Prospect SA", "Enfield", "Kilburn", "Gepps Cross", "Dry Creek",
+        "Mawson Lakes", "Parafield", "Salisbury Downs", "Salisbury North", "Salisbury East",
+        "Golden Grove", "Greenwith", "Wynn Vale", "Modbury Heights", "Hope Valley", "Highbury",
+        "Dernancourt", "Athelstone", "Paradise", "Newton SA", "Rostrevor", "Magill", "Tranmere",
+        
+        # Additional Regional Towns
+        "Katoomba", "Blackheath", "Springwood", "Penrith", "Windsor", "Richmond", "Hawkesbury",
+        "Gosford", "Wyong", "Tuggerah", "The Entrance", "Terrigal", "Avoca Beach", "Bateau Bay",
+        "Umina Beach", "Ettalong Beach", "Woy Woy", "Kincumber", "Green Point", "Erina",
+        "Singleton", "Muswellbrook", "Scone", "Murrurundi", "Gunnedah", "Narrabri", "Moree",
+        "Lightning Ridge", "Walgett", "Bourke", "Cobar", "Nyngan", "Gilgandra", "Coonamble",
+        "Coonabarabran", "Wellington NSW", "Parkes", "Forbes", "Condobolin", "West Wyalong",
+        "Temora", "Cootamundra", "Junee", "Gundagai", "Tumut", "Yass", "Murrumbateman",
+        "Young NSW", "Cowra", "Grenfell", "Canowindra", "Molong", "Orange NSW", "Bathurst NSW"
     ]
     
     usa = [
@@ -926,7 +1044,16 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         "Minneapolis", "Tulsa", "Bakersfield", "Wichita", "Arlington", "Tampa", "New Orleans", 
         "Cleveland", "Honolulu", "Anaheim", "Newark", "Santa Ana", "St. Louis", "Pittsburgh", 
         "Cincinnati", "St. Paul", "Greensboro", "Toledo", "Jersey City", "Orlando", 
-        "Buffalo", "Lincoln", "Henderson", "Chula Vista", "Fort Wayne", "St. Petersburg", "Laredo"
+        "Buffalo", "Lincoln", "Henderson", "Chula Vista", "Fort Wayne", "St. Petersburg", "Laredo",
+        
+        # Additional US Cities
+        "Lubbock", "Madison", "Reno", "Chandler", "Glendale", "Scottsdale", "Gilbert", "Tempe",
+        "Peoria", "Surprise", "Yuma", "Flagstaff", "Tuscaloosa", "Huntsville", "Mobile", "Montgomery",
+        "Little Rock", "Fort Smith", "Fayetteville", "Springdale", "Jonesboro", "Denver", "Boulder",
+        "Aurora", "Lakewood", "Fort Collins", "Thorn", "Pueblo", "Grand Junction", "Hartford",
+        "New Haven", "Stamford", "Bridgeport", "Waterbury", "Danbury", "Norwalk", "Wilmington",
+        "Dover", "Newark DE", "Jacksonville", "Miami Beach", "Key West", "Fort Lauderdale",
+        "Tampa Bay", "St. Petersburg", "Tallahassee", "Pensacola", "Gainesville", "Ocala"
     ]
     
     uk = [
@@ -937,7 +1064,12 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         "Wolverhampton", "Huddersfield", "Ipswich", "York", "Gloucester", "Oxford", "Cambridge", 
         "Norwich", "Exeter", "Preston", "Blackburn", "Aberdeen", "Dundee", "Newport", "Swansea", 
         "Bournemouth", "Swindon", "Southend-on-Sea", "Middlesbrough", "Peterborough", "Milton Keynes", 
-        "Colchester", "Chelmsford", "Crawley"
+        "Colchester", "Chelmsford", "Crawley",
+        
+        # Additional UK
+        "Bath", "Salisbury", "Winchester", "Chichester", "Canterbury", "Rochester", "St Albans",
+        "Colchester", "Southend", "Basildon", "Chelmsford", "Harlow", "Gillingham", "Maidstone",
+        "Tunbridge Wells", "Margate", "Dover", "Folkestone", "Hastings", "Eastbourne", "Worthing"
     ]
     
     canada = [
@@ -947,7 +1079,11 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         "Sherbrooke", "Kingston", "Trois-Rivieres", "Guelph", "Moncton", "Saint John", 
         "Sudbury", "Chicoutimi", "Lethbridge", "Kamloops", "Nanaimo", "Belleville", "Brantford", 
         "Sarnia", "Sault Ste. Marie", "Peterborough", "Red Deer", "Grande Prairie", "Medicine Hat", 
-        "Prince George", "Chilliwack", "Granby", "Drummondville", "Saint-Hyacinthe", "Shawinigan"
+        "Prince George", "Chilliwack", "Granby", "Drummondville", "Saint-Hyacinthe", "Shawinigan",
+        
+        # Additional Canada
+        "Fort McMurray", "Grande Prairie", "Airdrie", "Spruce Grove", "Leduc", "Lloydminster",
+        "Burnaby", "Richmond BC", "Surrey", "Coquitlam", "Langley", "Delta", "North Vancouver"
     ]
     
     germany = [
@@ -957,7 +1093,11 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         "Mannheim", "Augsburg", "Wiesbaden", "Gelsenkirchen", "Mönchengladbach", "Braunschweig", 
         "Chemnitz", "Aachen", "Kiel", "Halle", "Magdeburg", "Freiburg", "Krefeld", "Lübeck", 
         "Oberhausen", "Erfurt", "Mainz", "Rostock", "Kassel", "Hagen", "Hamm", "Saarbrücken", 
-        "Mülheim", "Herne", "Ludwigshafen", "Osnabrück", "Solingen", "Leverkusen", "Potsdam"
+        "Mülheim", "Herne", "Ludwigshafen", "Osnabrück", "Solingen", "Leverkusen", "Potsdam",
+        
+        # Additional Germany
+        "Heidelberg", "Darmstadt", "Offenbach", "Hanau", "Giessen", "Marburg", "Fulda",
+        "Wiesbaden", "Mainz", "Rüsselsheim", "Bad Homburg", "Kronberg", "Königstein"
     ]
 
     europe = ["London", "Paris", "Berlin", "Madrid", "Rome", "Kiev", "Bucharest", "Vienna", "Hamburg", 
@@ -983,7 +1123,7 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
         if not words:
             words = ["Local"]
         base_list = [f"{words[0]} City Center", f"North {words[0]}", f"South {words[0]}", f"East {words[0]}", f"West {words[0]}", f"Greater {words[0]}", f"{words[0]} Metro", f"{words[0]} Region", f"Downtown {words[0]}", f"Central {words[0]}"]
-        base_list.extend(australia[:10])
+        base_list.extend(australia[:20])
 
     import random
     result = list(base_list)
@@ -992,6 +1132,21 @@ def _generate_cities_variations(region: str, count: int) -> List[str]:
     if region.title() not in result:
         result.insert(0, region.title())
         
+    # If the list size is smaller than requested count, dynamically pad with sub-regions/directions
+    if len(result) < count:
+        directions = ["North", "South", "East", "West", "Greater", "Central", "Metro", "Valley", "Coast", "Heights"]
+        extra = []
+        # Dynamically use the matched list's cities to generate sub-regions
+        sample_cities = base_list[:15] if len(base_list) >= 15 else base_list
+        for city in sample_cities:
+            for d in directions:
+                comb = f"{d} {city}"
+                if comb not in result and comb not in extra:
+                    extra.append(comb)
+        random.shuffle(extra)
+        result.extend(extra)
+        
     return result[:count]
+
 
 
