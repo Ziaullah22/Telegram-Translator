@@ -135,84 +135,113 @@ class InstagramService:
             )
             proxies = [dict(r) for r in proxy_rows] if proxy_rows else []
 
-            async def run_single_keyword(keyword, kw_idx, proxy=None):
+            # Determine number of concurrent worker queues (one window per proxy up to 5)
+            num_workers = min(len(proxies), 5) if proxies else 1
+            worker_queues = [[] for _ in range(num_workers)]
+            for idx, keyword in enumerate(keywords):
+                worker_queues[idx % num_workers].append((keyword, idx))
+
+            logger.info(f"🛰️ Discovery mode initialized: Running {num_workers} parallel window(s) to process {len(keywords)} keyword(s).")
+
+            async def worker_loop(worker_idx, queue, proxy=None):
                 nonlocal new_count
-                # 🛠️ Direct Username Detection
-                kw_clean = keyword.strip().lstrip('@')
-                if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
-                    logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                    status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
-                    if status == "INSERT 0 1":
-                        async with new_count_lock:
-                            new_count += 1
+                if not queue:
+                    return
 
-                msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                from patchright.async_api import async_playwright
+                playwright_proxy = None
                 if proxy:
-                    msg = f"🔍 [Parallel Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)}) using proxy {proxy.get('host')}..."
-                logger.info(msg)
-                self._discovery_status[user_id]["progress"] = msg
-                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                except: pass
+                    server_prefix = "socks5://" if proxy.get("proxy_type") == "socks5" else "http://"
+                    playwright_proxy = {
+                        "server": f"{server_prefix}{proxy['host']}:{proxy['port']}"
+                    }
+                    if proxy.get("username"):
+                        playwright_proxy["username"] = proxy["username"]
+                    if proxy.get("password"):
+                        playwright_proxy["password"] = proxy["password"]
 
-                current_kw_new = 0
-                
-                # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
-                try:
-                    # Construct Playwright proxy settings if proxy is specified
-                    playwright_proxy = None
-                    if proxy:
-                        server_prefix = "socks5://" if proxy.get("proxy_type") == "socks5" else "http://"
-                        playwright_proxy = {
-                            "server": f"{server_prefix}{proxy['host']}:{proxy['port']}"
-                        }
-                        if proxy.get("username"):
-                            playwright_proxy["username"] = proxy["username"]
-                        if proxy.get("password"):
-                            playwright_proxy["password"] = proxy["password"]
+                async with async_playwright() as p:
+                    launch_args = {
+                        "headless": False,
+                        "channel": "chrome",
+                        "args": [
+                            "--start-maximized",
+                            "--disable-blink-features=AutomationControlled"
+                        ]
+                    }
+                    if playwright_proxy:
+                        launch_args["proxy"] = playwright_proxy
 
-                    surge_leads = await self._perform_scrapling_discovery(
-                        keyword, 
-                        limit=limit_per_keyword,
-                        enable_ai_filter=enable_ai_filter,
-                        google_niche_filter=google_niche_filter,
-                        ai_model=ai_model,
-                        minimax_api_key=minimax_api_key,
-                        user_id=user_id,
-                        proxy=playwright_proxy
-                    )
-                    if surge_leads:
-                        for u in surge_leads:
-                            if current_kw_new >= limit_per_keyword: break
-                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
-                            if status == "INSERT 0 1": 
-                                async with new_count_lock:
-                                    new_count += 1
-                                current_kw_new += 1
-                except Exception as e:
-                    logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
+                    try:
+                        logger.info(f"🖥️ Launching Window {worker_idx+1}...")
+                        browser = await p.chromium.launch(**launch_args)
+                        context = await browser.new_context(
+                            no_viewport=True,
+                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                        )
+                        page = await context.new_page()
 
-            if proxies:
-                # 🚀 Run concurrently up to min(len(proxies), 5) workers
-                max_workers = min(len(proxies), 5)
-                sem = asyncio.Semaphore(max_workers)
-                logger.info(f"🛰️ Parallel Discovery Mode: Running with {max_workers} concurrent tasks distributed across {len(proxies)} proxies.")
+                        for q_idx, (keyword, kw_idx) in enumerate(queue):
+                            # Direct Username Detection
+                            kw_clean = keyword.strip().lstrip('@')
+                            if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
+                                logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
+                                status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                                if status == "INSERT 0 1":
+                                    async with new_count_lock:
+                                        new_count += 1
+                                continue
 
-                async def sem_worker(keyword, kw_idx, proxy):
-                    async with sem:
-                        await run_single_keyword(keyword, kw_idx, proxy)
+                            msg = f"🔍 [Discovery - Window {worker_idx+1}] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
+                            if proxy:
+                                msg = f"🔍 [Parallel Discovery - Window {worker_idx+1}] Processing '{keyword}' ({kw_idx+1}/{len(keywords)}) using proxy {proxy.get('host')}..."
+                            logger.info(msg)
+                            self._discovery_status[user_id]["progress"] = msg
+                            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                            except: pass
 
-                tasks = []
-                for kw_idx, keyword in enumerate(keywords):
-                    assigned_proxy = proxies[kw_idx % len(proxies)]
-                    tasks.append(sem_worker(keyword, kw_idx, assigned_proxy))
-                
-                await asyncio.gather(*tasks)
-            else:
-                # 🔒 Run sequentially if no proxies (safety first)
-                logger.info("🔒 Sequential Discovery Mode: No proxies configured. Running sequentially.")
-                for kw_idx, keyword in enumerate(keywords):
-                    await run_single_keyword(keyword, kw_idx)
-                    await asyncio.sleep(random.uniform(5.0, 10.0))
+                            current_kw_new = 0
+                            try:
+                                surge_leads = await self._perform_scrapling_discovery(
+                                    keyword, 
+                                    limit=limit_per_keyword,
+                                    enable_ai_filter=enable_ai_filter,
+                                    google_niche_filter=google_niche_filter,
+                                    ai_model=ai_model,
+                                    minimax_api_key=minimax_api_key,
+                                    user_id=user_id,
+                                    proxy=playwright_proxy,
+                                    page=page,
+                                    is_first_search=(q_idx == 0)
+                                )
+                                if surge_leads:
+                                    for u in surge_leads:
+                                        if current_kw_new >= limit_per_keyword: break
+                                        status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                                        if status == "INSERT 0 1": 
+                                            async with new_count_lock:
+                                                new_count += 1
+                                            current_kw_new += 1
+                            except Exception as e:
+                                logger.warning(f"⚠️ Google Surge failed for '{keyword}' on Window {worker_idx+1}: {e}")
+
+                            # Human delay between queries
+                            if q_idx < len(queue) - 1:
+                                delay = random.uniform(8.0, 15.0)
+                                logger.info(f"⏳ Waiting {delay:.1f}s before next keyword in Window {worker_idx+1}...")
+                                await asyncio.sleep(delay)
+
+                        await browser.close()
+                    except Exception as b_err:
+                        logger.error(f"❌ Browser crashed on Window {worker_idx+1}: {b_err}")
+
+            # Run parallel queues concurrently
+            tasks = []
+            for w_idx in range(num_workers):
+                assigned_proxy = proxies[w_idx] if proxies else None
+                tasks.append(worker_loop(w_idx, worker_queues[w_idx], assigned_proxy))
+
+            await asyncio.gather(*tasks)
 
         except Exception as e:
             logger.error(f"❌ Discovery mission crashed: {e}")
@@ -231,7 +260,7 @@ class InstagramService:
             
         return new_count
 
-    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None):
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None, page=None, is_first_search=True):
         """
         🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
         Uses raw patchright for total control and visible navigation.
@@ -253,25 +282,53 @@ class InstagramService:
             if proxy:
                 launch_args["proxy"] = proxy
 
-            browser = await p.chromium.launch(**launch_args)
-            # 🖼️ NO VIEWPORT (Let it use the full screen)
-            context = await browser.new_context(
-                no_viewport=True,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            )
-            page = await context.new_page()
+        if page is None:
+            # Fallback wrapper if no external page is provided (sequential / testing legacy mode)
+            from patchright.async_api import async_playwright
+            async with async_playwright() as p:
+                launch_args = {
+                    "headless": False,
+                    "channel": "chrome",
+                    "args": [
+                        "--start-maximized",
+                        "--disable-blink-features=AutomationControlled"
+                    ]
+                }
+                if proxy:
+                    launch_args["proxy"] = proxy
+                browser = await p.chromium.launch(**launch_args)
+                context = await browser.new_context(
+                    no_viewport=True,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                )
+                temp_page = await context.new_page()
+                res = await self._perform_scrapling_discovery(
+                    keyword=keyword,
+                    limit=limit,
+                    enable_ai_filter=enable_ai_filter,
+                    google_niche_filter=google_niche_filter,
+                    ai_model=ai_model,
+                    minimax_api_key=minimax_api_key,
+                    user_id=user_id,
+                    proxy=proxy,
+                    page=temp_page,
+                    is_first_search=True
+                )
+                await browser.close()
+                return res
 
-            # 🚀 MAX RESULTS MODE (Up to 20 pages or until results end)
-            for page_num in range(20):
-                if len(found_usernames) >= limit: break
-                start_idx = page_num * 10
-                logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
+        # 🚀 MAX RESULTS MODE (Up to 20 pages or until results end)
+        for page_num in range(20):
+            if len(found_usernames) >= limit: break
+            start_idx = page_num * 10
+            logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
 
-                search_query = f"{keyword} site:instagram.com"
-                url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
+            search_query = f"{keyword} site:instagram.com"
+            url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
 
-                try:
-                    if page_num == 0:
+            try:
+                if page_num == 0:
+                    if is_first_search:
                         # 1. Open Google home page directly
                         logger.info("🌐 Opening Google homepage...")
                         await page.goto("https://www.google.com", wait_until="domcontentloaded")
@@ -317,197 +374,245 @@ class InstagramService:
                             logger.warning("⚠️ Search input field not found. Loading search query directly...")
                             await page.goto(url, wait_until="domcontentloaded")
                     else:
-                        # 3. For page 2+, scroll down and try to click the "Next" button
-                        logger.info("⏬ Scrolling down to find the Next page button...")
-                        for _ in range(3):
-                            scroll_step = random.randint(300, 600)
-                            await page.evaluate(f"window.scrollBy(0, {scroll_step})")
+                        # 🔄 Reusing browser tab: Clear top search bar and type new query
+                        logger.info("🔄 Reusing browser tab. Locating top search bar...")
+                        search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
+                        if search_box:
+                            await search_box.click()
                             await asyncio.sleep(random.uniform(0.5, 1.0))
-                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await asyncio.sleep(random.uniform(2.0, 3.5))
-                        
-                        next_btn = await page.query_selector("a#pnnext")
-                        if next_btn:
-                            logger.info("🖱️ Clicking next page button...")
-                            await next_btn.click()
+                            
+                            # Select all and delete (human way)
+                            logger.info("🧹 Clearing previous search text...")
+                            await page.keyboard.press("Control+A")
+                            await asyncio.sleep(0.3)
+                            await page.keyboard.press("Backspace")
+                            await asyncio.sleep(0.5)
+                            
+                            # Fallback check: if it still has value, empty it via fill
+                            val = await search_box.input_value()
+                            if val:
+                                await search_box.fill("")
+                                
+                            logger.info(f"⌨️ Typing new query: '{search_query}'...")
+                            for char in search_query:
+                                await page.keyboard.type(char)
+                                await asyncio.sleep(random.uniform(0.08, 0.22))
+                                
+                            await asyncio.sleep(random.uniform(0.8, 1.5))
+                            logger.info("🚀 Pressing Enter to search...")
+                            await page.keyboard.press("Enter")
                         else:
-                            logger.warning("⚠️ Next page button not found. Navigating directly...")
-                            await page.goto(url, wait_until="domcontentloaded")
-
-                    logger.info("⏳ Waiting for Google Results (15s Deep Breath)...")
-                    await asyncio.sleep(15) 
-
-                    # 🛡️ Robot Check detection
-                    content = (await page.content()).lower()
-                    if "unusual traffic" in content or "captcha" in content:
-                        logger.warning("🚨 GOOGLE CAPTCHA! Please solve it in the window...")
-                        for _ in range(60):
-                            await asyncio.sleep(5)
-                            content = (await page.content()).lower()
-                            if "unusual traffic" not in content and "captcha" not in content:
-                                logger.info("✅ CAPTCHA Resolved!")
-                                break
-
-                    # 📜 HUMAN SCROLLING (Slow & Steady)
-                    logger.info("⏬ Scrolling results like a human...")
-                    for _ in range(random.randint(5, 8)):
+                            logger.warning("⚠️ Top search bar not found. Navigating back to Google homepage...")
+                            await page.goto("https://www.google.com", wait_until="domcontentloaded")
+                            return await self._perform_scrapling_discovery(
+                                keyword=keyword,
+                                limit=limit,
+                                enable_ai_filter=enable_ai_filter,
+                                google_niche_filter=google_niche_filter,
+                                ai_model=ai_model,
+                                minimax_api_key=minimax_api_key,
+                                user_id=user_id,
+                                proxy=proxy,
+                                page=page,
+                                is_first_search=True
+                            )
+                else:
+                    # 3. For page 2+, scroll down and try to click the "Next" button
+                    logger.info("⏬ Scrolling down to find the Next page button...")
+                    for _ in range(3):
                         scroll_step = random.randint(300, 600)
                         await page.evaluate(f"window.scrollBy(0, {scroll_step})")
-                        await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
+                        await asyncio.sleep(random.uniform(0.5, 1.0))
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    
+                    next_btn = await page.query_selector("a#pnnext")
+                    if next_btn:
+                        logger.info("🖱️ Clicking next page button...")
+                        await next_btn.click()
+                    else:
+                        logger.warning("⚠️ Next page button not found. Navigating directly...")
+                        await page.goto(url, wait_until="domcontentloaded")
 
-                    # 🎯 CARD-BASED AI DISCOVERY WITH ROBUST FALLBACK
-                    cards = await page.query_selector_all('div.g, div[data-ved]')
-                    processed_card_leads = 0
+                logger.info("⏳ Waiting for Google Results to settle...")
+                try:
+                    # Wait for '#search' or 'div.g' to load (avoid div[data-ved] which matches invisible tracking elements)
+                    await page.wait_for_selector('div.g, #search', timeout=15000)
+                except Exception as we:
+                    logger.warning(f"⚠️ Timeout waiting for results selector: {we}")
+                await asyncio.sleep(random.uniform(2.0, 4.0)) 
 
-                    if cards and len(cards) > 0:
-                        logger.info(f"📋 Found {len(cards)} Google result cards. Starting card-based analysis...")
-                        for card in cards:
-                            if len(found_usernames) >= limit: break
-                            
-                            # Extract link
-                            link_el = await card.query_selector('a[href*="instagram.com"]')
-                            if not link_el:
-                                continue
-                            
-                            href = await link_el.get_attribute('href')
-                            if href and '/url?q=' in href: 
-                                href = href.split('/url?q=')[1].split('&')[0]
-                            
-                            if href:
-                                match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                                if match:
-                                    u = match.group(1).strip().strip('./_').lower()
-                                    if self._is_valid_username(u) and u not in seen:
-                                        processed_card_leads += 1
+                # 🛡️ Robot Check detection
+                content = (await page.content()).lower()
+                if "unusual traffic" in content or "captcha" in content:
+                    logger.warning("🚨 GOOGLE CAPTCHA! Please solve it in the window...")
+                    for _ in range(60):
+                        await asyncio.sleep(5)
+                        content = (await page.content()).lower()
+                        if "unusual traffic" not in content and "captcha" not in content:
+                            logger.info("✅ CAPTCHA Resolved!")
+                            break
+
+                # 📜 HUMAN SCROLLING (Slow & Steady)
+                logger.info("⏬ Scrolling results like a human...")
+                for _ in range(random.randint(5, 8)):
+                    scroll_step = random.randint(300, 600)
+                    await page.evaluate(f"window.scrollBy(0, {scroll_step})")
+                    await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
+
+                # 🎯 CARD-BASED AI DISCOVERY WITH ROBUST FALLBACK
+                cards = await page.query_selector_all('div.g, div[data-ved]')
+                processed_card_leads = 0
+                links = []
+
+                if cards and len(cards) > 0:
+                    logger.info(f"📋 Found {len(cards)} Google result cards. Starting card-based analysis...")
+                    for card in cards:
+                        if len(found_usernames) >= limit: break
+                        
+                        # Extract link
+                        link_el = await card.query_selector('a[href*="instagram.com"]')
+                        if not link_el:
+                            continue
+                        
+                        href = await link_el.get_attribute('href')
+                        if href and '/url?q=' in href: 
+                            href = href.split('/url?q=')[1].split('&')[0]
+                        
+                        if href:
+                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                            if match:
+                                u = match.group(1).strip().strip('./_').lower()
+                                if self._is_valid_username(u) and u not in seen:
+                                    processed_card_leads += 1
+                                    
+                                    # Extract title
+                                    title_el = await card.query_selector('h3')
+                                    title = await title_el.inner_text() if title_el else ""
+                                    
+                                    # Extract snippet
+                                    snippet = await card.inner_text()
+                                    if title and title in snippet:
+                                        snippet = snippet.replace(title, "").strip()
+
+                                    # Deep AI Filter logic
+                                    if enable_ai_filter and google_niche_filter:
+                                        msg = f"🧠 [AI Filter] Evaluating @{u} ({ai_model})..."
+                                        logger.info(msg)
+                                        try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                        except: pass
                                         
-                                        # Extract title
-                                        title_el = await card.query_selector('h3')
-                                        title = await title_el.inner_text() if title_el else ""
+                                        from app.features.instagram_scraper.ai_engine import instagram_ai
+                                        res = await instagram_ai.analyze_google_result(
+                                            title=title,
+                                            url=href,
+                                            snippet=snippet,
+                                            criteria=google_niche_filter,
+                                            model_choice=ai_model,
+                                            api_key=minimax_api_key
+                                        )
                                         
-                                        # Extract snippet
-                                        snippet = await card.inner_text()
-                                        if title and title in snippet:
-                                            snippet = snippet.replace(title, "").strip()
-
-                                        # Deep AI Filter logic
-                                        if enable_ai_filter and google_niche_filter:
-                                            msg = f"🧠 [AI Filter] Evaluating @{u} ({ai_model})..."
+                                        is_match = res.get("match", False)
+                                        reason = res.get("reason", "No reason provided.")
+                                        
+                                        if not is_match:
+                                            msg = f"❌ [AI Filter] Skipped @{u} (Reason: {reason})"
                                             logger.info(msg)
                                             try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                                             except: pass
-                                            
-                                            from app.features.instagram_scraper.ai_engine import instagram_ai
-                                            res = await instagram_ai.analyze_google_result(
-                                                title=title,
-                                                url=href,
-                                                snippet=snippet,
-                                                criteria=google_niche_filter,
-                                                model_choice=ai_model,
-                                                api_key=minimax_api_key
-                                            )
-                                            
-                                            is_match = res.get("match", False)
-                                            reason = res.get("reason", "No reason provided.")
-                                            
-                                            if not is_match:
-                                                msg = f"❌ [AI Filter] Skipped @{u} (Reason: {reason})"
-                                                logger.info(msg)
-                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                                except: pass
-                                                continue
-                                            else:
-                                                msg = f"✅ [AI Filter] MATCHED @{u} (Reason: {reason})"
-                                                logger.info(msg)
-                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                                except: pass
-                                        
-                                        logger.info(f"✨ Approved Lead: @{u}")
-                                        found_usernames.append(u)
-                                        seen.add(u)
-                                        
-                                        # Save lead to database immediately in real-time!
-                                        db_status = "discovered"
-                                        try:
-                                            new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
-                                                user_id, u, keyword, db_status
-                                            )
-                                            if new_id:
-                                                try:
-                                                    await manager.send_personal_message({
-                                                        "type": "new_lead_discovered",
-                                                        "lead_id": new_id,
-                                                        "status": db_status
-                                                    }, user_id)
-                                                except: pass
-                                        except Exception as db_err:
-                                            logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
+                                            continue
+                                        else:
+                                            msg = f"✅ [AI Filter] MATCHED @{u} (Reason: {reason})"
+                                            logger.info(msg)
+                                            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
+                                            except: pass
+                                    
+                                    logger.info(f"✨ Approved Lead: @{u}")
+                                    found_usernames.append(u)
+                                    seen.add(u)
+                                    
+                                    # Save lead to database immediately in real-time!
+                                    db_status = "discovered"
+                                    try:
+                                        new_id = await db.fetchval(
+                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                            "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                                            user_id, u, keyword, db_status
+                                        )
+                                        if new_id:
+                                            try:
+                                                await manager.send_personal_message({
+                                                    "type": "new_lead_discovered",
+                                                    "lead_id": new_id,
+                                                    "status": db_status
+                                                }, user_id)
+                                            except: pass
+                                    except Exception as db_err:
+                                        logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
 
-                    # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
-                    if processed_card_leads == 0:
-                        logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
-                        # 💡 VISIBLE TEXT ONLY: Extract inner text rather than HTML code to completely avoid CSS stylesheet leakage
-                        page_content = await page.evaluate("() => document.body.innerText")
-                        
-                        # 1. Scrape from Links
-                        links = await page.query_selector_all('a[href*="instagram.com"]')
-                        for link in links:
-                            href = await link.get_attribute('href')
-                            if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
-                            if href:
-                                match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                                if match:
-                                    u = match.group(1).strip().strip('./_').lower()
-                                    if self._is_valid_username(u) and u not in seen:
-                                        logger.info(f"✨ Found Link Lead: @{u}")
-                                        found_usernames.append(u)
-                                        seen.add(u)
-                                        
-                                        # Save fallback link lead immediately!
-                                        try:
-                                            new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                                "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                                user_id, u, keyword
-                                            )
-                                            if new_id:
-                                                try:
-                                                    await manager.send_personal_message({
-                                                        "type": "new_lead_discovered",
-                                                        "lead_id": new_id,
-                                                        "status": "discovered"
-                                                    }, user_id)
-                                                except: pass
-                                        except Exception as db_err:
-                                            logger.error(f"❌ Failed to insert fallback lead {u} in real-time: {db_err}")
+                # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
+                if processed_card_leads == 0:
+                    logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
+                    # 💡 VISIBLE TEXT ONLY: Extract inner text rather than HTML code to completely avoid CSS stylesheet leakage
+                    page_content = await page.evaluate("() => document.body.innerText")
+                    
+                    # 1. Scrape from Links
+                    links = await page.query_selector_all('a[href*="instagram.com"]')
+                    for link in links:
+                        href = await link.get_attribute('href')
+                        if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
+                        if href:
+                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                            if match:
+                                u = match.group(1).strip().strip('./_').lower()
+                                if self._is_valid_username(u) and u not in seen:
+                                    logger.info(f"✨ Found Link Lead: @{u}")
+                                    found_usernames.append(u)
+                                    seen.add(u)
+                                    
+                                    # Save fallback link lead immediately!
+                                    try:
+                                        new_id = await db.fetchval(
+                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                            "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
+                                            user_id, u, keyword
+                                        )
+                                        if new_id:
+                                            try:
+                                                await manager.send_personal_message({
+                                                    "type": "new_lead_discovered",
+                                                    "lead_id": new_id,
+                                                    "status": "discovered"
+                                                }, user_id)
+                                            except: pass
+                                    except Exception as db_err:
+                                        logger.error(f"❌ Failed to insert fallback lead {u} in real-time: {db_err}")
 
-                        # 2. Scrape from Text Snippets (Deep Scan)
-                        snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
-                        for u in snippets:
-                            u = u.strip().strip('./_')
-                            if self._is_valid_username(u) and u not in seen:
-                                logger.info(f"✨ Found Snippet Lead: @{u}")
-                                found_usernames.append(u)
-                                seen.add(u)
-                                
-                                # Save fallback snippet lead immediately!
-                                try:
-                                    new_id = await db.fetchval(
-                                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                        "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                        user_id, u, keyword
-                                    )
-                                    if new_id:
-                                        try:
-                                            await manager.send_personal_message({
-                                                "type": "new_lead_discovered",
-                                                "lead_id": new_id,
-                                                "status": "discovered"
-                                            }, user_id)
-                                        except: pass
-                                except Exception as db_err:
-                                    logger.error(f"❌ Failed to insert snippet lead {u} in real-time: {db_err}")
+                    # 2. Scrape from Text Snippets (Deep Scan)
+                    snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
+                    for u in snippets:
+                        u = u.strip().strip('./_')
+                        if self._is_valid_username(u) and u not in seen:
+                            logger.info(f"✨ Found Snippet Lead: @{u}")
+                            found_usernames.append(u)
+                            seen.add(u)
+                            
+                            # Save fallback snippet lead immediately!
+                            try:
+                                new_id = await db.fetchval(
+                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
+                                    "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
+                                    user_id, u, keyword
+                                )
+                                if new_id:
+                                    try:
+                                        await manager.send_personal_message({
+                                            "type": "new_lead_discovered",
+                                            "lead_id": new_id,
+                                            "status": "discovered"
+                                        }, user_id)
+                                    except: pass
+                            except Exception as db_err:
+                                logger.error(f"❌ Failed to insert snippet lead {u} in real-time: {db_err}")
                     
                     # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
@@ -515,11 +620,12 @@ class InstagramService:
                     # If we found nothing at all on this page, stop early
                     if processed_card_leads == 0 and len(links) < 5: 
                         break
-                except Exception as e:
-                    logger.error(f"❌ Google Scrape Error: {e}")
-                    break
+            except Exception as e:
+                logger.error(f"❌ Google Scrape Error: {e}")
+                break
 
-            await browser.close()
+            # Removed browser.close() from here because context is managed externally by the worker loop
+            pass
         
         logger.info(f"🎯 [ULTRA SURGE] Finished. Found {len(found_usernames)} unique Google leads.")
         return found_usernames[:limit]
@@ -2880,7 +2986,7 @@ class InstagramService:
         # Find all duplicate usernames
         dupes = await db.fetch("""
             SELECT instagram_username, COUNT(*) as cnt, 
-                   array_agg(id ORDER BY follower_count DESC NULLS LAST, discovered_at DESC) as ids
+                   array_agg(id ORDER BY follower_count DESC NULLS LAST, created_at DESC) as ids
             FROM instagram_leads
             WHERE user_id = $1
             GROUP BY instagram_username
