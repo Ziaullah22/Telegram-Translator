@@ -172,15 +172,11 @@ class InstagramService:
                     if playwright_proxy:
                         launch_args["proxy"] = playwright_proxy
 
-                    try:
-                        logger.info(f"🖥️ Launching Window {worker_idx+1}...")
-                        browser = await p.chromium.launch(**launch_args)
-                        context = await browser.new_context(
-                            no_viewport=True,
-                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-                        )
-                        page = await context.new_page()
+                    browser = None
+                    context = None
+                    page = None
 
+                    try:
                         for q_idx, (keyword, kw_idx) in enumerate(queue):
                             # Direct Username Detection
                             kw_clean = keyword.strip().lstrip('@')
@@ -191,6 +187,33 @@ class InstagramService:
                                     async with new_count_lock:
                                         new_count += 1
                                 continue
+
+                            # Ensure browser, context, and page are initialized and active
+                            is_first_search = False
+                            if browser is None or not browser.is_connected():
+                                if browser:
+                                    try: await browser.close()
+                                    except: pass
+                                logger.info(f"🖥️ Launching/Re-launching Window {worker_idx+1}...")
+                                browser = await p.chromium.launch(**launch_args)
+                                context = await browser.new_context(
+                                    no_viewport=True,
+                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                                )
+                                page = await context.new_page()
+                                is_first_search = True
+
+                            if page is None or page.is_closed():
+                                logger.info(f"🖥️ Tab closed. Re-opening new tab in Window {worker_idx+1}...")
+                                context = await browser.new_context(
+                                    no_viewport=True,
+                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                                )
+                                page = await context.new_page()
+                                is_first_search = True
+
+                            if q_idx == 0:
+                                is_first_search = True
 
                             msg = f"🔍 [Discovery - Window {worker_idx+1}] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
                             if proxy:
@@ -212,7 +235,7 @@ class InstagramService:
                                     user_id=user_id,
                                     proxy=playwright_proxy,
                                     page=page,
-                                    is_first_search=(q_idx == 0)
+                                    is_first_search=is_first_search
                                 )
                                 if surge_leads:
                                     for u in surge_leads:
@@ -231,7 +254,8 @@ class InstagramService:
                                 logger.info(f"⏳ Waiting {delay:.1f}s before next keyword in Window {worker_idx+1}...")
                                 await asyncio.sleep(delay)
 
-                        await browser.close()
+                        if browser:
+                            await browser.close()
                     except Exception as b_err:
                         logger.error(f"❌ Browser crashed on Window {worker_idx+1}: {b_err}")
 
