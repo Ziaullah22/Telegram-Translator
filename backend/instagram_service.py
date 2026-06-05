@@ -271,7 +271,69 @@ class InstagramService:
                 url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
 
                 try:
-                    await page.goto(url, wait_until="domcontentloaded")
+                    if page_num == 0:
+                        # 1. Open Google home page directly
+                        logger.info("🌐 Opening Google homepage...")
+                        await page.goto("https://www.google.com", wait_until="domcontentloaded")
+                        await asyncio.sleep(random.uniform(2.0, 4.0))
+                        
+                        # 1.5 Clear Google Cookie Consent or Sign-in Popups
+                        try:
+                            popup_selectors = [
+                                "button#L2AGLb",                   # EU Cookie Accept All
+                                "button:has-text('Accept all')",   # Generic Accept All
+                                "button:has-text('I agree')",      # Generic Agree
+                                "button:has-text('Agree')",
+                                "button:has-text('Consent')",
+                                "button:has-text('No thanks')",    # Sign-in popup bypass
+                                "button:has-text('Stay signed out')" # Sign-in popup bypass alternate
+                            ]
+                            for selector in popup_selectors:
+                                btn = await page.query_selector(selector)
+                                if btn and await btn.is_visible():
+                                    logger.info(f"🧹 Dismissing Google popup using button '{selector}'...")
+                                    await btn.click()
+                                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                        except Exception as pe:
+                            logger.warning(f"⚠️ Popup bypass warning: {pe}")
+                        
+                        # 2. Find the search input field
+                        search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
+                        if search_box:
+                            logger.info(f"⌨️ Typing search query: '{search_query}' with human speed...")
+                            await search_box.click()
+                            await asyncio.sleep(random.uniform(0.5, 1.2))
+                            
+                            # Type character-by-character with random delays
+                            for char in search_query:
+                                await page.keyboard.type(char)
+                                await asyncio.sleep(random.uniform(0.08, 0.22))
+                                
+                            await asyncio.sleep(random.uniform(0.8, 1.5))
+                            logger.info("🚀 Pressing Enter to search...")
+                            await page.keyboard.press("Enter")
+                        else:
+                            # Fallback if search input field is not found
+                            logger.warning("⚠️ Search input field not found. Loading search query directly...")
+                            await page.goto(url, wait_until="domcontentloaded")
+                    else:
+                        # 3. For page 2+, scroll down and try to click the "Next" button
+                        logger.info("⏬ Scrolling down to find the Next page button...")
+                        for _ in range(3):
+                            scroll_step = random.randint(300, 600)
+                            await page.evaluate(f"window.scrollBy(0, {scroll_step})")
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await asyncio.sleep(random.uniform(2.0, 3.5))
+                        
+                        next_btn = await page.query_selector("a#pnnext")
+                        if next_btn:
+                            logger.info("🖱️ Clicking next page button...")
+                            await next_btn.click()
+                        else:
+                            logger.warning("⚠️ Next page button not found. Navigating directly...")
+                            await page.goto(url, wait_until="domcontentloaded")
+
                     logger.info("⏳ Waiting for Google Results (15s Deep Breath)...")
                     await asyncio.sleep(15) 
 
