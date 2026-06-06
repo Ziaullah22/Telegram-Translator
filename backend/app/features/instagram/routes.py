@@ -1058,6 +1058,9 @@ async def suggest_cities(
     messages.append({"role": "user", "content": user_content})
 
     ai_online = False
+    suggested_cities = []
+    ai_message = ""
+    ai_used = False
     # 🚀 AI BYPASS: Generating > 100 cities/suburbs takes too long for local LLMs and causes timeouts.
     # We bypass Ollama for counts > 100 and use the instant database fallback.
     if count <= 100:

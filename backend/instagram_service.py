@@ -192,8 +192,8 @@ class InstagramService:
                     logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
 
             if proxies:
-                # 🚀 Browser Reuse Mode: up to 10 browsers, each handles a BATCH of keywords
-                max_workers = min(len(proxies), 10)
+                # 🚀 Browser Reuse Mode: up to 20 browsers, each handles a BATCH of keywords
+                max_workers = min(len(proxies), 20)
                 logger.info(f"🛰️ Parallel Browser Mode: {max_workers} browsers open simultaneously, each reusing session across keyword batch.")
 
                 # Split keywords into batches — one batch per browser worker
@@ -947,31 +947,45 @@ class InstagramService:
                     logger.info("❌ Exclude Keyword Filter rejected lead: Blacklisted keyword found in bio.")
                     is_qualified = False
 
-        # 1.7 Cities Whitelist Filter (checks bio + full_name + username)
+        # 1.7 Cities Whitelist Filter (string match first, then AI if needed)
         if is_qualified:
             bio_cities = settings.get('bio_cities_whitelist', '')
             if bio_cities and bio_cities.strip():
                 cities_list = [c.strip().lower() for c in bio_cities.split(',') if c.strip()]
 
-                # Fetch username from DB (not in function params but needed for city check)
+                # Fetch username from DB
                 lead_row = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1", lead_id)
-                username_lower = (lead_row['instagram_username'] if lead_row else '').lower()
+                username_val = (lead_row['instagram_username'] if lead_row else '')
+                username_lower = username_val.lower()
                 full_name_lower = (full_name or '').lower()
                 bio_lower_city = (bio or '').lower()
 
-                # Check all 3 fields — pass if city found in ANY of them
-                city_found = any(
+                # ⚡ FAST PATH: string match first (no API call needed)
+                city_found_fast = any(
                     city in bio_lower_city or city in full_name_lower or city in username_lower
                     for city in cities_list
                 )
 
-                if not city_found:
-                    logger.info(
-                        f"❌ Cities Whitelist rejected lead: None of bio/full_name/username "
-                        f"matched cities {cities_list}. "
-                        f"(bio='{bio_lower_city[:40]}', name='{full_name_lower}', user='{username_lower}')"
+                if city_found_fast:
+                    logger.info(f"✅ Cities Filter PASSED (string match) for @{username_val}")
+                else:
+                    # 🧠 SMART PATH: string match failed — ask AI (understands NYC, 305, South Beach etc.)
+                    logger.info(f"🧠 String match failed. Asking AI city check for @{username_val}...")
+                    await update_ui("AI: Checking city/region match...")
+                    ai_match, ai_reason = await self._ai_city_check(
+                        username=username_val,
+                        full_name=full_name or '',
+                        bio=bio or '',
+                        cities=cities_list
                     )
-                    is_qualified = False
+                    if ai_match:
+                        logger.info(f"✅ Cities Filter PASSED (AI) for @{username_val}: {ai_reason}")
+                    else:
+                        logger.info(
+                            f"❌ Cities Whitelist rejected @{username_val} — AI reason: {ai_reason}. "
+                            f"Cities checked: {cities_list}"
+                        )
+                        is_qualified = False
 
         # 2. Bio Keyword Match (Acts as a secondary booster or filter)
         # If score is high (90+), we ignore keywords. Otherwise, we check them.
@@ -2077,6 +2091,98 @@ class InstagramService:
         keywords = [k.strip().lower() for k in keywords_raw.split(',') if k.strip()]
         bio_lower = bio.lower()
         return any(kw in bio_lower for kw in keywords)
+
+    async def _ai_city_check(self, username: str, full_name: str, bio: str, cities: list) -> tuple[bool, str]:
+        """
+        🧠 AI-powered city/region check using Gemini → Groq → OpenRouter fallback.
+        Returns (is_match: bool, reason: str).
+        Understands nicknames, abbreviations, landmarks (NYC, 305, South Beach, etc.)
+        """
+        import aiohttp, json
+        from app.core.config import settings
+
+        cities_str = ', '.join(cities)
+        prompt = (
+            f"You are a location detection assistant.\n"
+            f"Target cities/regions: {cities_str}\n\n"
+            f"Instagram account info:\n"
+            f"- Username: @{username}\n"
+            f"- Full Name: {full_name or 'N/A'}\n"
+            f"- Bio: {bio or 'N/A'}\n\n"
+            f"Question: Is this Instagram account likely based in or serving any of the target cities/regions?\n"
+            f"Consider: city abbreviations (NYC=New York, LA=Los Angeles), area codes (305=Miami), "
+            f"neighborhoods, landmarks, slang terms, country/state names.\n\n"
+            f"Respond ONLY with this JSON:\n"
+            f'{{"match": true or false, "reason": "brief explanation"}}'
+        )
+
+        # --- Try Gemini ---
+        if settings.gemini_api_key:
+            try:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+                payload = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                            result = json.loads(raw)
+                            logger.info(f"🧠 [Gemini City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
+                            return result.get("match", False), result.get("reason", "")
+            except Exception as e:
+                logger.warning(f"⚠️ Gemini city check failed: {e}. Trying Groq...")
+
+        # --- Try Groq ---
+        if settings.groq_api_key:
+            try:
+                headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            result = json.loads(raw)
+                            logger.info(f"🧠 [Groq City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
+                            return result.get("match", False), result.get("reason", "")
+            except Exception as e:
+                logger.warning(f"⚠️ Groq city check failed: {e}. Trying OpenRouter...")
+
+        # --- Try OpenRouter ---
+        if settings.openrouter_api_key:
+            try:
+                headers = {
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173"
+                }
+                payload = {
+                    "model": "google/gemini-2.5-flash",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "max_tokens": 100
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            result = json.loads(raw)
+                            logger.info(f"🧠 [OpenRouter City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
+                            return result.get("match", False), result.get("reason", "")
+            except Exception as e:
+                logger.warning(f"⚠️ OpenRouter city check failed: {e}. No AI available.")
+
+        # --- No AI available ---
+        return False, "No AI service available for city check"
 
     def _check_follower_range(self, followers: int, min_f: int, max_f: int) -> bool:
         """Returns True if follower count is within range (0 = no limit)."""
