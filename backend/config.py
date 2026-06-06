@@ -8,11 +8,17 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 10080
+    debug: bool = True
 
-    frontend_url: str = "http://165.154.225.233"
+    frontend_url: str = "http://localhost:5173"
     
     # AES-256 encryption key for message storage
     aes_encryption_key: str = ""
+
+    # AI API keys
+    gemini_api_key: str = ""
+    groq_api_key: str = ""
+    openrouter_api_key: str = ""
 
     class Config:
         env_file = ".env"

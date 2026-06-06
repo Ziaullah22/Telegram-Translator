@@ -400,6 +400,254 @@ async def generate_image_hash(req: ImageHashRequest, current_user: TokenData = D
 
 # --- AI Keyword Suggestions ---
 
+def robust_json_extract(raw: str, array_key: str) -> tuple[list[str], str, bool]:
+    """
+    Robustly extracts the list from JSON/text output of Ollama.
+    Returns: (list_of_strings, explanation_message, parsed_successfully)
+    """
+    import json
+    import re
+
+    cleaned = raw.strip()
+    # Remove leading/trailing markdown blocks if any
+    cleaned = re.sub(r'^```(json)?', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'```$', '', cleaned)
+    cleaned = cleaned.strip()
+
+    # Try matching first brace to last brace for standard JSON object
+    match_obj = re.search(r'\{.*\}', cleaned, re.DOTALL)
+    if match_obj:
+        try:
+            parsed = json.loads(match_obj.group(0))
+            items = parsed.get(array_key, [])
+            msg = parsed.get("message", "")
+            if items:
+                return [str(i).strip() for i in items if i], msg, True
+        except json.JSONDecodeError:
+            pass
+
+    # Try matching first bracket to last bracket (raw JSON array)
+    match_arr = re.search(r'\[.*\]', cleaned, re.DOTALL)
+    if match_arr:
+        try:
+            parsed = json.loads(match_arr.group(0))
+            if isinstance(parsed, list):
+                return [str(i).strip() for i in parsed if i], "", True
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: extract double-quoted strings if there are many of them
+    quotes = re.findall(r'"([^"\n]+)"', cleaned)
+    if len(quotes) >= 3:
+        filtered_quotes = [
+            q.strip() for q in quotes 
+            if q.strip().lower() not in (array_key.lower(), "message", "keywords", "cities", "error")
+        ]
+        if filtered_quotes:
+            return filtered_quotes, "Extracted from raw AI response", True
+
+    # Fallback: line-by-line list item extraction
+    lines = cleaned.splitlines()
+    extracted_items = []
+    for line in lines:
+        line = line.strip()
+        list_match = re.match(r'^[\s\-\*\d\.\:\)]+\s*(.*)', line)
+        if list_match:
+            item = list_match.group(1).strip()
+            item = re.sub(r'^["\']|["\']$', '', item).strip()
+            if item and len(item) < 100 and not item.lower().startswith(("here are", "i have", "json", "sure", "ok", "this is", "keywords", "message")):
+                extracted_items.append(item)
+    
+    if len(extracted_items) >= 3:
+        return extracted_items, "Extracted from raw AI list", True
+
+    return [], "", False
+
+
+async def query_ai_service(messages: List[dict], system_prompt: str, array_key: str, temperature: float = 0.7) -> tuple[list[str], str, bool, bool]:
+    """
+    Queries Gemini API if GEMINI_API_KEY is configured, else falls back to Groq, else falls back to Ollama.
+    Returns: (suggested_items, message, ai_used, ai_online)
+    """
+    import aiohttp
+    from app.core.config import settings
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 1. Try Gemini first if API key is set
+    if settings.gemini_api_key:
+        try:
+            logger.info("Sending request to Gemini API (gemini-2.5-flash)...")
+            gemini_contents = []
+            for m in messages:
+                role = m.get("role")
+                content = m.get("content")
+                if role == "system":
+                    continue
+                role_mapped = "model" if role == "assistant" else "user"
+                gemini_contents.append({
+                    "role": role_mapped,
+                    "parts": [{"text": content}]
+                })
+            
+            payload = {
+                "contents": gemini_contents,
+                "generationConfig": {
+                    "temperature": temperature,
+                    "responseMimeType": "application/json"
+                }
+            }
+            if system_prompt:
+                payload["systemInstruction"] = {
+                    "parts": [{"text": system_prompt}]
+                }
+
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    gemini_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(connect=5, total=15)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via Gemini!", True, True
+                        elif raw.strip():
+                            return [], raw[:500], False, True
+                    else:
+                        err_text = await response.text()
+                        logger.warning(f"Gemini API returned status {response.status}: {err_text}")
+        except Exception as gemini_err:
+            logger.warning(f"Failed to query Gemini API: {gemini_err}. Falling back to Groq...")
+
+    # 2. Try Groq if API key is set
+    if settings.groq_api_key:
+        try:
+            logger.info("Sending request to Groq API (llama-3.3-70b-versatile)...")
+            groq_messages = []
+            if system_prompt:
+                groq_messages.append({"role": "system", "content": system_prompt})
+            for m in messages:
+                if m.get("role") != "system":
+                    groq_messages.append(m)
+
+            groq_url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": groq_messages,
+                "temperature": temperature,
+                "response_format": {"type": "json_object"}
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    groq_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(connect=5, total=20)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw = data["choices"][0]["message"]["content"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via Groq!", True, True
+                        elif raw.strip():
+                            return [], raw[:500], False, True
+                    else:
+                        err_text = await response.text()
+                        logger.warning(f"Groq API returned status {response.status}: {err_text}")
+        except Exception as groq_err:
+            logger.warning(f"Failed to query Groq API: {groq_err}. Falling back to OpenRouter...")
+
+    # 3. Try OpenRouter if API key is set
+    if settings.openrouter_api_key:
+        try:
+            logger.info("Sending request to OpenRouter API (google/gemini-2.5-flash)...")
+            or_messages = []
+            if system_prompt:
+                or_messages.append({"role": "system", "content": system_prompt})
+            for m in messages:
+                if m.get("role") != "system":
+                    or_messages.append(m)
+
+            or_url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:5173",
+                "X-Title": "Telegram Translator",
+                "User-Agent": "Mozilla/5.0"
+            }
+            payload = {
+                "model": "google/gemini-2.5-flash",
+                "messages": or_messages,
+                "temperature": temperature,
+                "max_tokens": 500,
+                "response_format": {"type": "json_object"}
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    or_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(connect=5, total=20)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw = data["choices"][0]["message"]["content"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via OpenRouter!", True, True
+                        elif raw.strip():
+                            return [], raw[:500], False, True
+                    else:
+                        err_text = await response.text()
+                        logger.warning(f"OpenRouter API returned status {response.status}: {err_text}")
+        except Exception as or_err:
+            logger.warning(f"Failed to query OpenRouter API: {or_err}. Falling back to Ollama...")
+
+    # 4. Fallback to Ollama
+    ollama_url = "http://localhost:11434"
+    try:
+        logger.info("Sending request to local Ollama (gemma4:e2b)...")
+        ollama_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": "gemma4:e2b",
+                    "messages": ollama_messages,
+                    "stream": False,
+                    "options": {"temperature": temperature}
+                },
+                timeout=aiohttp.ClientTimeout(connect=5, total=90)
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    raw = data.get("message", {}).get("content", "{}")
+                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                    if suggested_items:
+                        return suggested_items, explanation_msg or "Suggestions generated via local Ollama!", True, True
+                    elif raw.strip():
+                        return [], raw[:500], False, True
+    except Exception as ollama_err:
+        logger.info(f"Ollama not reachable: {type(ollama_err).__name__}")
+
+    return [], "", False, False
+
+
 class KeywordSuggestRequest(BaseModel):
     seed_keywords: List[str]
     conversation_history: List[dict] = []  # [{role: "user"/"assistant", content: "..."}]
@@ -448,10 +696,11 @@ async def suggest_keywords(
     # 3. Build prompt
     seeds_str = ", ".join(req.seed_keywords) if req.seed_keywords else "general"
     count = max(10, min(100, req.count))
+    ai_count = min(count, 20)
 
     system_prompt = (
         f"You are an expert Instagram lead generation keyword strategist. "
-        f"Your job is to help the user expand their seed keywords into {count} highly relevant keyword variations "
+        f"Your job is to help the user expand their seed keywords into {ai_count} highly relevant keyword variations "
         f"for scraping Instagram profiles via Google search. "
         f"Focus on: niches, hashtags, business types, locations, professions, product types. "
         f"Return ONLY a valid JSON object with a 'keywords' array of strings and a 'message' string explaining your choices. "
@@ -467,54 +716,27 @@ async def suggest_keywords(
         user_content = req.user_message
     else:
         user_content = (
-            f"Generate {count} Instagram search keyword variations based on these seed keywords: {seeds_str}. "
+            f"Generate {ai_count} Instagram search keyword variations based on these seed keywords: {seeds_str}. "
             f"Include hashtag-style keywords, niche descriptors, location variations, and related business types."
         )
     messages.append({"role": "user", "content": user_content})
 
-    # 4. Try Ollama
-    ollama_url = "http://localhost:11434"
-    suggested_keywords = []
-    ai_message = ""
-    ai_used = False
+    # 4. Try AI Service (Gemini/Ollama)
+    suggested_keywords, ai_message, ai_used, ai_online = await query_ai_service(
+        messages=messages,
+        system_prompt=system_prompt,
+        array_key="keywords",
+        temperature=0.7
+    )
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": "gemma4:e2b",
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"temperature": 0.7}
-                },
-                timeout=aiohttp.ClientTimeout(total=90)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    raw = data.get("message", {}).get("content", "{}")
-                    import re
-                    match = re.search(r'\{.*\}', raw, re.DOTALL)
-                    if match:
-                        try:
-                            parsed = json.loads(match.group(0))
-                            kws = parsed.get("keywords", [])
-                            if kws:
-                                suggested_keywords = kws
-                                ai_message = parsed.get("message", "Here are your keyword suggestions!")
-                                ai_used = True
-                        except json.JSONDecodeError:
-                            pass
-                    if not ai_used and raw.strip():
-                        # Raw text response — still try to use it as message
-                        ai_message = raw[:500]
-    except Exception as e:
-        logger.info(f"Ollama not reachable (using smart fallback): {type(e).__name__}")
-
-    # 5. SMART FALLBACK: Always generate variations algorithmically if AI didn't produce keywords
-    if not suggested_keywords:
+    # 5. SMART EXPANSION: If AI gave us keywords, but we need more to reach `count`, or if AI failed completely
+    if ai_used and suggested_keywords and len(suggested_keywords) < count:
+        extra_needed = count - len(suggested_keywords)
+        extra_kws = _generate_keyword_variations(suggested_keywords, extra_needed)
+        suggested_keywords.extend(extra_kws)
+    elif not suggested_keywords:
         suggested_keywords = _generate_keyword_variations(req.seed_keywords, count)
-        if ai_used:
+        if ai_online:
             ai_message = ai_message or f"Here are {len(suggested_keywords)} keyword variations for: {seeds_str}."
         else:
             ai_message = (
@@ -645,10 +867,11 @@ async def suggest_bad_keywords(
 
     count = max(10, min(100, req.count))
     seeds_str = ", ".join(req.seed_keywords) if req.seed_keywords else "competitor, spam, bot"
+    ai_count = min(count, 20)
 
     system_prompt = (
         f"You are an expert Instagram lead filtering strategist. "
-        f"Your job is to help the user build a list of {count} negative/blacklist keywords (blocklist) "
+        f"Your job is to help the user build a list of {ai_count} negative/blacklist keywords (blocklist) "
         f"to filter OUT unwanted leads based on their profile bios. "
         f"You should generate direct synonyms, variations, hashtags, and closely related terms of the specific topics/seeds provided by the user. "
         f"Return ONLY a valid JSON object with a 'keywords' array of strings and a 'message' string explaining your choices. "
@@ -664,52 +887,27 @@ async def suggest_bad_keywords(
         user_content = req.user_message
     else:
         user_content = (
-            f"Generate {count} bad/blacklist keyword variations to filter out unwanted leads based on these specific seeds/topics to exclude: {seeds_str}. "
+            f"Generate {ai_count} bad/blacklist keyword variations to filter out unwanted leads based on these specific seeds/topics to exclude: {seeds_str}. "
             f"Generate direct synonyms, alternative spellings, hashtags, and closely related words matching these exact topics."
         )
     messages.append({"role": "user", "content": user_content})
 
-    ollama_url = "http://localhost:11434"
-    suggested_keywords = []
-    ai_message = ""
-    ai_used = False
+    # 4. Try AI Service (Gemini/Ollama)
+    suggested_keywords, ai_message, ai_used, ai_online = await query_ai_service(
+        messages=messages,
+        system_prompt=system_prompt,
+        array_key="keywords",
+        temperature=0.7
+    )
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": "gemma4:e2b",
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"temperature": 0.7}
-                },
-                timeout=aiohttp.ClientTimeout(total=90)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    raw = data.get("message", {}).get("content", "{}")
-                    import re
-                    match = re.search(r'\{.*\}', raw, re.DOTALL)
-                    if match:
-                        try:
-                            parsed = json.loads(match.group(0))
-                            kws = parsed.get("keywords", [])
-                            if kws:
-                                suggested_keywords = kws
-                                ai_message = parsed.get("message", "Here are your negative keyword suggestions!")
-                                ai_used = True
-                        except json.JSONDecodeError:
-                            pass
-                    if not ai_used and raw.strip():
-                        ai_message = raw[:500]
-    except Exception as e:
-        logger.info(f"Ollama not reachable for negative keywords (using smart fallback): {type(e).__name__}")
-
-    # Fallback to algorithmic negative keywords
-    if not suggested_keywords:
+    # 5. SMART EXPANSION: If AI gave us keywords, but we need more to reach `count`, or if AI failed completely
+    if ai_used and suggested_keywords and len(suggested_keywords) < count:
+        extra_needed = count - len(suggested_keywords)
+        extra_kws = _generate_bad_keyword_variations(suggested_keywords, extra_needed)
+        suggested_keywords.extend(extra_kws)
+    elif not suggested_keywords:
         suggested_keywords = _generate_bad_keyword_variations(req.seed_keywords, count)
-        if ai_used:
+        if ai_online:
             ai_message = ai_message or f"Here are {len(suggested_keywords)} negative keyword variations for: {seeds_str}."
         else:
             ai_message = (
@@ -859,45 +1057,16 @@ async def suggest_cities(
         )
     messages.append({"role": "user", "content": user_content})
 
-    ollama_url = "http://localhost:11434"
-    suggested_cities = []
-    ai_message = ""
-    ai_used = False
-
+    ai_online = False
     # 🚀 AI BYPASS: Generating > 100 cities/suburbs takes too long for local LLMs and causes timeouts.
     # We bypass Ollama for counts > 100 and use the instant database fallback.
     if count <= 100:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{ollama_url}/api/chat",
-                    json={
-                        "model": "gemma4:e2b",
-                        "messages": messages,
-                        "stream": False,
-                        "options": {"temperature": 0.5}
-                    },
-                    timeout=aiohttp.ClientTimeout(total=90)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        raw = data.get("message", {}).get("content", "{}")
-                        import re
-                        match = re.search(r'\{.*\}', raw, re.DOTALL)
-                        if match:
-                            try:
-                                parsed = json.loads(match.group(0))
-                                cts = parsed.get("cities", [])
-                                if cts:
-                                    suggested_cities = cts
-                                    ai_message = parsed.get("message", "Here are your suggested cities!")
-                                    ai_used = True
-                            except json.JSONDecodeError:
-                                pass
-                        if not ai_used and raw.strip():
-                            ai_message = raw[:500]
-        except Exception as e:
-            logger.info(f"Ollama not reachable for cities (using smart fallback): {type(e).__name__}")
+        suggested_cities, ai_message, ai_used, ai_online = await query_ai_service(
+            messages=messages,
+            system_prompt=system_prompt,
+            array_key="cities",
+            temperature=0.5
+        )
 
     # Fallback to algorithmic cities
     if not suggested_cities:

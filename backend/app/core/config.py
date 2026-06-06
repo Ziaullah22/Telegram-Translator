@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-
+from typing import Optional
 
 class Settings(BaseSettings):
     # PostgreSQL connection string, e.g. postgresql://postgres:password@localhost:5432/telegram_translator
@@ -15,9 +15,13 @@ class Settings(BaseSettings):
     # AES-256 encryption key for message storage
     aes_encryption_key: str = ""
 
+    # AI API keys
+    gemini_api_key: str = ""
+    groq_api_key: str = ""
+    openrouter_api_key: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = False
-
 
 settings = Settings()

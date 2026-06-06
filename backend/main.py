@@ -177,6 +177,8 @@ async def lifespan(app: FastAPI):
         ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
         ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS assigned_account_id BIGINT REFERENCES instagram_accounts(id) ON DELETE SET NULL;
         ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS assigned_account_name TEXT;
+        ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS google_title TEXT;
+        ALTER TABLE instagram_leads ADD COLUMN IF NOT EXISTS google_description TEXT;
 
         -- Milestone 2: Sales & Inventory Automation
         CREATE TABLE IF NOT EXISTS sales_states (
