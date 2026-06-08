@@ -897,57 +897,31 @@ class InstagramService:
 
         settings = await self.get_filter_settings(user_id)
         is_qualified = True
+        rejection_reason = ""
         
         # 1. Follower Count Match
         if settings['min_followers'] > 0 and followers < settings['min_followers']:
-            logger.info(f"❌ Follower Filter rejected lead: {followers} followers is below min {settings['min_followers']}.")
+            rejection_reason = f"Follower check failed: {followers} followers is below the minimum requirement of {settings['min_followers']}."
+            logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
             is_qualified = False
         if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']:
-            logger.info(f"❌ Follower Filter rejected lead: {followers} followers is above max {settings['max_followers']}.")
+            rejection_reason = f"Follower check failed: {followers} followers is above the maximum limit of {settings['max_followers']}."
+            logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
             is_qualified = False
-            
-        # 2. Picture Visual Match (AI Vision + Hashing Fallback)
-        visual_niche = settings.get('visual_niche', '')
-        target_hashes = settings.get('sample_hashes', [])
-        
-        # 🧠 DEEP AI ANALYSIS (Gemma Powered) - Moved up to be the PRIMARY judge
-        ai_analysis = {}
-        score = 0
-        if is_qualified:
-            await update_ui("Gemma 4: Analyzing Bio & Intent...")
-            logger.info(f"🧠 [Gemma 4] Analyzing @{full_name}...")
-            ai_result = await instagram_ai.analyze_lead_deep({
-                "username": full_name,
-                "bio": bio,
-                "followers": followers
-            })
-            
-            if ai_result and "error" not in ai_result:
-                ai_analysis.update(ai_result)
-                score = ai_result.get("intent_score", 0)
-                if ai_result.get("quality") == "high":
-                    score = max(score, 90)
-                logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
-            else:
-                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {ai_result.get('error', 'Unknown Error')}")
 
-        # ⚖️ THE DECISION ENGINE: Use AI Score + Keywords
-        # 1. AI Score Filter (Must be > 70 if we have a score)
-        if is_qualified and score > 0 and score < 70:
-            logger.info(f"❌ AI Rejected lead: Intent Score {score}% is too low.")
-            is_qualified = False
-            
-        # 1.5 Exclude Bio Keyword Filter (Block list)
+        # 2. Exclude Bio Keyword Filter (Block list)
         if is_qualified and bio:
             bio_exclude = settings.get('bio_exclude_keywords', '')
             if bio_exclude and bio_exclude.strip():
                 exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
                 bio_lower = bio.lower()
-                if any(kw in bio_lower for kw in exclude_kws):
-                    logger.info("❌ Exclude Keyword Filter rejected lead: Blacklisted keyword found in bio.")
+                matched_kws = [kw for kw in exclude_kws if kw in bio_lower]
+                if matched_kws:
+                    rejection_reason = f"Bio contains a blacklisted keyword: '{matched_kws[0]}'."
+                    logger.info(f"❌ Exclude Keyword Filter rejected lead: {rejection_reason}")
                     is_qualified = False
 
-        # 1.7 Cities Whitelist Filter (string match first, then AI if needed)
+        # 3. Cities Whitelist Filter (String check only, no AI)
         if is_qualified:
             bio_cities = settings.get('bio_cities_whitelist', '')
             if bio_cities and bio_cities.strip():
@@ -960,7 +934,7 @@ class InstagramService:
                 full_name_lower = (full_name or '').lower()
                 bio_lower_city = (bio or '').lower()
 
-                # ⚡ FAST PATH: string match first (no API call needed)
+                # Fast string match only
                 city_found_fast = any(
                     city in bio_lower_city or city in full_name_lower or city in username_lower
                     for city in cities_list
@@ -969,37 +943,58 @@ class InstagramService:
                 if city_found_fast:
                     logger.info(f"✅ Cities Filter PASSED (string match) for @{username_val}")
                 else:
-                    # 🧠 SMART PATH: string match failed — ask AI (understands NYC, 305, South Beach etc.)
-                    logger.info(f"🧠 String match failed. Asking AI city check for @{username_val}...")
-                    await update_ui("AI: Checking city/region match...")
-                    ai_match, ai_reason = await self._ai_city_check(
-                        username=username_val,
-                        full_name=full_name or '',
-                        bio=bio or '',
-                        cities=cities_list
-                    )
-                    if ai_match:
-                        logger.info(f"✅ Cities Filter PASSED (AI) for @{username_val}: {ai_reason}")
-                    else:
-                        logger.info(
-                            f"❌ Cities Whitelist rejected @{username_val} — AI reason: {ai_reason}. "
-                            f"Cities checked: {cities_list}"
-                        )
-                        is_qualified = False
+                    rejection_reason = "Location check failed: The profile does not match any city on your whitelist."
+                    logger.info(f"❌ Cities Whitelist rejected @{username_val} (No AI Check).")
+                    is_qualified = False
 
-        # 2. Bio Keyword Match (Acts as a secondary booster or filter)
-        # If score is high (90+), we ignore keywords. Otherwise, we check them.
-        if is_qualified and score < 90 and not self._check_bio_keywords(bio, settings['bio_keywords']):
-            logger.info("❌ Keyword Filter rejected lead: No matching keywords found in bio.")
+        # 4. Bio Keyword Match (Acts as a secondary booster or filter)
+        if is_qualified and not self._check_bio_keywords(bio, settings['bio_keywords']):
+            rejection_reason = "Keyword check failed: Profile bio does not contain any of your target search keywords."
+            logger.info(f"❌ Keyword Filter rejected lead: {rejection_reason}")
             is_qualified = False
+            
+        # 5. 🧠 DEEP AI ANALYSIS
+        ai_analysis = {}
+        score = 0
+        if is_qualified:
+            selected_model = settings.get('ai_model') or 'gemma4'
+            await update_ui(f"AI ({selected_model}): Analyzing Bio & Intent...")
+            # Fetch username
+            lead_row = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1", lead_id)
+            username_val = lead_row['instagram_username'] if lead_row else "unknown"
+            logger.info(f"🧠 [{selected_model}] Analyzing @{username_val}...")
+            ai_result = await instagram_ai.analyze_lead_deep({
+                "username": username_val,
+                "bio": bio,
+                "followers": followers
+            }, model_choice=selected_model)
+            
+            if ai_result and "error" not in ai_result:
+                ai_analysis.update(ai_result)
+                score = ai_result.get("intent_score", 0)
+                if ai_result.get("quality") == "high":
+                    score = max(score, 90)
+                logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+                
+                # Check AI Score
+                if score < 70:
+                    rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
+                    logger.info(f"❌ AI Rejected lead: {rejection_reason}")
+                    is_qualified = False
+            else:
+                err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
+                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {err_msg}")
 
-        # 3. Visual Match Filter (Only if enabled)
+        # 6. Visual Match Filter (Only if enabled)
+        visual_niche = settings.get('visual_niche', '')
+        target_hashes = settings.get('sample_hashes', [])
         if is_qualified and (visual_niche or target_hashes):
             if not recent_posts:
-                reason = "Visual Scanner rejected lead: Lead has NO photos to scan."
+                reason = "Visual scanner failed: Profile has no photos to scan."
                 logger.info(f"❌ {reason}")
                 is_qualified = False
                 ai_analysis['vision_reason'] = reason
+                rejection_reason = reason
             else:
                 image_matched = False
                 # Try AI Vision FIRST if niche is described
@@ -1059,6 +1054,10 @@ class InstagramService:
                     logger.info(f"❌ Visual Check rejected lead: {reason}")
                     is_qualified = False
                     ai_analysis['vision_reason'] = reason
+                    rejection_reason = f"Visual check failed: {reason}"
+
+        if not is_qualified and rejection_reason:
+            ai_analysis['rejection_reason'] = rejection_reason
 
         new_status = 'qualified' if is_qualified else 'rejected'
         
@@ -1282,28 +1281,36 @@ class InstagramService:
 
     async def get_leads(self, user_id: int, status: str = None, keyword: str = None, limit: int = 5000, offset: int = 0):
         """Retrieve Instagram leads with filtering and VIP sorting."""
-        query = "SELECT * FROM instagram_leads WHERE user_id = $1"
+        where_clause = " WHERE user_id = $1"
         params = [user_id]
         if status:
             if status == 'qualified':
-                query += " AND status IN ('qualified', 'analyzed', 'vetted', 'harvested')"
+                where_clause += " AND status IN ('qualified', 'analyzed', 'vetted', 'harvested')"
             elif status == 'rejected':
-                query += " AND status IN ('rejected', 'discarded')"
+                where_clause += " AND status IN ('rejected', 'discarded')"
             elif status == 'discovered':
-                query += " AND status IN ('discovered', 'queued')"
+                where_clause += " AND status IN ('discovered', 'queued')"
             else:
                 params.append(status)
-                query += f" AND status = ${len(params)}"
+                where_clause += f" AND status = ${len(params)}"
         else:
             # Exclude discarded from 'all' view to keep it clean, unless explicitly asked for rejected
-            query += " AND status != 'discarded'"
+            where_clause += " AND status != 'discarded'"
             
-        if keyword: params.append(f"%{keyword}%"); query += f" AND (discovery_keyword ILIKE ${len(params)} OR instagram_username ILIKE ${len(params)})"
+        if keyword:
+            params.append(f"%{keyword}%")
+            where_clause += f" AND (discovery_keyword ILIKE ${len(params)} OR instagram_username ILIKE ${len(params)})"
+
+        # 🧮 Count total matching records before applying LIMIT/OFFSET
+        count_query = f"SELECT COUNT(*) FROM instagram_leads{where_clause}"
+        total_count = await db.fetchval(count_query, *params)
+        
         # 🏆 ACTION-FIRST INDUSTRIAL SEQUENCE:
         # 0. Waiting Approval (Approve & Scrape) -> ABSOLUTE TOP (0)
         # 1. Scrape Complete (Mission Finish)    -> SECOND (1)
         # 2. Main Search Leads (Discovery Core)  -> THIRD (2)
         # 3. Follower Wave (Network Expansion)   -> BOTTOM (3)
+        query = f"SELECT * FROM instagram_leads{where_clause}"
         query += f""" ORDER BY (
             CASE 
                 WHEN status IN ('analyzed', 'qualified') THEN 0
@@ -1324,14 +1331,17 @@ class InstagramService:
             try:
                 audit = json.loads(d.get('data_audit_json') or '{}') if isinstance(d.get('data_audit_json'), str) else (d.get('data_audit_json') or {})
                 d['data_audit_json'] = audit
-                # 🏎️ UI Sync: Map the AI Vision reason to the primary rejection_reason field
-                d['rejection_reason'] = audit.get('vision_reason', '')
+                # 🏎️ UI Sync: Map the dynamic rejection reason or fallback to vision_reason
+                d['rejection_reason'] = audit.get('rejection_reason', audit.get('vision_reason', ''))
             except:
                 d['data_audit_json'] = {}
                 d['rejection_reason'] = ''
                 
             leads.append(d)
-        return leads
+        return {
+            "leads": leads,
+            "total": total_count
+        }
 
     async def harvest_lead_network(self, user_id: int, lead_id: int, force_priority: bool = False):
         """🚀 PHASE 2: Deep Scrape - Get 150 Followers for viral growth!"""
@@ -2094,12 +2104,11 @@ class InstagramService:
 
     async def _ai_city_check(self, username: str, full_name: str, bio: str, cities: list) -> tuple[bool, str]:
         """
-        🧠 AI-powered city/region check using Gemini → Groq → OpenRouter fallback.
+        🧠 AI-powered city/region check using local Ollama (gemma4).
         Returns (is_match: bool, reason: str).
         Understands nicknames, abbreviations, landmarks (NYC, 305, South Beach, etc.)
         """
         import aiohttp, json
-        from app.core.config import settings
 
         cities_str = ', '.join(cities)
         prompt = (
@@ -2116,73 +2125,35 @@ class InstagramService:
             f'{{"match": true or false, "reason": "brief explanation"}}'
         )
 
-        # --- Try Gemini ---
-        if settings.gemini_api_key:
-            try:
-                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
-                payload = {
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            raw = data["candidates"][0]["content"]["parts"][0]["text"]
+        ollama_url = "http://localhost:11434"
+        try:
+            logger.info(f"🧠 [Gemma 4 City Check] @{username} via Ollama...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{ollama_url}/api/generate",
+                    json={
+                        "model": "gemma4",
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.1}
+                    },
+                    timeout=120
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        raw = data.get("response", "{}")
+                        # Extract JSON safely
+                        match_json = re.search(r'\{.*\}', raw, re.DOTALL)
+                        if match_json:
+                            result = json.loads(match_json.group(0))
+                        else:
                             result = json.loads(raw)
-                            logger.info(f"🧠 [Gemini City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
-                            return result.get("match", False), result.get("reason", "")
-            except Exception as e:
-                logger.warning(f"⚠️ Gemini city check failed: {e}. Trying Groq...")
+                        logger.info(f"🧠 [Gemma 4 City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
+                        return result.get("match", False), result.get("reason", "")
+        except Exception as e:
+            logger.warning(f"⚠️ Gemma 4 City Check failed: {e}")
 
-        # --- Try Groq ---
-        if settings.groq_api_key:
-            try:
-                headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"}
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            raw = data["choices"][0]["message"]["content"]
-                            result = json.loads(raw)
-                            logger.info(f"🧠 [Groq City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
-                            return result.get("match", False), result.get("reason", "")
-            except Exception as e:
-                logger.warning(f"⚠️ Groq city check failed: {e}. Trying OpenRouter...")
-
-        # --- Try OpenRouter ---
-        if settings.openrouter_api_key:
-            try:
-                headers = {
-                    "Authorization": f"Bearer {settings.openrouter_api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:5173"
-                }
-                payload = {
-                    "model": "google/gemini-2.5-flash",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
-                    "max_tokens": 100
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            raw = data["choices"][0]["message"]["content"]
-                            result = json.loads(raw)
-                            logger.info(f"🧠 [OpenRouter City Check] @{username}: match={result.get('match')}, reason={result.get('reason')}")
-                            return result.get("match", False), result.get("reason", "")
-            except Exception as e:
-                logger.warning(f"⚠️ OpenRouter city check failed: {e}. No AI available.")
-
-        # --- No AI available ---
-        return False, "No AI service available for city check"
+        return False, "Gemma 4 city check failed or was unreachable"
 
     def _check_follower_range(self, followers: int, min_f: int, max_f: int) -> bool:
         """Returns True if follower count is within range (0 = no limit)."""

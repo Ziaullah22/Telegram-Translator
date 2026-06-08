@@ -834,7 +834,7 @@ export const instagramAPI = {
     return response.data;
   },
 
-  getLeads: async (params: { status?: string; keyword?: string; limit?: number; offset?: number }): Promise<any[]> => {
+  getLeads: async (params: { status?: string; keyword?: string; limit?: number; offset?: number }): Promise<{ leads: any[]; total: number }> => {
     const response = await api.get('/instagram/leads', { params });
     return response.data;
   },
@@ -1049,9 +1049,11 @@ export const instagramAPI = {
     conversation_history?: { role: string; content: string }[];
     user_message?: string;
     count?: number;
+    provider?: string;
   }): Promise<{
     keywords: string[];
     ai_message: string;
+    api_provider: string;
     proxy_count: number;
     mode: 'sequential' | 'parallel';
     time_estimate: string;
@@ -1072,9 +1074,11 @@ export const instagramAPI = {
     conversation_history?: { role: string; content: string }[];
     user_message?: string;
     count?: number;
+    provider?: string;
   }): Promise<{
     keywords: string[];
     ai_message: string;
+    api_provider: string;
     assistant_message: { role: string; content: string };
   }> => {
     const response = await api.post('/instagram/suggest-bad-keywords', params, { timeout: 90000 });
@@ -1089,6 +1093,7 @@ export const instagramAPI = {
   }): Promise<{
     cities: string[];
     ai_message: string;
+    api_provider: string;
     assistant_message: { role: string; content: string };
   }> => {
     const response = await api.post('/instagram/suggest-cities', params, { timeout: 90000 });

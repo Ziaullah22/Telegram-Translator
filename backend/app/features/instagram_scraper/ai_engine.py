@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class InstagramAIEngine:
     def __init__(self, ollama_url="http://localhost:11434"):
         self.ollama_url = ollama_url
-        self.model = "gemma4:e2b" # 🧠 High-performance text analysis
+        self.model = "gemma4" # 🧠 High-performance text analysis
         self.vision_model = "gemma4:e2b" # 👁️ Native Vision capability
         self.vision_engine_type = "ollama" 
         self.transformers_model = None
@@ -28,23 +28,23 @@ class InstagramAIEngine:
             return {}
 
     async def _init_transformers(self):
-        """Lazy load Google's Gemma 4 E2B to save memory when not in use."""
+        """Lazy load Google's Gemma 4 to save memory when not in use."""
         if self.transformers_model is None:
-            print(f"🚀 Loading Gemma 4 E2B Engine ({self.model_id})...")
+            print(f"🚀 Loading Gemma 4 Engine ({self.model_id})...")
             from transformers import AutoProcessor, AutoModelForCausalLM
             import torch
             
-            # Using the latest Gemma 4 Effective 2B model for multimodal tasks
+            # Using the latest Gemma 4 model for multimodal tasks
             self.transformers_processor = AutoProcessor.from_pretrained(self.model_id)
             self.transformers_model = AutoModelForCausalLM.from_pretrained(
                 self.model_id, 
                 device_map="auto", 
                 torch_dtype="auto"
             )
-            print("✅ Gemma 4 E2B Engine Ready!")
+            print("✅ Gemma 4 Engine Ready!")
 
     async def analyze_vision_transformers(self, image_base64: str, niche_description: str) -> dict:
-        """Analyze image using Gemma 4 E2B (Native Multimodal Analysis)."""
+        """Analyze image using Gemma 4 (Native Multimodal Analysis)."""
         try:
             await self._init_transformers()
             from PIL import Image
@@ -76,11 +76,11 @@ class InstagramAIEngine:
                 "reason": analysis.get("reason", response_text)
             }
         except Exception as e:
-            print(f"❌ [Gemma 4 E2B] Vision Error: {e}")
+            print(f"❌ [Gemma 4] Vision Error: {e}")
             return {"match": False, "confidence": 0, "reason": f"Gemma 4 Error: {str(e)}"}
 
-    async def analyze_lead_deep(self, lead_data: dict) -> dict:
-        """Analyze lead data using Gemma 4 E2B in Ollama."""
+    async def analyze_lead_deep(self, lead_data: dict, model_choice: str = None) -> dict:
+        """Analyze lead data using selected model in Ollama."""
         username = lead_data.get('username', 'unknown')
         bio = lead_data.get('bio', '').strip()
         followers = lead_data.get('followers', 0)
@@ -89,7 +89,8 @@ class InstagramAIEngine:
         if not bio and followers < 1000:
             return {"niche": "Personal", "intent_score": 0, "strategy": "Ignore.", "suggested_hook": "N/A"}
 
-        print(f"🧠 [Gemma 4 E2B] Analyzing @{username} via Ollama...")
+        model_to_use = model_choice if model_choice and model_choice != "ollama-local" and not model_choice.startswith("minimax") else self.model
+        print(f"🧠 [{model_to_use}] Analyzing @{username} via Ollama...")
         prompt = get_lead_analysis_prompt(username, bio, followers)
         
         async with aiohttp.ClientSession() as session:
@@ -97,35 +98,36 @@ class InstagramAIEngine:
                 async with session.post(
                     f"{self.ollama_url}/api/generate",
                     json={
-                        "model": self.model,
+                        "model": model_to_use,
                         "prompt": prompt,
                         "stream": False,
                         "options": {"temperature": 0.1}
                     },
-                    timeout=60
+                    timeout=180
                 ) as response:
                     if response.status != 200:
                         err_body = await response.text()
-                        print(f"❌ [Gemma 4 E2B] Ollama error {response.status}: {err_body}")
+                        print(f"❌ [Gemma 4] Ollama error {response.status}: {err_body}")
                         return {"error": f"Ollama error: {response.status}"}
                     
                     data = await response.json()
                     raw_content = data.get("response", "{}")
                     
                     # Log raw response for debugging
-                    print(f"📡 [Gemma 4 E2B] Raw Response: {raw_content[:200]}...")
+                    print(f"📡 [Gemma 4] Raw Response: {raw_content[:200]}...")
                     
                     analysis = self._extract_json(raw_content)
                     if not analysis:
-                        print(f"⚠️ [Gemma 4 E2B] Failed to extract JSON from: {raw_content[:100]}")
+                        print(f"⚠️ [Gemma 4] Failed to extract JSON from: {raw_content[:100]}")
                         return {"error": "JSON extraction failed"}
                         
-                    print(f"✨ [Gemma 4 E2B] Success! Score: {analysis.get('intent_score')}, Niche: {analysis.get('niche')}")
+                    print(f"✨ [Gemma 4] Success! Score: {analysis.get('intent_score')}, Niche: {analysis.get('niche')}")
                     return analysis
                     
             except Exception as e:
-                print(f"❌ [Gemma 4 E2B] Analysis error: {e}")
-                return {"error": str(e)}
+                err_msg = str(e) or type(e).__name__
+                print(f"❌ [Gemma 4] Analysis error: {err_msg}")
+                return {"error": err_msg}
 
     async def analyze_vision(self, image_base64: str, niche_description: str) -> dict:
         """Analyze image using the best available engine."""
@@ -235,7 +237,7 @@ class InstagramAIEngine:
         else:
             # Local Ollama fallback
             url_to_use = ollama_url or self.ollama_url
-            model_to_use = self.model  # e.g. "gemma4:e2b"
+            model_to_use = model_choice if model_choice and model_choice != "ollama-local" else self.model
             
             prompt = f"{system_prompt}\n\n{user_prompt}"
             

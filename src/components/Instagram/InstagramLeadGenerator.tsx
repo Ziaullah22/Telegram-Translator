@@ -11,6 +11,7 @@ import {
     Play,
     Zap,
     AlertCircle,
+    AlertTriangle,
     Clock,
     CheckCircle2,
     ExternalLink,
@@ -46,19 +47,29 @@ const timeAgo = (dateStr?: string) => {
     return `${Math.floor(hours / 24)} days ago`;
 };
 
+const getDisplayEngineName = (provider?: string) => {
+    if (!provider) return 'AI Engine';
+    if (provider.includes('Ollama')) return provider;
+    if (provider.includes('None') || provider.includes('Fallback')) return 'Fallback AI';
+    return `${provider.split(' ')[0]} AI`;
+};
+
 const InstagramLeadGenerator: React.FC = () => {
     const [leads, setLeads] = useState<any[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+    const [totalLeadsCount, setTotalLeadsCount] = useState(0);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [proxies, setProxies] = useState<any[]>([]);
     const [stats, setStats] = useState({ total: 0, discovered: 0, analyzed: 0, rejected: 0, contacted: 0, converted: 0 });
     const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'campaign' | 'filters'>('leads');
     const [messageTemplate, setMessageTemplate] = useState('Hello [username], I saw your profile and loved your content! We help brands like yours grow. Would you be open to a quick chat?');
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
-    const [filterSettings, setFilterSettings] = useState<{ 
-        bio_keywords: string, 
-        min_followers: number, 
-        max_followers: number, 
-        sample_hashes: string[], 
+    const [filterSettings, setFilterSettings] = useState<{
+        bio_keywords: string,
+        min_followers: number,
+        max_followers: number,
+        sample_hashes: string[],
         visual_niche: string,
         minimax_api_key: string,
         enable_ai_filter: boolean,
@@ -66,11 +77,11 @@ const InstagramLeadGenerator: React.FC = () => {
         ai_model: string,
         bio_exclude_keywords: string,
         bio_cities_whitelist: string
-    }>({ 
-        bio_keywords: '', 
-        min_followers: 0, 
-        max_followers: 0, 
-        sample_hashes: [], 
+    }>({
+        bio_keywords: '',
+        min_followers: 0,
+        max_followers: 0,
+        sample_hashes: [],
         visual_niche: '',
         minimax_api_key: '',
         enable_ai_filter: false,
@@ -93,7 +104,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [bulkUploading, setBulkUploading] = useState<'accounts' | 'proxies' | null>(null);
     const [connectingIds, setConnectingIds] = useState<Set<number>>(new Set());
     const [connectedIds, setConnectedIds] = useState<Set<number>>(new Set());
-    
+
     // Live Discovery HUD states
     const [discoveryProgressMessage, setDiscoveryProgressMessage] = useState<string | null>(null);
     const [discoveryStartTime, setDiscoveryStartTime] = useState<number | null>(null);
@@ -123,6 +134,8 @@ const InstagramLeadGenerator: React.FC = () => {
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiProxyInfo, setAiProxyInfo] = useState<{ count: number; mode: string; time_estimate: string } | null>(null);
     const [selectedKeywords, setSelectedKeywords] = useState<Set<string>>(new Set());
+    const [aiProvider, setAiProvider] = useState<string>('');
+    const [keywordModel, setKeywordModel] = useState<string>('auto');
     const aiChatEndRef = useRef<HTMLDivElement>(null);
 
     // 🤖 AI Bad Keyword Suggestion States (Filter block list)
@@ -135,6 +148,8 @@ const InstagramLeadGenerator: React.FC = () => {
     const [badAiKeywordCount, setBadAiKeywordCount] = useState(20);
     const [isBadAiThinking, setIsBadAiThinking] = useState(false);
     const [badSelectedKeywords, setBadSelectedKeywords] = useState<Set<string>>(new Set());
+    const [badAiProvider, setBadAiProvider] = useState<string>('');
+    const [badKeywordModel, setBadKeywordModel] = useState<string>('auto');
     const badAiChatEndRef = useRef<HTMLDivElement>(null);
 
     // 🤖 AI Cities Whitelist Suggestion States
@@ -147,6 +162,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [citiesAiKeywordCount, setCitiesAiKeywordCount] = useState(50);
     const [isCitiesAiThinking, setIsCitiesAiThinking] = useState(false);
     const [citiesSelectedKeywords, setCitiesSelectedKeywords] = useState<Set<string>>(new Set());
+    const [citiesAiProvider, setCitiesAiProvider] = useState<string>('');
     const citiesAiChatEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -196,16 +212,27 @@ const InstagramLeadGenerator: React.FC = () => {
     const fetchData = async () => {
         try {
             setIsLoading(true);
-            const [leadsData, statsData, accountsData, proxiesData] = await Promise.all([
+            const [leadsRes, statsData, accountsData, proxiesData] = await Promise.all([
                 instagramAPI.getLeads({
                     status: filterStatus === 'all' ? undefined : filterStatus,
-                    keyword: searchQuery || undefined
+                    keyword: searchQuery || undefined,
+                    limit: pageSize,
+                    offset: (currentPage - 1) * pageSize
                 }),
                 instagramAPI.getStats(),
                 instagramAPI.getAccounts(),
                 instagramAPI.getProxies()
             ]);
-            setLeads(leadsData);
+            if (leadsRes && Array.isArray(leadsRes)) {
+                setLeads(leadsRes);
+                setTotalLeadsCount(leadsRes.length);
+            } else if (leadsRes && Array.isArray(leadsRes.leads)) {
+                setLeads(leadsRes.leads);
+                setTotalLeadsCount(typeof leadsRes.total === 'number' ? leadsRes.total : leadsRes.leads.length);
+            } else {
+                setLeads([]);
+                setTotalLeadsCount(0);
+            }
             setStats(statsData);
             setAccounts(accountsData);
             setProxies(proxiesData);
@@ -268,8 +295,17 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     }, [notification]);
 
+    // Reset page index on query or filter status changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus, searchQuery]);
+
+    // Refetch data when page size, active page, filter status, or search query changes
     useEffect(() => {
         fetchData();
+    }, [currentPage, pageSize, filterStatus, searchQuery]);
+
+    useEffect(() => {
         // Load saved filter settings
         instagramAPI.getFilterSettings()
             .then(s => setFilterSettings({
@@ -281,12 +317,12 @@ const InstagramLeadGenerator: React.FC = () => {
                 minimax_api_key: s.minimax_api_key || '',
                 enable_ai_filter: !!s.enable_ai_filter,
                 google_niche_filter: s.google_niche_filter || '',
-                ai_model: s.ai_model || 'minimax-text-01',
+                ai_model: s.ai_model === 'ollama-local' ? 'gemma4' : (s.ai_model || 'minimax-text-01'),
                 bio_exclude_keywords: s.bio_exclude_keywords || '',
                 bio_cities_whitelist: s.bio_cities_whitelist || ''
             }))
             .catch(() => { });
-    }, [filterStatus, searchQuery]);
+    }, []);
 
     useEffect(() => {
         const checkPilotStatus = async () => {
@@ -298,7 +334,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 ]);
                 setIsAutoPilotRunning(autoStatus.is_running);
                 setIsCampaignRunning(campStatus.is_running);
-                
+
                 if (discStatus.active) {
                     setIsDiscovering(true);
                     setDiscoveryProgressMessage(discStatus.progress);
@@ -484,6 +520,7 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    /*
     const handleDiscover = async () => {
         if (!keywords.trim()) return;
         setIsDiscovering(true);
@@ -504,7 +541,7 @@ const InstagramLeadGenerator: React.FC = () => {
                         setNotification({ msg: `🧹 Auto-purged ${dedupResult.removed} duplicate leads!`, type: 'success' });
                         fetchData();
                     }
-                } catch { /* silent */ }
+                } catch { / * silent * / }
             }, 5000);
         } catch (error: any) {
             console.error('Failed to trigger discovery:', error);
@@ -514,6 +551,7 @@ const InstagramLeadGenerator: React.FC = () => {
             setNotification({ msg: 'Failed to start scan.', type: 'alert' });
         }
     };
+    */
 
     // 🤖 AI-powered discovery with selected keywords
     const handleAiDiscover = async () => {
@@ -560,10 +598,10 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleAiKeywordChat = async (overrideMessage?: string) => {
         const message = overrideMessage || aiChatInput.trim();
         if (!message && !aiSeedInput.trim()) return;
-        
+
         const seeds = aiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
         const userMsg = message || `Generate ${aiKeywordCount} Instagram search keyword variations based on: ${seeds.join(', ')}`;
-        
+
         const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
             ...aiChatHistory,
             { role: 'user', content: userMsg }
@@ -577,7 +615,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 seed_keywords: seeds.length > 0 ? seeds : ['instagram influencer'],
                 conversation_history: newHistory,
                 user_message: userMsg,
-                count: aiKeywordCount
+                count: aiKeywordCount,
+                provider: keywordModel
             });
 
             const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
@@ -585,6 +624,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 { role: 'assistant', content: result.ai_message }
             ];
             setAiChatHistory(updatedHistory);
+            setAiProvider(result.api_provider || 'Unknown');
 
             if (result.keywords && result.keywords.length > 0) {
                 setAiSuggestedKeywords(result.keywords);
@@ -614,10 +654,10 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleBadAiKeywordChat = async (overrideMessage?: string) => {
         const message = overrideMessage || badAiChatInput.trim();
         if (!message && !badAiSeedInput.trim()) return;
-        
+
         const seeds = badAiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
         const userMsg = message || `Generate ${badAiKeywordCount} blacklist keywords to filter out unwanted profiles based on: ${seeds.join(', ')}`;
-        
+
         const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
             ...badAiChatHistory,
             { role: 'user', content: userMsg }
@@ -631,7 +671,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 seed_keywords: seeds.length > 0 ? seeds : ['competitor', 'spam'],
                 conversation_history: newHistory,
                 user_message: userMsg,
-                count: badAiKeywordCount
+                count: badAiKeywordCount,
+                provider: badKeywordModel
             });
 
             const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
@@ -639,6 +680,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 { role: 'assistant', content: result.ai_message }
             ];
             setBadAiChatHistory(updatedHistory);
+            setBadAiProvider(result.api_provider || 'Unknown');
 
             if (result.keywords && result.keywords.length > 0) {
                 setBadAiSuggestedKeywords(result.keywords);
@@ -691,10 +733,10 @@ const InstagramLeadGenerator: React.FC = () => {
     const handleCitiesAiChat = async (overrideMessage?: string) => {
         const message = overrideMessage || citiesAiChatInput.trim();
         if (!message && !citiesAiSeedInput.trim()) return;
-        
+
         const regionStr = citiesAiSeedInput.trim() || 'Australia';
         const userMsg = message || `Generate a list of ${citiesAiKeywordCount} major cities, suburbs, or regions in: ${regionStr} for our profile location whitelist.`;
-        
+
         const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
             ...citiesAiChatHistory,
             { role: 'user', content: userMsg }
@@ -716,6 +758,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 { role: 'assistant', content: result.ai_message }
             ];
             setCitiesAiChatHistory(updatedHistory);
+            setCitiesAiProvider(result.api_provider || 'Unknown');
 
             if (result.cities && result.cities.length > 0) {
                 setCitiesAiSuggestedKeywords(result.cities);
@@ -919,7 +962,7 @@ const InstagramLeadGenerator: React.FC = () => {
             console.error('Failed to delete account:', error);
         }
     };
-    
+
     const handleConnectAccount = async (id: number) => {
         setConnectingIds(prev => new Set(prev).add(id));
         try {
@@ -1041,13 +1084,12 @@ const InstagramLeadGenerator: React.FC = () => {
                         </button>
                         <button
                             onClick={handleToggleAutoPilot}
-                            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${
-                                isAutoPilotRunning
+                            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${isAutoPilotRunning
                                     ? restTimer !== null
                                         ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
                                         : 'bg-green-500 text-white shadow-lg shadow-green-500/25'
                                     : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-green-500'
-                            }`}
+                                }`}
                         >
                             <Play className={`w-4 h-4 ${isAutoPilotRunning ? 'fill-current' : 'group-hover:fill-green-500'}`} />
                             {isAutoPilotRunning ? 'Scanning...' : 'Auto-Pilot Mode'}
@@ -1088,7 +1130,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 dark:from-pink-500/20 dark:via-purple-500/20 dark:to-indigo-500/20 border border-pink-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden animate-pulse">
                                 {/* Pulse light effect */}
                                 <div className="absolute top-0 right-0 w-64 h-64 bg-pink-500/5 dark:bg-pink-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-                                
+
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
                                     <div className="flex items-center gap-4">
                                         {/* Pulse indicator */}
@@ -1142,8 +1184,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                         key={status}
                                         onClick={() => setFilterStatus(status)}
                                         className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterStatus === status
-                                                ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/20'
-                                                : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                                            ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/20'
+                                            : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                                             }`}
                                     >
                                         {status}
@@ -1193,8 +1235,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 <tr
                                                     key={lead.id}
                                                     className={`group transition-all duration-700 ${autoAnalyzingId === lead.id
-                                                            ? 'bg-blue-500/10 dark:bg-blue-500/15 shadow-[inset_0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20'
-                                                            : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
+                                                        ? 'bg-blue-500/10 dark:bg-blue-500/15 shadow-[inset_0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20'
+                                                        : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
                                                         }`}
                                                 >
                                                     <td className="px-4 py-3">
@@ -1233,8 +1275,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <div className="flex flex-col gap-1">
                                                             <span className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tight text-center ${getStatusStyle(lead.status)}`}>{lead.status}</span>
                                                             <div className={`px-1.5 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-tighter inline-flex items-center justify-center gap-1 ${lead.source === 'network_expansion'
-                                                                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 border border-purple-200 dark:border-purple-500/20'
-                                                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 border border-blue-200 dark:border-blue-500/20'
+                                                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 border border-purple-200 dark:border-purple-500/20'
+                                                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 border border-blue-200 dark:border-blue-500/20'
                                                                 }`}>
                                                                 {lead.source === 'network_expansion' ? 'Follower' : 'Search'}
                                                             </div>
@@ -1307,7 +1349,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
                                                             {(lead.data_audit_json || lead.rejection_reason) && (
-                                                                <button 
+                                                                <button
                                                                     onClick={() => {
                                                                         setSelectedLead(lead);
                                                                         setShowAuditModal(true);
@@ -1328,8 +1370,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         onClick={() => handleForceHarvest(lead.id)}
                                                                         disabled={harvestingId === lead.id}
                                                                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight transition-all ${harvestingId === lead.id
-                                                                                ? 'bg-orange-500 text-white animate-pulse'
-                                                                                : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-orange-500/20'
+                                                                            ? 'bg-orange-500 text-white animate-pulse'
+                                                                            : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white border border-orange-500/20'
                                                                             }`}
                                                                         title="Force Scrape — harvest data but keep rejected status"
                                                                     >
@@ -1375,8 +1417,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                             onClick={() => handleHarvest(lead.id)}
                                                                             disabled={harvestingId === lead.id}
                                                                             className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all ${harvestingId === lead.id
-                                                                                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                                                                                    : 'bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20'
+                                                                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                                                                                : 'bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20'
                                                                                 }`}
                                                                         >
                                                                             {harvestingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
@@ -1408,6 +1450,50 @@ const InstagramLeadGenerator: React.FC = () => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Pagination Controls */}
+                            {totalLeadsCount > 0 && (
+                                <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-[#1a2436] flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Show:</span>
+                                        <select
+                                            value={pageSize}
+                                            onChange={e => {
+                                                setPageSize(Number(e.target.value));
+                                                setCurrentPage(1);
+                                            }}
+                                            className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-2.5 py-1.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
+                                        >
+                                            <option value={10}>10</option>
+                                            <option value={20}>20</option>
+                                            <option value={50}>50</option>
+                                            <option value={100}>100</option>
+                                        </select>
+                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider pl-2">
+                                            Showing {Math.min(totalLeadsCount, (currentPage - 1) * pageSize + 1)} - {Math.min(totalLeadsCount, currentPage * pageSize)} of {totalLeadsCount}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            className="px-3.5 py-2 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest text-gray-500 hover:text-indigo-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Prev
+                                        </button>
+                                        <span className="text-xs font-black text-gray-700 dark:text-gray-300 px-2">
+                                            {currentPage} / {Math.ceil(totalLeadsCount / pageSize) || 1}
+                                        </span>
+                                        <button
+                                            disabled={currentPage >= Math.ceil(totalLeadsCount / pageSize)}
+                                            onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalLeadsCount / pageSize), prev + 1))}
+                                            className="px-3.5 py-2 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest text-gray-500 hover:text-indigo-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1439,7 +1525,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             ) : accounts.map(acc => {
                                 const usagePercent = (acc.daily_usage_count / 10) * 100;
                                 const safetyScore = Math.max(0, 100 - (acc.daily_usage_count * 10));
-                                
+
                                 return (
                                     <div key={acc.id} className="bg-white dark:bg-[#1e293b] p-6 rounded-3xl border border-gray-100 dark:border-white/5 shadow-sm group relative">
                                         <div className="flex items-start justify-between mb-5">
@@ -1449,19 +1535,17 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 </div>
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                            acc.status === 'active' ? 'bg-green-500 animate-pulse' : 
-                                                            acc.status === 'frozen' ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' :
-                                                            acc.status === 'rate_limited' ? 'bg-yellow-500' : 'bg-gray-300'
-                                                        }`}></span>
-                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                                            acc.status === 'active' ? 'text-green-500' : 
-                                                            acc.status === 'frozen' ? 'text-blue-500' :
-                                                            acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'
-                                                        }`}>
-                                                            {acc.status === 'frozen' ? 'Cold Sleep ❄️' : 
-                                                             acc.daily_usage_count >= 10 ? 'Locked (Limit) ⏳' : 
-                                                             (acc.status || 'inactive')}
+                                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${acc.status === 'active' ? 'bg-green-500 animate-pulse' :
+                                                                acc.status === 'frozen' ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' :
+                                                                    acc.status === 'rate_limited' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                            }`}></span>
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${acc.status === 'active' ? 'text-green-500' :
+                                                                acc.status === 'frozen' ? 'text-blue-500' :
+                                                                    acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'
+                                                            }`}>
+                                                            {acc.status === 'frozen' ? 'Cold Sleep ❄️' :
+                                                                acc.daily_usage_count >= 10 ? 'Locked (Limit) ⏳' :
+                                                                    (acc.status || 'inactive')}
                                                         </span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
@@ -1518,12 +1602,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ghost Phase</span>
                                                     <span className="text-[9px] font-black text-indigo-500 uppercase">
                                                         {acc.warming_session_count < 7 ? '1: Incubation' :
-                                                         acc.warming_session_count < 14 ? '2: Socialite' :
-                                                         acc.warming_session_count < 21 ? '3: Operative' : '4: Mature'}
+                                                            acc.warming_session_count < 14 ? '2: Socialite' :
+                                                                acc.warming_session_count < 21 ? '3: Operative' : '4: Mature'}
                                                     </span>
                                                 </div>
                                                 <div className="h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                    <div 
+                                                    <div
                                                         className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000"
                                                         style={{ width: `${Math.min(100, (acc.warming_session_count / 21) * 100)}%` }}
                                                     />
@@ -1564,11 +1648,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 <button
                                                     onClick={() => handleConnectAccount(acc.id)}
                                                     disabled={connectingIds.has(acc.id)}
-                                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${
-                                                        connectingIds.has(acc.id) 
-                                                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed' 
-                                                        : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'
-                                                    }`}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${connectingIds.has(acc.id)
+                                                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                                            : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'
+                                                        }`}
                                                 >
                                                     {connectingIds.has(acc.id) ? (
                                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1650,8 +1733,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <button
                                             onClick={handleToggleCampaign}
                                             className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-sm tracking-tight transition-all shadow-xl active:scale-95 ${isCampaignRunning
-                                                    ? 'bg-red-500 text-white shadow-red-500/20'
-                                                    : 'bg-pink-500 text-white shadow-pink-500/25 hover:bg-pink-600'
+                                                ? 'bg-red-500 text-white shadow-red-500/20'
+                                                : 'bg-pink-500 text-white shadow-pink-500/25 hover:bg-pink-600'
                                                 }`}
                                         >
                                             {isCampaignRunning ? (
@@ -1741,9 +1824,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                             </div>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={filterSettings.enable_ai_filter} 
+                                            <input
+                                                type="checkbox"
+                                                checked={filterSettings.enable_ai_filter}
                                                 onChange={(e) => setFilterSettings(p => ({ ...p, enable_ai_filter: e.target.checked }))}
                                                 className="sr-only peer"
                                             />
@@ -1776,7 +1859,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         onChange={(e) => setFilterSettings(p => ({ ...p, ai_model: e.target.value }))}
                                                         className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                                     >
-                                                        <option value="ollama-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Ollama (Local / FREE - No Key Required)</option>
+                                                        <option value="gemma4" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4 (Ollama / Local)</option>
+                                                        <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4:e2b (Ollama / Local)</option>
+                                                        <option value="qwen3.6" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">qwen3.6 (Ollama / Local)</option>
                                                         <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud / API Key Required)</option>
                                                     </select>
                                                 </div>
@@ -2017,12 +2102,36 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="px-8 flex-1 overflow-y-auto space-y-6 pb-2 scrollbar-hide">
                                 {/* Gemma Analysis */}
                                 {(!ai || Object.keys(ai).length === 0) ? (
-                                    <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
-                                        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
-                                    </div>
+                                    liveLead.status === 'rejected' ? (
+                                        <div className="p-6 bg-red-500/5 rounded-3xl border border-red-500/10">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <AlertTriangle className="w-4 h-4 text-red-500" />
+                                                <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest">Rejection Reason</h3>
+                                            </div>
+                                            <p className="text-sm font-bold text-red-600 dark:text-red-400 leading-relaxed pl-1">
+                                                {liveLead.rejection_reason || "Lead was rejected by the filtering rules before deep AI analysis."}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
+                                            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
+                                        </div>
+                                    )
                                 ) : (
                                     <div className="space-y-4">
+                                        {liveLead.status === 'rejected' && liveLead.rejection_reason && (
+                                            <div className="p-6 bg-red-500/5 rounded-3xl border border-red-500/10">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                                                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest">Rejection Reason</h3>
+                                                </div>
+                                                <p className="text-sm font-bold text-red-600 dark:text-red-400 leading-relaxed pl-1">
+                                                    {liveLead.rejection_reason}
+                                                </p>
+                                            </div>
+                                        )}
+
                                         <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
                                             <div className="flex items-center gap-2 mb-3">
                                                 <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -2050,7 +2159,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <Zap className="w-4 h-4 text-pink-500" />
                                                         <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-widest">AI Cold Hook</h3>
                                                     </div>
-                                                    <button 
+                                                    <button
                                                         onClick={() => {
                                                             navigator.clipboard.writeText(ai.suggested_hook);
                                                             setNotification({ msg: '📋 Hook copied!', type: 'success' });
@@ -2067,39 +2176,6 @@ const InstagramLeadGenerator: React.FC = () => {
                                         )}
                                     </div>
                                 )}
-
-                                {/* Gemma 4 Vision Audit */}
-                                <div className="p-6 bg-slate-50 dark:bg-black/20 rounded-3xl border border-slate-200 dark:border-white/10">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <Eye className={`w-4 h-4 ${liveLead.rejection_reason ? (liveLead.status === 'rejected' ? 'text-red-500' : 'text-emerald-500') : 'text-gray-400'}`} />
-                                            <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">
-                                                {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <Loader2 className="w-2.5 h-2.5 text-blue-500 animate-spin" />
-                                                        <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-blue-500/10 text-blue-500">
-                                                            {statusUpdates[liveLead.id] || "Deep Scan Active..."}
-                                                        </span>
-                                                    </div>
-                                                ) : liveLead.rejection_reason ? (
-                                                    <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${liveLead.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
-                                                        {liveLead.status === 'rejected' ? 'Rejected' : 'Qualified'}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase bg-gray-100 dark:bg-white/5 text-gray-400">
-                                                        Pending Scan
-                                                    </span>
-                                                )}
-                                            </h3>
-                                        </div>
-                                    </div>
-                                    <p className={`text-sm font-medium leading-relaxed italic border-l-4 border-blue-500/20 pl-4 py-1 ${liveLead.rejection_reason ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}>
-                                        {(analyzingId === liveLead.id || autoAnalyzingId === liveLead.id) 
-                                            ? (statusUpdates[liveLead.id] || "Gemma 4 is scanning photos and analyzing intent. Please wait...") 
-                                            : (liveLead.rejection_reason || "No visual audit data available. This lead was analyzed before AI Vision was enabled or the target niche was empty.")
-                                        }
-                                    </p>
-                                </div>
                             </div>
 
                             {/* Sticky Footer */}
@@ -2115,9 +2191,9 @@ const InstagramLeadGenerator: React.FC = () => {
 
             {/* 🤖 Enhanced AI-Powered Discovery Modal */}
             {showDiscoveryModal && (
-                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
-                        
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-4xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] dark:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.8)] border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+
                         {/* Modal Header */}
                         <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
                             <div className="flex items-center justify-between">
@@ -2130,18 +2206,18 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational keyword expansion • Google scraping</p>
                                     </div>
                                 </div>
-                                <button onClick={() => { setShowDiscoveryModal(false); setAiDiscoveryStep('chat'); setAiChatHistory([]); setAiSuggestedKeywords([]); setSelectedKeywords(new Set()); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                <button onClick={() => { setShowDiscoveryModal(false); setAiDiscoveryStep('chat'); setAiChatHistory([]); setAiSuggestedKeywords([]); setSelectedKeywords(new Set()); setAiProvider(''); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
                                     <X className="w-5 h-5 text-gray-400" />
                                 </button>
                             </div>
 
                             {/* Step indicator */}
                             <div className="flex items-center gap-2 mt-4">
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ aiDiscoveryStep === 'chat' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${aiDiscoveryStep === 'chat' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
                                     <MessageSquare className="w-3 h-3" /> AI Chat
                                 </div>
                                 <ChevronRight className="w-3 h-3 text-gray-300" />
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ aiDiscoveryStep === 'review' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${aiDiscoveryStep === 'review' ? 'bg-pink-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
                                     <Hash className="w-3 h-3" /> Review Keywords
                                 </div>
                                 <ChevronRight className="w-3 h-3 text-gray-300" />
@@ -2151,181 +2227,250 @@ const InstagramLeadGenerator: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* STEP 1: AI Chat */}
+                        {/* STEP 1: AI Chat Side-by-Side */}
                         {aiDiscoveryStep === 'chat' && (
-                            <div className="flex flex-col flex-1 overflow-hidden">
-                                {/* Seed keywords input */}
-                                <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Your Niche / Seed Keywords</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Luxury Watches, Coffee Shop, Yoga Studio..."
-                                            value={aiSeedInput}
-                                            onChange={e => setAiSeedInput(e.target.value)}
-                                            onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking) handleAiKeywordChat(); }}
-                                            className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-pink-400"
-                                        />
-                                        <div className="flex items-center gap-1">
-                                            <select
-                                                value={aiKeywordCount}
-                                                onChange={e => setAiKeywordCount(parseInt(e.target.value))}
-                                                className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-2 py-2.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none"
-                                            >
-                                                {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} kws</option>)}
-                                            </select>
-                                        </div>
-                                        <button
-                                            onClick={() => handleAiKeywordChat()}
-                                            disabled={isAiThinking || !aiSeedInput.trim()}
-                                            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-pink-500/20 disabled:opacity-50"
-                                        >
-                                            {isAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                                            {isAiThinking ? 'Thinking...' : 'Expand with AI'}
-                                        </button>
-                                    </div>
-
-                                    {/* Direct start option */}
-                                    {aiSeedInput.trim() && (
-                                        <div className="mt-2.5 flex items-center gap-2">
-                                            <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
-                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">or</span>
-                                            <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
-                                        </div>
-                                    )}
-                                    {aiSeedInput.trim() && (
-                                        <button
-                                            onClick={() => {
-                                                // Start directly with seed keywords — skip AI
-                                                const kws = aiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
-                                                if (kws.length === 0) return;
-                                                setIsDiscovering(true);
-                                                setDiscoveryStartTime(Date.now());
-                                                setDiscoveryProgressMessage('Initiating background lead discovery...');
-                                                setShowDiscoveryModal(false);
-                                                setAiDiscoveryStep('chat');
-                                                setAiChatHistory([]);
-                                                setAiSuggestedKeywords([]);
-                                                setSelectedKeywords(new Set());
-                                                setAiSeedInput('');
-                                                setNotification({ msg: `🚀 Started with ${kws.length} seed keyword(s)! Live HUD active.`, type: 'success' });
-                                                instagramAPI.discoverLeads(kws, 50)
-                                                    .then(() => {
-                                                        setTimeout(async () => {
-                                                            try {
-                                                                const d = await instagramAPI.deduplicateLeads();
-                                                                if (d.removed > 0) { setNotification({ msg: `🧹 Auto-purged ${d.removed} duplicates!`, type: 'success' }); fetchData(); }
-                                                            } catch { /* silent */ }
-                                                        }, 5000);
-                                                    })
-                                                    .catch(() => {
-                                                        setIsDiscovering(false);
-                                                        setDiscoveryStartTime(null);
-                                                        setDiscoveryProgressMessage(null);
-                                                        setNotification({ msg: 'Failed to start scan.', type: 'alert' });
-                                                    });
-                                            }}
-                                            disabled={isDiscovering}
-                                            className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 bg-gray-900 dark:bg-white/5 hover:bg-gray-800 dark:hover:bg-white/10 border border-gray-700 dark:border-white/10 text-white text-xs font-black rounded-xl transition-all"
-                                        >
-                                            <Play className="w-3.5 h-3.5 fill-current" />
-                                            Start Discovery with Seed Keywords Only (skip AI)
-                                        </button>
-                                    )}
-                                </div>
-
-
-                                {/* Chat messages */}
-                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {aiChatHistory.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                                            <div className="w-16 h-16 bg-gradient-to-tr from-pink-500/20 to-purple-600/20 rounded-3xl flex items-center justify-center mb-4">
-                                                <Brain className="w-8 h-8 text-pink-500" />
-                                            </div>
-                                            <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Keyword Strategist Ready</h3>
-                                            <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
-                                                Enter your niche above and I'll generate <span className="text-pink-500 font-bold">{aiKeywordCount} relevant keyword variations</span> for Instagram scraping. You can have a conversation to refine them!
-                                            </p>
-                                            <div className="mt-4 grid grid-cols-2 gap-2 w-full max-w-xs">
-                                                {['Luxury Watches', 'Coffee Roasters', 'Yoga Studios', 'Real Estate Agents'].map(example => (
-                                                    <button
-                                                        key={example}
-                                                        onClick={() => { setAiSeedInput(example); }}
-                                                        className="text-[10px] font-bold text-pink-500 bg-pink-50 dark:bg-pink-500/10 border border-pink-200 dark:border-pink-500/20 rounded-xl px-3 py-2 hover:bg-pink-100 dark:hover:bg-pink-500/20 transition-all"
-                                                    >
-                                                        {example}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        aiChatHistory.map((msg, idx) => (
-                                            <div key={idx} className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' }`}>
-                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${
-                                                    msg.role === 'user'
-                                                        ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-br-none'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
-                                                }`}>
-                                                    {msg.role === 'assistant' && (
-                                                        <div className="flex items-center gap-1.5 mb-1">
-                                                            <Sparkles className="w-3 h-3 text-pink-500" />
-                                                            <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Gemma AI</span>
-                                                        </div>
-                                                    )}
-                                                    {msg.content}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                    {isAiThinking && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                            <div className="flex flex-1 overflow-hidden divide-x divide-gray-100 dark:divide-white/5">
+                                {/* Left Pane: Chat */}
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    {/* Seed keywords input */}
+                                    <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Your Niche / Seed Keywords</p>
+                                            <div className="flex items-center gap-3">
                                                 <div className="flex items-center gap-1.5">
-                                                    <Sparkles className="w-3 h-3 text-pink-500" />
-                                                    <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Gemma AI</span>
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">AI Model:</span>
+                                                    <select
+                                                        value={keywordModel}
+                                                        onChange={e => setKeywordModel(e.target.value)}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-pink-500"
+                                                    >
+                                                        <option value="auto">Auto / Default</option>
+                                                        <option value="gemini">Gemini API</option>
+                                                        <option value="groq">Groq API</option>
+                                                        <option value="openrouter">OpenRouter API</option>
+                                                        <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
+                                                        <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
+                                                        <option value="gemma">Gemma 4 (Ollama)</option>
+                                                    </select>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 mt-1">
-                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">Target Count:</span>
+                                                    <select
+                                                        value={aiKeywordCount}
+                                                        onChange={e => setAiKeywordCount(parseInt(e.target.value))}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-pink-500"
+                                                    >
+                                                        {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} Variations</option>)}
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
-                                    )}
-                                    <div ref={aiChatEndRef} />
-                                </div>
-
-                                {/* Refinement chat input (shown after first response) */}
-                                {aiChatHistory.length > 0 && (
-                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
-                                                placeholder="Refine: 'more local ones', 'add USA cities', 'focus on luxury'..."
-                                                value={aiChatInput}
-                                                onChange={e => setAiChatInput(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking && aiChatInput.trim()) handleAiKeywordChat(); }}
-                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-pink-400"
+                                                placeholder="e.g. Luxury Watches, Coffee Shop, Yoga Studio..."
+                                                value={aiSeedInput}
+                                                onChange={e => setAiSeedInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking) handleAiKeywordChat(); }}
+                                                className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-pink-400"
                                             />
                                             <button
                                                 onClick={() => handleAiKeywordChat()}
-                                                disabled={isAiThinking || !aiChatInput.trim()}
-                                                className="p-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                                disabled={isAiThinking || !aiSeedInput.trim()}
+                                                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-pink-500/20 disabled:opacity-50"
                                             >
-                                                <Send className="w-4 h-4" />
+                                                {isAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                                {isAiThinking ? 'Thinking...' : 'Expand with AI'}
                                             </button>
                                         </div>
-                                        {aiSuggestedKeywords.length > 0 && (
+
+                                        {/* Direct start option */}
+                                        {aiSeedInput.trim() && (
+                                            <div className="mt-2.5 flex items-center gap-2">
+                                                <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
+                                                <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">or</span>
+                                                <div className="flex-1 h-px bg-gray-200 dark:bg-white/5" />
+                                            </div>
+                                        )}
+                                        {aiSeedInput.trim() && (
                                             <button
-                                                onClick={() => setAiDiscoveryStep('review')}
-                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-purple-700 transition-all"
+                                                onClick={() => {
+                                                    const kws = aiSeedInput.split(',').map(k => k.trim()).filter(Boolean);
+                                                    if (kws.length === 0) return;
+                                                    setIsDiscovering(true);
+                                                    setDiscoveryStartTime(Date.now());
+                                                    setDiscoveryProgressMessage('Initiating background lead discovery...');
+                                                    setShowDiscoveryModal(false);
+                                                    setAiDiscoveryStep('chat');
+                                                    setAiChatHistory([]);
+                                                    setAiSuggestedKeywords([]);
+                                                    setSelectedKeywords(new Set());
+                                                    setAiSeedInput('');
+                                                    setNotification({ msg: `🚀 Started with ${kws.length} seed keyword(s)! Live HUD active.`, type: 'success' });
+                                                    instagramAPI.discoverLeads(kws, 50)
+                                                        .then(() => {
+                                                            setTimeout(async () => {
+                                                                try {
+                                                                    const d = await instagramAPI.deduplicateLeads();
+                                                                    if (d.removed > 0) { setNotification({ msg: `🧹 Auto-purged ${d.removed} duplicates!`, type: 'success' }); fetchData(); }
+                                                                } catch { /* silent */ }
+                                                            }, 5000);
+                                                        })
+                                                        .catch(() => {
+                                                            setIsDiscovering(false);
+                                                            setDiscoveryStartTime(null);
+                                                            setDiscoveryProgressMessage(null);
+                                                            setNotification({ msg: 'Failed to start scan.', type: 'alert' });
+                                                        });
+                                                }}
+                                                disabled={isDiscovering}
+                                                className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 bg-gray-900 dark:bg-white/5 hover:bg-gray-800 dark:hover:bg-white/10 border border-gray-700 dark:border-white/10 text-white text-xs font-black rounded-xl transition-all"
                                             >
-                                                <ChevronRight className="w-4 h-4" />
-                                                Review {aiSuggestedKeywords.length} Keywords →
+                                                <Play className="w-3.5 h-3.5 fill-current" />
+                                                Start Discovery with Seed Keywords Only (skip AI)
                                             </button>
                                         )}
                                     </div>
-                                )}
+
+                                    {/* Chat messages */}
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                        {aiChatHistory.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                                <div className="w-16 h-16 bg-gradient-to-tr from-pink-500/20 to-purple-600/20 rounded-3xl flex items-center justify-center mb-4">
+                                                    <Brain className="w-8 h-8 text-pink-500" />
+                                                </div>
+                                                <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Keyword Strategist Ready</h3>
+                                                <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                                                    Enter your niche above and I'll generate <span className="text-pink-500 font-bold">{aiKeywordCount} relevant keyword variations</span>. Have a conversation to refine them!
+                                                </p>
+                                                <div className="mt-4 grid grid-cols-2 gap-2 w-full max-w-xs">
+                                                    {['Luxury Watches', 'Coffee Roasters', 'Yoga Studios', 'Real Estate Agents'].map(example => (
+                                                        <button
+                                                            key={example}
+                                                            onClick={() => { setAiSeedInput(example); }}
+                                                            className="text-[10px] font-bold text-pink-500 bg-pink-50 dark:bg-pink-500/10 border border-pink-200 dark:border-pink-500/20 rounded-xl px-3 py-2 hover:bg-pink-100 dark:hover:bg-pink-500/20 transition-all"
+                                                        >
+                                                            {example}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            aiChatHistory.map((msg, idx) => (
+                                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
+                                                            ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-br-none'
+                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        }`}>
+                                                        {msg.role === 'assistant' && (
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <Sparkles className="w-3 h-3 text-pink-500" />
+                                                                <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">{getDisplayEngineName(aiProvider)}</span>
+                                                            </div>
+                                                        )}
+                                                        {msg.content}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                        {isAiThinking && (
+                                            <div className="flex justify-start">
+                                                <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Sparkles className="w-3 h-3 text-pink-500" />
+                                                        <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest font-bold">{getDisplayEngineName(aiProvider)}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div ref={aiChatEndRef} />
+                                    </div>
+
+                                    {/* Refinement chat input */}
+                                    {aiChatHistory.length > 0 && (
+                                        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Refine: 'more local ones', 'add USA cities', 'focus on luxury'..."
+                                                    value={aiChatInput}
+                                                    onChange={e => setAiChatInput(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && !isAiThinking && aiChatInput.trim()) handleAiKeywordChat(); }}
+                                                    className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-pink-400"
+                                                />
+                                                <button
+                                                    onClick={() => handleAiKeywordChat()}
+                                                    disabled={isAiThinking || !aiChatInput.trim()}
+                                                    className="p-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                                >
+                                                    <Send className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            {aiSuggestedKeywords.length > 0 && (
+                                                <button
+                                                    onClick={() => setAiDiscoveryStep('review')}
+                                                    className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-purple-700 transition-all"
+                                                >
+                                                    <ChevronRight className="w-4 h-4" />
+                                                    Review {aiSuggestedKeywords.length} Keywords →
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Right Pane: Real-time Keyword Suggestions List */}
+                                <div className="w-[300px] flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#090d16] overflow-hidden">
+                                    <div className="p-4 border-b border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Proposed Keywords ({aiSuggestedKeywords.length})</p>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                                        {aiSuggestedKeywords.length === 0 ? (
+                                            <div className="text-center py-12 text-gray-400 text-xs font-medium italic">
+                                                No keywords suggested yet. Start by entering seeds on the left.
+                                            </div>
+                                        ) : (
+                                            aiSuggestedKeywords.map((kw, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                                                    <Hash className="w-3.5 h-3.5 opacity-40 text-pink-500" />
+                                                    <span className="truncate">{kw}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+
+                                    {/* Active AI Provider HUD */}
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#0f172a] shrink-0">
+                                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-gray-400">
+                                            <span>Active Engine:</span>
+                                            {aiProvider ? (
+                                                aiProvider.includes('Ollama') ? (
+                                                    <span className="text-purple-500 flex items-center gap-1 animate-pulse">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {aiProvider}
+                                                    </span>
+                                                ) : aiProvider.includes('None') || aiProvider.includes('Fallback') ? (
+                                                    <span className="text-amber-500 flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Fallback (Ollama Offline)
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-green-500 flex items-center gap-1 font-bold">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {aiProvider.split(' ')[0]} API
+                                                    </span>
+                                                )
+                                            ) : (
+                                                <span className="text-gray-500 italic">Waiting...</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -2337,11 +2482,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <div className="px-5 py-3 bg-gradient-to-r from-pink-500/10 to-purple-500/10 border-b border-pink-500/10 flex-shrink-0">
                                         <div className="flex items-center justify-between flex-wrap gap-3">
                                             <div className="flex items-center gap-4">
-                                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                                                    aiProxyInfo.mode === 'parallel'
+                                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${aiProxyInfo.mode === 'parallel'
                                                         ? 'bg-green-500/10 text-green-600 border border-green-500/20'
                                                         : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                                }`}>
+                                                    }`}>
                                                     <Zap className="w-3 h-3" />
                                                     {aiProxyInfo.mode === 'parallel' ? `⚡ Parallel (${aiProxyInfo.count} proxies)` : '📶 Sequential (No Proxies)'}
                                                 </div>
@@ -2374,11 +2518,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     if (next.has(kw)) next.delete(kw); else next.add(kw);
                                                     return next;
                                                 })}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                                                    selectedKeywords.has(kw)
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${selectedKeywords.has(kw)
                                                         ? 'bg-pink-500 text-white border-pink-400 shadow-md shadow-pink-500/20'
                                                         : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-pink-300'
-                                                }`}
+                                                    }`}
                                             >
                                                 {selectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
                                                 <Hash className="w-3 h-3 opacity-50" />
@@ -2441,9 +2584,9 @@ const InstagramLeadGenerator: React.FC = () => {
 
             {/* 🤖 AI-Powered Bad Keywords Modal */}
             {showBadKeywordsModal && (
-                <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
-                        
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-4xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] dark:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.8)] border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+
                         {/* Modal Header */}
                         <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
                             <div className="flex items-center justify-between">
@@ -2456,18 +2599,18 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational negative keywords • Step 2 Bio Scan Filters</p>
                                     </div>
                                 </div>
-                                <button onClick={() => { setShowBadKeywordsModal(false); setBadAiDiscoveryStep('chat'); setBadAiChatHistory([]); setBadAiSuggestedKeywords([]); setBadSelectedKeywords(new Set()); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                <button onClick={() => { setShowBadKeywordsModal(false); setBadAiDiscoveryStep('chat'); setBadAiChatHistory([]); setBadAiSuggestedKeywords([]); setBadSelectedKeywords(new Set()); setBadAiProvider(''); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
                                     <X className="w-5 h-5 text-gray-400" />
                                 </button>
                             </div>
 
                             {/* Step indicator */}
                             <div className="flex items-center gap-2 mt-4">
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ badAiDiscoveryStep === 'chat' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${badAiDiscoveryStep === 'chat' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
                                     <MessageSquare className="w-3 h-3" /> AI Chat
                                 </div>
                                 <ChevronRight className="w-3 h-3 text-gray-300" />
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${ badAiDiscoveryStep === 'review' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400' }`}>
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${badAiDiscoveryStep === 'review' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
                                     <Hash className="w-3 h-3" /> Review Keywords
                                 </div>
                                 <ChevronRight className="w-3 h-3 text-gray-300" />
@@ -2477,121 +2620,192 @@ const InstagramLeadGenerator: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* STEP 1: AI Chat */}
+                        {/* STEP 1: AI Chat Side-by-Side */}
                         {badAiDiscoveryStep === 'chat' && (
-                            <div className="flex flex-col flex-1 overflow-hidden">
-                                {/* Seed keywords input */}
-                                <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Describe What to Exclude (Niche / Competitors / Bot patterns)</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Competitors, bots, giveaway accounts, resellers, fake profiles..."
-                                            value={badAiSeedInput}
-                                            onChange={e => setBadAiSeedInput(e.target.value)}
-                                            onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking) handleBadAiKeywordChat(); }}
-                                            className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-red-400"
-                                        />
-                                        <div className="flex items-center gap-1">
-                                            <select
-                                                value={badAiKeywordCount}
-                                                onChange={e => setBadAiKeywordCount(parseInt(e.target.value))}
-                                                className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-2 py-2.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none"
-                                            >
-                                                {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} kws</option>)}
-                                            </select>
-                                        </div>
-                                        <button
-                                            onClick={() => handleBadAiKeywordChat()}
-                                            disabled={isBadAiThinking || !badAiSeedInput.trim()}
-                                            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
-                                        >
-                                            {isBadAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                                            {isBadAiThinking ? 'Thinking...' : 'Get Bad Words'}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Chat messages */}
-                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {badAiChatHistory.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                                            <div className="w-16 h-16 bg-gradient-to-tr from-red-500/20 to-pink-600/20 rounded-3xl flex items-center justify-center mb-4">
-                                                <Brain className="w-8 h-8 text-red-500" />
-                                            </div>
-                                            <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Bad Result Filter Assistant</h3>
-                                            <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
-                                                Describe what profiles you want to filter out (e.g. replica sellers, dropshippers, spam accounts, giveaway channels) and I'll suggest negative keywords to block them.
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        badAiChatHistory.map((msg, idx) => (
-                                            <div key={idx} className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' }`}>
-                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${
-                                                    msg.role === 'user'
-                                                        ? 'bg-gradient-to-br from-red-500 to-pink-600 text-white rounded-br-none'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
-                                                }`}>
-                                                    {msg.role === 'assistant' && (
-                                                        <div className="flex items-center gap-1.5 mb-1">
-                                                            <Sparkles className="w-3 h-3 text-red-500" />
-                                                            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Gemma AI</span>
-                                                        </div>
-                                                    )}
-                                                    {msg.content}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                    {isBadAiThinking && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                            <div className="flex flex-1 overflow-hidden divide-x divide-gray-100 dark:divide-white/5">
+                                {/* Left Pane: Chat */}
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    {/* Seed keywords input */}
+                                    <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Describe What to Exclude (Niche / Competitors / Bot patterns)</p>
+                                            <div className="flex items-center gap-3">
                                                 <div className="flex items-center gap-1.5">
-                                                    <Sparkles className="w-3 h-3 text-red-500" />
-                                                    <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Gemma AI</span>
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">AI Model:</span>
+                                                    <select
+                                                        value={badKeywordModel}
+                                                        onChange={e => setBadKeywordModel(e.target.value)}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-red-500"
+                                                    >
+                                                        <option value="auto">Auto / Default</option>
+                                                        <option value="gemini">Gemini API</option>
+                                                        <option value="groq">Groq API</option>
+                                                        <option value="openrouter">OpenRouter API</option>
+                                                        <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
+                                                        <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
+                                                        <option value="gemma">Gemma 4 (Ollama)</option>
+                                                    </select>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 mt-1">
-                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">Target Count:</span>
+                                                    <select
+                                                        value={badAiKeywordCount}
+                                                        onChange={e => setBadAiKeywordCount(parseInt(e.target.value))}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-red-500"
+                                                    >
+                                                        {[10, 20, 30, 50, 75, 100].map(n => <option key={n} value={n}>{n} Variations</option>)}
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
-                                    )}
-                                    <div ref={badAiChatEndRef} />
-                                </div>
-
-                                {/* Refinement chat input (shown after first response) */}
-                                {badAiChatHistory.length > 0 && (
-                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
-                                                placeholder="Refine: 'add wholesale terms', 'focus on dropshipping'..."
-                                                value={badAiChatInput}
-                                                onChange={e => setBadAiChatInput(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking && badAiChatInput.trim()) handleBadAiKeywordChat(); }}
-                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-red-400"
+                                                placeholder="e.g. Competitors, bots, giveaway accounts, resellers, fake profiles..."
+                                                value={badAiSeedInput}
+                                                onChange={e => setBadAiSeedInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking) handleBadAiKeywordChat(); }}
+                                                className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-red-400"
                                             />
                                             <button
                                                 onClick={() => handleBadAiKeywordChat()}
-                                                disabled={isBadAiThinking || !badAiChatInput.trim()}
-                                                className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                                disabled={isBadAiThinking || !badAiSeedInput.trim()}
+                                                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
                                             >
-                                                <Send className="w-4 h-4" />
+                                                {isBadAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                                {isBadAiThinking ? 'Thinking...' : 'Get Bad Words'}
                                             </button>
                                         </div>
-                                        {badAiSuggestedKeywords.length > 0 && (
-                                            <button
-                                                onClick={() => setBadAiDiscoveryStep('review')}
-                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-red-500/20 hover:from-red-600 hover:to-pink-700 transition-all"
-                                            >
-                                                <ChevronRight className="w-4 h-4" />
-                                                Review {badAiSuggestedKeywords.length} Bad Keywords →
-                                            </button>
+                                    </div>
+
+                                    {/* Chat messages */}
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                        {badAiChatHistory.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                                <div className="w-16 h-16 bg-gradient-to-tr from-red-500/20 to-pink-600/20 rounded-3xl flex items-center justify-center mb-4">
+                                                    <Brain className="w-8 h-8 text-red-500" />
+                                                </div>
+                                                <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Bad Result Filter Assistant</h3>
+                                                <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                                                    Describe what profiles you want to filter out (e.g. replica sellers, dropshippers, spam accounts, giveaway channels) and I'll suggest negative keywords to block them.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            badAiChatHistory.map((msg, idx) => (
+                                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
+                                                            ? 'bg-gradient-to-br from-red-500 to-pink-600 text-white rounded-br-none'
+                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        }`}>
+                                                        {msg.role === 'assistant' && (
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <Sparkles className="w-3 h-3 text-red-500" />
+                                                                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{getDisplayEngineName(badAiProvider)}</span>
+                                                            </div>
+                                                        )}
+                                                        {msg.content}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                        {isBadAiThinking && (
+                                            <div className="flex justify-start">
+                                                <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Sparkles className="w-3 h-3 text-red-500" />
+                                                        <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{getDisplayEngineName(badAiProvider)}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div ref={badAiChatEndRef} />
+                                    </div>
+
+                                    {/* Refinement chat input (shown after first response) */}
+                                    {badAiChatHistory.length > 0 && (
+                                        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Refine: 'add wholesale terms', 'focus on dropshipping'..."
+                                                    value={badAiChatInput}
+                                                    onChange={e => setBadAiChatInput(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && !isBadAiThinking && badAiChatInput.trim()) handleBadAiKeywordChat(); }}
+                                                    className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-red-400"
+                                                />
+                                                <button
+                                                    onClick={() => handleBadAiKeywordChat()}
+                                                    disabled={isBadAiThinking || !badAiChatInput.trim()}
+                                                    className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all disabled:opacity-50"
+                                                >
+                                                    <Send className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            {badAiSuggestedKeywords.length > 0 && (
+                                                <button
+                                                    onClick={() => setBadAiDiscoveryStep('review')}
+                                                    className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-red-500/20 hover:from-red-600 hover:to-pink-700 transition-all"
+                                                >
+                                                    <ChevronRight className="w-4 h-4" />
+                                                    Review {badAiSuggestedKeywords.length} Bad Keywords →
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Right Pane: Real-time Excluded Keywords List */}
+                                <div className="w-[300px] flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#090d16] overflow-hidden">
+                                    <div className="p-4 border-b border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Proposed Excluded Keywords ({badAiSuggestedKeywords.length})</p>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                                        {badAiSuggestedKeywords.length === 0 ? (
+                                            <div className="text-center py-12 text-gray-400 text-xs font-medium italic">
+                                                No bad keywords suggested yet. Start by entering descriptors on the left.
+                                            </div>
+                                        ) : (
+                                            badAiSuggestedKeywords.map((kw, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                                                    <Hash className="w-3.5 h-3.5 opacity-40 text-red-500" />
+                                                    <span className="truncate">{kw}</span>
+                                                </div>
+                                            ))
                                         )}
                                     </div>
-                                )}
+
+                                    {/* Active AI Provider HUD */}
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#0f172a] shrink-0">
+                                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-gray-400">
+                                            <span>Active Engine:</span>
+                                            {badAiProvider ? (
+                                                badAiProvider.includes('Ollama') ? (
+                                                    <span className="text-purple-500 flex items-center gap-1 animate-pulse">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {badAiProvider}
+                                                    </span>
+                                                ) : badAiProvider.includes('None') || badAiProvider.includes('Fallback') ? (
+                                                    <span className="text-amber-500 flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Fallback (Ollama Offline)
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-red-500 flex items-center gap-1 font-bold">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {badAiProvider.split(' ')[0]} API
+                                                    </span>
+                                                )
+                                            ) : (
+                                                <span className="text-gray-500 italic">Waiting...</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -2617,11 +2831,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     if (next.has(kw)) next.delete(kw); else next.add(kw);
                                                     return next;
                                                 })}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                                                    badSelectedKeywords.has(kw)
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${badSelectedKeywords.has(kw)
                                                         ? 'bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20'
                                                         : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-red-300'
-                                                }`}
+                                                    }`}
                                             >
                                                 {badSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
                                                 <Hash className="w-3 h-3 opacity-50" />
@@ -2677,8 +2890,8 @@ const InstagramLeadGenerator: React.FC = () => {
 
             {showCitiesModal && (
                 <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
-                        
+                    <div className="bg-white dark:bg-[#0f172a] rounded-3xl w-full max-w-4xl shadow-2xl border border-white/10 dark:border-white/5 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+
                         {/* Modal Header */}
                         <div className="p-6 pb-4 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
                             <div className="flex items-center justify-between">
@@ -2691,129 +2904,179 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational Whitelist suggester • Gemma AI</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowCitiesModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
+                                <button onClick={() => { setShowCitiesModal(false); setCitiesAiDiscoveryStep('chat'); setCitiesAiChatHistory([]); setCitiesAiSuggestedKeywords([]); setCitiesSelectedKeywords(new Set()); setCitiesAiProvider(''); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
                                     <X className="w-5 h-5 text-gray-400" />
                                 </button>
                             </div>
                         </div>
 
-                        {/* STEP 1: Conversational input / Chat */}
+                        {/* STEP 1: Conversational input / Chat Side-by-Side */}
                         {citiesAiDiscoveryStep === 'chat' && (
-                            <div className="flex flex-col flex-1 overflow-hidden">
-                                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                                    {citiesAiChatHistory.length === 0 ? (
-                                        <div className="space-y-6 max-w-md mx-auto pt-6 text-center">
-                                            <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto text-indigo-500">
-                                                <Sparkles className="w-8 h-8" />
-                                            </div>
-                                            <div>
-                                                <h3 className="font-black text-gray-950 dark:text-white text-base">Generate Location Whitelist</h3>
-                                                <p className="text-xs text-gray-500 mt-1">Specify a target country or region, and Gemma AI will suggest up to 500 major cities, suburbs, and areas to include on the whitelist.</p>
-                                            </div>
-                                            <div className="space-y-4 text-left">
-                                                <div className="space-y-1">
-                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Target Country or Region 📍</p>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g. Australia, California, Germany..."
-                                                        value={citiesAiSeedInput}
-                                                        onChange={e => setCitiesAiSeedInput(e.target.value)}
-                                                        className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
-                                                    />
+                            <div className="flex flex-1 overflow-hidden divide-x divide-gray-100 dark:divide-white/5">
+                                {/* Left Pane: Chat */}
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                                        {citiesAiChatHistory.length === 0 ? (
+                                            <div className="space-y-6 max-w-md mx-auto pt-6 text-center">
+                                                <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto text-indigo-500">
+                                                    <Sparkles className="w-8 h-8" />
                                                 </div>
-                                                <div className="space-y-1">
-                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Suggested Locations count ({citiesAiKeywordCount})</p>
-                                                    <input
-                                                        type="range"
-                                                        min="20"
-                                                        max="500"
-                                                        step="10"
-                                                        value={citiesAiKeywordCount}
-                                                        onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
-                                                        className="w-full h-1.5 bg-gray-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                                                    />
-                                                    <div className="flex justify-between text-[9px] text-gray-400 font-bold uppercase tracking-tight">
-                                                        <span>20 cities</span>
-                                                        <span>500 cities</span>
+                                                <div>
+                                                    <h3 className="font-black text-gray-950 dark:text-white text-base">Generate Location Whitelist</h3>
+                                                    <p className="text-xs text-gray-500 mt-1">Specify a target country or region, and Gemma AI will suggest up to 500 major cities, suburbs, and areas to include on the whitelist.</p>
+                                                </div>
+                                                <div className="space-y-4 text-left">
+                                                    <div className="space-y-1">
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Target Country or Region 📍</p>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. Australia, California, Germany..."
+                                                            value={citiesAiSeedInput}
+                                                            onChange={e => setCitiesAiSeedInput(e.target.value)}
+                                                            className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Suggested Locations count ({citiesAiKeywordCount})</p>
+                                                        <input
+                                                            type="range"
+                                                            min="20"
+                                                            max="500"
+                                                            step="10"
+                                                            value={citiesAiKeywordCount}
+                                                            onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
+                                                            className="w-full h-1.5 bg-gray-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        />
+                                                        <div className="flex justify-between text-[9px] text-gray-400 font-bold uppercase tracking-tight">
+                                                            <span>20 cities</span>
+                                                            <span>500 cities</span>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleCitiesAiChat()}
+                                                        disabled={isCitiesAiThinking || !citiesAiSeedInput.trim()}
+                                                        className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                                                    >
+                                                        Generate Target Whitelist ✨
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            citiesAiChatHistory.map((msg, idx) => (
+                                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed shadow-sm ${msg.role === 'user'
+                                                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
+                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        }`}>
+                                                        {msg.role === 'assistant' && (
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                                                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{getDisplayEngineName(citiesAiProvider)}</span>
+                                                            </div>
+                                                        )}
+                                                        {msg.content}
                                                     </div>
                                                 </div>
+                                            ))
+                                        )}
+                                        {isCitiesAiThinking && (
+                                            <div className="flex justify-start">
+                                                <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Sparkles className="w-3 h-3 text-indigo-500" />
+                                                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest font-bold">{getDisplayEngineName(citiesAiProvider)}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div ref={citiesAiChatEndRef} />
+                                    </div>
+
+                                    {/* Refinement chat input */}
+                                    {citiesAiChatHistory.length > 0 && (
+                                        <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Refine: 'only major capital cities', 'add suburbs of Melbourne'..."
+                                                    value={citiesAiChatInput}
+                                                    onChange={e => setCitiesAiChatInput(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && !isCitiesAiThinking && citiesAiChatInput.trim()) handleCitiesAiChat(); }}
+                                                    className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
+                                                />
                                                 <button
                                                     onClick={() => handleCitiesAiChat()}
-                                                    disabled={isCitiesAiThinking || !citiesAiSeedInput.trim()}
-                                                    className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                                                    disabled={isCitiesAiThinking || !citiesAiChatInput.trim()}
+                                                    className="p-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl transition-all disabled:opacity-50"
                                                 >
-                                                    Generate Target Whitelist ✨
+                                                    <Send className="w-4 h-4" />
                                                 </button>
                                             </div>
-                                        </div>
-                                    ) : (
-                                        citiesAiChatHistory.map((msg, idx) => (
-                                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed shadow-sm ${
-                                                    msg.role === 'user'
-                                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
-                                                }`}>
-                                                    {msg.role === 'assistant' && (
-                                                        <div className="flex items-center gap-1.5 mb-1">
-                                                            <Sparkles className="w-3 h-3 text-indigo-500" />
-                                                            <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Gemma AI</span>
-                                                        </div>
-                                                    )}
-                                                    {msg.content}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                    {isCitiesAiThinking && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Sparkles className="w-3 h-3 text-indigo-500" />
-                                                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Gemma AI</span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 mt-1">
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                                </div>
-                                            </div>
+                                            {citiesAiSuggestedKeywords.length > 0 && (
+                                                <button
+                                                    onClick={() => setCitiesAiDiscoveryStep('review')}
+                                                    className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-purple-700 transition-all"
+                                                >
+                                                    <ChevronRight className="w-4 h-4" />
+                                                    Review {citiesAiSuggestedKeywords.length} Cities Whitelist →
+                                                </button>
+                                            )}
                                         </div>
                                     )}
-                                    <div ref={citiesAiChatEndRef} />
                                 </div>
 
-                                {/* Refinement chat input */}
-                                {citiesAiChatHistory.length > 0 && (
-                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 flex-shrink-0">
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Refine: 'only major capital cities', 'add suburbs of Melbourne'..."
-                                                value={citiesAiChatInput}
-                                                onChange={e => setCitiesAiChatInput(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter' && !isCitiesAiThinking && citiesAiChatInput.trim()) handleCitiesAiChat(); }}
-                                                className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
-                                            />
-                                            <button
-                                                onClick={() => handleCitiesAiChat()}
-                                                disabled={isCitiesAiThinking || !citiesAiChatInput.trim()}
-                                                className="p-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl transition-all disabled:opacity-50"
-                                            >
-                                                <Send className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                        {citiesAiSuggestedKeywords.length > 0 && (
-                                            <button
-                                                onClick={() => setCitiesAiDiscoveryStep('review')}
-                                                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-black text-xs tracking-wide shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-purple-700 transition-all"
-                                            >
-                                                <ChevronRight className="w-4 h-4" />
-                                                Review {citiesAiSuggestedKeywords.length} Cities Whitelist →
-                                            </button>
+                                {/* Right Pane: Real-time Cities Whitelist List */}
+                                <div className="w-[300px] flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#090d16] overflow-hidden">
+                                    <div className="p-4 border-b border-gray-100 dark:border-white/5">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Proposed Cities ({citiesAiSuggestedKeywords.length})</p>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                                        {citiesAiSuggestedKeywords.length === 0 ? (
+                                            <div className="text-center py-12 text-gray-400 text-xs font-medium italic">
+                                                No cities suggested yet. Start by entering a target country/region on the left.
+                                            </div>
+                                        ) : (
+                                            citiesAiSuggestedKeywords.map((kw, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 text-xs font-bold text-gray-700 dark:text-gray-300">
+                                                    <Globe className="w-3.5 h-3.5 opacity-40 text-indigo-500" />
+                                                    <span className="truncate">{kw}</span>
+                                                </div>
+                                            ))
                                         )}
                                     </div>
-                                )}
+
+                                    {/* Active AI Provider HUD */}
+                                    <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#0f172a] shrink-0">
+                                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-gray-400">
+                                            <span>Active Engine:</span>
+                                            {citiesAiProvider ? (
+                                                citiesAiProvider.includes('Ollama') ? (
+                                                    <span className="text-purple-500 flex items-center gap-1 animate-pulse">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {citiesAiProvider}
+                                                    </span>
+                                                ) : citiesAiProvider.includes('None') || citiesAiProvider.includes('Fallback') ? (
+                                                    <span className="text-amber-500 flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Fallback (Ollama Offline)
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-indigo-500 flex items-center gap-1 font-bold">
+                                                        <Sparkles className="w-3 h-3 fill-current" />
+                                                        {citiesAiProvider.split(' ')[0]} API
+                                                    </span>
+                                                )
+                                            ) : (
+                                                <span className="text-gray-500 italic">Waiting...</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -2838,11 +3101,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     if (next.has(kw)) next.delete(kw); else next.add(kw);
                                                     return next;
                                                 })}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                                                    citiesSelectedKeywords.has(kw)
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${citiesSelectedKeywords.has(kw)
                                                         ? 'bg-indigo-500 text-white border-indigo-400 shadow-md shadow-indigo-500/20'
                                                         : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-indigo-300'
-                                                }`}
+                                                    }`}
                                             >
                                                 {citiesSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
                                                 <Globe className="w-3 h-3 opacity-50" />
@@ -3044,7 +3306,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 return (
                     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-8 bg-slate-900/90 backdrop-blur-md">
                         <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col mt-10">
-                            
+
                             {/* Sticky Header */}
                             <div className="p-8 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] z-10">
                                 <div className="flex items-center gap-4">
@@ -3075,10 +3337,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                         </p>
                                     </div>
                                     {liveLead.external_url && (
-                                        <a 
-                                            href={liveLead.external_url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
+                                        <a
+                                            href={liveLead.external_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                             className="flex items-center gap-3 p-4 bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/30 hover:scale-[1.02] transition-transform"
                                         >
                                             <ExternalLink className="w-4 h-4" />

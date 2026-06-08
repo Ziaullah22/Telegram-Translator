@@ -464,18 +464,98 @@ def robust_json_extract(raw: str, array_key: str) -> tuple[list[str], str, bool]
     return [], "", False
 
 
-async def query_ai_service(messages: List[dict], system_prompt: str, array_key: str, temperature: float = 0.7) -> tuple[list[str], str, bool, bool]:
+async def make_proxied_post(session, url: str, json_data: dict, headers: dict, timeout: int, user_proxies: list) -> tuple[int, str]:
     """
-    Queries Gemini API if GEMINI_API_KEY is configured, else falls back to Groq, else falls back to Ollama.
-    Returns: (suggested_items, message, ai_used, ai_online)
+    Sends a POST request through the user's proxy pool, rotating to the next proxy on failure.
+    If user has no proxies, makes the request directly.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    import aiohttp
+    import random
+
+    if not user_proxies:
+        logger.info(f"No proxies configured in database pool. Making direct request to {url}...")
+        async with session.post(url, json=json_data, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+            body = await response.read()
+            return response.status, body.decode('utf-8', errors='ignore')
+
+    # Shuffle the list to randomize and distribute load
+    proxy_list = list(user_proxies)
+    random.shuffle(proxy_list)
+
+    last_err = None
+    for proxy in proxy_list:
+        p_host = proxy.get('host')
+        p_port = proxy.get('port')
+        p_user = proxy.get('username')
+        p_pass = proxy.get('password')
+        
+        proxy_url = f"http://{p_host}:{p_port}"
+        proxy_auth = None
+        if p_user:
+            proxy_auth = aiohttp.BasicAuth(p_user, p_pass or '')
+
+        try:
+            logger.info(f"🔄 Routing request to {url} via proxy {p_host}:{p_port}...")
+            async with session.post(
+                url,
+                json=json_data,
+                headers=headers,
+                proxy=proxy_url,
+                proxy_auth=proxy_auth,
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
+                body = await response.read()
+                return response.status, body.decode('utf-8', errors='ignore')
+        except Exception as err:
+            logger.warning(f"⚠️ Proxy connection failed for {p_host}:{p_port}: {err}. Trying next...")
+            last_err = err
+            continue
+
+    raise Exception(f"All {len(user_proxies)} proxies in pool failed. Last error: {last_err}")
+
+
+async def query_ai_service(messages: List[dict], system_prompt: str, array_key: str, temperature: float = 0.7, provider: Optional[str] = None, user_id: Optional[int] = None) -> tuple[list[str], str, bool, bool, str]:
+    """
+    Queries the selected provider (Gemini, Groq, OpenRouter, or local Ollama), or runs the waterfall fallback logic if provider is "auto" or None.
+    If user_id is provided, routes external requests through the user's proxy pool.
+    Returns: (suggested_items, message, ai_used, ai_online, api_provider)
     """
     import aiohttp
+    import json
     from app.core.config import settings
     import logging
     logger = logging.getLogger(__name__)
 
-    # 1. Try Gemini first if API key is set
-    if settings.gemini_api_key:
+    prov_lower = provider.lower().strip() if provider else "auto"
+
+    # Retrieve user proxies if user_id is provided
+    proxies = []
+    if user_id:
+        try:
+            from database import db
+            rows = await db.fetch(
+                "SELECT host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1",
+                user_id
+            )
+            proxies = [dict(r) for r in rows]
+            logger.info(f"Loaded {len(proxies)} proxies from pool for user {user_id}")
+        except Exception as db_err:
+            logger.warning(f"Failed to fetch user proxies: {db_err}")
+
+    # 🚨 Configuration validation for explicitly requested providers
+    if prov_lower == "gemini" and not settings.gemini_api_key:
+        return [], "⚠️ Gemini API key is missing from backend `.env`. Configure `GEMINI_API_KEY` to use Gemini.", False, False, "None"
+    if prov_lower == "groq" and not settings.groq_api_key:
+        return [], "⚠️ Groq API key is missing from backend `.env`. Configure `GROQ_API_KEY` to use Groq.", False, False, "None"
+    if prov_lower == "openrouter" and not settings.openrouter_api_key:
+        return [], "⚠️ OpenRouter API key is missing from backend `.env`. Configure `OPENROUTER_API_KEY` to use OpenRouter.", False, False, "None"
+    if prov_lower in ("huggingface", "hf") and not settings.huggingface_api_key:
+        return [], "⚠️ Hugging Face API key is missing from backend `.env`. Configure `HUGGINGFACE_API_KEY` to use Hugging Face.", False, False, "None"
+
+    # 1. Try Gemini
+    if prov_lower == "gemini" or (prov_lower == "auto" and settings.gemini_api_key):
         try:
             logger.info("Sending request to Gemini API (gemini-2.5-flash)...")
             gemini_contents = []
@@ -505,28 +585,33 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
             gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    gemini_url,
-                    json=payload,
+                status, raw_text = await make_proxied_post(
+                    session=session,
+                    url=gemini_url,
+                    json_data=payload,
                     headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(connect=5, total=15)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                        if suggested_items:
-                            return suggested_items, explanation_msg or f"Suggestions generated via Gemini!", True, True
-                        elif raw.strip():
-                            return [], raw[:500], False, True
-                    else:
-                        err_text = await response.text()
-                        logger.warning(f"Gemini API returned status {response.status}: {err_text}")
+                    timeout=15,
+                    user_proxies=proxies
+                )
+                if status == 200:
+                    data = json.loads(raw_text)
+                    raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                    if suggested_items:
+                        return suggested_items, explanation_msg or f"Suggestions generated via Gemini!", True, True, "Gemini API (gemini-2.5-flash)"
+                    elif raw.strip():
+                        return [], raw[:500], False, True, "Gemini API (gemini-2.5-flash)"
+                else:
+                    logger.warning(f"Gemini API returned status {status}: {raw_text}")
+                    if prov_lower != "auto":
+                        return [], f"❌ Gemini API Error (Status {status}): {raw_text[:500]}", False, True, "Gemini API"
         except Exception as gemini_err:
-            logger.warning(f"Failed to query Gemini API: {gemini_err}. Falling back to Groq...")
+            logger.warning(f"Failed to query Gemini API: {gemini_err}")
+            if prov_lower != "auto":
+                return [], f"❌ Failed to query Gemini API: {gemini_err}", False, False, "Gemini API"
 
-    # 2. Try Groq if API key is set
-    if settings.groq_api_key:
+    # 2. Try Groq
+    if prov_lower == "groq" or (prov_lower == "auto" and settings.groq_api_key):
         try:
             logger.info("Sending request to Groq API (llama-3.3-70b-versatile)...")
             groq_messages = []
@@ -550,28 +635,33 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    groq_url,
-                    json=payload,
+                status, raw_text = await make_proxied_post(
+                    session=session,
+                    url=groq_url,
+                    json_data=payload,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(connect=5, total=20)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                        if suggested_items:
-                            return suggested_items, explanation_msg or f"Suggestions generated via Groq!", True, True
-                        elif raw.strip():
-                            return [], raw[:500], False, True
-                    else:
-                        err_text = await response.text()
-                        logger.warning(f"Groq API returned status {response.status}: {err_text}")
+                    timeout=20,
+                    user_proxies=proxies
+                )
+                if status == 200:
+                    data = json.loads(raw_text)
+                    raw = data["choices"][0]["message"]["content"]
+                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                    if suggested_items:
+                        return suggested_items, explanation_msg or f"Suggestions generated via Groq!", True, True, "Groq API (llama-3.3-70b-versatile)"
+                    elif raw.strip():
+                        return [], raw[:500], False, True, "Groq API (llama-3.3-70b-versatile)"
+                else:
+                    logger.warning(f"Groq API returned status {status}: {raw_text}")
+                    if prov_lower != "auto":
+                        return [], f"❌ Groq API Error (Status {status}): {raw_text[:500]}", False, True, "Groq API"
         except Exception as groq_err:
-            logger.warning(f"Failed to query Groq API: {groq_err}. Falling back to OpenRouter...")
+            logger.warning(f"Failed to query Groq API: {groq_err}")
+            if prov_lower != "auto":
+                return [], f"❌ Failed to query Groq API: {groq_err}", False, False, "Groq API"
 
-    # 3. Try OpenRouter if API key is set
-    if settings.openrouter_api_key:
+    # 3. Try OpenRouter
+    if prov_lower == "openrouter" or (prov_lower == "auto" and settings.openrouter_api_key):
         try:
             logger.info("Sending request to OpenRouter API (google/gemini-2.5-flash)...")
             or_messages = []
@@ -598,54 +688,114 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    or_url,
-                    json=payload,
+                status, raw_text = await make_proxied_post(
+                    session=session,
+                    url=or_url,
+                    json_data=payload,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(connect=5, total=20)
+                    timeout=20,
+                    user_proxies=proxies
+                )
+                if status == 200:
+                    data = json.loads(raw_text)
+                    raw = data["choices"][0]["message"]["content"]
+                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                    if suggested_items:
+                        return suggested_items, explanation_msg or f"Suggestions generated via OpenRouter!", True, True, "OpenRouter API (gemini-2.5-flash)"
+                    elif raw.strip():
+                        return [], raw[:500], False, True, "OpenRouter API (gemini-2.5-flash)"
+                else:
+                    logger.warning(f"OpenRouter API returned status {status}: {raw_text}")
+                    if prov_lower != "auto":
+                        return [], f"❌ OpenRouter API Error (Status {status}): {raw_text[:500]}", False, True, "OpenRouter API"
+        except Exception as or_err:
+            logger.warning(f"Failed to query OpenRouter API: {or_err}")
+            if prov_lower != "auto":
+                return [], f"❌ Failed to query OpenRouter API: {or_err}", False, False, "OpenRouter API"
+
+    # 4. Try Hugging Face
+    if prov_lower in ("huggingface", "hf") or (prov_lower == "auto" and settings.huggingface_api_key):
+        try:
+            logger.info("Sending request to Hugging Face Router API...")
+            hf_messages = []
+            if system_prompt:
+                hf_messages.append({"role": "system", "content": system_prompt})
+            for m in messages:
+                if m.get("role") != "system":
+                    hf_messages.append(m)
+
+            hf_url = "https://router.huggingface.co/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {settings.huggingface_api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "Qwen/Qwen2.5-72B-Instruct",
+                "messages": hf_messages,
+                "temperature": temperature,
+                "max_tokens": 500
+            }
+
+            async with aiohttp.ClientSession() as session:
+                status, raw_text = await make_proxied_post(
+                    session=session,
+                    url=hf_url,
+                    json_data=payload,
+                    headers=headers,
+                    timeout=20,
+                    user_proxies=proxies
+                )
+                if status == 200:
+                    data = json.loads(raw_text)
+                    raw = data["choices"][0]["message"]["content"]
+                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                    if suggested_items:
+                        return suggested_items, explanation_msg or f"Suggestions generated via Hugging Face!", True, True, "Hugging Face API (Qwen2.5-72B)"
+                    elif raw.strip():
+                        return [], raw[:500], False, True, "Hugging Face API (Qwen2.5-72B)"
+                else:
+                    logger.warning(f"Hugging Face API returned status {status}: {raw_text}")
+                    if prov_lower != "auto":
+                        return [], f"❌ Hugging Face API Error (Status {status}): {raw_text[:500]}", False, True, "Hugging Face API"
+        except Exception as hf_err:
+            logger.warning(f"Failed to query Hugging Face API: {hf_err}")
+            if prov_lower != "auto":
+                return [], f"❌ Failed to query Hugging Face API: {hf_err}", False, False, "Hugging Face API"
+
+    # 5. Try Ollama
+    if prov_lower in ("gemma", "gemma4", "ollama") or prov_lower == "auto":
+        ollama_url = "http://localhost:11434"
+        try:
+            logger.info("Sending request to local Ollama (gemma4)...")
+            ollama_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{ollama_url}/api/chat",
+                    json={
+                        "model": "gemma4",
+                        "messages": ollama_messages,
+                        "stream": False,
+                        "options": {"temperature": temperature}
+                    },
+                    timeout=aiohttp.ClientTimeout(connect=5, total=90)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
+                        raw = data.get("message", {}).get("content", "{}")
                         suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
                         if suggested_items:
-                            return suggested_items, explanation_msg or f"Suggestions generated via OpenRouter!", True, True
+                            return suggested_items, explanation_msg or "Suggestions generated via local Ollama!", True, True, "Ollama (gemma4)"
                         elif raw.strip():
-                            return [], raw[:500], False, True
+                            return [], raw[:500], False, True, "Ollama (gemma4)"
                     else:
-                        err_text = await response.text()
-                        logger.warning(f"OpenRouter API returned status {response.status}: {err_text}")
-        except Exception as or_err:
-            logger.warning(f"Failed to query OpenRouter API: {or_err}. Falling back to Ollama...")
+                        if prov_lower != "auto":
+                            return [], f"❌ Local Ollama returned status {response.status}.", False, True, "Ollama"
+        except Exception as ollama_err:
+            logger.info(f"Ollama not reachable: {type(ollama_err).__name__}")
+            if prov_lower != "auto":
+                return [], f"❌ Local Ollama (gemma4) is offline or unreachable. Make sure you run `ollama serve` and installed gemma4 model.", False, False, "Ollama"
 
-    # 4. Fallback to Ollama
-    ollama_url = "http://localhost:11434"
-    try:
-        logger.info("Sending request to local Ollama (gemma4:e2b)...")
-        ollama_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": "gemma4:e2b",
-                    "messages": ollama_messages,
-                    "stream": False,
-                    "options": {"temperature": temperature}
-                },
-                timeout=aiohttp.ClientTimeout(connect=5, total=90)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    raw = data.get("message", {}).get("content", "{}")
-                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                    if suggested_items:
-                        return suggested_items, explanation_msg or "Suggestions generated via local Ollama!", True, True
-                    elif raw.strip():
-                        return [], raw[:500], False, True
-    except Exception as ollama_err:
-        logger.info(f"Ollama not reachable: {type(ollama_err).__name__}")
-
-    return [], "", False, False
+    return [], "", False, False, "None (Local Fallback)"
 
 
 class KeywordSuggestRequest(BaseModel):
@@ -653,6 +803,7 @@ class KeywordSuggestRequest(BaseModel):
     conversation_history: List[dict] = []  # [{role: "user"/"assistant", content: "..."}]
     user_message: str = ""
     count: int = 20  # How many keywords to suggest (10-100)
+    provider: Optional[str] = None
 
 @router.post("/suggest-keywords")
 async def suggest_keywords(
@@ -722,11 +873,13 @@ async def suggest_keywords(
     messages.append({"role": "user", "content": user_content})
 
     # 4. Try AI Service (Gemini/Ollama)
-    suggested_keywords, ai_message, ai_used, ai_online = await query_ai_service(
+    suggested_keywords, ai_message, ai_used, ai_online, api_provider = await query_ai_service(
         messages=messages,
         system_prompt=system_prompt,
         array_key="keywords",
-        temperature=0.7
+        temperature=0.7,
+        provider=req.provider,
+        user_id=current_user.user_id
     )
 
     # 5. SMART EXPANSION: If AI gave us keywords, but we need more to reach `count`, or if AI failed completely
@@ -744,6 +897,7 @@ async def suggest_keywords(
                 f"_(Gemma AI is offline — using built-in expansion engine. "
                 f"Run `ollama serve` for AI-powered conversation!)_"
             )
+            api_provider = "None (Local Fallback)"
 
     # 6. Deduplicate
     seen = set()
@@ -757,6 +911,7 @@ async def suggest_keywords(
     return {
         "keywords": clean_keywords[:count],
         "ai_message": ai_message,
+        "api_provider": api_provider,
         "proxy_count": proxy_count,
         "mode": mode,
         "time_estimate": time_estimate,
@@ -893,11 +1048,13 @@ async def suggest_bad_keywords(
     messages.append({"role": "user", "content": user_content})
 
     # 4. Try AI Service (Gemini/Ollama)
-    suggested_keywords, ai_message, ai_used, ai_online = await query_ai_service(
+    suggested_keywords, ai_message, ai_used, ai_online, api_provider = await query_ai_service(
         messages=messages,
         system_prompt=system_prompt,
         array_key="keywords",
-        temperature=0.7
+        temperature=0.7,
+        provider=req.provider,
+        user_id=current_user.user_id
     )
 
     # 5. SMART EXPANSION: If AI gave us keywords, but we need more to reach `count`, or if AI failed completely
@@ -915,6 +1072,7 @@ async def suggest_bad_keywords(
                 f"_(Gemma AI is offline — using built-in expansion engine. "
                 f"Run `ollama serve` for AI-powered conversation!)_"
             )
+            api_provider = "None (Local Fallback)"
 
     seen = set()
     clean_keywords = []
@@ -927,6 +1085,7 @@ async def suggest_bad_keywords(
     return {
         "keywords": clean_keywords[:count],
         "ai_message": ai_message,
+        "api_provider": api_provider,
         "assistant_message": {
             "role": "assistant",
             "content": ai_message
@@ -1061,10 +1220,11 @@ async def suggest_cities(
     suggested_cities = []
     ai_message = ""
     ai_used = False
+    api_provider = "None (Local Fallback)"
     # 🚀 AI BYPASS: Generating > 100 cities/suburbs takes too long for local LLMs and causes timeouts.
     # We bypass Ollama for counts > 100 and use the instant database fallback.
     if count <= 100:
-        suggested_cities, ai_message, ai_used, ai_online = await query_ai_service(
+        suggested_cities, ai_message, ai_used, ai_online, api_provider = await query_ai_service(
             messages=messages,
             system_prompt=system_prompt,
             array_key="cities",
@@ -1082,6 +1242,7 @@ async def suggest_cities(
                 f"_(Gemma AI is offline — using built-in expansion engine. "
                 f"Run `ollama serve` for AI-powered conversation!)_"
             )
+            api_provider = "None (Local Fallback)"
 
     seen = set()
     clean_cities = []
@@ -1094,6 +1255,7 @@ async def suggest_cities(
     return {
         "cities": clean_cities[:count],
         "ai_message": ai_message,
+        "api_provider": api_provider,
         "assistant_message": {
             "role": "assistant",
             "content": ai_message
