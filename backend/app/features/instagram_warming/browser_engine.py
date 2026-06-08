@@ -345,7 +345,17 @@ class InstagramBrowserEngine:
                 logger.info(f"💾 Memory Saved: Session cookies updated for @{account_data['username']}")
                 return result
             finally:
-                await browser.close()
+                try:
+                    await page.close()
+                except: pass
+                try:
+                    await context.close()
+                except: pass
+                try:
+                    await browser.close()
+                except: pass
+                import gc
+                gc.collect()
 
 
     async def run_anonymous_session(self, target_username: str, action_func: Callable, is_desktop: bool = False, proxy: dict = None, headless: bool = True):
@@ -414,6 +424,16 @@ class InstagramBrowserEngine:
                 result = await action_func(page, target_username)
                 return result
             finally:
-                await browser.close()
+                try:
+                    await page.close()
+                except: pass
+                try:
+                    await context.close()
+                except: pass
+                try:
+                    await browser.close()
+                except: pass
+                import gc
+                gc.collect()
             
 browser_engine = InstagramBrowserEngine()
