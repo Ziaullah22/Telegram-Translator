@@ -32,7 +32,7 @@ import {
     Hash,
     Send
 } from 'lucide-react';
-import { instagramAPI } from '../../services/api';
+import { instagramAPI, api } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 
 // 🕒 Time Formatter Helper for Ghost Accounts
@@ -78,7 +78,8 @@ const InstagramLeadGenerator: React.FC = () => {
         ai_model: string,
         bio_exclude_keywords: string,
         bio_cities_whitelist: string,
-        enable_ai_analysis: boolean
+        enable_ai_analysis: boolean,
+        ai_intent_filter: string
     }>({
         bio_keywords: '',
         min_followers: 0,
@@ -91,7 +92,8 @@ const InstagramLeadGenerator: React.FC = () => {
         ai_model: 'minimax-text-01',
         bio_exclude_keywords: '',
         bio_cities_whitelist: '',
-        enable_ai_analysis: true
+        enable_ai_analysis: true,
+        ai_intent_filter: ''
     });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -320,7 +322,7 @@ const InstagramLeadGenerator: React.FC = () => {
     useEffect(() => {
         // Load saved filter settings
         instagramAPI.getFilterSettings()
-            .then(s => setFilterSettings({
+            .then((s: any) => setFilterSettings({
                 bio_keywords: s.bio_keywords || '',
                 min_followers: s.min_followers || 0,
                 max_followers: s.max_followers || 0,
@@ -332,7 +334,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 ai_model: s.ai_model === 'ollama-local' ? 'gemma4' : (s.ai_model || 'minimax-text-01'),
                 bio_exclude_keywords: s.bio_exclude_keywords || '',
                 bio_cities_whitelist: s.bio_cities_whitelist || '',
-                enable_ai_analysis: s.enable_ai_analysis !== undefined ? s.enable_ai_analysis : true
+                enable_ai_analysis: s.enable_ai_analysis !== undefined ? s.enable_ai_analysis : true,
+                ai_intent_filter: s.ai_intent_filter || ''
             }))
             .catch(() => { });
     }, []);
@@ -1114,20 +1117,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                 const newVal = !filterSettings.enable_ai_analysis;
                                 setFilterSettings(p => ({ ...p, enable_ai_analysis: newVal }));
                                 try {
-                                    await instagramAPI.saveFilterSettings(
-                                        filterSettings.bio_keywords,
-                                        filterSettings.min_followers,
-                                        filterSettings.max_followers,
-                                        filterSettings.sample_hashes,
-                                        filterSettings.visual_niche,
-                                        filterSettings.minimax_api_key,
-                                        filterSettings.enable_ai_filter,
-                                        filterSettings.google_niche_filter,
-                                        filterSettings.ai_model,
-                                        filterSettings.bio_exclude_keywords,
-                                        filterSettings.bio_cities_whitelist,
-                                        newVal
-                                    );
+                                    await api.post('/instagram/filters/settings', {
+                                        ...filterSettings,
+                                        enable_ai_analysis: newVal
+                                    });
                                     setNotification({ msg: `AI Analysis turned ${newVal ? 'ON 🧠' : 'OFF 🛑'}`, type: 'success' });
                                 } catch {
                                     setNotification({ msg: 'Failed to update AI Analysis status.', type: 'alert' });
@@ -1915,6 +1908,23 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
                                         🧠 When ON, AI will automatically analyze your pending leads in the background, score them, and approve or reject them. When OFF, pending leads will wait.
                                     </p>
+
+                                    <div className="space-y-3 pt-2 animate-in fade-in duration-300">
+                                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                            Target Lead Intent / Qualification Criteria
+                                            <span className="px-1.5 py-0.5 bg-indigo-500 text-white rounded text-[8px]">New</span>
+                                        </label>
+                                        <textarea
+                                            rows={3}
+                                            placeholder="Describe the target business or profiles you want the AI to approve. E.g., 'Find vehicle wrapping shops, PPF studios, or vinyl wrap distributors, ignoring personal bloggers.'"
+                                            value={filterSettings.ai_intent_filter}
+                                            onChange={(e) => setFilterSettings(p => ({ ...p, ai_intent_filter: e.target.value }))}
+                                            className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-gray-400"
+                                        />
+                                        <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
+                                            💡 When sequential AI analysis runs, the AI will evaluate each profile against this intent. Leads that match are marked qualified (High Quality), and others are rejected (Low Quality).
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-4 p-6 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-3xl border border-indigo-500/10 mb-6">
@@ -1997,6 +2007,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4:e2b (Ollama / Local)</option>
                                                         <option value="qwen3.6" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">qwen3.6 (Ollama / Local)</option>
                                                         <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud / API Key Required)</option>
+                                                        <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Free Cloud APIs ──</option>
+                                                        <option value="gemini" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">✨ Gemini 2.5 Flash (Free / GEMINI_API_KEY)</option>
+                                                        <option value="groq" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">⚡ Groq Llama-3.3-70B (Free / GROQ_API_KEY)</option>
+                                                        <option value="openrouter" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🌐 OpenRouter Gemini Flash (Free / OPENROUTER_API_KEY)</option>
+                                                        <option value="huggingface" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🤗 HuggingFace Qwen-72B (Free / HUGGINGFACE_API_KEY)</option>
                                                     </select>
                                                 </div>
 
@@ -2137,20 +2152,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                     onClick={async () => {
                                         setIsSavingFilters(true);
                                         try {
-                                            await instagramAPI.saveFilterSettings(
-                                                filterSettings.bio_keywords,
-                                                filterSettings.min_followers,
-                                                filterSettings.max_followers,
-                                                filterSettings.sample_hashes,
-                                                filterSettings.visual_niche,
-                                                filterSettings.minimax_api_key,
-                                                filterSettings.enable_ai_filter,
-                                                filterSettings.google_niche_filter,
-                                                filterSettings.ai_model,
-                                                filterSettings.bio_exclude_keywords,
-                                                filterSettings.bio_cities_whitelist,
-                                                filterSettings.enable_ai_analysis
-                                            );
+                                            await api.post('/instagram/filters/settings', filterSettings);
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }
                                         finally { setIsSavingFilters(false); }

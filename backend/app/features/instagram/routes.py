@@ -365,6 +365,7 @@ class FilterSettingsRequest(BaseModel):
     bio_exclude_keywords: str = ""
     bio_cities_whitelist: str = ""
     enable_ai_analysis: bool = True
+    ai_intent_filter: str = ""
 
 @router.get("/filters/settings")
 async def get_filter_settings(current_user: TokenData = Depends(get_current_user)):
@@ -387,7 +388,8 @@ async def save_filter_settings(req: FilterSettingsRequest, current_user: TokenDa
         req.ai_model,
         req.bio_exclude_keywords,
         req.bio_cities_whitelist,
-        req.enable_ai_analysis
+        req.enable_ai_analysis,
+        req.ai_intent_filter
     )
 
 class ImageHashRequest(BaseModel):
@@ -559,7 +561,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
     # 1. Try Gemini
     if prov_lower == "gemini" or (prov_lower == "auto" and settings.gemini_api_key):
         try:
-            logger.info("Sending request to Gemini API (gemini-2.5-flash)...")
+            logger.info("Sending request to Gemini API (gemini-2.5-flash-lite)...")
             gemini_contents = []
             for m in messages:
                 role = m.get("role")
@@ -584,7 +586,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                     "parts": [{"text": system_prompt}]
                 }
 
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
             
             async with aiohttp.ClientSession() as session:
                 status, raw_text = await make_proxied_post(

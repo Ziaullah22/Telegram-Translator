@@ -29,16 +29,42 @@ EXAMPLES:
 JSON ONLY. START WITH '{'.
 """
 
-def get_lead_analysis_prompt(username, bio, followers, posts_summary=""):
+def get_lead_analysis_prompt(username, bio, followers, intent_description=""):
     bio_content = bio if (bio and len(bio) > 2) else "No bio provided."
     
+    if intent_description:
+        intent_clause = f"""
+CRITICAL CRITERIA / INTENT:
+- The user's target business/profile intent is: "{intent_description}"
+- You MUST evaluate this profile strictly against this target intent. If it does not match, set "quality" to "low" and keep the "intent_score" below 70.
+- If it matches the intent perfectly, set "quality" to "high" and "intent_score" to 80-100.
+- In the `strategy` field, you MUST explain exactly how the services, products, or keywords in this profile's bio match or do not match the target intent: "{intent_description}". Write a detailed, professional paragraph (3-5 sentences) providing the logical reasoning behind your decision.
+"""
+    else:
+        intent_clause = f"""
+CRITICAL RULES:
+- REJECT (Score 0-20): Personal profiles, students, employees (e.g. "Software Engineer at X", "Working at Y"). These are NOT leads.
+- ACCEPT (Score 80-100): People who SELL services (Coaches, Agency Owners, Freelancers, E-com brands).
+- BIO CLUE: If they don't have a "DM for [Service]" or an Email, they are likely PERSONAL.
+"""
+
     return f"""
-    {ANALYSIS_SYSTEM_PROMPT}
+You are an Instagram Lead Qualifier. Your goal is to determine if a profile matches the target intent.
 
-    INPUT:
-    Username: @{username}
-    Bio: {bio_content}
-    Followers: {followers}
+{intent_clause}
 
-    JSON OUTPUT:
-    """
+JSON FORMAT INSTRUCTIONS:
+- You must respond with a JSON object.
+- The `strategy` field MUST be a detailed, professional explanation (3-5 sentences) explaining exactly what the lead's profile is about, what services or business they run, and why they qualify or disqualify based on the target intent.
+- Include a field `quality` which must be "high" if they match the intent, or "low" if they do not match.
+- Include a field `intent_score` (0-100) representing how well they match the target criteria.
+- Include a field `niche` (brief description of their business niche/type).
+- Include a field `suggested_hook` (a personalized outreach message if quality is high, or "N/A" if quality is low).
+
+INPUT:
+Username: @{username}
+Bio: {bio_content}
+Followers: {followers}
+
+JSON OUTPUT ONLY. START WITH '{{':
+"""

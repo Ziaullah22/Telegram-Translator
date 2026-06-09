@@ -1318,7 +1318,7 @@ class InstagramService:
                 "username": username,
                 "bio": bio,
                 "followers": followers
-            }, model_choice=selected_model)
+            }, model_choice=selected_model, intent_description=settings.get('ai_intent_filter', ''), api_key=settings.get('minimax_api_key', ''))
 
             if ai_result and "error" not in ai_result:
                 ai_analysis.update(ai_result)
@@ -2377,6 +2377,7 @@ class InstagramService:
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_exclude_keywords TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_cities_whitelist TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS enable_ai_analysis BOOLEAN DEFAULT TRUE;
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS ai_intent_filter TEXT DEFAULT '';
             """)
             
             await db.execute("""
@@ -2449,6 +2450,8 @@ class InstagramService:
             # Handle default value if column is NULL in database
             if res.get('enable_ai_analysis') is None:
                 res['enable_ai_analysis'] = True
+            if res.get('ai_intent_filter') is None:
+                res['ai_intent_filter'] = ""
             return res
         return {
             "user_id": user_id, 
@@ -2463,17 +2466,18 @@ class InstagramService:
             "ai_model": "minimax-text-01",
             "bio_exclude_keywords": "",
             "bio_cities_whitelist": "",
-            "enable_ai_analysis": True
+            "enable_ai_analysis": True,
+            "ai_intent_filter": ""
         }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True, ai_intent_filter: str = ""):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, enable_ai_analysis = $13, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, enable_ai_analysis = $13, ai_intent_filter = $14, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:
