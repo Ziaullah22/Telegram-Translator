@@ -1004,10 +1004,19 @@ class InstagramService:
                     async with httpx.AsyncClient(timeout=20.0) as client:
                         for post in recent_posts[:2]:
                             try:
-                                res = await client.get(post['display_url'])
-                                if res.status_code == 200:
-                                    import base64
-                                    img_b64 = base64.b64encode(res.content).decode('utf-8')
+                                img_b64 = None
+                                # Prefer pre-captured b64 screenshot — avoids blocked Instagram CDN
+                                if isinstance(post, dict) and post.get('b64_data'):
+                                    logger.info("📸 Using pre-captured screenshot base64 for vision check.")
+                                    img_b64 = post['b64_data']
+                                elif isinstance(post, dict) and post.get('display_url'):
+                                    logger.info(f"🌐 Fetching post URL via HTTP: {post.get('display_url', '')[:60]}...")
+                                    res = await client.get(post['display_url'])
+                                    if res.status_code == 200:
+                                        import base64
+                                        img_b64 = base64.b64encode(res.content).decode('utf-8')
+                                
+                                if img_b64:
                                     vision_res = await instagram_ai.analyze_vision(img_b64, visual_niche)
                                     if vision_res.get('match'):
                                         reason = vision_res.get('reason', 'Visual match confirmed.')
@@ -1017,8 +1026,11 @@ class InstagramService:
                                         break
                                     else:
                                         logger.info(f"❌ AI Vision Mismatch: {vision_res.get('reason', '')}")
+                                else:
+                                    logger.warning(f"⚠️ No image data available for post (no b64_data or display_url)")
                             except Exception as e:
                                 logger.warning(f"⚠️ AI Vision post check failed: {e}")
+
                 
                 # Fallback to Math Hashing if AI didn't confirm (or wasn't used)
                 if not image_matched and target_hashes:
@@ -1113,40 +1125,326 @@ class InstagramService:
         return data
 
     async def analyze_lead(self, user_id: int, lead_id: int):
+        # 1. Fetch user proxies to rotate / check
+        proxies = []
+        try:
+            rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
+            proxies = [dict(r) for r in rows]
+        except Exception as p_err:
+            logger.warning(f"Failed to fetch proxies: {p_err}")
+
+        proxy = None
+        if proxies:
+            p_row = random.choice(proxies)
+            proxy = {
+                "host": p_row["host"],
+                "port": p_row["port"],
+                "p_user": p_row["username"],
+                "p_pass": p_row["password"]
+            }
+
+        # Step 1: Scrape & Pre-Filter
+        step1_res = await self.scrape_and_pre_filter_lead(user_id, lead_id, proxy=proxy)
+        if not step1_res.get("success"):
+            return {"error": "Analysis Failed", "status": "failed"}
+
+        status = step1_res.get("status")
+        if status == "pending_ai":
+            # Step 2: AI Analysis
+            step2_res = await self.run_sequential_ai_analysis(user_id, lead_id)
+            if step2_res.get("success"):
+                return {"success": True, "new_status": step2_res.get("new_status"), "source": "anonymous_playwright"}
+            else:
+                return {"error": "AI Analysis Failed", "status": "error"}
+        
+        return {"success": True, "new_status": status, "source": "anonymous_playwright"}
+
+    async def scrape_and_pre_filter_lead(self, user_id: int, lead_id: int, proxy: dict = None):
+        """
+        Step 1: Scrapes profile anonymously (using a proxy if provided) and runs non-AI pre-filters.
+        Sets status to 'pending_ai' if qualified, or 'rejected' if disqualified, or 'private'/'error'/'failed'.
+        """
         lead = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
         if not lead: return {"error": "Lead not found"}
         username = lead['instagram_username']
 
-        # 2. Strategy 2: Anonymous Playwright Extraction (No Account Fallback)
+        async def update_ui(status: str, action: str = None):
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": status,
+                    "current_action": action
+                }, user_id)
+            except: pass
+
+        await update_ui("analyzing", "Scraping profile details...")
+
         try:
-            logger.info(f"🕶️ Strategy 2: Attempting Anonymous Playwright Capture for @{username}...")
+            logger.info(f"🕶️ Phase 1 Scraping: Capturing @{username}...")
             result = await browser_engine.run_anonymous_session(
                 username,
                 self._perform_anonymous_analysis,
-                headless=False # 📺 Make analysis visible for verification
+                headless=False,
+                proxy=proxy
             )
 
-            if result and result.get('success'):
-                new_status = await self._qualify_and_update(lead_id, user_id, 
-                                                         result['bio'], 
-                                                         result['followers'], 
-                                                         result['following'], 
-                                                         result['full_name'], 
-                                                         result['posts'],
-                                                         is_private=result['is_private'])
-                
-                logger.info(f"✨ Anonymous Capture successful for @{username}!")
-                return {"success": True, "new_status": new_status, "source": "anonymous_playwright"}
-            
-            # 🚨 HARD ABORT
-            logger.warning(f"🚫 Profile @{username} analysis failed. Aborting.")
-            await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
-            return {"error": "Analysis Failed", "status": "error"}
+            if not result or not result.get('success'):
+                logger.warning(f"⚠️ Scraping failed for @{username}.")
+                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("failed", "Scraping failed")
+                return {"success": False, "status": "failed"}
+
+            bio = result.get('bio', '')
+            followers = result.get('followers', 0)
+            following = result.get('following', 0)
+            full_name = result.get('full_name', username)
+            posts = result.get('posts', [])
+            is_private = result.get('is_private', False)
+
+            # Not found check
+            not_found_phrases = [
+                'we are downloading the profile',
+                'downloading the profile. please wait',
+                'the page was not found',
+                'page was not found',
+                'profile not found',
+                'user not found',
+                'this account doesn\'t exist',
+                'no posts yet',
+                'account not found',
+                'sorry, this page isn\'t available',
+            ]
+            bio_lower = bio.lower()
+            if any(phrase in bio_lower for phrase in not_found_phrases):
+                logger.warning(f"🚫 Lead {lead_id} shows a 'not found' page. Marking as 'error'.")
+                await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("error", "Profile not found")
+                return {"success": True, "status": "error"}
+
+            # Safety check
+            if not bio and followers == 0 and following == 0:
+                logger.warning(f"⚠️ Lead {lead_id} has NO data. Marking as 'failed' for retry.")
+                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("failed", "No data scraped")
+                return {"success": False, "status": "failed"}
+
+            # Handle private profile immediately
+            if is_private:
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET status = 'private', bio = $1, follower_count = $2, following_count = $3, full_name = $4, recent_posts = '[]', is_private = TRUE, updated_at = NOW() 
+                    WHERE id = $5
+                """, bio, followers, following, full_name, lead_id)
+                logger.info(f"🔒 Lead {lead_id} marked as PRIVATE.")
+                await update_ui("private", "Private account")
+                return {"success": True, "status": "private"}
+
+            # Run non-AI filters
+            settings = await self.get_filter_settings(user_id)
+            is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
+
+            posts_json = json.dumps(posts or [])
+            if not is_qualified:
+                ai_analysis = {"rejection_reason": rejection_reason}
+                ai_data_json = json.dumps(ai_analysis)
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET status = 'rejected', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
+                        recent_posts = $5, is_private = FALSE, score = 0, data_audit_json = $6, updated_at = NOW() 
+                    WHERE id = $7
+                """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
+                logger.info(f"❌ Lead {lead_id} rejected by pre-filters: {rejection_reason}")
+                await update_ui("rejected", rejection_reason)
+                return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
+
+            # Passed pre-filters -> set status to pending_ai
+            await db.execute("""
+                UPDATE instagram_leads 
+                SET status = 'pending_ai', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
+                    recent_posts = $5, is_private = FALSE, updated_at = NOW() 
+                WHERE id = $6
+            """, bio, followers, following, full_name, posts_json, lead_id)
+            logger.info(f"⏳ Lead {lead_id} passed pre-filters. Marked as pending_ai.")
+            await update_ui("pending_ai", "Passed pre-filters, waiting for AI...")
+            return {"success": True, "status": "pending_ai"}
 
         except Exception as e:
-            logger.error(f"⚠️ Strategy 2 (Anonymous) failure for @{username}: {e}")
-            await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
-            return {"error": str(e), "status": "error"}
+            logger.error(f"⚠️ Scraping phase failed for @{username}: {e}")
+            await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+            await update_ui("failed", str(e))
+            return {"success": False, "status": "failed", "error": str(e)}
+
+    async def run_sequential_ai_analysis(self, user_id: int, lead_id: int):
+        """
+        Step 2: Processes AI analysis sequentially for a single lead.
+        Reads scraped data from the database, queries AI, runs visual verification, and marks as 'qualified' or 'rejected'.
+        """
+        lead = await db.fetchrow("SELECT instagram_username, bio, follower_count, following_count, full_name, recent_posts, is_private FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        if not lead: return {"error": "Lead not found"}
+
+        username = lead['instagram_username']
+        bio = lead['bio']
+        followers = lead['follower_count'] or 0
+        following = lead['following_count'] or 0
+        full_name = lead['full_name']
+        recent_posts = json.loads(lead['recent_posts'] or '[]')
+        is_private = lead['is_private']
+
+        async def update_ui(status: str, action: str = None):
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": status,
+                    "current_action": action
+                }, user_id)
+            except: pass
+
+        await update_ui("analyzing", "Running AI Intent Analysis...")
+
+        settings = await self.get_filter_settings(user_id)
+        is_qualified = True
+        rejection_reason = ""
+        ai_analysis = {}
+        score = 0
+
+        # 1. 🧠 DEEP AI ANALYSIS
+        selected_model = settings.get('ai_model') or 'gemma4'
+        logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
+        
+        try:
+            ai_result = await instagram_ai.analyze_lead_deep({
+                "username": username,
+                "bio": bio,
+                "followers": followers
+            }, model_choice=selected_model)
+
+            if ai_result and "error" not in ai_result:
+                ai_analysis.update(ai_result)
+                score = ai_result.get("intent_score", 0)
+                if ai_result.get("quality") == "high":
+                    score = max(score, 90)
+                logger.info(f"✨ [{selected_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+
+                if score < 70:
+                    rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
+                    logger.info(f"❌ AI Rejected lead: {rejection_reason}")
+                    is_qualified = False
+            else:
+                err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
+                logger.warning(f"⚠️ [{selected_model}] AI was unavailable or returned error: {err_msg}")
+        except Exception as ai_err:
+            logger.error(f"❌ AI analysis error: {ai_err}")
+
+        # 2. Visual Match Filter (Only if enabled)
+        visual_niche = settings.get('visual_niche', '')
+        target_hashes = settings.get('sample_hashes', [])
+        if is_qualified and (visual_niche or target_hashes):
+            if not recent_posts:
+                reason = "Visual scanner failed: Profile has no photos to scan."
+                logger.info(f"❌ {reason}")
+                is_qualified = False
+                ai_analysis['vision_reason'] = reason
+                rejection_reason = reason
+            else:
+                image_matched = False
+                import httpx
+                # Try AI Vision FIRST if niche is described
+                if visual_niche:
+                    await update_ui("analyzing", f"AI Vision: Scanning for '{visual_niche}'...")
+                    logger.info(f"👁️ AI VISION ACTIVE: Checking photos for '{visual_niche}'...")
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        for post in recent_posts[:2]:
+                            try:
+                                img_b64 = None
+                                if isinstance(post, dict) and post.get('b64_data'):
+                                    raw_b64 = post['b64_data']
+                                    # Guard: skip if base64 is too small (< 5000 chars ≈ 3.7KB) — likely a blurred placeholder
+                                    if len(raw_b64) < 5000:
+                                        logger.warning(f"  ⚠️ b64_data too small ({len(raw_b64)} chars) — skipping placeholder image")
+                                    else:
+                                        logger.info(f"📸 Using pre-captured screenshot base64 ({len(raw_b64)} chars) for vision check.")
+                                        img_b64 = raw_b64
+                                elif isinstance(post, dict) and post.get('display_url'):
+                                    logger.info(f"🌐 Fetching post URL via HTTP: {post.get('display_url', '')[:60]}...")
+                                    try:
+                                        res = await client.get(post['display_url'])
+                                        if res.status_code == 200 and len(res.content) > 5000:
+                                            import base64
+                                            img_b64 = base64.b64encode(res.content).decode('utf-8')
+                                        else:
+                                            logger.warning(f"  ⚠️ HTTP image too small or failed ({res.status_code})")
+                                    except Exception as fetch_err:
+                                        logger.warning(f"  ⚠️ HTTP fetch failed: {fetch_err}")
+
+                                if img_b64:
+                                    vision_res = await instagram_ai.analyze_vision(img_b64, visual_niche)
+                                    if vision_res.get('match'):
+                                        reason = vision_res.get('reason', 'Visual match confirmed.')
+                                        logger.info(f"✅ AI Vision Match: {reason}")
+                                        image_matched = True
+                                        ai_analysis['vision_reason'] = reason
+                                        break
+                                    else:
+                                        logger.info(f"❌ AI Vision Mismatch: {vision_res.get('reason', '')}")
+                                else:
+                                    logger.warning(f"  ⚠️ No usable image data for post — skipping")
+                            except Exception as e:
+                                logger.warning(f"⚠️ AI Vision post check failed: {e}")
+
+
+                # Fallback to Math Hashing if AI didn't confirm (or wasn't used)
+                if not image_matched and target_hashes:
+                    logger.info("🔍 Hashing Fallback: Checking structural match...")
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            for post in recent_posts:
+                                try:
+                                    res = await client.get(post['display_url'])
+                                    if res.status_code == 200:
+                                        post_hash = await asyncio.get_event_loop().run_in_executor(None, self._get_image_hash, res.content)
+                                        if post_hash:
+                                            import imagehash
+                                            p_hashes = post_hash.split('|')
+                                            for target_hash in target_hashes:
+                                                t_hashes = target_hash.split('|')
+                                                if len(p_hashes) == 2 and len(t_hashes) == 2:
+                                                    p_obj1, p_obj2 = imagehash.hex_to_hash(p_hashes[0]), imagehash.hex_to_hash(p_hashes[1])
+                                                    t_obj1, t_obj2 = imagehash.hex_to_hash(t_hashes[0]), imagehash.hex_to_hash(t_hashes[1])
+                                                    if (p_obj1 - t_obj1) <= 32 and (p_obj2 - t_obj2) <= 38:
+                                                        image_matched = True
+                                                        break
+                                                else:
+                                                    if (imagehash.hex_to_hash(p_hashes[0]) - imagehash.hex_to_hash(t_hashes[0])) <= 26:
+                                                        image_matched = True
+                                                        break
+                                except: pass
+                                if image_matched: break
+                    except: pass
+
+                if not image_matched:
+                    reason = "No photos matched the target criteria"
+                    logger.info(f"❌ Visual Check rejected lead: {reason}")
+                    is_qualified = False
+                    ai_analysis['vision_reason'] = reason
+                    rejection_reason = f"Visual check failed: {reason}"
+
+        if not is_qualified and rejection_reason:
+            ai_analysis['rejection_reason'] = rejection_reason
+
+        new_status = 'qualified' if is_qualified else 'rejected'
+        ai_data_json = json.dumps(ai_analysis)
+
+        logger.info(f"💾 [DB] Saving Lead {lead_id} with AI results. Status: {new_status.upper()}")
+        await db.execute("""
+            UPDATE instagram_leads 
+            SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
+            WHERE id = $4
+        """, new_status, score, ai_data_json, lead_id)
+
+        await update_ui(new_status, "Analysis Complete")
+        return {"success": True, "new_status": new_status}
 
     async def _perform_anonymous_analysis(self, page, username: str):
         """
@@ -1254,14 +1552,64 @@ class InstagramService:
             bio_match = re.search(r'<meta property="og:description" content="([^"]+)"', content)
             if bio_match: bio = bio_match.group(1)
             
-            # 4. Scrape Posts (Grid check)
+            # 4. Scrape Posts (Grid check) + capture screenshots for AI vision
             recent_posts = []
             post_links = await page.query_selector_all('a[href*="/p/"]')
-            for link in post_links[:6]: # Last 6 posts
-                href = await link.get_attribute('href')
-                if href: recent_posts.append({"url": f"https://www.instagram.com{href}"})
+            logger.info(f"📸 Found {len(post_links)} post links. Capturing thumbnails...")
             
-            logger.info(f"✅ Scraped: @{username} | {followers} Followers | {len(recent_posts)} Posts")
+            # Wait for grid images to load (Instagram lazy-loads them)
+            try:
+                await page.wait_for_load_state('networkidle', timeout=8000)
+            except:
+                pass  # Continue even if networkidle times out
+            
+            for link in post_links[:6]:  # Last 6 posts
+                try:
+                    href = await link.get_attribute('href')
+                    if not href:
+                        continue
+                    
+                    post_url = f"https://www.instagram.com{href}"
+                    post_entry = {"url": post_url}
+                    
+                    # Try to get the image element inside this link and screenshot it
+                    try:
+                        img_el = await link.query_selector('img')
+                        if img_el:
+                            # Get the src URL as display_url
+                            src = await img_el.get_attribute('src')
+                            if src:
+                                post_entry['display_url'] = src
+                            
+                            # ✅ CHECK: Only screenshot if the image is actually loaded (naturalWidth > 50px)
+                            natural_width = await img_el.evaluate('el => el.naturalWidth')
+                            if not natural_width or natural_width < 50:
+                                # Image not loaded yet — wait a moment and re-check
+                                logger.info(f"  ⏳ Image not loaded yet (naturalWidth={natural_width}), waiting...")
+                                await asyncio.sleep(2)
+                                natural_width = await img_el.evaluate('el => el.naturalWidth')
+                            
+                            if natural_width and natural_width >= 50:
+                                # Take a screenshot of this specific image element
+                                img_bytes = await img_el.screenshot(type='jpeg', quality=75)
+                                # 5000 bytes minimum — anything smaller is a blurred placeholder
+                                if img_bytes and len(img_bytes) > 5000:
+                                    import base64
+                                    post_entry['b64_data'] = base64.b64encode(img_bytes).decode('utf-8')
+                                    logger.info(f"  ✅ Post screenshot captured ({len(img_bytes)} bytes, {natural_width}px wide)")
+                                else:
+                                    logger.warning(f"  ⚠️ Screenshot too small ({len(img_bytes) if img_bytes else 0} bytes) — skipped (likely placeholder)")
+                            else:
+                                logger.warning(f"  ⚠️ Image did not load (naturalWidth={natural_width}) — skipped")
+                    except Exception as img_err:
+                        logger.warning(f"  ⚠️ Failed to screenshot post img: {img_err}")
+                    
+                    recent_posts.append(post_entry)
+                except Exception as link_err:
+                    logger.warning(f"  ⚠️ Failed to process post link: {link_err}")
+            
+            logger.info(f"✅ Scraped: @{username} | {followers} Followers | {len(recent_posts)} Posts (with {sum(1 for p in recent_posts if p.get('b64_data'))} screenshots)")
+
             
             return {
                 "success": True,
@@ -1313,10 +1661,13 @@ class InstagramService:
         query = f"SELECT * FROM instagram_leads{where_clause}"
         query += f""" ORDER BY (
             CASE 
-                WHEN status IN ('analyzed', 'qualified') THEN 0
-                WHEN status IN ('harvested', 'vetted') THEN 1 
-                WHEN source != 'network_expansion' THEN 2 
-                ELSE 3 
+                WHEN status IN ('qualified', 'analyzed', 'vetted', 'harvested') THEN 0
+                WHEN status IN ('rejected', 'discarded') THEN 1
+                WHEN status = 'private' THEN 2
+                WHEN status = 'failed' THEN 3
+                WHEN status = 'pending_ai' THEN 4
+                WHEN status = 'discovered' THEN 5
+                ELSE 6
             END) ASC, updated_at DESC, created_at DESC LIMIT {limit} OFFSET {offset}"""
         rows = await db.fetch(query, *params)
         leads = []
@@ -2025,6 +2376,7 @@ class InstagramService:
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'minimax-text-01';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_exclude_keywords TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_cities_whitelist TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS enable_ai_analysis BOOLEAN DEFAULT TRUE;
             """)
             
             await db.execute("""
@@ -2039,14 +2391,64 @@ class InstagramService:
                   ADD COLUMN IF NOT EXISTS proxy TEXT,
                   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             """)
+
+            # Start global sequential AI loop if not already started
+            if not hasattr(self, 'global_ai_task') or self.global_ai_task.done():
+                self.global_ai_task = asyncio.create_task(self.global_ai_analysis_loop())
+                logger.info("🚀 Global Sequential AI Task created.")
         except Exception as e:
             logger.warning(f"Settings table init: {e}")
+
+    async def global_ai_analysis_loop(self):
+        """🧠 GLOBAL AI ANALYSIS RUNNER: Automatically processes pending_ai leads for users who have enable_ai_analysis ON."""
+        logger.info("🧠 Global Sequential AI Analysis Loop started...")
+        while True:
+            try:
+                # Fetch the oldest pending_ai lead for users who have enable_ai_analysis = TRUE
+                pending_lead = await db.fetchrow("""
+                    SELECT l.id, l.user_id 
+                    FROM instagram_leads l
+                    JOIN instagram_filter_settings s ON l.user_id = s.user_id
+                    WHERE l.status = 'pending_ai' AND COALESCE(s.enable_ai_analysis, TRUE) = TRUE
+                    ORDER BY l.updated_at ASC LIMIT 1
+                """)
+                if pending_lead:
+                    lead_id = pending_lead["id"]
+                    user_id = pending_lead["user_id"]
+                    logger.info(f"🧠 [Global AI] Processing pending lead {lead_id} for user {user_id}...")
+                    
+                    try:
+                        await manager.send_personal_message({
+                            "type": "auto_analyze_started",
+                            "lead_id": lead_id
+                        }, user_id)
+                    except: pass
+
+                    try:
+                        await self.run_sequential_ai_analysis(user_id, lead_id)
+                    except Exception as e:
+                        logger.error(f"Error in global AI analysis for lead {lead_id}: {e}")
+                    finally:
+                        try:
+                            await manager.send_personal_message({
+                                "type": "auto_analyze_finished",
+                                "lead_id": lead_id
+                            }, user_id)
+                        except: pass
+                else:
+                    await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"Error in global AI analysis loop: {e}")
+                await asyncio.sleep(5)
 
     async def get_filter_settings(self, user_id: int):
         row = await db.fetchrow("SELECT * FROM instagram_filter_settings WHERE user_id = $1", user_id)
         if row:
             res = dict(row)
             res['sample_hashes'] = json.loads(res.get('sample_hashes') or '[]')
+            # Handle default value if column is NULL in database
+            if res.get('enable_ai_analysis') is None:
+                res['enable_ai_analysis'] = True
             return res
         return {
             "user_id": user_id, 
@@ -2060,17 +2462,18 @@ class InstagramService:
             "google_niche_filter": "",
             "ai_model": "minimax-text-01",
             "bio_exclude_keywords": "",
-            "bio_cities_whitelist": ""
+            "bio_cities_whitelist": "",
+            "enable_ai_analysis": True
         }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = ""):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, enable_ai_analysis = $13, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:
@@ -2091,6 +2494,48 @@ class InstagramService:
             base64_img = base64_img.split(',')[1]
         content = base64.b64decode(base64_img)
         return self._get_image_hash(content)
+
+    def _check_non_ai_filters(self, bio: str, followers: int, full_name: str, username: str, settings: dict) -> tuple[bool, str]:
+        """
+        Runs all non-AI filtering rules (Followers range, Exclude keywords, Whitelisted cities, Include keywords).
+        Returns (is_qualified, rejection_reason).
+        """
+        # 1. Follower Count Match
+        if settings.get('min_followers', 0) > 0 and followers < settings['min_followers']:
+            return False, f"Follower check failed: {followers} followers is below the minimum requirement of {settings['min_followers']}."
+        if settings.get('max_followers', 0) > 0 and followers > settings['max_followers']:
+            return False, f"Follower check failed: {followers} followers is above the maximum limit of {settings['max_followers']}."
+
+        # 2. Exclude Bio Keyword Filter (Block list)
+        if bio:
+            bio_exclude = settings.get('bio_exclude_keywords', '')
+            if bio_exclude and bio_exclude.strip():
+                exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
+                bio_lower = bio.lower()
+                matched_kws = [kw for kw in exclude_kws if kw in bio_lower]
+                if matched_kws:
+                    return False, f"Bio contains a blacklisted keyword: '{matched_kws[0]}'."
+
+        # 3. Cities Whitelist Filter (String check only, no AI)
+        bio_cities = settings.get('bio_cities_whitelist', '')
+        if bio_cities and bio_cities.strip():
+            cities_list = [c.strip().lower() for c in bio_cities.split(',') if c.strip()]
+            username_lower = (username or '').lower()
+            full_name_lower = (full_name or '').lower()
+            bio_lower_city = (bio or '').lower()
+
+            city_found_fast = any(
+                city in bio_lower_city or city in full_name_lower or city in username_lower
+                for city in cities_list
+            )
+            if not city_found_fast:
+                return False, "Location check failed: The profile does not match any city on your whitelist."
+
+        # 4. Bio Keyword Match (Booster / Allow list)
+        if not self._check_bio_keywords(bio, settings.get('bio_keywords', '')):
+            return False, "Keyword check failed: Profile bio does not contain any of your target search keywords."
+
+        return True, ""
 
     def _check_bio_keywords(self, bio: str, keywords_raw: str) -> bool:
         """Returns True if lead passes keyword filter (or no filter set)."""
@@ -2164,15 +2609,30 @@ class InstagramService:
         return True
 
     async def _analysis_worker(self, user_id: int):
-        """🚀 THE AUTO-PILOT WORKER: Scans leads and applies bio/follower filters"""
+        """🚀 THE AUTO-PILOT WORKER: Scans leads in parallel and applies AI filters sequentially."""
         logger.info(f"Auto-Pilot Analysis Worker started for User {user_id}")
         self.workers[user_id] = True
-        
-        try:
-            while self.workers.get(user_id):
-                # 1. Fetch filter settings for this user
-                settings = await self.get_filter_settings(user_id)
 
+        try:
+            # 1. Fetch user proxies to configure concurrency
+            proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
+            proxies = [dict(r) for r in proxy_rows]
+
+            # 10 max parallel windows, or proxy pool size. Default to 1 if no proxies to prevent local IP ban.
+            concurrency = max(1, min(10, len(proxies))) if proxies else 1
+            logger.info(f"Setting parallel scraping concurrency to {concurrency} (proxies: {len(proxies)})")
+
+            sem = asyncio.Semaphore(concurrency)
+            active_tasks = set()
+
+            async def sem_scrape(lead_id, proxy_to_use):
+                async with sem:
+                    try:
+                        await self.scrape_and_pre_filter_lead(user_id, lead_id, proxy=proxy_to_use)
+                    except Exception as err:
+                        logger.error(f"Error in parallel scrape for lead {lead_id}: {err}")
+
+            while self.workers.get(user_id):
                 # 🚀 SELF-HEALING: Auto-Reset rate limits after a 12-hour cool-down!
                 await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE user_id = $1 AND status = 'rate_limited' AND last_used_at < NOW() - INTERVAL '12 hours'", user_id)
 
@@ -2186,63 +2646,73 @@ class InstagramService:
                 if next_in_queue:
                     logger.info(f"🛰️ Priority Logic: Handing over to Queued Surge for lead {next_in_queue['id']}")
                     await self.harvest_lead_network(user_id, next_in_queue['id'], force_priority=True)
-                    # After the surge finishes, restart the loop to check for more queued items!
                     continue
 
-                # 2. Peek for the NEXT discovered lead
-                lead = await db.fetchrow("""
-                    SELECT id FROM instagram_leads 
-                    WHERE user_id = $1 AND status = 'discovered' 
-                    ORDER BY created_at DESC LIMIT 1
-                """, user_id)
-                
-                if not lead:
-                    logger.info(f"No more leads to analyze for User {user_id}. Auto-Pilot Resting. 😴")
-                    # 🛰️ REAL-TIME UI SYNC: Inform the frontend that the mission is complete!
-                    try:
-                        await manager.send_personal_message({
-                            "type": "auto_analyze_stopped",
-                            "status": "completed",
-                            "message": "🏁 Mission Complete: All leads have been analyzed!"
-                        }, user_id)
-                    except: pass
-                    break
-                
-                # 3. PERFORM DEEP ANALYSIS
-                logger.info(f"Auto-Pilot Analysis: Processing Lead ID {lead['id']}...")
+                # Clean up completed scraping tasks
+                active_tasks = {t for t in active_tasks if not t.done()}
+
+                # Clean / Refresh proxy list occasionally to reflect working/added proxies
                 try:
-                    # 🛰️ VISIBILITY SYNC: Tell the UI exactly which lead we are working on!
-                    try:
-                        await manager.send_personal_message({
-                            "type": "auto_analyze_started",
-                            "lead_id": lead['id']
-                        }, user_id)
-                    except: pass
+                    proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
+                    proxies = [dict(r) for r in proxy_rows]
+                except: pass
 
-                    # analyze_lead now handles EVERYTHING: Info, Visuals, and Qualification rules.
-                    result = await self.analyze_lead(user_id, lead['id'])
+                # --- STEP 1: PARALLEL SCRAPER INJECTION ---
+                # Check if we can start more parallel scraping tasks
+                if len(active_tasks) < concurrency:
+                    slots_available = concurrency - len(active_tasks)
+                    # Peek for the NEXT discovered leads
+                    leads_to_scrape = await db.fetch("""
+                        SELECT id FROM instagram_leads 
+                        WHERE user_id = $1 AND status = 'discovered' 
+                        ORDER BY created_at DESC LIMIT $2
+                    """, user_id, slots_available)
+
+                    for l_row in leads_to_scrape:
+                        lead_id = l_row["id"]
+                        
+                        # Select proxy
+                        proxy_to_use = None
+                        if proxies:
+                            p_row = random.choice(proxies)
+                            proxy_to_use = {
+                                "host": p_row["host"],
+                                "port": p_row["port"],
+                                "p_user": p_row["username"],
+                                "p_pass": p_row["password"]
+                            }
+
+                        # Mark as analyzing/queued in UI immediately
+                        try:
+                            await manager.send_personal_message({
+                                "type": "auto_analyze_started",
+                                "lead_id": lead_id
+                            }, user_id)
+                        except: pass
+
+                        # Create and run task
+                        task = asyncio.create_task(sem_scrape(lead_id, proxy_to_use))
+                        active_tasks.add(task)
+
+                # If no active scraping tasks are running, no discovered leads left, and no pending_ai leads left, we are done!
+                if not active_tasks:
+                    has_more_discovered = await db.fetchval("SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'discovered')", user_id)
+                    has_more_pending_ai = await db.fetchval("SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'pending_ai')", user_id)
                     
-                    if "error" in result:
-                        logger.error(f"Auto-Pilot Lead {lead['id']} failed: {result['error']}. Skipping...")
-                        # 🛡️ PROTECT THE QUEUE: Move failed leads to 'failed' status so they don't block the worker!
-                        await db.execute("UPDATE instagram_leads SET status = 'failed' WHERE id = $1", lead['id'])
-                    else:
-                        status = result.get("new_status", "analyzed")
-                        logger.info(f"✨ Lead {lead['id']} finished with status: {status.upper()}")
+                    if not has_more_discovered and not has_more_pending_ai:
+                        logger.info(f"No more leads to analyze for User {user_id}. Auto-Pilot Resting. 😴")
+                        try:
+                            await manager.send_personal_message({
+                                "type": "auto_analyze_stopped",
+                                "status": "completed",
+                                "message": "🏁 Mission Complete: All leads have been analyzed!"
+                            }, user_id)
+                        except: pass
+                        break
 
-                except Exception as e:
-                    logger.error(f"Auto-Pilot error on Lead {lead['id']}: {e}")
-                finally:
-                    # 🏁 RELEASE UI LOCK: Lead is done!
-                    try:
-                        await manager.send_personal_message({
-                            "type": "auto_analyze_finished",
-                            "lead_id": lead['id']
-                        }, user_id)
-                    except: pass
-                
-                # No inter-lead nap: move immediately to next lead
-                
+                # Sleep a tiny bit to prevent pegging CPU in while loop
+                await asyncio.sleep(0.5)
+
         except Exception as e:
             logger.error(f"Critical Auto-Pilot Worker failure: {e}")
         finally:
@@ -2683,40 +3153,73 @@ class InstagramService:
                 await page.evaluate("window.scrollBy(0, 600)")
                 await asyncio.sleep(2)
 
-                # ── STEP 4: Extract Posts ──
+                # ── STEP 4: Extract Posts with Native Screenshots ──
                 profile_img_src = await page.evaluate("""() =>
                     document.querySelector('img.profile-pic, img.avatar, .profile-image img, .user-avatar img')?.src || ""
                 """)
 
-                posts_data = await page.evaluate(f"""() => {{
-                    const posts = [];
-                    const seenUrls = new Set();
-                    const profileImgSrc = "{profile_img_src}";
+                posts_data = []
+                seen_srcs = set()
+                img_selectors = [
+                    '.post img', '.media img', '.grid img',
+                    'article img', '.item img',
+                    '[class*="post"] img', '[class*="media"] img',
+                    'img[src*="cdninstagram"]'
+                ]
 
-                    const imgSelectors = [
-                        '.post img', '.media img', '.grid img',
-                        'article img', '.item img',
-                        '[class*="post"] img', '[class*="media"] img',
-                        'img[src*="cdninstagram"]'
-                    ];
+                # Nudge again to make sure loaded
+                await page.evaluate("window.scrollBy(0, 300)")
+                await asyncio.sleep(1)
 
-                    for (const sel of imgSelectors) {{
-                        document.querySelectorAll(sel).forEach(img => {{
-                            if (posts.length >= 3) return;
-                            if (!img.src || seenUrls.has(img.src)) return;
-                            if (img.src === profileImgSrc) return;
-                            if (img.naturalWidth < 100 || img.naturalHeight < 100) return;
+                logger.info("📸 Screenshotting posts natively to capture exact pixels...")
+                for sel in img_selectors:
+                    if len(posts_data) >= 3:
+                        break
+                    try:
+                        elements = await page.query_selector_all(sel)
+                        for el in elements:
+                            if len(posts_data) >= 3:
+                                break
                             
-                            const parent = img.closest('[class*="post"], article, [class*="media"], li');
-                            if (parent && parent.querySelector('video, [class*="video"], svg[aria-label*="Video"]')) return;
+                            src = await el.get_attribute('src')
+                            if not src or src in seen_srcs or src == profile_img_src:
+                                continue
+                                
+                            # Check size in browser
+                            box = await el.bounding_box()
+                            if not box or box['width'] < 60 or box['height'] < 60:
+                                continue
+                                
+                            # Check if video
+                            is_video = await page.evaluate("""(img) => {
+                                const parent = img.closest('[class*="post"], article, [class*="media"], li');
+                                return !!(parent && parent.querySelector('video, [class*="video"], svg[aria-label*="Video"]'));
+                            }""", el)
+                            if is_video:
+                                continue
                             
-                            posts.push({{ display_url: img.src, caption: "" }});
-                            seenUrls.add(img.src);
-                        }});
-                        if (posts.length >= 3) break;
-                    }}
-                    return posts;
-                }}""")
+                            try:
+                                # Native Playwright screenshot of the image element
+                                img_bytes = await el.screenshot(type="jpeg", timeout=4000)
+                                import base64
+                                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                                posts_data.append({
+                                    "display_url": src,
+                                    "caption": "",
+                                    "b64_data": img_b64
+                                })
+                                seen_srcs.add(src)
+                                logger.info(f"✅ Successfully screenshotted post image: {src[:50]}...")
+                            except Exception as ss_err:
+                                logger.warning(f"Screenshot failed for {src[:50]}: {ss_err}")
+                                # Fallback to URL-only if screenshot fails
+                                posts_data.append({
+                                    "display_url": src,
+                                    "caption": ""
+                                })
+                                seen_srcs.add(src)
+                    except Exception as e:
+                        logger.warning(f"Error checking selector {sel}: {e}")
 
                 def parse_count(txt):
                     if not txt: return 0

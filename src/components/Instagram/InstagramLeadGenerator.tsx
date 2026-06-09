@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Instagram,
     Search,
@@ -55,6 +55,7 @@ const getDisplayEngineName = (provider?: string) => {
 };
 
 const InstagramLeadGenerator: React.FC = () => {
+    const fetchRequestRef = useRef(0);
     const [leads, setLeads] = useState<any[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -76,7 +77,8 @@ const InstagramLeadGenerator: React.FC = () => {
         google_niche_filter: string,
         ai_model: string,
         bio_exclude_keywords: string,
-        bio_cities_whitelist: string
+        bio_cities_whitelist: string,
+        enable_ai_analysis: boolean
     }>({
         bio_keywords: '',
         min_followers: 0,
@@ -88,7 +90,8 @@ const InstagramLeadGenerator: React.FC = () => {
         google_niche_filter: '',
         ai_model: 'minimax-text-01',
         bio_exclude_keywords: '',
-        bio_cities_whitelist: ''
+        bio_cities_whitelist: '',
+        enable_ai_analysis: true
     });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -209,7 +212,8 @@ const InstagramLeadGenerator: React.FC = () => {
         });
     }, [socketOnMessage]);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        const requestId = ++fetchRequestRef.current;
         try {
             setIsLoading(true);
             const [leadsRes, statsData, accountsData, proxiesData] = await Promise.all([
@@ -223,12 +227,18 @@ const InstagramLeadGenerator: React.FC = () => {
                 instagramAPI.getAccounts(),
                 instagramAPI.getProxies()
             ]);
-            if (leadsRes && Array.isArray(leadsRes)) {
-                setLeads(leadsRes);
-                setTotalLeadsCount(leadsRes.length);
-            } else if (leadsRes && Array.isArray(leadsRes.leads)) {
+            
+            if (requestId !== fetchRequestRef.current) {
+                return; // Stale request — a newer one is in flight, discard this
+            }
+
+            if (leadsRes && Array.isArray(leadsRes.leads)) {
                 setLeads(leadsRes.leads);
                 setTotalLeadsCount(typeof leadsRes.total === 'number' ? leadsRes.total : leadsRes.leads.length);
+            } else if (leadsRes && Array.isArray(leadsRes)) {
+                // Fallback: plain array (shouldn't happen with current backend)
+                setLeads(leadsRes);
+                setTotalLeadsCount((leadsRes as any[]).length);
             } else {
                 setLeads([]);
                 setTotalLeadsCount(0);
@@ -239,9 +249,11 @@ const InstagramLeadGenerator: React.FC = () => {
         } catch (error) {
             console.error('Failed to fetch Instagram data:', error);
         } finally {
-            setIsLoading(false);
+            if (requestId === fetchRequestRef.current) {
+                setIsLoading(false);
+            }
         }
-    };
+    }, [currentPage, pageSize, filterStatus, searchQuery]);
 
     const { onMessage } = useSocket();
 
@@ -300,10 +312,10 @@ const InstagramLeadGenerator: React.FC = () => {
         setCurrentPage(1);
     }, [filterStatus, searchQuery]);
 
-    // Refetch data when page size, active page, filter status, or search query changes
+    // Refetch data whenever fetchData identity changes (i.e. when any of its deps change)
     useEffect(() => {
         fetchData();
-    }, [currentPage, pageSize, filterStatus, searchQuery]);
+    }, [fetchData]);
 
     useEffect(() => {
         // Load saved filter settings
@@ -319,7 +331,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 google_niche_filter: s.google_niche_filter || '',
                 ai_model: s.ai_model === 'ollama-local' ? 'gemma4' : (s.ai_model || 'minimax-text-01'),
                 bio_exclude_keywords: s.bio_exclude_keywords || '',
-                bio_cities_whitelist: s.bio_cities_whitelist || ''
+                bio_cities_whitelist: s.bio_cities_whitelist || '',
+                enable_ai_analysis: s.enable_ai_analysis !== undefined ? s.enable_ai_analysis : true
             }))
             .catch(() => { });
     }, []);
@@ -1046,6 +1059,8 @@ const InstagramLeadGenerator: React.FC = () => {
     const getStatusStyle = (status: string) => {
         switch (status) {
             case 'discovered': case 'queued': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+            case 'pending_ai': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse';
+            case 'private': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
             case 'analyzed': case 'qualified': case 'vetted': case 'harvested': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
             case 'rejected': case 'discarded': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
             case 'contacted': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
@@ -1093,6 +1108,38 @@ const InstagramLeadGenerator: React.FC = () => {
                         >
                             <Play className={`w-4 h-4 ${isAutoPilotRunning ? 'fill-current' : 'group-hover:fill-green-500'}`} />
                             {isAutoPilotRunning ? 'Scanning...' : 'Auto-Pilot Mode'}
+                        </button>
+                        <button
+                            onClick={async () => {
+                                const newVal = !filterSettings.enable_ai_analysis;
+                                setFilterSettings(p => ({ ...p, enable_ai_analysis: newVal }));
+                                try {
+                                    await instagramAPI.saveFilterSettings(
+                                        filterSettings.bio_keywords,
+                                        filterSettings.min_followers,
+                                        filterSettings.max_followers,
+                                        filterSettings.sample_hashes,
+                                        filterSettings.visual_niche,
+                                        filterSettings.minimax_api_key,
+                                        filterSettings.enable_ai_filter,
+                                        filterSettings.google_niche_filter,
+                                        filterSettings.ai_model,
+                                        filterSettings.bio_exclude_keywords,
+                                        filterSettings.bio_cities_whitelist,
+                                        newVal
+                                    );
+                                    setNotification({ msg: `AI Analysis turned ${newVal ? 'ON 🧠' : 'OFF 🛑'}`, type: 'success' });
+                                } catch {
+                                    setNotification({ msg: 'Failed to update AI Analysis status.', type: 'alert' });
+                                }
+                            }}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${filterSettings.enable_ai_analysis
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 animate-pulse'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-indigo-500'
+                                }`}
+                        >
+                            <Brain className={`w-4 h-4 ${filterSettings.enable_ai_analysis ? 'fill-current' : ''}`} />
+                            {filterSettings.enable_ai_analysis ? 'AI Analysis ON 🧠' : 'AI Analysis OFF 🛑'}
                         </button>
                         <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
                             <Trash2 className="w-4 h-4" /> Clear All
@@ -1291,8 +1338,14 @@ const InstagramLeadGenerator: React.FC = () => {
                                                             ) : (
                                                                 lead.status === 'discovered' ? (
                                                                     <span className="text-[8px] text-gray-300 dark:text-gray-600 block animate-pulse">Wait Stage 2..🏎️💨</span>
+                                                                ) : lead.status === 'pending_ai' ? (
+                                                                    <span className="text-[8px] text-amber-500 font-bold block animate-pulse">
+                                                                        {statusUpdates[lead.id] || "Waiting for AI... 🧠"}
+                                                                    </span>
                                                                 ) : (
-                                                                    <span className="text-[8px] text-gray-400/50 italic">No bio 🧐</span>
+                                                                    <span className="text-[8px] text-gray-400/50 italic">
+                                                                        {statusUpdates[lead.id] || "No bio 🧐"}
+                                                                    </span>
                                                                 )
                                                             )}
                                                         </div>
@@ -1302,16 +1355,27 @@ const InstagramLeadGenerator: React.FC = () => {
                                                             {lead.recent_posts && lead.recent_posts.length > 0 ? (
                                                                 <>
                                                                     {lead.recent_posts.map((post: any, idx: number) => {
-                                                                        const imageUrl = typeof post === 'string' ? post : post.display_url;
+                                                                        const b64 = typeof post === 'object' && post?.b64_data ? post.b64_data : null;
+                                                                        const imageUrl = b64
+                                                                            ? (b64.startsWith('data:') ? b64 : `data:image/jpeg;base64,${b64}`)
+                                                                            : (typeof post === 'string' ? post : (post?.display_url || ''));
                                                                         return (
                                                                             <div
                                                                                 key={idx}
                                                                                 className="w-7 h-7 rounded-full border border-white dark:border-[#1e293b] overflow-hidden bg-gray-100 shadow-sm"
                                                                             >
-                                                                                <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+                                                                                {imageUrl ? (
+                                                                                    <img
+                                                                                        src={imageUrl}
+                                                                                        alt=""
+                                                                                        className="w-full h-full object-cover"
+                                                                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                                                    />
+                                                                                ) : null}
                                                                             </div>
                                                                         );
                                                                     })}
+
                                                                     <button
                                                                         onClick={() => {
                                                                             setSelectedLead(lead);
@@ -1412,6 +1476,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-500 font-black text-[9px] uppercase tracking-widest border border-indigo-500/20 animate-pulse">
                                                                             <Clock className="w-3 h-3" /> In Queue ⏰
                                                                         </div>
+                                                                    ) : lead.status === 'pending_ai' ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-500 font-black text-[9px] uppercase tracking-widest border border-amber-500/20 animate-pulse" title="Ready for AI Analysis">
+                                                                            <Brain className="w-3 h-3" /> PENDING AI 🧠
+                                                                        </div>
                                                                     ) : (
                                                                         <button
                                                                             onClick={() => handleHarvest(lead.id)}
@@ -1451,49 +1519,89 @@ const InstagramLeadGenerator: React.FC = () => {
                                 </table>
                             </div>
 
-                            {/* Pagination Controls */}
-                            {totalLeadsCount > 0 && (
-                                <div className="p-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-[#1a2436] flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Show:</span>
-                                        <select
-                                            value={pageSize}
-                                            onChange={e => {
-                                                setPageSize(Number(e.target.value));
-                                                setCurrentPage(1);
-                                            }}
-                                            className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl px-2.5 py-1.5 text-xs font-black text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
-                                        >
-                                            <option value={10}>10</option>
-                                            <option value={20}>20</option>
-                                            <option value={50}>50</option>
-                                            <option value={100}>100</option>
-                                        </select>
-                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider pl-2">
-                                            Showing {Math.min(totalLeadsCount, (currentPage - 1) * pageSize + 1)} - {Math.min(totalLeadsCount, currentPage * pageSize)} of {totalLeadsCount}
-                                        </span>
+
+                            {/* ── Professional Pagination ── */}
+                            {totalLeadsCount > 0 && (() => {
+                                const totalPages = Math.max(1, Math.ceil(totalLeadsCount / pageSize));
+                                const startItem = Math.min(totalLeadsCount, (currentPage - 1) * pageSize + 1);
+                                const endItem = Math.min(totalLeadsCount, currentPage * pageSize);
+
+                                // Build page number list with ellipsis
+                                const buildPages = (): (number | '...')[] => {
+                                    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+                                    const pages: (number | '...')[] = [1];
+                                    if (currentPage > 3) pages.push('...');
+                                    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
+                                    if (currentPage < totalPages - 2) pages.push('...');
+                                    pages.push(totalPages);
+                                    return pages;
+                                };
+                                const pages = buildPages();
+
+                                return (
+                                    <div className="px-5 py-4 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#1e293b] flex flex-wrap items-center justify-between gap-3">
+                                        {/* Left: count info + per-page selector */}
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                                                {startItem}–{endItem} <span className="text-gray-300 dark:text-gray-600">of</span> {totalLeadsCount.toLocaleString()} leads
+                                            </span>
+                                            <div className="h-4 w-px bg-gray-200 dark:bg-white/10" />
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Show</span>
+                                                <select
+                                                    value={pageSize}
+                                                    onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                                                    className="bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl px-2.5 py-1.5 text-[11px] font-black text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500 cursor-pointer"
+                                                >
+                                                    {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                                                </select>
+                                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">/ page</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: page number buttons */}
+                                        <div className="flex items-center gap-1.5">
+                                            {/* Prev */}
+                                            <button
+                                                disabled={currentPage === 1}
+                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                className="flex items-center gap-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a2436] font-black text-[10px] uppercase tracking-widest text-gray-500 hover:border-indigo-500 hover:text-indigo-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                                            >
+                                                ← Prev
+                                            </button>
+
+                                            {/* Page number buttons */}
+                                            {pages.map((p, idx) =>
+                                                p === '...' ? (
+                                                    <span key={`ellipsis-${idx}`} className="px-2 text-gray-400 font-bold text-xs select-none">…</span>
+                                                ) : (
+                                                    <button
+                                                        key={p}
+                                                        onClick={() => setCurrentPage(p as number)}
+                                                        className={`min-w-[36px] h-9 px-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
+                                                            currentPage === p
+                                                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 scale-105'
+                                                                : 'bg-white dark:bg-[#1a2436] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:border-indigo-400 hover:text-indigo-500'
+                                                        }`}
+                                                    >
+                                                        {p}
+                                                    </button>
+                                                )
+                                            )}
+
+                                            {/* Next */}
+                                            <button
+                                                disabled={currentPage >= totalPages}
+                                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                className="flex items-center gap-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a2436] font-black text-[10px] uppercase tracking-widest text-gray-500 hover:border-indigo-500 hover:text-indigo-500 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                                            >
+                                                Next →
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            disabled={currentPage === 1}
-                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                            className="px-3.5 py-2 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest text-gray-500 hover:text-indigo-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                        >
-                                            Prev
-                                        </button>
-                                        <span className="text-xs font-black text-gray-700 dark:text-gray-300 px-2">
-                                            {currentPage} / {Math.ceil(totalLeadsCount / pageSize) || 1}
-                                        </span>
-                                        <button
-                                            disabled={currentPage >= Math.ceil(totalLeadsCount / pageSize)}
-                                            onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalLeadsCount / pageSize), prev + 1))}
-                                            className="px-3.5 py-2 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest text-gray-500 hover:text-indigo-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                        >
-                                            Next
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                                );
+                            })()}
+
                         </div>
                     </div>
                 )}
@@ -1784,6 +1892,32 @@ const InstagramLeadGenerator: React.FC = () => {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 space-y-6">
                                 <div className="space-y-4 p-6 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-3xl border border-indigo-500/10 mb-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-500">
+                                                <Brain className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-black text-gray-900 dark:text-white tracking-tight">Stage 2 AI Lead Analysis</h3>
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Process pending leads using local Gemma-4 intent analysis</p>
+                                            </div>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={filterSettings.enable_ai_analysis}
+                                                onChange={(e) => setFilterSettings(p => ({ ...p, enable_ai_analysis: e.target.checked }))}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
+                                    <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
+                                        🧠 When ON, AI will automatically analyze your pending leads in the background, score them, and approve or reject them. When OFF, pending leads will wait.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-4 p-6 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-3xl border border-indigo-500/10 mb-6">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-500">
                                             <Brain className="w-5 h-5" />
@@ -2014,7 +2148,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 filterSettings.google_niche_filter,
                                                 filterSettings.ai_model,
                                                 filterSettings.bio_exclude_keywords,
-                                                filterSettings.bio_cities_whitelist
+                                                filterSettings.bio_cities_whitelist,
+                                                filterSettings.enable_ai_analysis
                                             );
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }
@@ -3354,18 +3489,35 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <div className="grid grid-cols-3 gap-4">
                                         {liveLead.recent_posts && liveLead.recent_posts.length > 0 ? (
                                             liveLead.recent_posts.map((post: any, idx: number) => {
-                                                const imageUrl = typeof post === 'string' ? post : post.display_url;
+                                                // Prioritize base64 screenshot (captured during scraping) over external URL
+                                                const b64 = typeof post === 'object' && post?.b64_data ? post.b64_data : null;
+                                                const imgSrc = b64
+                                                    ? (b64.startsWith('data:') ? b64 : `data:image/jpeg;base64,${b64}`)
+                                                    : (typeof post === 'string' ? post : (post?.display_url || ''));
                                                 return (
                                                     <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-inner group relative border border-gray-100 dark:border-white/5">
-                                                        <img src={imageUrl} alt={`Post ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                                        <a
-                                                            href={post.url || '#'}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
-                                                        >
-                                                            <span className="text-[10px] text-white font-black uppercase tracking-widest">View Full</span>
-                                                        </a>
+                                                        {imgSrc ? (
+                                                            <img
+                                                                src={imgSrc}
+                                                                alt={`Post ${idx + 1}`}
+                                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                                                <AlertCircle className="w-6 h-6" />
+                                                            </div>
+                                                        )}
+                                                        {post?.url && (
+                                                            <a
+                                                                href={post.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3"
+                                                            >
+                                                                <span className="text-[10px] text-white font-black uppercase tracking-widest">View Post</span>
+                                                            </a>
+                                                        )}
                                                     </div>
                                                 );
                                             })

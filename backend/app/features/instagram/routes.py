@@ -364,6 +364,7 @@ class FilterSettingsRequest(BaseModel):
     ai_model: str = "minimax-text-01"
     bio_exclude_keywords: str = ""
     bio_cities_whitelist: str = ""
+    enable_ai_analysis: bool = True
 
 @router.get("/filters/settings")
 async def get_filter_settings(current_user: TokenData = Depends(get_current_user)):
@@ -385,7 +386,8 @@ async def save_filter_settings(req: FilterSettingsRequest, current_user: TokenDa
         req.google_niche_filter,
         req.ai_model,
         req.bio_exclude_keywords,
-        req.bio_cities_whitelist
+        req.bio_cities_whitelist,
+        req.enable_ai_analysis
     )
 
 class ImageHashRequest(BaseModel):

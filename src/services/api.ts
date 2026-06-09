@@ -973,7 +973,7 @@ export const instagramAPI = {
     return response.data;
   },
 
-  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string; minimax_api_key: string; enable_ai_filter: boolean; google_niche_filter: string; ai_model: string; bio_exclude_keywords: string; bio_cities_whitelist: string }> => {
+  getFilterSettings: async (): Promise<{ bio_keywords: string; min_followers: number; max_followers: number; sample_hashes: string[]; visual_niche: string; minimax_api_key: string; enable_ai_filter: boolean; google_niche_filter: string; ai_model: string; bio_exclude_keywords: string; bio_cities_whitelist: string; enable_ai_analysis: boolean }> => {
     const response = await api.get('/instagram/filters/settings');
     return response.data;
   },
@@ -989,7 +989,8 @@ export const instagramAPI = {
     google_niche_filter: string,
     ai_model: string,
     bio_exclude_keywords: string,
-    bio_cities_whitelist: string
+    bio_cities_whitelist: string,
+    enable_ai_analysis: boolean
   ): Promise<any> => {
     const response = await api.post('/instagram/filters/settings', { 
       bio_keywords, 
@@ -1002,7 +1003,8 @@ export const instagramAPI = {
       google_niche_filter,
       ai_model,
       bio_exclude_keywords,
-      bio_cities_whitelist
+      bio_cities_whitelist,
+      enable_ai_analysis
     });
     return response.data;
   },
