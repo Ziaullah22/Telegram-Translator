@@ -123,6 +123,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [showAuditModal, setShowAuditModal] = useState(false);
+    const [showTraceModal, setShowTraceModal] = useState(false);
 
     const [selectedLead, setSelectedLead] = useState<any>(null);
 
@@ -1406,16 +1407,28 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
                                                             {(lead.data_audit_json || lead.rejection_reason) && (
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setSelectedLead(lead);
-                                                                        setShowAuditModal(true);
-                                                                    }}
-                                                                    className="p-2 rounded-xl text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all"
-                                                                    title="View AI Decision Audit"
-                                                                >
-                                                                    <Brain className="w-4 h-4" />
-                                                                </button>
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedLead(lead);
+                                                                            setShowAuditModal(true);
+                                                                        }}
+                                                                        className="p-2 rounded-xl text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all"
+                                                                        title="View AI Decision Audit"
+                                                                    >
+                                                                        <Brain className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedLead(lead);
+                                                                            setShowTraceModal(true);
+                                                                        }}
+                                                                        className="p-2 rounded-xl text-pink-400 hover:text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"
+                                                                        title="View Step-by-Step Filter Trace"
+                                                                    >
+                                                                        <Filter className="w-4 h-4" />
+                                                                    </button>
+                                                                </>
                                                             )}
                                                             {lead.status === 'discarded' ? (
                                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 font-black text-[9px] uppercase tracking-widest border border-red-500/20">
@@ -2257,6 +2270,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                     )
                                 ) : (
                                     <div className="space-y-4">
+
                                         {liveLead.status === 'rejected' && liveLead.rejection_reason && (
                                             <div className="p-6 bg-red-500/5 rounded-3xl border border-red-500/10">
                                                 <div className="flex items-center gap-2 mb-3">
@@ -2269,7 +2283,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                             </div>
                                         )}
 
-                                        <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
+                                        {ai.strategy && (
+                                            <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
                                             <div className="flex items-center gap-2 mb-3">
                                                 <Sparkles className="w-4 h-4 text-indigo-500" />
                                                 <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
@@ -2287,7 +2302,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
                                                 </div>
                                             </div>
-                                        </div>
+                                            </div>
+                                        )}
 
                                         {ai.suggested_hook && (
                                             <div className="p-6 bg-pink-500/5 rounded-3xl border border-pink-500/10">
@@ -2319,6 +2335,102 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="p-8 pt-4 shrink-0 bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-white/5">
                                 <button onClick={() => setShowAuditModal(false)} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
                                     Close Audit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Filter Trace Modal */}
+            {showTraceModal && selectedLead && (() => {
+                const liveLead = leads.find(l => l.id === selectedLead.id) || selectedLead;
+                const ai = typeof liveLead.data_audit_json === 'string' ? JSON.parse(liveLead.data_audit_json || '{}') : liveLead.data_audit_json;
+                const filterTrace = ai?.filter_trace || [];
+
+                return (
+                    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                            {/* Sticky Header */}
+                            <div className="p-8 pb-4 shrink-0">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-pink-500/10 rounded-2xl">
+                                            <Filter className="w-6 h-6 text-pink-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Lead Filter Trace</h2>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Step-by-Step Decision logic for @{liveLead.username}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowTraceModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                                        <X className="w-6 h-6 text-gray-400" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Scrollable Content */}
+                            <div className="px-8 flex-1 overflow-y-auto space-y-6 pb-6 scrollbar-hide">
+                                {/* Decision Process Trace Timeline */}
+                                <div className="p-6 bg-gray-50 dark:bg-slate-800/40 rounded-3xl border border-gray-100 dark:border-white/5 space-y-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Target className="w-4 h-4 text-pink-500" />
+                                        <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Execution Steps</h3>
+                                    </div>
+                                    
+                                    {filterTrace.length === 0 ? (
+                                        <div className="text-center py-6">
+                                            <p className="text-xs text-gray-400 italic">No decision steps recorded.</p>
+                                            <p className="text-[11px] text-gray-400 mt-2 font-medium">This lead was analyzed before filter tracking was added. Toggle AI Analysis or manually trigger analysis to generate a fresh trace!</p>
+                                        </div>
+                                    ) : (
+                                        <div className="relative pl-6 border-l border-gray-200 dark:border-white/10 space-y-5">
+                                            {filterTrace.map((item: any, idx: number) => {
+                                                const isPassed = item.status === 'passed';
+                                                const isFailed = item.status === 'failed';
+                                                
+                                                let icon = "⏭️";
+                                                let dotColor = "bg-gray-100 dark:bg-slate-800 text-gray-400 border-gray-200 dark:border-white/10";
+                                                if (isPassed) {
+                                                    icon = "✓";
+                                                    dotColor = "bg-green-500 text-white border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]";
+                                                } else if (isFailed) {
+                                                    icon = "✕";
+                                                    dotColor = "bg-red-500 text-white border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]";
+                                                }
+                                                
+                                                return (
+                                                    <div key={idx} className="relative">
+                                                        {/* Timeline dot */}
+                                                        <div className={`absolute -left-[35px] top-0.5 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center text-[10px] font-extrabold transition-all duration-300 ${dotColor}`}>
+                                                            {icon}
+                                                        </div>
+                                                        
+                                                        <div>
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <h4 className="text-xs font-black text-gray-900 dark:text-white tracking-tight">{item.step}</h4>
+                                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${
+                                                                    isPassed ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400' :
+                                                                    isFailed ? 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400' :
+                                                                    'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
+                                                                }`}>
+                                                                    {item.status}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{item.details}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="p-8 pt-4 shrink-0 bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-white/5">
+                                <button onClick={() => setShowTraceModal(false)} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
+                                    Close Trace
                                 </button>
                             </div>
                         </div>

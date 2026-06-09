@@ -460,11 +460,31 @@ class InstagramService:
                                     logger.info(f"✨ Approved Lead: @{u}")
                                     found_usernames.append(u)
                                     seen.add(u)
+                                    # Extract title and snippet from card for later AI filter use
+                                    try:
+                                        title_el = await card.query_selector('h3')
+                                        card_title = await title_el.inner_text() if title_el else ""
+                                        card_snippet = await card.inner_text()
+                                        if card_title and card_title in card_snippet:
+                                            card_snippet = card_snippet.replace(card_title, "").strip()
+                                    except:
+                                        card_title = ""
+                                        card_snippet = ""
                                     try:
                                         new_id = await db.fetchval(
-                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                            "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                            user_id, u, keyword
+                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                            "VALUES ($1, $2, $3, 'discovered', $4) "
+                                            "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                            "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                            "discovery_keyword = EXCLUDED.discovery_keyword "
+                                            "RETURNING id",
+                                            user_id, u, keyword, json.dumps({
+                                                "google_snippet_data": {
+                                                    "title": card_title,
+                                                    "url": href,
+                                                    "snippet": card_snippet
+                                                }
+                                            })
                                         )
                                         if new_id:
                                             new_leads_count += 1
@@ -497,9 +517,19 @@ class InstagramService:
                                     seen.add(u)
                                     try:
                                         new_id = await db.fetchval(
-                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                            "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                            user_id, u, keyword
+                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                            "VALUES ($1, $2, $3, 'discovered', $4) "
+                                            "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                            "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                            "discovery_keyword = EXCLUDED.discovery_keyword "
+                                            "RETURNING id",
+                                            user_id, u, keyword, json.dumps({
+                                                "google_snippet_data": {
+                                                    "title": "",
+                                                    "url": href,
+                                                    "snippet": ""
+                                                }
+                                            })
                                         )
                                         if new_id:
                                             new_leads_count += 1
@@ -517,9 +547,19 @@ class InstagramService:
                             seen.add(u)
                             try:
                                 new_id = await db.fetchval(
-                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                    "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                    user_id, u, keyword
+                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                    "VALUES ($1, $2, $3, 'discovered', $4) "
+                                    "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                    "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                    "discovery_keyword = EXCLUDED.discovery_keyword "
+                                    "RETURNING id",
+                                    user_id, u, keyword, json.dumps({
+                                        "google_snippet_data": {
+                                            "title": "",
+                                            "url": f"https://www.instagram.com/{u}/",
+                                            "snippet": ""
+                                        }
+                                    })
                                 )
                                 if new_id:
                                     new_leads_count += 1
@@ -730,7 +770,6 @@ class InstagramService:
                                                 logger.info(msg)
                                                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                                                 except: pass
-                                        
                                         logger.info(f"✨ Approved Lead: @{u}")
                                         found_usernames.append(u)
                                         seen.add(u)
@@ -739,9 +778,19 @@ class InstagramService:
                                         db_status = "discovered"
                                         try:
                                             new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
-                                                user_id, u, keyword, db_status
+                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                                "VALUES ($1, $2, $3, $4, $5) "
+                                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                                "discovery_keyword = EXCLUDED.discovery_keyword "
+                                                "RETURNING id",
+                                                user_id, u, keyword, db_status, json.dumps({
+                                                    "google_snippet_data": {
+                                                        "title": title,
+                                                        "url": href,
+                                                        "snippet": snippet
+                                                    }
+                                                })
                                             )
                                             if new_id:
                                                 try:
@@ -777,9 +826,19 @@ class InstagramService:
                                         # Save fallback link lead immediately!
                                         try:
                                             new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                                "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                                user_id, u, keyword
+                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                                "VALUES ($1, $2, $3, 'discovered', $4) "
+                                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                                "discovery_keyword = EXCLUDED.discovery_keyword "
+                                                "RETURNING id",
+                                                user_id, u, keyword, json.dumps({
+                                                    "google_snippet_data": {
+                                                        "title": "",
+                                                        "url": href,
+                                                        "snippet": ""
+                                                    }
+                                                })
                                             )
                                             if new_id:
                                                 try:
@@ -804,9 +863,19 @@ class InstagramService:
                                 # Save fallback snippet lead immediately!
                                 try:
                                     new_id = await db.fetchval(
-                                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) "
-                                        "VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING RETURNING id",
-                                        user_id, u, keyword
+                                         "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                         "VALUES ($1, $2, $3, 'discovered', $4) "
+                                         "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                         "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                         "discovery_keyword = EXCLUDED.discovery_keyword "
+                                         "RETURNING id",
+                                         user_id, u, keyword, json.dumps({
+                                             "google_snippet_data": {
+                                                 "title": "",
+                                                 "url": f"https://www.instagram.com/{u}/",
+                                                 "snippet": ""
+                                             }
+                                         })
                                     )
                                     if new_id:
                                         try:
@@ -898,21 +967,57 @@ class InstagramService:
         settings = await self.get_filter_settings(user_id)
         is_qualified = True
         rejection_reason = ""
+        trace_steps = []
         
         # 1. Follower Count Match
-        if settings['min_followers'] > 0 and followers < settings['min_followers']:
-            rejection_reason = f"Follower check failed: {followers} followers is below the minimum requirement of {settings['min_followers']}."
-            logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
-            is_qualified = False
-        if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']:
-            rejection_reason = f"Follower check failed: {followers} followers is above the maximum limit of {settings['max_followers']}."
-            logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
-            is_qualified = False
+        if settings['min_followers'] > 0 or settings['max_followers'] > 0:
+            sub_qualified = True
+            details_str = f"Found {followers:,} followers."
+            if settings['min_followers'] > 0 and followers < settings['min_followers']:
+                rejection_reason = f"Follower check failed: {followers} followers is below the minimum requirement of {settings['min_followers']}."
+                logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
+                is_qualified = False
+                sub_qualified = False
+                details_str += f" Below min limit of {settings['min_followers']:,}."
+            if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']:
+                rejection_reason = f"Follower check failed: {followers} followers is above the maximum limit of {settings['max_followers']}."
+                logger.info(f"❌ Follower Filter rejected lead: {rejection_reason}")
+                is_qualified = False
+                sub_qualified = False
+                details_str += f" Above max limit of {settings['max_followers']:,}."
+            
+            if sub_qualified:
+                min_lbl = f"{settings['min_followers']:,}" if settings['min_followers'] > 0 else "0"
+                max_lbl = f"{settings['max_followers']:,}" if settings['max_followers'] > 0 else "∞"
+                details_str += f" Within allowed range ({min_lbl} - {max_lbl})."
+            trace_steps.append({
+                "step": "Follower Count Check",
+                "status": "passed" if sub_qualified else "failed",
+                "details": details_str
+            })
+        else:
+            trace_steps.append({
+                "step": "Follower Count Check",
+                "status": "skipped",
+                "details": f"No follower range criteria set. Profile has {followers:,} followers."
+            })
 
         # 2. Exclude Bio Keyword Filter (Block list)
-        if is_qualified and bio:
-            bio_exclude = settings.get('bio_exclude_keywords', '')
-            if bio_exclude and bio_exclude.strip():
+        bio_exclude = settings.get('bio_exclude_keywords', '')
+        if bio_exclude and bio_exclude.strip():
+            if not is_qualified:
+                trace_steps.append({
+                    "step": "Exclude Keyword Filter",
+                    "status": "skipped",
+                    "details": "Skipped because follower filter failed."
+                })
+            elif not bio:
+                trace_steps.append({
+                    "step": "Exclude Keyword Filter",
+                    "status": "passed",
+                    "details": "Profile bio is empty, so no exclude keywords matched."
+                })
+            else:
                 exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
                 bio_lower = bio.lower()
                 matched_kws = [kw for kw in exclude_kws if kw in bio_lower]
@@ -920,13 +1025,35 @@ class InstagramService:
                     rejection_reason = f"Bio contains a blacklisted keyword: '{matched_kws[0]}'."
                     logger.info(f"❌ Exclude Keyword Filter rejected lead: {rejection_reason}")
                     is_qualified = False
+                    trace_steps.append({
+                        "step": "Exclude Keyword Filter",
+                        "status": "failed",
+                        "details": f"Bio contains blacklisted keyword(s): {', '.join(matched_kws)}."
+                    })
+                else:
+                    trace_steps.append({
+                        "step": "Exclude Keyword Filter",
+                        "status": "passed",
+                        "details": "Bio does not contain any blacklisted keywords."
+                    })
+        else:
+            trace_steps.append({
+                "step": "Exclude Keyword Filter",
+                "status": "skipped",
+                "details": "No exclude keywords list set."
+            })
 
         # 3. Cities Whitelist Filter (String check only, no AI)
-        if is_qualified:
-            bio_cities = settings.get('bio_cities_whitelist', '')
-            if bio_cities and bio_cities.strip():
+        bio_cities = settings.get('bio_cities_whitelist', '')
+        if bio_cities and bio_cities.strip():
+            if not is_qualified:
+                trace_steps.append({
+                    "step": "Cities Whitelist Filter",
+                    "status": "skipped",
+                    "details": "Skipped because previous step failed."
+                })
+            else:
                 cities_list = [c.strip().lower() for c in bio_cities.split(',') if c.strip()]
-
                 # Fetch username from DB
                 lead_row = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1", lead_id)
                 username_val = (lead_row['instagram_username'] if lead_row else '')
@@ -935,28 +1062,81 @@ class InstagramService:
                 bio_lower_city = (bio or '').lower()
 
                 # Fast string match only
-                city_found_fast = any(
-                    city in bio_lower_city or city in full_name_lower or city in username_lower
-                    for city in cities_list
-                )
+                matched_cities = [city for city in cities_list if city in bio_lower_city or city in full_name_lower or city in username_lower]
+                city_found_fast = len(matched_cities) > 0
 
                 if city_found_fast:
                     logger.info(f"✅ Cities Filter PASSED (string match) for @{username_val}")
+                    trace_steps.append({
+                        "step": "Cities Whitelist Filter",
+                        "status": "passed",
+                        "details": f"Matches whitelist city: '{matched_cities[0]}'."
+                    })
                 else:
                     rejection_reason = "Location check failed: The profile does not match any city on your whitelist."
                     logger.info(f"❌ Cities Whitelist rejected @{username_val} (No AI Check).")
                     is_qualified = False
+                    trace_steps.append({
+                        "step": "Cities Whitelist Filter",
+                        "status": "failed",
+                        "details": f"Profile details did not match any of: {', '.join(cities_list)}."
+                    })
+        else:
+            trace_steps.append({
+                "step": "Cities Whitelist Filter",
+                "status": "skipped",
+                "details": "No cities whitelist criteria set."
+            })
 
         # 4. Bio Keyword Match (Acts as a secondary booster or filter)
-        if is_qualified and not self._check_bio_keywords(bio, settings['bio_keywords']):
-            rejection_reason = "Keyword check failed: Profile bio does not contain any of your target search keywords."
-            logger.info(f"❌ Keyword Filter rejected lead: {rejection_reason}")
-            is_qualified = False
-            
+        if settings.get('bio_keywords'):
+            if not is_qualified:
+                trace_steps.append({
+                    "step": "Bio Keyword Match",
+                    "status": "skipped",
+                    "details": "Skipped because previous step failed."
+                })
+            else:
+                kw_match = self._check_bio_keywords(bio, settings['bio_keywords'])
+                if not kw_match:
+                    rejection_reason = "Keyword check failed: Profile bio does not contain any of your target search keywords."
+                    logger.info(f"❌ Keyword Filter rejected lead: {rejection_reason}")
+                    is_qualified = False
+                    trace_steps.append({
+                        "step": "Bio Keyword Match",
+                        "status": "failed",
+                        "details": f"Bio does not match target keywords: {settings['bio_keywords']}."
+                    })
+                else:
+                    trace_steps.append({
+                        "step": "Bio Keyword Match",
+                        "status": "passed",
+                        "details": f"Bio contains target search keyword(s)."
+                    })
+        else:
+            trace_steps.append({
+                "step": "Bio Keyword Match",
+                "status": "skipped",
+                "details": "No bio keyword criteria set."
+            })
+
         # 5. 🧠 DEEP AI ANALYSIS
         ai_analysis = {}
         score = 0
-        if is_qualified:
+        intent_description = settings.get('ai_intent_filter', '')
+        if not is_qualified:
+            trace_steps.append({
+                "step": "Deep AI Intent Check",
+                "status": "skipped",
+                "details": "Skipped because previous step failed."
+            })
+        elif not intent_description or not intent_description.strip():
+            trace_steps.append({
+                "step": "Deep AI Intent Check",
+                "status": "skipped",
+                "details": "Skipped because no Target Lead Intent description was set."
+            })
+        else:
             selected_model = settings.get('ai_model') or 'gemma4'
             await update_ui(f"AI ({selected_model}): Analyzing Bio & Intent...")
             # Fetch username
@@ -967,36 +1147,66 @@ class InstagramService:
                 "username": username_val,
                 "bio": bio,
                 "followers": followers
-            }, model_choice=selected_model)
+            }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
             
             if ai_result and "error" not in ai_result:
                 ai_analysis.update(ai_result)
                 score = ai_result.get("intent_score", 0)
                 if ai_result.get("quality") == "high":
                     score = max(score, 90)
-                logger.info(f"✨ [Gemma 4] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+                logger.info(f"✨ [AI] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
                 
                 # Check AI Score
                 if score < 70:
                     rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
                     logger.info(f"❌ AI Rejected lead: {rejection_reason}")
                     is_qualified = False
+                    trace_steps.append({
+                        "step": "Deep AI Intent Check",
+                        "status": "failed",
+                        "details": f"Intent match score {score}% is below required 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                    })
+                else:
+                    trace_steps.append({
+                        "step": "Deep AI Intent Check",
+                        "status": "passed",
+                        "details": f"Intent match score {score}% meets/exceeds 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                    })
             else:
                 err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
-                logger.warning(f"⚠️ [Gemma 4] AI was unavailable or returned error: {err_msg}")
+                logger.warning(f"⚠️ AI was unavailable or returned error: {err_msg}")
+                rejection_reason = f"AI Analysis failed: {err_msg}"
+                is_qualified = False
+                trace_steps.append({
+                    "step": "Deep AI Intent Check",
+                    "status": "failed",
+                    "details": f"AI Engine returned error: {err_msg}"
+                })
 
         # 6. Visual Match Filter (Only if enabled)
         visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
-        if is_qualified and (visual_niche or target_hashes):
-            if not recent_posts:
+        if visual_niche or target_hashes:
+            if not is_qualified:
+                trace_steps.append({
+                    "step": "Visual Match Filter",
+                    "status": "skipped",
+                    "details": "Skipped because previous step failed."
+                })
+            elif not recent_posts:
                 reason = "Visual scanner failed: Profile has no photos to scan."
                 logger.info(f"❌ {reason}")
                 is_qualified = False
                 ai_analysis['vision_reason'] = reason
                 rejection_reason = reason
+                trace_steps.append({
+                    "step": "Visual Match Filter",
+                    "status": "failed",
+                    "details": reason
+                })
             else:
                 image_matched = False
+                vision_res = {}
                 # Try AI Vision FIRST if niche is described
                 if visual_niche:
                     await update_ui(f"AI Vision: Scanning for '{visual_niche}'...")
@@ -1067,6 +1277,27 @@ class InstagramService:
                     is_qualified = False
                     ai_analysis['vision_reason'] = reason
                     rejection_reason = f"Visual check failed: {reason}"
+                    trace_steps.append({
+                        "step": "Visual Match Filter",
+                        "status": "failed",
+                        "details": reason
+                    })
+                else:
+                    v_reason = ai_analysis.get('vision_reason', 'Visual match confirmed.')
+                    trace_steps.append({
+                        "step": "Visual Match Filter",
+                        "status": "passed",
+                        "details": v_reason
+                    })
+        else:
+            trace_steps.append({
+                "step": "Visual Match Filter",
+                "status": "skipped",
+                "details": "No visual criteria or sample hashes set."
+            })
+
+        # Attach filter trace to the AI analysis dict so it gets saved to data_audit_json in DB
+        ai_analysis['filter_trace'] = trace_steps
 
         if not is_qualified and rejection_reason:
             ai_analysis['rejection_reason'] = rejection_reason
@@ -1244,9 +1475,10 @@ class InstagramService:
             settings = await self.get_filter_settings(user_id)
             is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
 
+            trace_steps = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
             posts_json = json.dumps(posts or [])
             if not is_qualified:
-                ai_analysis = {"rejection_reason": rejection_reason}
+                ai_analysis = {"rejection_reason": rejection_reason, "filter_trace": trace_steps}
                 ai_data_json = json.dumps(ai_analysis)
                 await db.execute("""
                     UPDATE instagram_leads 
@@ -1259,12 +1491,14 @@ class InstagramService:
                 return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
 
             # Passed pre-filters -> set status to pending_ai
+            ai_analysis = {"filter_trace": trace_steps}
+            ai_data_json = json.dumps(ai_analysis)
             await db.execute("""
                 UPDATE instagram_leads 
                 SET status = 'pending_ai', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
-                    recent_posts = $5, is_private = FALSE, updated_at = NOW() 
-                WHERE id = $6
-            """, bio, followers, following, full_name, posts_json, lead_id)
+                    recent_posts = $5, is_private = FALSE, data_audit_json = $6, updated_at = NOW() 
+                WHERE id = $7
+            """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
             logger.info(f"⏳ Lead {lead_id} passed pre-filters. Marked as pending_ai.")
             await update_ui("pending_ai", "Passed pre-filters, waiting for AI...")
             return {"success": True, "status": "pending_ai"}
@@ -1280,8 +1514,9 @@ class InstagramService:
         Step 2: Processes AI analysis sequentially for a single lead.
         Reads scraped data from the database, queries AI, runs visual verification, and marks as 'qualified' or 'rejected'.
         """
-        lead = await db.fetchrow("SELECT instagram_username, bio, follower_count, following_count, full_name, recent_posts, is_private FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        lead = await db.fetchrow("SELECT instagram_username, bio, follower_count, following_count, full_name, recent_posts, is_private, data_audit_json FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
         if not lead: return {"error": "Lead not found"}
+        from app.features.instagram_scraper.ai_engine import instagram_ai
 
         username = lead['instagram_username']
         bio = lead['bio']
@@ -1290,6 +1525,9 @@ class InstagramService:
         full_name = lead['full_name']
         recent_posts = json.loads(lead['recent_posts'] or '[]')
         is_private = lead['is_private']
+        # Preserve the pre-filter trace that was saved by scrape_and_pre_filter_lead
+        existing_audit = json.loads(lead['data_audit_json'] or '{}') if lead['data_audit_json'] else {}
+        pre_filter_trace = existing_audit.get('filter_trace', [])
 
         async def update_ui(status: str, action: str = None):
             try:
@@ -1308,40 +1546,159 @@ class InstagramService:
         rejection_reason = ""
         ai_analysis = {}
         score = 0
+        ai_trace_steps = []
 
-        # 1. 🧠 DEEP AI ANALYSIS
+        # 1. 🔍 DEEP AI SEARCH RESULT FILTER
         selected_model = settings.get('ai_model') or 'gemma4'
+        if not is_qualified:
+            ai_trace_steps.append({
+                "step": "Deep AI Search Result Filter",
+                "status": "skipped",
+                "details": "Skipped because previous step failed."
+            })
+        elif not settings.get('enable_ai_filter'):
+            ai_trace_steps.append({
+                "step": "Deep AI Search Result Filter",
+                "status": "skipped",
+                "details": "Skipped because Deep AI Search Result Filter is not enabled in settings."
+            })
+        else:
+            google_data = existing_audit.get('google_snippet_data', {})
+            title = google_data.get('title')
+            url = google_data.get('url')
+            snippet = google_data.get('snippet')
+            google_niche_filter = settings.get('google_niche_filter', '')
+            
+            if not google_niche_filter or not google_niche_filter.strip():
+                ai_trace_steps.append({
+                    "step": "Deep AI Search Result Filter",
+                    "status": "skipped",
+                    "details": "Skipped because no Target Lead Criteria Description was set."
+                })
+            else:
+                is_fallback = False
+                if not title and not snippet:
+                    is_fallback = True
+                    title = f"Instagram Profile: {full_name or username}"
+                    post_caps = [p.get('caption', '') for p in recent_posts if isinstance(p, dict) and p.get('caption')]
+                    posts_text = " | ".join(post_caps[:3])
+                    snippet = f"Bio: {bio or ''}\nRecent Posts: {posts_text}"
+
+                if not title or not title.strip():
+                    ai_trace_steps.append({
+                        "step": "Deep AI Search Result Filter",
+                        "status": "skipped",
+                        "details": "Skipped because no Google search snippet data or Instagram profile text was found for this lead."
+                    })
+                else:
+                    try:
+                        step_prefix = ""
+                        await update_ui("analyzing", "Running Deep AI Search Result Filter...")
+                        res = await instagram_ai.analyze_google_result(
+                            title=title,
+                            url=url or f"https://www.instagram.com/{username}/",
+                            snippet=snippet,
+                            criteria=google_niche_filter,
+                            model_choice=selected_model,
+                            api_key=settings.get('minimax_api_key', '')
+                        )
+                        is_match = res.get("match", False)
+                        reason = res.get("reason", "No reason provided.")
+                        
+                        if not is_match:
+                            rejection_reason = f"Deep AI Search Result Filter mismatch: {reason}"
+                            logger.info(f"❌ Deep AI Search Result Filter Rejected lead: {rejection_reason}")
+                            is_qualified = False
+                            ai_trace_steps.append({
+                                "step": "Deep AI Search Result Filter",
+                                "status": "failed",
+                                "details": f"{step_prefix}{reason}"
+                            })
+                        else:
+                            ai_trace_steps.append({
+                                "step": "Deep AI Search Result Filter",
+                                "status": "passed",
+                                "details": f"{step_prefix}{reason}"
+                            })
+                    except Exception as eval_err:
+                        logger.error(f"❌ Deep AI Search Result Filter error: {eval_err}")
+                        is_qualified = False
+                        ai_trace_steps.append({
+                            "step": "Deep AI Search Result Filter",
+                            "status": "failed",
+                            "details": f"AI Engine returned error: {eval_err}"
+                        })
+
+        # 2. 🧠 DEEP AI INTENT ANALYSIS
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
         
         try:
-            ai_result = await instagram_ai.analyze_lead_deep({
-                "username": username,
-                "bio": bio,
-                "followers": followers
-            }, model_choice=selected_model, intent_description=settings.get('ai_intent_filter', ''), api_key=settings.get('minimax_api_key', ''))
-
-            if ai_result and "error" not in ai_result:
-                ai_analysis.update(ai_result)
-                score = ai_result.get("intent_score", 0)
-                if ai_result.get("quality") == "high":
-                    score = max(score, 90)
-                logger.info(f"✨ [{selected_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
-
-                if score < 70:
-                    rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
-                    logger.info(f"❌ AI Rejected lead: {rejection_reason}")
-                    is_qualified = False
+            intent_description = settings.get('ai_intent_filter', '')
+            if not is_qualified:
+                ai_trace_steps.append({
+                    "step": "Deep AI Intent Check",
+                    "status": "skipped",
+                    "details": "Skipped because previous step failed."
+                })
+            elif not intent_description or not intent_description.strip():
+                ai_trace_steps.append({
+                    "step": "Deep AI Intent Check",
+                    "status": "skipped",
+                    "details": "Skipped because no Target Lead Intent description was set."
+                })
             else:
-                err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
-                logger.warning(f"⚠️ [{selected_model}] AI was unavailable or returned error: {err_msg}")
+                ai_result = await instagram_ai.analyze_lead_deep({
+                    "username": username,
+                    "bio": bio,
+                    "followers": followers
+                }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+
+                if ai_result and "error" not in ai_result:
+                    ai_analysis.update(ai_result)
+                    score = ai_result.get("intent_score", 0)
+                    if ai_result.get("quality") == "high":
+                        score = max(score, 90)
+                    logger.info(f"✨ [{selected_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+
+                    if score < 70:
+                        rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
+                        logger.info(f"❌ AI Rejected lead: {rejection_reason}")
+                        is_qualified = False
+                        ai_trace_steps.append({
+                            "step": "Deep AI Intent Check",
+                            "status": "failed",
+                            "details": f"Intent match score {score}% is below required 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                        })
+                    else:
+                        ai_trace_steps.append({
+                            "step": "Deep AI Intent Check",
+                            "status": "passed",
+                            "details": f"Intent match score {score}% meets/exceeds 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                        })
+                else:
+                    err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
+                    logger.warning(f"⚠️ [{selected_model}] AI was unavailable or returned error: {err_msg}")
+                    is_qualified = False
+                    ai_trace_steps.append({
+                        "step": "Deep AI Intent Check",
+                        "status": "failed",
+                        "details": f"AI Engine returned error: {err_msg}"
+                    })
         except Exception as ai_err:
             logger.error(f"❌ AI analysis error: {ai_err}")
+            ai_trace_steps.append({
+                "step": "Deep AI Intent Check",
+                "status": "failed",
+                "details": f"AI analysis exception: {ai_err}"
+            })
 
-        # 2. Visual Match Filter (Only if enabled)
+        # 3. Visual Match Filter (Only if enabled)
         visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
-        if is_qualified and (visual_niche or target_hashes):
-            if not recent_posts:
+        if visual_niche or target_hashes:
+            if not is_qualified:
+                pass  # Skipped from trace
+            elif not recent_posts:
                 reason = "Visual scanner failed: Profile has no photos to scan."
                 logger.info(f"❌ {reason}")
                 is_qualified = False
@@ -1349,6 +1706,7 @@ class InstagramService:
                 rejection_reason = reason
             else:
                 image_matched = False
+                vision_res = {}
                 import httpx
                 # Try AI Vision FIRST if niche is described
                 if visual_niche:
@@ -1393,7 +1751,6 @@ class InstagramService:
                             except Exception as e:
                                 logger.warning(f"⚠️ AI Vision post check failed: {e}")
 
-
                 # Fallback to Math Hashing if AI didn't confirm (or wasn't used)
                 if not image_matched and target_hashes:
                     logger.info("🔍 Hashing Fallback: Checking structural match...")
@@ -1424,7 +1781,7 @@ class InstagramService:
                     except: pass
 
                 if not image_matched:
-                    reason = "No photos matched the target criteria"
+                    reason = vision_res.get('reason', 'No photos matched the target criteria') if visual_niche else 'No structural match found'
                     logger.info(f"❌ Visual Check rejected lead: {reason}")
                     is_qualified = False
                     ai_analysis['vision_reason'] = reason
@@ -1432,6 +1789,10 @@ class InstagramService:
 
         if not is_qualified and rejection_reason:
             ai_analysis['rejection_reason'] = rejection_reason
+
+        # Merge pre-filter trace with AI trace steps for full end-to-end decision trace
+        full_trace = pre_filter_trace + ai_trace_steps
+        ai_analysis['filter_trace'] = full_trace
 
         new_status = 'qualified' if is_qualified else 'rejected'
         ai_data_json = json.dumps(ai_analysis)
@@ -2498,6 +2859,87 @@ class InstagramService:
             base64_img = base64_img.split(',')[1]
         content = base64.b64decode(base64_img)
         return self._get_image_hash(content)
+
+    def _generate_pre_filter_trace(self, settings: dict, bio: str, followers: int, full_name: str, username: str) -> list:
+        """Generates a list of trace step dicts for all non-AI pre-filters, mirroring _check_non_ai_filters."""
+        trace = []
+        is_ok = True  # track cascading failures
+
+        # 1. Follower Count Check
+        min_f = settings.get('min_followers', 0)
+        max_f = settings.get('max_followers', 0)
+        if min_f > 0 or max_f > 0:
+            detail = f"Found {followers:,} followers."
+            passed = True
+            if min_f > 0 and followers < min_f:
+                passed = False
+                detail += f" Below min limit of {min_f:,}."
+            elif max_f > 0 and followers > max_f:
+                passed = False
+                detail += f" Above max limit of {max_f:,}."
+            else:
+                min_lbl = f"{min_f:,}" if min_f > 0 else "0"
+                max_lbl = f"{max_f:,}" if max_f > 0 else "∞"
+                detail += f" Within allowed range ({min_lbl} – {max_lbl})."
+            if not passed:
+                is_ok = False
+            trace.append({"step": "Follower Count Check", "status": "passed" if passed else "failed", "details": detail})
+        else:
+            trace.append({"step": "Follower Count Check", "status": "skipped", "details": f"No follower range criteria set. Profile has {followers:,} followers."})
+
+        # 2. Exclude Keyword Filter
+        bio_exclude = settings.get('bio_exclude_keywords', '')
+        if bio_exclude and bio_exclude.strip():
+            if not is_ok:
+                trace.append({"step": "Exclude Keyword Filter", "status": "skipped", "details": "Skipped because follower filter failed."})
+            elif not bio:
+                trace.append({"step": "Exclude Keyword Filter", "status": "passed", "details": "Profile bio is empty, so no exclude keywords matched."})
+            else:
+                exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
+                matched = [kw for kw in exclude_kws if kw in bio.lower()]
+                if matched:
+                    is_ok = False
+                    trace.append({"step": "Exclude Keyword Filter", "status": "failed", "details": f"Bio contains blacklisted keyword(s): {', '.join(matched)}."})
+                else:
+                    trace.append({"step": "Exclude Keyword Filter", "status": "passed", "details": "Bio does not contain any blacklisted keywords."})
+        else:
+            trace.append({"step": "Exclude Keyword Filter", "status": "skipped", "details": "No exclude keywords list set."})
+
+        # 3. Cities Whitelist Filter
+        bio_cities = settings.get('bio_cities_whitelist', '')
+        if bio_cities and bio_cities.strip():
+            if not is_ok:
+                trace.append({"step": "Cities Whitelist Filter", "status": "skipped", "details": "Skipped because previous step failed."})
+            else:
+                cities_list = [c.strip().lower() for c in bio_cities.split(',') if c.strip()]
+                bio_lower = (bio or '').lower()
+                full_name_lower = (full_name or '').lower()
+                username_lower = (username or '').lower()
+                matched_cities = [city for city in cities_list if city in bio_lower or city in full_name_lower or city in username_lower]
+                if matched_cities:
+                    trace.append({"step": "Cities Whitelist Filter", "status": "passed", "details": f"Matches whitelist city: '{matched_cities[0]}'."})
+                else:
+                    is_ok = False
+                    trace.append({"step": "Cities Whitelist Filter", "status": "failed", "details": f"Profile details did not match any of: {', '.join(cities_list)}."})
+        else:
+            trace.append({"step": "Cities Whitelist Filter", "status": "skipped", "details": "No cities whitelist criteria set."})
+
+        # 4. Bio Keyword Match
+        bio_kws = settings.get('bio_keywords', '')
+        if bio_kws and bio_kws.strip():
+            if not is_ok:
+                trace.append({"step": "Bio Keyword Match", "status": "skipped", "details": "Skipped because previous step failed."})
+            else:
+                passed = self._check_bio_keywords(bio, bio_kws)
+                if not passed:
+                    is_ok = False
+                    trace.append({"step": "Bio Keyword Match", "status": "failed", "details": f"Bio does not match target keywords: {bio_kws}."})
+                else:
+                    trace.append({"step": "Bio Keyword Match", "status": "passed", "details": "Bio contains target search keyword(s)."})
+        else:
+            trace.append({"step": "Bio Keyword Match", "status": "skipped", "details": "No bio keyword criteria set."})
+
+        return trace
 
     def _check_non_ai_filters(self, bio: str, followers: int, full_name: str, username: str, settings: dict) -> tuple[bool, str]:
         """
