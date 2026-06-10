@@ -278,7 +278,10 @@ class InstagramService:
             "headless": False,
             "channel": "chrome",
             "args": [
-                "--start-maximized",
+                "--window-state=minimized",
+                "--window-position=-3000,-3000",
+                "--no-first-run",
+                "--no-default-browser-check",
                 "--disable-blink-features=AutomationControlled"
             ]
         }
@@ -625,7 +628,10 @@ class InstagramService:
                 "headless": False,
                 "channel": "chrome",
                 "args": [
-                    "--start-maximized",
+                    "--window-state=minimized",
+                    "--window-position=-3000,-3000",
+                    "--no-first-run",
+                    "--no-default-browser-check",
                     "--disable-blink-features=AutomationControlled"
                 ]
             }
@@ -3174,8 +3180,8 @@ class InstagramService:
             proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
             proxies = [dict(r) for r in proxy_rows]
 
-            # 10 max parallel windows, or proxy pool size. Default to 1 if no proxies to prevent local IP ban.
-            concurrency = max(1, min(10, len(proxies))) if proxies else 1
+            # 20 max parallel windows, or proxy pool size. Default to 1 if no proxies to prevent local IP ban.
+            concurrency = max(1, min(20, len(proxies))) if proxies else 1
             logger.info(f"Setting parallel scraping concurrency to {concurrency} (proxies: {len(proxies)})")
 
             sem = asyncio.Semaphore(concurrency)
