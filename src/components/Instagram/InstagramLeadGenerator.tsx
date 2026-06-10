@@ -298,6 +298,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 setDiscoveryStartTime(null);
                 setNotification({ msg: message.message, type: 'success' });
                 fetchData();
+            } else if (message.type === 'filter_settings_updated') {
+                setFilterSettings(prev => ({ ...prev, ...message.settings }));
             }
         });
         return unsubscribe;

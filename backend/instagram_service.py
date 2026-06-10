@@ -1550,6 +1550,14 @@ class InstagramService:
 
         # 1. 🔍 DEEP AI SEARCH RESULT FILTER
         selected_model = settings.get('ai_model') or 'gemma4'
+        
+        # Setup fallback models list
+        cloud_fallbacks = ["gemini", "groq", "huggingface", "minimax-text-01"]
+        models_to_try = [selected_model]
+        for m in cloud_fallbacks:
+            if not any(m in x.lower() for x in models_to_try):
+                models_to_try.append(m)
+
         if not is_qualified:
             ai_trace_steps.append({
                 "step": "Deep AI Search Result Filter",
@@ -1591,17 +1599,47 @@ class InstagramService:
                         "details": "Skipped because no Google search snippet data or Instagram profile text was found for this lead."
                     })
                 else:
-                    try:
-                        step_prefix = ""
-                        await update_ui("analyzing", "Running Deep AI Search Result Filter...")
-                        res = await instagram_ai.analyze_google_result(
-                            title=title,
-                            url=url or f"https://www.instagram.com/{username}/",
-                            snippet=snippet,
-                            criteria=google_niche_filter,
-                            model_choice=selected_model,
-                            api_key=settings.get('minimax_api_key', '')
-                        )
+                    import random
+                    res = None
+                    last_err = None
+                    used_model = selected_model
+                    for model in models_to_try:
+                        try:
+                            # Delay only if calling a cloud model
+                            if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf", "minimax"]):
+                                sleep_time = random.uniform(5.0, 6.0)
+                                logger.info(f"⏳ Sleeping {sleep_time:.2f}s before calling cloud model {model}...")
+                                await asyncio.sleep(sleep_time)
+                            
+                            step_prefix = ""
+                            await update_ui("analyzing", "Running Deep AI Search Result Filter...")
+                            res = await instagram_ai.analyze_google_result(
+                                title=title,
+                                url=url or f"https://www.instagram.com/{username}/",
+                                snippet=snippet,
+                                criteria=google_niche_filter,
+                                model_choice=model,
+                                api_key=settings.get('minimax_api_key', '')
+                            )
+                            if res and "error" not in res:
+                                used_model = model
+                                break
+                            else:
+                                last_err = res.get("error", "Unknown error")
+                                logger.warning(f"⚠️ Search Result Filter failed on {model}: {last_err}. Trying fallback...")
+                        except Exception as e:
+                            last_err = str(e)
+                            logger.warning(f"⚠️ Search Result Filter exception on {model}: {last_err}. Trying fallback...")
+
+                    if not res or "error" in res:
+                        logger.error(f"❌ Deep AI Search Result Filter error: {last_err}")
+                        is_qualified = False
+                        ai_trace_steps.append({
+                            "step": "Deep AI Search Result Filter",
+                            "status": "failed",
+                            "details": f"AI Engine returned error: {last_err}"
+                        })
+                    else:
                         is_match = res.get("match", False)
                         reason = res.get("reason", "No reason provided.")
                         
@@ -1620,14 +1658,6 @@ class InstagramService:
                                 "status": "passed",
                                 "details": f"{step_prefix}{reason}"
                             })
-                    except Exception as eval_err:
-                        logger.error(f"❌ Deep AI Search Result Filter error: {eval_err}")
-                        is_qualified = False
-                        ai_trace_steps.append({
-                            "step": "Deep AI Search Result Filter",
-                            "status": "failed",
-                            "details": f"AI Engine returned error: {eval_err}"
-                        })
 
         # 2. 🧠 DEEP AI INTENT ANALYSIS
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
@@ -1647,43 +1677,64 @@ class InstagramService:
                     "details": "Skipped because no Target Lead Intent description was set."
                 })
             else:
-                ai_result = await instagram_ai.analyze_lead_deep({
-                    "username": username,
-                    "bio": bio,
-                    "followers": followers
-                }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+                import random
+                ai_result = None
+                last_err = None
+                used_model = selected_model
+                for model in models_to_try:
+                    try:
+                        # Delay only if calling a cloud model
+                        if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf", "minimax"]):
+                            sleep_time = random.uniform(5.0, 6.0)
+                            logger.info(f"⏳ Sleeping {sleep_time:.2f}s before calling cloud model {model} for Intent Check...")
+                            await asyncio.sleep(sleep_time)
 
-                if ai_result and "error" not in ai_result:
+                        ai_result = await instagram_ai.analyze_lead_deep({
+                            "username": username,
+                            "bio": bio,
+                            "followers": followers
+                        }, model_choice=model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+                        
+                        if ai_result and "error" not in ai_result:
+                            used_model = model
+                            break
+                        else:
+                            last_err = ai_result.get("error", "Unknown error") if ai_result else "Unknown error"
+                            logger.warning(f"⚠️ Intent Check failed on {model}: {last_err}. Trying fallback...")
+                    except Exception as e:
+                        last_err = str(e)
+                        logger.warning(f"⚠️ Intent Check exception on {model}: {last_err}. Trying fallback...")
+
+                if not ai_result or "error" in ai_result:
+                    logger.warning(f"⚠️ AI was unavailable or returned error: {last_err}")
+                    is_qualified = False
+                    ai_trace_steps.append({
+                        "step": "Deep AI Intent Check",
+                        "status": "failed",
+                        "details": f"AI Engine returned error: {last_err}"
+                    })
+                else:
                     ai_analysis.update(ai_result)
                     score = ai_result.get("intent_score", 0)
                     if ai_result.get("quality") == "high":
                         score = max(score, 90)
-                    logger.info(f"✨ [{selected_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
+                    logger.info(f"✨ [{used_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
 
                     if score < 70:
-                        rejection_reason = f"Low intent score: Gemma intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
+                        rejection_reason = f"Low intent score: {used_model} intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
                         logger.info(f"❌ AI Rejected lead: {rejection_reason}")
                         is_qualified = False
                         ai_trace_steps.append({
                             "step": "Deep AI Intent Check",
                             "status": "failed",
-                            "details": f"Intent match score {score}% is below required 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                            "details": f"Intent match score {score}% is below required 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
                         })
                     else:
                         ai_trace_steps.append({
                             "step": "Deep AI Intent Check",
                             "status": "passed",
-                            "details": f"Intent match score {score}% meets/exceeds 70%. Model: {selected_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                            "details": f"Intent match score {score}% meets/exceeds 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
                         })
-                else:
-                    err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
-                    logger.warning(f"⚠️ [{selected_model}] AI was unavailable or returned error: {err_msg}")
-                    is_qualified = False
-                    ai_trace_steps.append({
-                        "step": "Deep AI Intent Check",
-                        "status": "failed",
-                        "details": f"AI Engine returned error: {err_msg}"
-                    })
         except Exception as ai_err:
             logger.error(f"❌ AI analysis error: {ai_err}")
             ai_trace_steps.append({
@@ -2766,6 +2817,26 @@ class InstagramService:
         logger.info("🧠 Global Sequential AI Analysis Loop started...")
         while True:
             try:
+                # Auto-disable AI analysis for users who have no pending AI leads
+                users_to_disable = await db.fetch("""
+                    SELECT user_id FROM instagram_filter_settings 
+                    WHERE enable_ai_analysis = TRUE 
+                      AND NOT EXISTS (
+                          SELECT 1 FROM instagram_leads 
+                          WHERE user_id = instagram_filter_settings.user_id AND status = 'pending_ai'
+                      )
+                """)
+                for u_row in users_to_disable:
+                    u_id = u_row["user_id"]
+                    logger.info(f"🛑 [Global AI] No pending AI leads left for user {u_id}. Auto-disabling enable_ai_analysis.")
+                    await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = FALSE WHERE user_id = $1", u_id)
+                    try:
+                        await manager.send_personal_message({
+                            "type": "filter_settings_updated",
+                            "settings": {"enable_ai_analysis": False}
+                        }, u_id)
+                    except: pass
+
                 # Fetch the oldest pending_ai lead for users who have enable_ai_analysis = TRUE
                 pending_lead = await db.fetchrow("""
                     SELECT l.id, l.user_id 
