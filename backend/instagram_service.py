@@ -279,7 +279,6 @@ class InstagramService:
             "channel": "chrome",
             "args": [
                 "--window-state=minimized",
-                "--window-position=-3000,-3000",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--disable-blink-features=AutomationControlled"
@@ -629,7 +628,6 @@ class InstagramService:
                 "channel": "chrome",
                 "args": [
                     "--window-state=minimized",
-                    "--window-position=-3000,-3000",
                     "--no-first-run",
                     "--no-default-browser-check",
                     "--disable-blink-features=AutomationControlled"
@@ -3175,25 +3173,24 @@ class InstagramService:
         logger.info(f"Auto-Pilot Analysis Worker started for User {user_id}")
         self.workers[user_id] = True
 
+        # 1. Fetch user proxies to configure concurrency
+        proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
+        proxies = [dict(r) for r in proxy_rows]
+
+        # 20 max parallel windows, or proxy pool size. Default to 1 if no proxies to prevent local IP ban.
+        concurrency = max(1, min(20, len(proxies))) if proxies else 1
+        logger.info(f"Setting parallel scraping concurrency to {concurrency} (proxies: {len(proxies)})")
+
+        lead_queue = asyncio.Queue()
+        worker_tasks = []
+
+        # Start persistent browser workers
+        for i in range(concurrency):
+            proxy_to_use = proxies[i % len(proxies)] if proxies else None
+            t = asyncio.create_task(self._persistent_browser_worker(user_id, lead_queue, proxy_to_use))
+            worker_tasks.append(t)
+
         try:
-            # 1. Fetch user proxies to configure concurrency
-            proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
-            proxies = [dict(r) for r in proxy_rows]
-
-            # 20 max parallel windows, or proxy pool size. Default to 1 if no proxies to prevent local IP ban.
-            concurrency = max(1, min(20, len(proxies))) if proxies else 1
-            logger.info(f"Setting parallel scraping concurrency to {concurrency} (proxies: {len(proxies)})")
-
-            sem = asyncio.Semaphore(concurrency)
-            active_tasks = set()
-
-            async def sem_scrape(lead_id, proxy_to_use):
-                async with sem:
-                    try:
-                        await self.scrape_and_pre_filter_lead(user_id, lead_id, proxy=proxy_to_use)
-                    except Exception as err:
-                        logger.error(f"Error in parallel scrape for lead {lead_id}: {err}")
-
             while self.workers.get(user_id):
                 # 🚀 SELF-HEALING: Auto-Reset rate limits after a 12-hour cool-down!
                 await db.execute("UPDATE instagram_accounts SET status = 'active' WHERE user_id = $1 AND status = 'rate_limited' AND last_used_at < NOW() - INTERVAL '12 hours'", user_id)
@@ -3210,20 +3207,11 @@ class InstagramService:
                     await self.harvest_lead_network(user_id, next_in_queue['id'], force_priority=True)
                     continue
 
-                # Clean up completed scraping tasks
-                active_tasks = {t for t in active_tasks if not t.done()}
-
-                # Clean / Refresh proxy list occasionally to reflect working/added proxies
-                try:
-                    proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
-                    proxies = [dict(r) for r in proxy_rows]
-                except: pass
-
-                # --- STEP 1: PARALLEL SCRAPER INJECTION ---
-                # Check if we can start more parallel scraping tasks
-                if len(active_tasks) < concurrency:
-                    slots_available = concurrency - len(active_tasks)
-                    # Peek for the NEXT discovered leads
+                # Add discovered leads to queue if queue is below concurrency capacity
+                current_qsize = lead_queue.qsize()
+                if current_qsize < concurrency:
+                    slots_available = concurrency - current_qsize
+                    
                     leads_to_scrape = await db.fetch("""
                         SELECT id FROM instagram_leads 
                         WHERE user_id = $1 AND status = 'discovered' 
@@ -3233,17 +3221,9 @@ class InstagramService:
                     for l_row in leads_to_scrape:
                         lead_id = l_row["id"]
                         
-                        # Select proxy
-                        proxy_to_use = None
-                        if proxies:
-                            p_row = random.choice(proxies)
-                            proxy_to_use = {
-                                "host": p_row["host"],
-                                "port": p_row["port"],
-                                "p_user": p_row["username"],
-                                "p_pass": p_row["password"]
-                            }
-
+                        # Lock lead immediately in DB to prevent duplicate parallel processing
+                        await db.execute("UPDATE instagram_leads SET status = 'analyzing', updated_at = NOW() WHERE id = $1", lead_id)
+                        
                         # Mark as analyzing/queued in UI immediately
                         try:
                             await manager.send_personal_message({
@@ -3252,16 +3232,15 @@ class InstagramService:
                             }, user_id)
                         except: pass
 
-                        # Create and run task
-                        task = asyncio.create_task(sem_scrape(lead_id, proxy_to_use))
-                        active_tasks.add(task)
+                        # Push to queue
+                        await lead_queue.put(lead_id)
 
                 # If no active scraping tasks are running, no discovered leads left, and no pending_ai leads left, we are done!
-                if not active_tasks:
+                if lead_queue.empty():
                     has_more_discovered = await db.fetchval("SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'discovered')", user_id)
-                    has_more_pending_ai = await db.fetchval("SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'pending_ai')", user_id)
+                    has_more_analyzing = await db.fetchval("SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'analyzing')", user_id)
                     
-                    if not has_more_discovered and not has_more_pending_ai:
+                    if not has_more_discovered and not has_more_analyzing:
                         logger.info(f"No more leads to analyze for User {user_id}. Auto-Pilot Resting. 😴")
                         try:
                             await manager.send_personal_message({
@@ -3279,7 +3258,210 @@ class InstagramService:
             logger.error(f"Critical Auto-Pilot Worker failure: {e}")
         finally:
             self.workers[user_id] = False
+            # Cancel all persistent browser tasks
+            for t in worker_tasks:
+                t.cancel()
+            await asyncio.gather(*worker_tasks, return_exceptions=True)
             logger.info(f"Auto-Pilot Analysis Worker stopped for User {user_id}")
+
+    async def _persistent_browser_worker(self, user_id: int, lead_queue: asyncio.Queue, proxy: Optional[dict]):
+        """Runs a persistent browser instance, processing leads from the queue sequentially inside the same window."""
+        from patchright.async_api import async_playwright
+        import gc
+
+        playwright_proxy = None
+        if proxy and proxy.get('host'):
+            server_prefix = "socks5://" if proxy.get("proxy_type") == "socks5" else "http://"
+            playwright_proxy = {
+                "server": f"{server_prefix}{proxy['host']}:{proxy['port']}",
+            }
+            if proxy.get('username'):
+                playwright_proxy["username"] = proxy["username"]
+                playwright_proxy["password"] = proxy["password"]
+
+        # Chrome path
+        chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        if not os.path.exists(chrome_path):
+            chrome_path = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
+
+        launch_args = {
+            "executable_path": chrome_path if os.path.exists(chrome_path) else None,
+            "headless": False,
+            "channel": "chrome",
+            "proxy": playwright_proxy,
+            "args": [
+                "--window-state=minimized",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-infobars",
+                "--disable-blink-features=AutomationControlled"
+            ]
+        }
+
+        async with async_playwright() as p:
+            browser = None
+            context = None
+            page = None
+            try:
+                browser = await p.chromium.launch(**launch_args)
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                    viewport={'width': 393, 'height': 852},
+                    is_mobile=True,
+                    has_touch=True,
+                    locale="en-US"
+                )
+                page = await context.new_page()
+
+                while self.workers.get(user_id):
+                    try:
+                        # Get a lead from queue with timeout
+                        try:
+                            lead_id = await asyncio.wait_for(lead_queue.get(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            continue
+
+                        # Process lead
+                        try:
+                            await self._scrape_and_pre_filter_lead_with_page(user_id, lead_id, page)
+                        except Exception as e:
+                            logger.error(f"Error scraping lead {lead_id} in persistent browser: {e}")
+                        finally:
+                            lead_queue.task_done()
+                    except Exception as loop_err:
+                        logger.error(f"Error in persistent browser loop: {loop_err}")
+                        await asyncio.sleep(1)
+            except Exception as launch_err:
+                logger.error(f"Failed to launch persistent browser: {launch_err}")
+            finally:
+                if page:
+                    try: await asyncio.shield(page.close())
+                    except: pass
+                if context:
+                    try: await asyncio.shield(context.close())
+                    except: pass
+                if browser:
+                    try: await asyncio.shield(browser.close())
+                    except: pass
+                gc.collect()
+
+    async def _scrape_and_pre_filter_lead_with_page(self, user_id: int, lead_id: int, page):
+        """
+        Step 1: Scrapes profile using an already open Playwright page, runs non-AI pre-filters.
+        Sets status to 'pending_ai' if qualified, or 'rejected' if disqualified, or 'private'/'error'/'failed'.
+        """
+        lead = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        if not lead: return {"error": "Lead not found"}
+        username = lead['instagram_username']
+
+        async def update_ui(status: str, action: str = None):
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": status,
+                    "current_action": action
+                }, user_id)
+            except: pass
+
+        await update_ui("analyzing", "Scraping profile details...")
+
+        try:
+            logger.info(f"🕶️ Phase 1 Scraping (Persistent Browser): Capturing @{username}...")
+            # Execute analysis action directly on our page
+            result = await self._perform_anonymous_analysis(page, username)
+
+            if not result or not result.get('success'):
+                logger.warning(f"⚠️ Scraping failed for @{username}.")
+                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("failed", "Scraping failed")
+                return {"success": False, "status": "failed"}
+
+            bio = result.get('bio', '')
+            followers = result.get('followers', 0)
+            following = result.get('following', 0)
+            full_name = result.get('full_name', username)
+            posts = result.get('posts', [])
+            is_private = result.get('is_private', False)
+
+            # Not found check
+            not_found_phrases = [
+                'we are downloading the profile',
+                'downloading the profile. please wait',
+                'the page was not found',
+                'page was not found',
+                'profile not found',
+                'user not found',
+                'this account doesn\'t exist',
+                'no posts yet',
+                'account not found',
+                'sorry, this page isn\'t available',
+            ]
+            bio_lower = bio.lower()
+            if any(phrase in bio_lower for phrase in not_found_phrases):
+                logger.warning(f"🚫 Lead {lead_id} shows a 'not found' page. Marking as 'error'.")
+                await db.execute("UPDATE instagram_leads SET status = 'error', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("error", "Profile not found")
+                return {"success": True, "status": "error"}
+
+            # Safety check
+            if not bio and followers == 0 and following == 0:
+                logger.warning(f"⚠️ Lead {lead_id} has NO data. Marking as 'failed' for retry.")
+                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("failed", "No data scraped")
+                return {"success": False, "status": "failed"}
+
+            # Handle private profile immediately
+            if is_private:
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET status = 'private', bio = $1, follower_count = $2, following_count = $3, full_name = $4, recent_posts = '[]', is_private = TRUE, updated_at = NOW() 
+                    WHERE id = $5
+                """, bio, followers, following, full_name, lead_id)
+                logger.info(f"🔒 Lead {lead_id} marked as PRIVATE.")
+                await update_ui("private", "Private account")
+                return {"success": True, "status": "private"}
+
+            # Run non-AI filters
+            settings = await self.get_filter_settings(user_id)
+            is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
+
+            trace_steps = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
+            posts_json = json.dumps(posts or [])
+            if not is_qualified:
+                ai_analysis = {"rejection_reason": rejection_reason, "filter_trace": trace_steps}
+                ai_data_json = json.dumps(ai_analysis)
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET status = 'rejected', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
+                        recent_posts = $5, is_private = FALSE, score = 0, data_audit_json = $6, updated_at = NOW() 
+                    WHERE id = $7
+                """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
+                logger.info(f"❌ Lead {lead_id} rejected by pre-filters: {rejection_reason}")
+                await update_ui("rejected", rejection_reason)
+                return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
+
+            # Passed pre-filters -> set status to pending_ai
+            ai_analysis = {"filter_trace": trace_steps}
+            ai_data_json = json.dumps(ai_analysis)
+            await db.execute("""
+                UPDATE instagram_leads 
+                SET status = 'pending_ai', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
+                    recent_posts = $5, is_private = FALSE, data_audit_json = $6, updated_at = NOW() 
+                WHERE id = $7
+            """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
+            logger.info(f"⏳ Lead {lead_id} passed pre-filters. Marked as pending_ai.")
+            await update_ui("pending_ai", "Passed pre-filters, waiting for AI...")
+            return {"success": True, "status": "pending_ai"}
+
+        except Exception as e:
+            logger.error(f"⚠️ Scraping phase failed for @{username}: {e}")
+            await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+            await update_ui("failed", str(e))
+            return {"success": False, "status": "failed", "error": str(e)}
 
     async def start_auto_analysis(self, user_id: int):
         if self.workers.get(user_id):

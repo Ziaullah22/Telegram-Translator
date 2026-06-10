@@ -207,7 +207,7 @@ const InstagramLeadGenerator: React.FC = () => {
                         type: data.status === 'completed' ? 'success' : 'alert'
                     });
                     setHarvestingId(null);
-                    fetchData();
+                    fetchDataRef.current();
                 }
             } else if (data.type === 'auto_analyze_stopped') {
                 setIsAutoPilotRunning(false);
@@ -259,6 +259,11 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     }, [currentPage, pageSize, filterStatus, searchQuery]);
 
+    const fetchDataRef = useRef(fetchData);
+    useEffect(() => {
+        fetchDataRef.current = fetchData;
+    }, [fetchData]);
+
     const { onMessage } = useSocket();
 
     useEffect(() => {
@@ -270,7 +275,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 if (message.current_action) {
                     setStatusUpdates(prev => ({ ...prev, [message.lead_id]: message.current_action }));
                 }
-                fetchData();
+                fetchDataRef.current();
                 // If the updated lead is the one we are harvesting, clear the stuck state
                 if (message.type === 'instagram_lead_updated') {
                     setHarvestingId((currentHarvestingId) => {
@@ -285,7 +290,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 setRestTimer(null);
             } else if (message.type === 'auto_analyze_finished') {
                 setAutoAnalyzingId(null);
-                fetchData(); // Refresh to show the new 'qualified/vetted' status immediately!
+                fetchDataRef.current(); // Refresh to show the new 'qualified/vetted' status immediately!
             } else if (message.type === 'auto_analyze_resting') {
                 setRestTimer(message.duration);
                 setAutoAnalyzingId(null);
@@ -398,7 +403,7 @@ const InstagramLeadGenerator: React.FC = () => {
         // 🏎️💨 HEARTBEAT: Pulse every 3s if ANYTHING is working! (Auto-Pilot OR Manual Analysis OR Harvest)
         if (isDiscovering || isAutoPilotRunning || isCampaignRunning || analyzingId !== null || harvestingId !== null) {
             pollInterval = setInterval(async () => {
-                fetchData();
+                fetchDataRef.current();
                 if (isCampaignRunning) {
                     try {
                         const campStatus = await instagramAPI.getCampaignStatus();
@@ -1225,7 +1230,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">Quick Filter:</span>
-                                {['all', 'discovered', 'qualified', 'rejected', 'contacted'].map(status => (
+                                {['all', 'discovered', 'pending_ai', 'qualified', 'rejected', 'contacted'].map(status => (
                                     <button
                                         key={status}
                                         onClick={() => setFilterStatus(status)}
@@ -1234,7 +1239,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                             : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                                             }`}
                                     >
-                                        {status}
+                                        {status.replace('_', ' ')}
                                     </button>
                                 ))}
                             </div>
