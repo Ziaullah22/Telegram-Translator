@@ -540,4 +540,6 @@ class InstagramLeadResponse(BaseModel):
 class InstagramDiscoveryRequest(BaseModel):
     keywords: List[str]
     limit_per_keyword: int = 50
+    discovery_intent: Optional[str] = None
+
 

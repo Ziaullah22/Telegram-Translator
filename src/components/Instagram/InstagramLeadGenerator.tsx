@@ -156,6 +156,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [badSelectedKeywords, setBadSelectedKeywords] = useState<Set<string>>(new Set());
     const [badAiProvider, setBadAiProvider] = useState<string>('');
     const [badKeywordModel, setBadKeywordModel] = useState<string>('auto');
+    const [citiesKeywordModel, setCitiesKeywordModel] = useState<string>('auto');
     const badAiChatEndRef = useRef<HTMLDivElement>(null);
 
     // 🤖 AI Cities Whitelist Suggestion States
@@ -588,12 +589,13 @@ const InstagramLeadGenerator: React.FC = () => {
         setAiChatHistory([]);
         setAiSuggestedKeywords([]);
         setSelectedKeywords(new Set());
+        const currentIntent = aiSeedInput;
         setAiSeedInput('');
         setAiChatInput('');
         setNotification({ msg: `🚀 Launched with ${kws.length} AI keywords! Live HUD active.`, type: 'success' });
-
+ 
         try {
-            await instagramAPI.discoverLeads(kws, 50);
+            await instagramAPI.discoverLeads(kws, 50, currentIntent);
             // 🧹 Auto-dedup after scraping
             setTimeout(async () => {
                 try {
@@ -769,7 +771,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 region: regionStr,
                 conversation_history: newHistory,
                 user_message: userMsg,
-                count: citiesAiKeywordCount
+                count: citiesAiKeywordCount,
+                provider: citiesKeywordModel
             });
 
             const updatedHistory: { role: 'user' | 'assistant'; content: string }[] = [
@@ -1294,22 +1297,32 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <div className={`w-2 h-2 rounded-full ${lead.score > 80 ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : lead.score > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} title={`Strategic Score: ${lead.score}%`} />
                                                                     )}
                                                                 </div>
-                                                                <div className="flex items-center gap-1">
+                                                                <div className="flex flex-col gap-0.5">
+                                                                    <div className="flex items-center gap-1">
+                                                                        {(() => {
+                                                                            const ai = typeof lead.data_audit_json === 'string' ? JSON.parse(lead.data_audit_json || '{}') : lead.data_audit_json;
+                                                                            return ai?.niche ? (
+                                                                                <span className="text-[8px] font-black text-indigo-500 uppercase bg-indigo-500/10 px-1 rounded flex items-center gap-0.5">
+                                                                                    <Sparkles className="w-2 h-2" /> {ai.niche}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
+                                                                            );
+                                                                        })()}
+                                                                        {autoAnalyzingId === lead.id && (
+                                                                            <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 uppercase animate-pulse">
+                                                                                <Loader2 className="w-2 h-2 animate-spin" /> Analyzing ⚙️
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                     {(() => {
                                                                         const ai = typeof lead.data_audit_json === 'string' ? JSON.parse(lead.data_audit_json || '{}') : lead.data_audit_json;
-                                                                        return ai?.niche ? (
-                                                                            <span className="text-[8px] font-black text-indigo-500 uppercase bg-indigo-500/10 px-1 rounded flex items-center gap-0.5">
-                                                                                <Sparkles className="w-2 h-2" /> {ai.niche}
+                                                                        return ai?.discovery_intent ? (
+                                                                            <span className="text-[8px] font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1 rounded mt-0.5 max-w-[120px] truncate block" title={`Intent: ${ai.discovery_intent}`}>
+                                                                                🎯 {ai.discovery_intent}
                                                                             </span>
-                                                                        ) : (
-                                                                            <span className="text-[9px] text-gray-400 font-bold lowercase truncate max-w-[80px]">{lead.full_name || 'Personal'}</span>
-                                                                        );
+                                                                        ) : null;
                                                                     })()}
-                                                                    {autoAnalyzingId === lead.id && (
-                                                                        <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 uppercase animate-pulse">
-                                                                            <Loader2 className="w-2 h-2 animate-spin" /> Analyzing ⚙️
-                                                                        </span>
-                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1923,23 +1936,6 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
                                         🧠 When ON, AI will automatically analyze your pending leads in the background, score them, and approve or reject them. When OFF, pending leads will wait.
                                     </p>
-
-                                    <div className="space-y-3 pt-2 animate-in fade-in duration-300">
-                                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                            Target Lead Intent / Qualification Criteria
-                                            <span className="px-1.5 py-0.5 bg-indigo-500 text-white rounded text-[8px]">New</span>
-                                        </label>
-                                        <textarea
-                                            rows={3}
-                                            placeholder="Describe the target business or profiles you want the AI to approve. E.g., 'Find vehicle wrapping shops, PPF studios, or vinyl wrap distributors, ignoring personal bloggers.'"
-                                            value={filterSettings.ai_intent_filter}
-                                            onChange={(e) => setFilterSettings(p => ({ ...p, ai_intent_filter: e.target.value }))}
-                                            className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-gray-400"
-                                        />
-                                        <p className="text-[9px] text-gray-400 font-medium leading-relaxed italic">
-                                            💡 When sequential AI analysis runs, the AI will evaluate each profile against this intent. Leads that match are marked qualified (High Quality), and others are rejected (Low Quality).
-                                        </p>
-                                    </div>
                                 </div>
 
                                 <div className="space-y-4 p-6 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-3xl border border-indigo-500/10 mb-6">
@@ -2252,6 +2248,15 @@ const InstagramLeadGenerator: React.FC = () => {
 
                             {/* Scrollable Content */}
                             <div className="px-8 flex-1 overflow-y-auto space-y-6 pb-2 scrollbar-hide">
+                                {ai?.discovery_intent && (
+                                    <div className="p-4 bg-purple-500/5 rounded-2xl border border-purple-500/10 flex items-start gap-2.5">
+                                        <div className="mt-0.5 text-purple-500">🎯</div>
+                                        <div>
+                                            <span className="text-[8px] font-black text-purple-400 uppercase block tracking-wider mb-0.5">Scraped Target Intent</span>
+                                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">{ai.discovery_intent}</span>
+                                        </div>
+                                    </div>
+                                )}
                                 {/* Gemma Analysis */}
                                 {(!ai || Object.keys(ai).length === 0) ? (
                                     liveLead.status === 'rejected' ? (
@@ -2476,6 +2481,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                     <Play className="w-3 h-3" /> Launch
                                 </div>
                             </div>
+
                         </div>
 
                         {/* STEP 1: AI Chat Side-by-Side */}
@@ -2556,9 +2562,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     setAiChatHistory([]);
                                                     setAiSuggestedKeywords([]);
                                                     setSelectedKeywords(new Set());
+                                                    const currentIntent = aiSeedInput;
                                                     setAiSeedInput('');
                                                     setNotification({ msg: `🚀 Started with ${kws.length} seed keyword(s)! Live HUD active.`, type: 'success' });
-                                                    instagramAPI.discoverLeads(kws, 50)
+                                                    instagramAPI.discoverLeads(kws, 50, currentIntent)
                                                         .then(() => {
                                                             setTimeout(async () => {
                                                                 try {
@@ -3127,7 +3134,6 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <button
                                             onClick={handleApplyBadKeywords}
                                             disabled={badSelectedKeywords.size === 0}
-                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-xl font-black text-sm shadow-xl shadow-red-500/20 transition-all active:scale-95"
                                         >
                                             <CheckCircle2 className="w-4 h-4" /> Add {badSelectedKeywords.size} Keywords to Block List
                                         </button>
@@ -3151,10 +3157,26 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <Wand2 className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">Step 2: Regional Whitelist Builder</h2>
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational Whitelist suggester • Gemma AI</p>
+                                        <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">Regional Whitelist Builder</h2>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Conversational Whitelist suggester</p>
                                     </div>
                                 </div>
+
+                                {/* Step indicators */}
+                                <div className="flex items-center gap-2">
+                                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${citiesAiDiscoveryStep === 'chat' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
+                                        <MessageSquare className="w-3 h-3" /> AI Chat
+                                    </div>
+                                    <ChevronRight className="w-3 h-3 text-gray-300" />
+                                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${citiesAiDiscoveryStep === 'review' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400'}`}>
+                                        <Globe className="w-3 h-3" /> Review Locations
+                                    </div>
+                                    <ChevronRight className="w-3 h-3 text-gray-300" />
+                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-gray-100 dark:bg-white/5 text-gray-400">
+                                        <Play className="w-3 h-3" /> Apply to Filter
+                                    </div>
+                                </div>
+
                                 <button onClick={() => { setShowCitiesModal(false); setCitiesAiDiscoveryStep('chat'); setCitiesAiChatHistory([]); setCitiesAiSuggestedKeywords([]); setCitiesSelectedKeywords(new Set()); setCitiesAiProvider(''); }} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors">
                                     <X className="w-5 h-5 text-gray-400" />
                                 </button>
@@ -3166,56 +3188,76 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="flex flex-1 overflow-hidden divide-x divide-gray-100 dark:divide-white/5">
                                 {/* Left Pane: Chat */}
                                 <div className="flex-1 flex flex-col overflow-hidden">
-                                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                                        {citiesAiChatHistory.length === 0 ? (
-                                            <div className="space-y-6 max-w-md mx-auto pt-6 text-center">
-                                                <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto text-indigo-500">
-                                                    <Sparkles className="w-8 h-8" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-black text-gray-950 dark:text-white text-base">Generate Location Whitelist</h3>
-                                                    <p className="text-xs text-gray-500 mt-1">Specify a target country or region, and Gemma AI will suggest up to 500 major cities, suburbs, and areas to include on the whitelist.</p>
-                                                </div>
-                                                <div className="space-y-4 text-left">
-                                                    <div className="space-y-1">
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Target Country or Region 📍</p>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="e.g. Australia, California, Germany..."
-                                                            value={citiesAiSeedInput}
-                                                            onChange={e => setCitiesAiSeedInput(e.target.value)}
-                                                            className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none focus:border-indigo-400"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1">
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Suggested Locations count ({citiesAiKeywordCount})</p>
-                                                        <input
-                                                            type="range"
-                                                            min="20"
-                                                            max="500"
-                                                            step="10"
-                                                            value={citiesAiKeywordCount}
-                                                            onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
-                                                            className="w-full h-1.5 bg-gray-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                                                        />
-                                                        <div className="flex justify-between text-[9px] text-gray-400 font-bold uppercase tracking-tight">
-                                                            <span>20 cities</span>
-                                                            <span>500 cities</span>
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleCitiesAiChat()}
-                                                        disabled={isCitiesAiThinking || !citiesAiSeedInput.trim()}
-                                                        className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                                    {/* Seed input + Model Selector */}
+                                    <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-bold">Describe Target Country / Region / City 📍</p>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">AI Model:</span>
+                                                    <select
+                                                        value={citiesKeywordModel}
+                                                        onChange={e => setCitiesKeywordModel(e.target.value)}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
                                                     >
-                                                        Generate Target Whitelist ✨
-                                                    </button>
+                                                        <option value="auto">Auto / Default</option>
+                                                        <option value="gemini">Gemini API</option>
+                                                        <option value="groq">Groq API</option>
+                                                        <option value="openrouter">OpenRouter API</option>
+                                                        <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
+                                                        <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
+                                                        <option value="gemma">Gemma 4 (Ollama)</option>
+                                                    </select>
                                                 </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-black uppercase text-gray-400">Target Count:</span>
+                                                    <select
+                                                        value={citiesAiKeywordCount}
+                                                        onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
+                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
+                                                    >
+                                                        {[10, 20, 30, 50, 75, 100, 200, 300, 500].map(n => <option key={n} value={n}>{n} Locations</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Australia, California, Germany, major cities in UK..."
+                                                value={citiesAiSeedInput}
+                                                onChange={e => setCitiesAiSeedInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isCitiesAiThinking) handleCitiesAiChat(); }}
+                                                className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 dark:text-white outline-none focus:border-indigo-400"
+                                            />
+                                            <button
+                                                onClick={() => handleCitiesAiChat()}
+                                                disabled={isCitiesAiThinking || !citiesAiSeedInput.trim()}
+                                                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                                            >
+                                                {isCitiesAiThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                                {isCitiesAiThinking ? 'Thinking...' : 'Get Cities'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Chat messages */}
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                        {citiesAiChatHistory.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                                <div className="w-16 h-16 bg-gradient-to-tr from-indigo-500/20 to-purple-600/20 rounded-3xl flex items-center justify-center mb-4">
+                                                    <Globe className="w-8 h-8 text-indigo-500" />
+                                                </div>
+                                                <h3 className="text-sm font-black text-gray-900 dark:text-white mb-2">AI Regional Whitelist Assistant</h3>
+                                                <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                                                    Describe what country, region or cities you want to whitelist (e.g. major cities in UK, suburbs of Sydney) and I'll suggest target locations.
+                                                </p>
                                             </div>
                                         ) : (
                                             citiesAiChatHistory.map((msg, idx) => (
                                                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed shadow-sm ${msg.role === 'user'
+                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
                                                             ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
                                                             : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
                                                         }`}>
@@ -3235,7 +3277,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-2xl rounded-bl-none px-4 py-3">
                                                     <div className="flex items-center gap-1.5">
                                                         <Sparkles className="w-3 h-3 text-indigo-500" />
-                                                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest font-bold">{getDisplayEngineName(citiesAiProvider)}</span>
+                                                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{getDisplayEngineName(citiesAiProvider)}</span>
                                                     </div>
                                                     <div className="flex items-center gap-1.5 mt-1">
                                                         <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />

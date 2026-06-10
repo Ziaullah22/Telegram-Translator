@@ -107,7 +107,7 @@ class InstagramService:
         
         return list(found)
 
-    async def discover_leads_google(self, user_id, keywords, limit_per_keyword=100):
+    async def discover_leads_google(self, user_id, keywords, limit_per_keyword=100, discovery_intent=None):
         """
         🚀 High-Precision Discovery Engine
         Uses targeted Google scraping with strict filtering for Instagram handles.
@@ -128,24 +128,31 @@ class InstagramService:
             google_niche_filter = ""
             ai_model = "minimax-text-01"
             minimax_api_key = ""
-
+ 
             # Fetch proxies for user
             proxy_rows = await db.fetch(
                 "SELECT host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1", user_id
             )
             proxies = [dict(r) for r in proxy_rows] if proxy_rows else []
-
+ 
             async def run_single_keyword(keyword, kw_idx, proxy=None):
                 nonlocal new_count
                 # 🛠️ Direct Username Detection
                 kw_clean = keyword.strip().lstrip('@')
                 if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
                     logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                    status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, kw_clean, "direct_add")
+                    data_audit = {}
+                    if discovery_intent:
+                        data_audit["discovery_intent"] = discovery_intent
+                    status = await db.execute(
+                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                        "VALUES ($1, $2, $3, 'discovered', $4) ON CONFLICT DO NOTHING", 
+                        user_id, kw_clean, "direct_add", json.dumps(data_audit)
+                    )
                     if status == "INSERT 0 1":
                         async with new_count_lock:
                             new_count += 1
-
+ 
                 msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
                 if proxy:
                     msg = f"🔍 [Parallel Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)}) using proxy {proxy.get('host')}..."
@@ -153,7 +160,7 @@ class InstagramService:
                 self._discovery_status[user_id]["progress"] = msg
                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                 except: pass
-
+ 
                 current_kw_new = 0
                 
                 # 🚀 STAGE A: Scrapling Ultra Surge (Fast & Stealthy Google)
@@ -169,7 +176,7 @@ class InstagramService:
                             playwright_proxy["username"] = proxy["username"]
                         if proxy.get("password"):
                             playwright_proxy["password"] = proxy["password"]
-
+ 
                     surge_leads = await self._perform_scrapling_discovery(
                         keyword, 
                         limit=limit_per_keyword,
@@ -178,29 +185,40 @@ class InstagramService:
                         ai_model=ai_model,
                         minimax_api_key=minimax_api_key,
                         user_id=user_id,
-                        proxy=playwright_proxy
+                        proxy=playwright_proxy,
+                        discovery_intent=discovery_intent
                     )
                     if surge_leads:
                         for u in surge_leads:
                             if current_kw_new >= limit_per_keyword: break
-                            status = await db.execute("INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status) VALUES ($1, $2, $3, 'discovered') ON CONFLICT DO NOTHING", user_id, u, keyword)
+                            data_audit = {}
+                            if discovery_intent:
+                                data_audit["discovery_intent"] = discovery_intent
+                            status = await db.execute(
+                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                "VALUES ($1, $2, $3, 'discovered', $4) "
+                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                "discovery_keyword = EXCLUDED.discovery_keyword",
+                                user_id, u, keyword, json.dumps(data_audit)
+                            )
                             if status == "INSERT 0 1": 
                                 async with new_count_lock:
                                     new_count += 1
                                 current_kw_new += 1
                 except Exception as e:
                     logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
-
+ 
             if proxies:
                 # 🚀 Browser Reuse Mode: up to 20 browsers, each handles a BATCH of keywords
                 max_workers = min(len(proxies), 20)
                 logger.info(f"🛰️ Parallel Browser Mode: {max_workers} browsers open simultaneously, each reusing session across keyword batch.")
-
+ 
                 # Split keywords into batches — one batch per browser worker
                 keyword_batches = [[] for _ in range(max_workers)]
                 for kw_idx, keyword in enumerate(keywords):
                     keyword_batches[kw_idx % max_workers].append((kw_idx, keyword))
-
+ 
                 async def browser_worker(batch, proxy):
                     """One browser handles its entire batch of keywords without closing."""
                     await self._run_browser_worker(
@@ -214,15 +232,16 @@ class InstagramService:
                         user_id=user_id,
                         proxy=proxy,
                         new_count_ref=[new_count],
-                        new_count_lock=new_count_lock
+                        new_count_lock=new_count_lock,
+                        discovery_intent=discovery_intent
                     )
-
+ 
                 worker_tasks = []
                 for i in range(max_workers):
                     if keyword_batches[i]:  # only spawn if batch has keywords
                         assigned_proxy = proxies[i % len(proxies)]
                         worker_tasks.append(browser_worker(keyword_batches[i], assigned_proxy))
-
+ 
                 await asyncio.gather(*worker_tasks)
             else:
                 # 🔒 Run sequentially if no proxies (safety first)
@@ -248,13 +267,13 @@ class InstagramService:
             
         return new_count
 
-    async def _run_browser_worker(self, batch: list, total_keywords: int, limit_per_keyword: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, proxy: Optional[dict], new_count_ref: list, new_count_lock: asyncio.Lock):
+    async def _run_browser_worker(self, batch: list, total_keywords: int, limit_per_keyword: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, proxy: Optional[dict], new_count_ref: list, new_count_lock: asyncio.Lock, discovery_intent: str = None):
         """
         🏎️ BROWSER WORKER: Opens ONE browser and processes a BATCH of keywords sequentially.
         After each keyword, it clears the Google search box and types the next one — no browser restart!
         """
         from patchright.async_api import async_playwright
-
+ 
         launch_args = {
             "headless": False,
             "channel": "chrome",
@@ -272,7 +291,7 @@ class InstagramService:
             if proxy.get("password"):
                 playwright_proxy["password"] = proxy["password"]
             launch_args["proxy"] = playwright_proxy
-
+ 
         async with async_playwright() as p:
             browser = await p.chromium.launch(**launch_args)
             context = await browser.new_context(
@@ -281,14 +300,14 @@ class InstagramService:
             )
             page = await context.new_page()
             is_first_keyword = True
-
+ 
             for kw_idx, keyword in batch:
                 try:
                     msg = f"🔍 [Browser Worker] Processing '{keyword}' ({kw_idx+1}/{total_keywords}) — reusing browser session..."
                     logger.info(msg)
                     try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                     except: pass
-
+ 
                     found = await self._scrape_keyword_on_page(
                         page=page,
                         keyword=keyword,
@@ -299,7 +318,8 @@ class InstagramService:
                         ai_model=ai_model,
                         minimax_api_key=minimax_api_key,
                         user_id=user_id,
-                        is_first_keyword=is_first_keyword
+                        is_first_keyword=is_first_keyword,
+                        discovery_intent=discovery_intent
                     )
                     is_first_keyword = False
 
@@ -317,7 +337,7 @@ class InstagramService:
             await browser.close()
             logger.info(f"🏁 Browser worker finished batch of {len(batch)} keywords.")
 
-    async def _scrape_keyword_on_page(self, page, keyword: str, kw_idx: int, limit: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, is_first_keyword: bool) -> int:
+    async def _scrape_keyword_on_page(self, page, keyword: str, kw_idx: int, limit: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, is_first_keyword: bool, discovery_intent: str = None) -> int:
         """
         🔍 Scrapes Google for ONE keyword using an already-open page.
         If is_first_keyword: navigates to Google home and types the query.
@@ -328,13 +348,13 @@ class InstagramService:
         seen = set()
         new_leads_count = 0
         search_query = f"{keyword} site:instagram.com"
-
+ 
         # ---- FIRST keyword: open Google home and type ----
         if is_first_keyword:
             logger.info("🌐 Opening Google homepage for first keyword...")
             await page.goto("https://www.google.com", wait_until="domcontentloaded")
             await asyncio.sleep(random.uniform(2.0, 4.0))
-
+ 
             # Dismiss consent/cookie popups
             try:
                 popup_selectors = [
@@ -351,7 +371,7 @@ class InstagramService:
                         await asyncio.sleep(random.uniform(1.0, 2.0))
             except Exception as pe:
                 logger.warning(f"⚠️ Popup bypass warning: {pe}")
-
+ 
             search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
             if search_box:
                 await search_box.click()
@@ -364,7 +384,7 @@ class InstagramService:
             else:
                 logger.warning("⚠️ Search box not found. Direct URL navigation...")
                 await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
-
+ 
         # ---- SUBSEQUENT keywords: reuse the same tab, clear search box ----
         else:
             logger.info(f"♻️ Reusing browser — clearing search box for next keyword: '{keyword}'")
@@ -391,14 +411,14 @@ class InstagramService:
             except Exception as e:
                 logger.warning(f"⚠️ Search box reuse failed: {e}. Falling back to direct URL...")
                 await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
-
+ 
         # ---- Scrape multiple pages for this keyword ----
         for page_num in range(20):
             if len(found_usernames) >= limit:
                 break
             start_idx = page_num * 10
             logger.info(f"🔥 [SURGE] Page {page_num+1} for '{keyword}'...")
-
+ 
             try:
                 if page_num > 0:
                     # Navigate to next page
@@ -408,17 +428,17 @@ class InstagramService:
                         await asyncio.sleep(random.uniform(0.5, 1.0))
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     await asyncio.sleep(random.uniform(2.0, 3.5))
-
+ 
                     next_btn = await page.query_selector("a#pnnext")
                     if next_btn:
                         await next_btn.click()
                     else:
                         logger.warning("⚠️ Next page button not found. Direct URL...")
                         await page.goto(f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}", wait_until="domcontentloaded")
-
+ 
                 logger.info("⏳ Waiting for results (15s)...")
                 await asyncio.sleep(15)
-
+ 
                 # CAPTCHA detection
                 content = (await page.content()).lower()
                 if "unusual traffic" in content or "captcha" in content:
@@ -429,17 +449,17 @@ class InstagramService:
                         if "unusual traffic" not in content and "captcha" not in content:
                             logger.info("✅ CAPTCHA resolved!")
                             break
-
+ 
                 # Human scrolling
                 for _ in range(random.randint(5, 8)):
                     await page.evaluate(f"window.scrollBy(0, {random.randint(300, 600)})")
                     await asyncio.sleep(random.uniform(0.8, 1.5))
-
+ 
                 # Extract leads from cards
                 cards = await page.query_selector_all('div.g, div[data-ved]')
                 processed_card_leads = 0
                 links = []
-
+ 
                 if cards and len(cards) > 0:
                     logger.info(f"📋 Found {len(cards)} result cards for '{keyword}'")
                     for card in cards:
@@ -471,6 +491,15 @@ class InstagramService:
                                         card_title = ""
                                         card_snippet = ""
                                     try:
+                                        data_audit = {
+                                            "google_snippet_data": {
+                                                "title": card_title,
+                                                "url": href,
+                                                "snippet": card_snippet
+                                            }
+                                        }
+                                        if discovery_intent:
+                                            data_audit["discovery_intent"] = discovery_intent
                                         new_id = await db.fetchval(
                                             "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                             "VALUES ($1, $2, $3, 'discovered', $4) "
@@ -478,13 +507,7 @@ class InstagramService:
                                             "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                             "discovery_keyword = EXCLUDED.discovery_keyword "
                                             "RETURNING id",
-                                            user_id, u, keyword, json.dumps({
-                                                "google_snippet_data": {
-                                                    "title": card_title,
-                                                    "url": href,
-                                                    "snippet": card_snippet
-                                                }
-                                            })
+                                            user_id, u, keyword, json.dumps(data_audit)
                                         )
                                         if new_id:
                                             new_leads_count += 1
@@ -497,7 +520,7 @@ class InstagramService:
                                             except: pass
                                     except Exception as db_err:
                                         logger.error(f"❌ DB insert error for @{u}: {db_err}")
-
+ 
                 # Fallback: regex from page text if cards returned nothing
                 if processed_card_leads == 0:
                     logger.warning("⚠️ Card selector found no leads. Using regex fallback...")
@@ -516,6 +539,15 @@ class InstagramService:
                                     found_usernames.append(u)
                                     seen.add(u)
                                     try:
+                                        data_audit = {
+                                            "google_snippet_data": {
+                                                "title": "",
+                                                "url": href,
+                                                "snippet": ""
+                                            }
+                                        }
+                                        if discovery_intent:
+                                            data_audit["discovery_intent"] = discovery_intent
                                         new_id = await db.fetchval(
                                             "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                             "VALUES ($1, $2, $3, 'discovered', $4) "
@@ -523,13 +555,7 @@ class InstagramService:
                                             "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                             "discovery_keyword = EXCLUDED.discovery_keyword "
                                             "RETURNING id",
-                                            user_id, u, keyword, json.dumps({
-                                                "google_snippet_data": {
-                                                    "title": "",
-                                                    "url": href,
-                                                    "snippet": ""
-                                                }
-                                            })
+                                            user_id, u, keyword, json.dumps(data_audit)
                                         )
                                         if new_id:
                                             new_leads_count += 1
@@ -538,7 +564,7 @@ class InstagramService:
                                             except: pass
                                     except Exception as db_err:
                                         logger.error(f"❌ DB insert error for @{u}: {db_err}")
-
+ 
                     snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
                     for u in snippets:
                         u = u.strip().strip('./_')
@@ -546,6 +572,15 @@ class InstagramService:
                             found_usernames.append(u)
                             seen.add(u)
                             try:
+                                data_audit = {
+                                    "google_snippet_data": {
+                                        "title": "",
+                                        "url": f"https://www.instagram.com/{u}/",
+                                        "snippet": ""
+                                    }
+                                }
+                                if discovery_intent:
+                                    data_audit["discovery_intent"] = discovery_intent
                                 new_id = await db.fetchval(
                                     "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                     "VALUES ($1, $2, $3, 'discovered', $4) "
@@ -553,13 +588,7 @@ class InstagramService:
                                     "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                     "discovery_keyword = EXCLUDED.discovery_keyword "
                                     "RETURNING id",
-                                    user_id, u, keyword, json.dumps({
-                                        "google_snippet_data": {
-                                            "title": "",
-                                            "url": f"https://www.instagram.com/{u}/",
-                                            "snippet": ""
-                                        }
-                                    })
+                                    user_id, u, keyword, json.dumps(data_audit)
                                 )
                                 if new_id:
                                     new_leads_count += 1
@@ -581,7 +610,7 @@ class InstagramService:
         logger.info(f"🎯 Keyword '{keyword}' done. Found {len(found_usernames)} leads ({new_leads_count} new).")
         return new_leads_count
 
-    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None):
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None, discovery_intent: str = None):
         """
         🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
         Uses raw patchright for total control and visible navigation.
@@ -589,7 +618,7 @@ class InstagramService:
         from patchright.async_api import async_playwright
         found_usernames = []
         seen = set()
-
+ 
         async with async_playwright() as p:
             # 🖥️ LAUNCH ACTUAL GOOGLE CHROME WITH STEALTH FLAGS
             launch_args = {
@@ -602,7 +631,7 @@ class InstagramService:
             }
             if proxy:
                 launch_args["proxy"] = proxy
-
+ 
             browser = await p.chromium.launch(**launch_args)
             # 🖼️ NO VIEWPORT (Let it use the full screen)
             context = await browser.new_context(
@@ -610,16 +639,16 @@ class InstagramService:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
-
+ 
             # 🚀 MAX RESULTS MODE (Up to 20 pages or until results end)
             for page_num in range(20):
                 if len(found_usernames) >= limit: break
                 start_idx = page_num * 10
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
-
+ 
                 search_query = f"{keyword} site:instagram.com"
                 url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
-
+ 
                 try:
                     if page_num == 0:
                         # 1. Open Google home page directly
@@ -683,10 +712,10 @@ class InstagramService:
                         else:
                             logger.warning("⚠️ Next page button not found. Navigating directly...")
                             await page.goto(url, wait_until="domcontentloaded")
-
+ 
                     logger.info("⏳ Waiting for Google Results (15s Deep Breath)...")
                     await asyncio.sleep(15) 
-
+ 
                     # 🛡️ Robot Check detection
                     content = (await page.content()).lower()
                     if "unusual traffic" in content or "captcha" in content:
@@ -697,18 +726,18 @@ class InstagramService:
                             if "unusual traffic" not in content and "captcha" not in content:
                                 logger.info("✅ CAPTCHA Resolved!")
                                 break
-
+ 
                     # 📜 HUMAN SCROLLING (Slow & Steady)
                     logger.info("⏬ Scrolling results like a human...")
                     for _ in range(random.randint(5, 8)):
                         scroll_step = random.randint(300, 600)
                         await page.evaluate(f"window.scrollBy(0, {scroll_step})")
                         await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
-
+ 
                     # 🎯 CARD-BASED AI DISCOVERY WITH ROBUST FALLBACK
                     cards = await page.query_selector_all('div.g, div[data-ved]')
                     processed_card_leads = 0
-
+ 
                     if cards and len(cards) > 0:
                         logger.info(f"📋 Found {len(cards)} Google result cards. Starting card-based analysis...")
                         for card in cards:
@@ -738,7 +767,7 @@ class InstagramService:
                                         snippet = await card.inner_text()
                                         if title and title in snippet:
                                             snippet = snippet.replace(title, "").strip()
-
+ 
                                         # Deep AI Filter logic
                                         if enable_ai_filter and google_niche_filter:
                                             msg = f"🧠 [AI Filter] Evaluating @{u} ({ai_model})..."
@@ -777,6 +806,15 @@ class InstagramService:
                                         # Save lead to database immediately in real-time!
                                         db_status = "discovered"
                                         try:
+                                            data_audit = {
+                                                "google_snippet_data": {
+                                                    "title": title,
+                                                    "url": href,
+                                                    "snippet": snippet
+                                                }
+                                            }
+                                            if discovery_intent:
+                                                data_audit["discovery_intent"] = discovery_intent
                                             new_id = await db.fetchval(
                                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                                 "VALUES ($1, $2, $3, $4, $5) "
@@ -784,13 +822,7 @@ class InstagramService:
                                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                                 "discovery_keyword = EXCLUDED.discovery_keyword "
                                                 "RETURNING id",
-                                                user_id, u, keyword, db_status, json.dumps({
-                                                    "google_snippet_data": {
-                                                        "title": title,
-                                                        "url": href,
-                                                        "snippet": snippet
-                                                    }
-                                                })
+                                                user_id, u, keyword, db_status, json.dumps(data_audit)
                                             )
                                             if new_id:
                                                 try:
@@ -802,7 +834,7 @@ class InstagramService:
                                                 except: pass
                                         except Exception as db_err:
                                             logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
-
+ 
                     # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
                     if processed_card_leads == 0:
                         logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
@@ -825,6 +857,15 @@ class InstagramService:
                                         
                                         # Save fallback link lead immediately!
                                         try:
+                                            data_audit = {
+                                                "google_snippet_data": {
+                                                    "title": "",
+                                                    "url": href,
+                                                    "snippet": ""
+                                                }
+                                            }
+                                            if discovery_intent:
+                                                data_audit["discovery_intent"] = discovery_intent
                                             new_id = await db.fetchval(
                                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                                 "VALUES ($1, $2, $3, 'discovered', $4) "
@@ -832,13 +873,7 @@ class InstagramService:
                                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                                 "discovery_keyword = EXCLUDED.discovery_keyword "
                                                 "RETURNING id",
-                                                user_id, u, keyword, json.dumps({
-                                                    "google_snippet_data": {
-                                                        "title": "",
-                                                        "url": href,
-                                                        "snippet": ""
-                                                    }
-                                                })
+                                                user_id, u, keyword, json.dumps(data_audit)
                                             )
                                             if new_id:
                                                 try:
@@ -850,7 +885,7 @@ class InstagramService:
                                                 except: pass
                                         except Exception as db_err:
                                             logger.error(f"❌ Failed to insert fallback lead {u} in real-time: {db_err}")
-
+ 
                         # 2. Scrape from Text Snippets (Deep Scan)
                         snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
                         for u in snippets:
@@ -862,6 +897,15 @@ class InstagramService:
                                 
                                 # Save fallback snippet lead immediately!
                                 try:
+                                    data_audit = {
+                                        "google_snippet_data": {
+                                            "title": "",
+                                            "url": f"https://www.instagram.com/{u}/",
+                                            "snippet": ""
+                                        }
+                                    }
+                                    if discovery_intent:
+                                        data_audit["discovery_intent"] = discovery_intent
                                     new_id = await db.fetchval(
                                          "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                          "VALUES ($1, $2, $3, 'discovered', $4) "
@@ -869,13 +913,7 @@ class InstagramService:
                                          "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                          "discovery_keyword = EXCLUDED.discovery_keyword "
                                          "RETURNING id",
-                                         user_id, u, keyword, json.dumps({
-                                             "google_snippet_data": {
-                                                 "title": "",
-                                                 "url": f"https://www.instagram.com/{u}/",
-                                                 "snippet": ""
-                                             }
-                                         })
+                                         user_id, u, keyword, json.dumps(data_audit)
                                     )
                                     if new_id:
                                         try:
@@ -1123,7 +1161,10 @@ class InstagramService:
         # 5. 🧠 DEEP AI ANALYSIS
         ai_analysis = {}
         score = 0
-        intent_description = settings.get('ai_intent_filter', '')
+        lead_row = await db.fetchrow("SELECT data_audit_json, instagram_username FROM instagram_leads WHERE id = $1", lead_id)
+        existing_audit = json.loads(lead_row['data_audit_json'] or '{}') if (lead_row and lead_row['data_audit_json']) else {}
+        intent_description = existing_audit.get('discovery_intent', '') or settings.get('ai_intent_filter', '')
+        
         if not is_qualified:
             trace_steps.append({
                 "step": "Deep AI Intent Check",
@@ -1139,8 +1180,6 @@ class InstagramService:
         else:
             selected_model = settings.get('ai_model') or 'gemma4'
             await update_ui(f"AI ({selected_model}): Analyzing Bio & Intent...")
-            # Fetch username
-            lead_row = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1", lead_id)
             username_val = lead_row['instagram_username'] if lead_row else "unknown"
             logger.info(f"🧠 [{selected_model}] Analyzing @{username_val}...")
             ai_result = await instagram_ai.analyze_lead_deep({
@@ -1663,7 +1702,7 @@ class InstagramService:
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
         
         try:
-            intent_description = settings.get('ai_intent_filter', '')
+            intent_description = existing_audit.get('discovery_intent', '') or settings.get('ai_intent_filter', '')
             if not is_qualified:
                 ai_trace_steps.append({
                     "step": "Deep AI Intent Check",

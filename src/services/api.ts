@@ -824,8 +824,8 @@ export const salesAPI = {
 
 // --- INSTAGRAM LEAD GENERATION SERVICES ---
 export const instagramAPI = {
-  discoverLeads: async (keywords: string[], limit_per_keyword: number = 50): Promise<{ status: string; message: string }> => {
-    const response = await api.post('/instagram/discover', { keywords, limit_per_keyword });
+  discoverLeads: async (keywords: string[], limit_per_keyword: number = 50, discovery_intent?: string): Promise<{ status: string; message: string }> => {
+    const response = await api.post('/instagram/discover', { keywords, limit_per_keyword, discovery_intent });
     return response.data;
   },
 
@@ -1092,6 +1092,7 @@ export const instagramAPI = {
     conversation_history?: { role: string; content: string }[];
     user_message?: string;
     count?: number;
+    provider?: string;
   }): Promise<{
     cities: string[];
     ai_message: string;

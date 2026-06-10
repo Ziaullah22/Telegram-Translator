@@ -106,7 +106,8 @@ async def discover_leads(
         instagram_service.discover_leads_google,
         current_user.user_id, 
         request.keywords, 
-        request.limit_per_keyword
+        request.limit_per_keyword,
+        request.discovery_intent
     )
     return {"status": "success", "message": "Discovery started in background."}
 
@@ -635,7 +636,8 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                 "model": "llama-3.3-70b-versatile",
                 "messages": groq_messages,
                 "temperature": temperature,
-                "response_format": {"type": "json_object"}
+                "response_format": {"type": "json_object"},
+                "max_tokens": 4096
             }
 
             async with aiohttp.ClientSession() as session:
@@ -737,7 +739,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                 "model": "Qwen/Qwen2.5-72B-Instruct",
                 "messages": hf_messages,
                 "temperature": temperature,
-                "max_tokens": 500
+                "max_tokens": 4096
             }
 
             async with aiohttp.ClientSession() as session:
@@ -1178,6 +1180,7 @@ class CitiesSuggestRequest(BaseModel):
     conversation_history: List[dict] = []  # [{role: "user"/"assistant", content: "..."}]
     user_message: str = ""
     count: int = 50  # How many cities to suggest (50-500)
+    provider: Optional[str] = None
 
 
 @router.post("/suggest-cities")
@@ -1227,13 +1230,98 @@ async def suggest_cities(
     api_provider = "None (Local Fallback)"
     # 🚀 AI BYPASS: Generating > 100 cities/suburbs takes too long for local LLMs and causes timeouts.
     # We bypass Ollama for counts > 100 and use the instant database fallback.
-    if count <= 100:
-        suggested_cities, ai_message, ai_used, ai_online, api_provider = await query_ai_service(
-            messages=messages,
-            system_prompt=system_prompt,
-            array_key="cities",
-            temperature=0.5
-        )
+    selected_provider = req.provider.lower().strip() if req.provider else "auto"
+    
+    # We will generate in batches to ensure model generates the full list without cutting off
+    batch_size = 50
+    total_wanted = count
+    accumulated_messages = []
+    
+    run_ai = True
+    if total_wanted > 100 and selected_provider in ("ollama", "ollama-local", "local"):
+        run_ai = False
+
+    if run_ai:
+        max_batches = (total_wanted + batch_size - 1) // batch_size
+        logger.info(f"Generating {total_wanted} cities/regions for {region_str} in up to {max_batches} batches using provider {selected_provider}...")
+        
+        for batch_idx in range(max_batches):
+            current_batch_wanted = min(batch_size, total_wanted - len(suggested_cities))
+            if current_batch_wanted <= 0:
+                break
+                
+            # Customize the system prompt and user content to avoid duplicates
+            exclude_str = ""
+            if suggested_cities:
+                sample_excludes = suggested_cities[-100:]
+                exclude_str = f" You MUST NOT include any of the following cities/regions that were already generated: {', '.join(sample_excludes)}."
+
+            system_prompt = (
+                f"You are a target region and city database expert. Your job is to help the user generate a list of cities "
+                f"or regions in a target country or area to be used as a profile location whitelist. "
+                f"Generate a list of {current_batch_wanted} major cities, suburbs, or regions in the target area (e.g. {region_str}).{exclude_str} "
+                f"Return ONLY a valid JSON object with a 'cities' array of strings and a 'message' string explaining the coverage. "
+                f"Example: {{\"cities\": [\"Sydney\", \"Melbourne\", \"Brisbane\"], \"message\": \"Here are some major cities in Australia...\"}}"
+            )
+            
+            # Prepare messages
+            batch_messages = [{"role": "system", "content": system_prompt}]
+            if batch_idx == 0:
+                for turn in req.conversation_history[-8:]:
+                    if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                        batch_messages.append({"role": turn["role"], "content": turn["content"]})
+                        
+            if batch_idx == 0 and req.user_message.strip():
+                user_content = req.user_message
+            else:
+                user_content = (
+                    f"Generate a whitelist of {current_batch_wanted} unique cities or regions in the target area: {region_str}.{exclude_str} "
+                    f"Please output the result as JSON."
+                )
+            batch_messages.append({"role": "user", "content": user_content})
+            
+            try:
+                batch_cities, batch_msg, ai_used_flag, ai_online_flag, api_prov_flag = await query_ai_service(
+                    messages=batch_messages,
+                    system_prompt=system_prompt,
+                    array_key="cities",
+                    temperature=0.7,
+                    provider=req.provider,
+                    user_id=current_user.user_id
+                )
+                if ai_used_flag:
+                    ai_used = True
+                if ai_online_flag:
+                    ai_online = True
+                if api_prov_flag and api_prov_flag != "None":
+                    api_provider = api_prov_flag
+                    
+                if not batch_cities:
+                    logger.warning(f"Batch {batch_idx + 1} returned no cities, stopping generator.")
+                    break
+                    
+                new_added = 0
+                for c in batch_cities:
+                    c_clean = c.strip()
+                    if c_clean and c_clean.lower() not in [sc.lower() for sc in suggested_cities]:
+                        suggested_cities.append(c_clean)
+                        new_added += 1
+                        
+                if batch_msg:
+                    accumulated_messages.append(batch_msg)
+                    
+                logger.info(f"Batch {batch_idx + 1} generated {len(batch_cities)} cities ({new_added} unique new ones). Total: {len(suggested_cities)}.")
+                
+                if new_added == 0:
+                    break
+            except Exception as e:
+                logger.error(f"Error generating batch {batch_idx + 1}: {e}")
+                break
+                
+        if suggested_cities:
+            ai_message = f"Generated {len(suggested_cities)} unique cities/regions using {api_provider} in batches.\n\n"
+            if accumulated_messages:
+                ai_message += accumulated_messages[0]
 
     # Fallback to algorithmic cities
     if not suggested_cities:
