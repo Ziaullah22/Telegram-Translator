@@ -768,6 +768,75 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
             if prov_lower != "auto":
                 return [], f"❌ Failed to query Hugging Face API: {hf_err}", False, False, "Hugging Face API"
 
+    # 4.5 Try Qwen Local (llama.cpp / Ollama fallback)
+    if prov_lower == "qwen-35b-local":
+        payload_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
+        payload = {
+            "model": "qwen",
+            "messages": payload_messages,
+            "temperature": temperature,
+            "response_format": {"type": "json_object"}
+        }
+        llama_cpp_ok = False
+        raw = "{}"
+
+        for port in [8080, 8000]:
+            url = f"http://localhost:{port}/v1/chat/completions"
+            logger.info(f"Connecting to llama.cpp at {url}...")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url, 
+                        json=payload, 
+                        headers={"Content-Type": "application/json"}, 
+                        timeout=aiohttp.ClientTimeout(connect=5, total=300)
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            logger.info(f"Successfully got response from llama.cpp on port {port}")
+                            llama_cpp_ok = True
+                            break
+                        else:
+                            logger.warning(f"llama.cpp on port {port} returned status {response.status}")
+            except Exception as e:
+                logger.warning(f"Failed to connect to llama.cpp on port {port}: {e}")
+
+        if llama_cpp_ok:
+            suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+            if suggested_items:
+                return suggested_items, explanation_msg or "Suggestions generated via local llama.cpp!", True, True, "llama.cpp (Qwen 35B)"
+            elif raw.strip():
+                return [], raw[:500], False, True, "llama.cpp (Qwen 35B)"
+        else:
+            logger.info("llama.cpp not reachable. Falling back to local Ollama qwen2.5:32b...")
+            ollama_url = "http://localhost:11434"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{ollama_url}/api/chat",
+                        json={
+                            "model": "qwen2.5:32b",
+                            "messages": payload_messages,
+                            "stream": False,
+                            "options": {"temperature": temperature}
+                        },
+                        timeout=aiohttp.ClientTimeout(connect=5, total=300)
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            raw = data.get("message", {}).get("content", "{}")
+                            suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                            if suggested_items:
+                                return suggested_items, explanation_msg or "Suggestions generated via local Ollama fallback!", True, True, "Ollama (qwen2.5:32b)"
+                            elif raw.strip():
+                                return [], raw[:500], False, True, "Ollama (qwen2.5:32b)"
+                        else:
+                            return [], f"❌ Local Ollama fallback returned status {response.status}.", False, True, "Ollama"
+            except Exception as ollama_err:
+                logger.info(f"Ollama fallback not reachable: {type(ollama_err).__name__}")
+                return [], f"❌ Local llama.cpp and Ollama fallbacks are offline. Make sure you run llama-server on port 8080/8000 or have Ollama qwen2.5:32b installed.", False, False, "Ollama"
+
     # 5. Try Ollama
     if prov_lower in ("gemma", "gemma4", "ollama") or prov_lower == "auto":
         ollama_url = "http://localhost:11434"

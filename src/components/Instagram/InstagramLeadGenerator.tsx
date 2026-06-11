@@ -2021,7 +2021,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     >
                                                         <option value="gemma4" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4 (Ollama / Local)</option>
                                                         <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4:e2b (Ollama / Local)</option>
-                                                        <option value="qwen3.6" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">qwen3.6 (Ollama / Local)</option>
+                                                        <option value="qwen-35b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 35B (llama.cpp / Local)</option>
                                                         <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud / API Key Required)</option>
                                                         <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Free Cloud APIs ──</option>
                                                         <option value="gemini" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">✨ Gemini 2.5 Flash (Free / GEMINI_API_KEY)</option>
@@ -2513,6 +2513,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
@@ -2907,6 +2908,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
@@ -3212,6 +3214,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">

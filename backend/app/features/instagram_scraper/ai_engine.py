@@ -27,6 +27,70 @@ class InstagramAIEngine:
         except:
             return {}
 
+    async def _call_llama_cpp(self, prompt: str, system_prompt: str = None) -> dict:
+        """
+        Attempts to call llama.cpp on port 8080 or 8000 using the OpenAI-compatible v1/chat/completions API.
+        Falls back to Ollama with qwen2.5:32b if both fail.
+        """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": "qwen",
+            "messages": messages,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"}
+        }
+
+        for port in [8080, 8000]:
+            url = f"http://localhost:{port}/v1/chat/completions"
+            logger.info(f"Connecting to llama.cpp at {url}...")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url, 
+                        json=payload, 
+                        headers={"Content-Type": "application/json"}, 
+                        timeout=aiohttp.ClientTimeout(connect=5, total=300)
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            raw_content = data["choices"][0]["message"]["content"]
+                            logger.info(f"Successfully got response from llama.cpp on port {port}")
+                            return self._extract_json(raw_content)
+                        else:
+                            logger.warning(f"llama.cpp on port {port} returned status {response.status}")
+            except Exception as e:
+                logger.warning(f"Failed to connect to llama.cpp on port {port}: {e}")
+
+        logger.info("llama.cpp not reachable. Falling back to Ollama qwen2.5:32b...")
+        fallback_model = "qwen2.5:32b"
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": fallback_model,
+                        "prompt": full_prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.1}
+                    },
+                    timeout=aiohttp.ClientTimeout(connect=5, total=300)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw_content = data.get("response", "{}")
+                        return self._extract_json(raw_content)
+                    else:
+                        logger.error(f"Ollama fallback error: {response.status}")
+            except Exception as e:
+                logger.error(f"Ollama fallback failed: {e}")
+                
+        return {}
+
     async def _init_transformers(self):
         """Lazy load Google's Gemma 4 to save memory when not in use."""
         if self.transformers_model is None:
@@ -93,7 +157,11 @@ class InstagramAIEngine:
 
         model_lower = model_choice.lower().strip() if model_choice else ""
 
-        if model_lower.startswith("minimax"):
+        if model_lower == "qwen-35b-local":
+            print(f"🧠 [Qwen 35B] Analyzing @{username} via llama.cpp/Ollama...")
+            return await self._call_llama_cpp(prompt)
+
+        elif model_lower.startswith("minimax"):
             if not api_key:
                 return {"error": "MiniMax API key not provided"}
             
@@ -340,7 +408,11 @@ class InstagramAIEngine:
 
         model_lower = model_choice.lower().strip() if model_choice else ""
         
-        if model_lower.startswith("minimax"):
+        if model_lower == "qwen-35b-local":
+            print(f"🧠 [Qwen 35B] Filtering google result: {title} via llama.cpp/Ollama...")
+            return await self._call_llama_cpp(user_prompt, system_prompt)
+
+        elif model_lower.startswith("minimax"):
             if not api_key:
                 return {"match": False, "reason": "MiniMax API key not provided"}
             
