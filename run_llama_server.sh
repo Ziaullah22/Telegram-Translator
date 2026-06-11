@@ -18,7 +18,9 @@ fi
 
 # Run the llama-server with CUDA GPU acceleration
 # -t 8: Uses 8 CPU threads matching your Ryzen physical cores
-# -ngl 10: Offloads 10 layers to your RTX 3060 Ti GPU (about 5-6 GB VRAM)
+# -ngl 10: Offloads 10 layers to your RTX 3060 Ti GPU (fits within VRAM limit)
+# -c 4096: Reduces context size to save massive VRAM and speed up generation
+# -np 1: Runs 1 parallel slot instead of 4 (dramatically saves memory and boosts speed)
 # --host 0.0.0.0: Allows connections from other devices on your local network
 cd "$LLAMA_DIR"
 ./build/bin/llama-server \
@@ -27,7 +29,9 @@ cd "$LLAMA_DIR"
   --n-cpu-moe 8 \
   --flash-attn on \
   --jinja \
-  -c 32768 \
+  --reasoning-budget 0 \
+  -c 4096 \
+  -np 1 \
   -t 8 \
   -b 512 \
   -ub 128 \
