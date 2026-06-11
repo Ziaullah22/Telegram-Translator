@@ -775,7 +775,6 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
             "model": "qwen",
             "messages": payload_messages,
             "temperature": temperature,
-            "max_tokens": 500,
             "response_format": {"type": "json_object"}
         }
         llama_cpp_ok = False
