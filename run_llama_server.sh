@@ -17,22 +17,20 @@ if [ ! -f "$LLAMA_DIR/$MODEL_PATH" ]; then
 fi
 
 # Run the llama-server with CUDA GPU acceleration
-# -t 8: Uses 8 CPU threads matching your Ryzen physical cores
-# -ngl 10: Offloads 10 layers to your RTX 3060 Ti GPU (about 5-6 GB VRAM)
-# --host 0.0.0.0: Allows connections from other devices on your local network
 cd "$LLAMA_DIR"
 ./build/bin/llama-server \
   -m "$MODEL_PATH" \
-  -ngl 10 \
-  --n-cpu-moe 8 \
+  --mmproj "models/mmproj-BF16.gguf" \
+  -ngl 99 \
+  --n-cpu-moe 999 \
   --flash-attn on \
   --jinja \
   -c 32768 \
-  -t 8 \
+  -t 12 \
   -b 512 \
   -ub 128 \
   --cache-type-k q4_0 \
   --cache-type-v q4_0 \
   --mlock \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8080

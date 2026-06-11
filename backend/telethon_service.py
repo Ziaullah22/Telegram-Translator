@@ -244,7 +244,7 @@ class TelegramSession:
             """
             INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
             VALUES ($1, $2, $3, 'secret', $4)
-            ON CONFLICT (telegram_account_id, telegram_peer_id) DO UPDATE
+            ON CONFLICT (telegram_account_id, telegram_peer_id) WHERE telegram_peer_id != 0 DO UPDATE
             SET type = 'secret', title = $3, username = $4
             RETURNING id
             """,
@@ -745,7 +745,7 @@ class TelegramSession:
                 """
                 INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
                 VALUES ($1, $2, $3, 'secret', $4)
-                ON CONFLICT (telegram_account_id, telegram_peer_id) DO UPDATE 
+                ON CONFLICT (telegram_account_id, telegram_peer_id) WHERE telegram_peer_id != 0 DO UPDATE 
                 SET type = 'secret', title = $3, username = $4
                 RETURNING id
                 """,
