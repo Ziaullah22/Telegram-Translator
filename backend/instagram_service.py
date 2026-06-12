@@ -829,8 +829,7 @@ class InstagramService:
                                                         },
                                                         "rejection_reason": reason,
                                                         "google_ai_analyzed": True,
-                                                        "google_ai_match": False,
-                                                        "used_model": res.get("used_model")
+                                                        "google_ai_match": False
                                                     }
                                                     if discovery_intent:
                                                         data_audit["discovery_intent"] = discovery_intent
@@ -2216,15 +2215,6 @@ class InstagramService:
             params.append(f"{clean_kw}%")
             where_clause += f" AND instagram_username ILIKE ${len(params)}"
 
-        # Fetch selected AI model to identify fallbacks
-        settings = await self.get_filter_settings(user_id)
-        selected_model = settings.get('ai_model') or 'minimax-text-01'
-        if selected_model == 'ollama-local':
-            selected_model = 'gemma4'
-            
-        params.append(selected_model)
-        model_param_idx = len(params)
-
         # 🧮 Count total matching records before applying LIMIT/OFFSET
         count_query = f"SELECT COUNT(*) FROM instagram_leads{where_clause}"
         total_count = await db.fetchval(count_query, *params)
@@ -2244,9 +2234,7 @@ class InstagramService:
                 WHEN status = 'pending_ai' THEN 4
                 WHEN status = 'discovered' THEN 5
                 ELSE 6
-            END) ASC,
-            (CASE WHEN status IN ('google_rejected', 'rejected') AND (data_audit_json->>'used_model' IS NULL OR data_audit_json->>'used_model' = ${model_param_idx}) THEN 0 ELSE 1 END) ASC,
-            updated_at DESC, created_at DESC LIMIT {limit} OFFSET {offset}"""
+            END) ASC, updated_at DESC, created_at DESC LIMIT {limit} OFFSET {offset}"""
         rows = await db.fetch(query, *params)
         leads = []
         for row in rows:

@@ -592,7 +592,6 @@ class InstagramAIEngine:
 
                 if result and isinstance(result, dict) and "match" in result and "error" not in result:
                     logger.info(f"✅ [AI Filter] Successfully qualified result using model: {model}")
-                    result["used_model"] = model
                     return result
                 else:
                     err_msg = result.get("error") if result else "JSON parsing or match key missing"
