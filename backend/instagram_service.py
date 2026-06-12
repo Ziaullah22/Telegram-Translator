@@ -40,6 +40,17 @@ class InstagramService:
     workers = {} # user_id: bool (auto-pilot status)
     active_pages = {} # username: page object
     _discovery_status = {} # user_id: {"active": bool, "progress": str}
+    _google_ai_lock = None
+
+    async def _analyze_google_result_sequential(self, **kwargs):
+        """Ensures that Google AI analysis runs sequentially to prevent rate limits."""
+        if self._google_ai_lock is None:
+            self._google_ai_lock = asyncio.Lock()
+        async with self._google_ai_lock:
+            # 0.5s safety cooldown between requests
+            await asyncio.sleep(0.5)
+            from app.features.instagram_scraper.ai_engine import instagram_ai
+            return await instagram_ai.analyze_google_result(**kwargs)
 
     def _is_valid_username(self, u: str) -> bool:
         """
@@ -438,17 +449,19 @@ class InstagramService:
                         logger.warning("⚠️ Next page button not found. Direct URL...")
                         await page.goto(f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}", wait_until="domcontentloaded")
  
-                logger.info("⏳ Waiting for results (15s)...")
-                await asyncio.sleep(15)
+                logger.info("⏳ Waiting for results (3s)...")
+                await asyncio.sleep(3)
  
                 # CAPTCHA detection
-                content = (await page.content()).lower()
-                if "unusual traffic" in content or "captcha" in content:
+                current_url = page.url
+                is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                if is_captcha:
                     logger.warning("🚨 CAPTCHA detected! Waiting for manual solve...")
                     for _ in range(60):
                         await asyncio.sleep(5)
-                        content = (await page.content()).lower()
-                        if "unusual traffic" not in content and "captcha" not in content:
+                        current_url = page.url
+                        is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                        if not is_captcha:
                             logger.info("✅ CAPTCHA resolved!")
                             break
  
@@ -712,22 +725,32 @@ class InstagramService:
                         next_btn = await page.query_selector("a#pnnext")
                         if next_btn:
                             logger.info("🖱️ Clicking next page button...")
-                            await next_btn.click()
+                            try:
+                                await next_btn.click(force=True, timeout=5000)
+                            except Exception as click_err:
+                                logger.warning(f"⚠️ Next page click failed: {click_err}. Trying JS evaluation click...")
+                                try:
+                                    await page.evaluate("el => el.click()", next_btn)
+                                except Exception as js_err:
+                                    logger.warning(f"⚠️ JS click failed: {js_err}. Navigating directly...")
+                                    await page.goto(url, wait_until="domcontentloaded")
                         else:
                             logger.warning("⚠️ Next page button not found. Navigating directly...")
                             await page.goto(url, wait_until="domcontentloaded")
  
-                    logger.info("⏳ Waiting for Google Results (15s Deep Breath)...")
-                    await asyncio.sleep(15) 
+                    logger.info("⏳ Waiting for Google Results (3s)...")
+                    await asyncio.sleep(3) 
  
                     # 🛡️ Robot Check detection
-                    content = (await page.content()).lower()
-                    if "unusual traffic" in content or "captcha" in content:
+                    current_url = page.url
+                    is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                    if is_captcha:
                         logger.warning("🚨 GOOGLE CAPTCHA! Please solve it in the window...")
                         for _ in range(60):
                             await asyncio.sleep(5)
-                            content = (await page.content()).lower()
-                            if "unusual traffic" not in content and "captcha" not in content:
+                            current_url = page.url
+                            is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                            if not is_captcha:
                                 logger.info("✅ CAPTCHA Resolved!")
                                 break
  
@@ -779,8 +802,7 @@ class InstagramService:
                                             try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                                             except: pass
                                             
-                                            from app.features.instagram_scraper.ai_engine import instagram_ai
-                                            res = await instagram_ai.analyze_google_result(
+                                            res = await self._analyze_google_result_sequential(
                                                 title=title,
                                                 url=href,
                                                 snippet=snippet,
@@ -797,12 +819,54 @@ class InstagramService:
                                                 logger.info(msg)
                                                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                                                 except: pass
+                                                
+                                                try:
+                                                    data_audit = {
+                                                        "google_snippet_data": {
+                                                            "title": title,
+                                                            "url": href,
+                                                            "snippet": snippet
+                                                        },
+                                                        "rejection_reason": reason,
+                                                        "google_ai_analyzed": True,
+                                                        "google_ai_match": False
+                                                    }
+                                                    if discovery_intent:
+                                                        data_audit["discovery_intent"] = discovery_intent
+                                                    
+                                                    new_id = await db.fetchval(
+                                                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                                        "VALUES ($1, $2, $3, 'google_rejected', $4) "
+                                                        "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                                        "status = CASE WHEN instagram_leads.status IN ('discovered', 'queued', 'pending_ai', 'qualified') THEN instagram_leads.status ELSE 'google_rejected' END, "
+                                                        "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                                        "discovery_keyword = EXCLUDED.discovery_keyword "
+                                                        "RETURNING id",
+                                                        user_id, u, keyword, json.dumps(data_audit)
+                                                    )
+                                                    if new_id:
+                                                        try:
+                                                            await manager.send_personal_message({
+                                                                "type": "new_lead_discovered",
+                                                                "lead_id": new_id,
+                                                                "status": "google_rejected"
+                                                            }, user_id)
+                                                        except: pass
+                                                except Exception as db_err:
+                                                    logger.error(f"❌ Failed to insert google_rejected lead {u}: {db_err}")
                                                 continue
                                             else:
                                                 msg = f"✅ [AI Filter] MATCHED @{u} (Reason: {reason})"
                                                 logger.info(msg)
                                                 try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
                                                 except: pass
+                                                
+                                                # Mark the audit data so we don't repeat the AI filter later
+                                                google_ai_data = {
+                                                    "google_ai_analyzed": True,
+                                                    "google_ai_match": True,
+                                                    "google_ai_reason": reason
+                                                }
                                         logger.info(f"✨ Approved Lead: @{u}")
                                         found_usernames.append(u)
                                         seen.add(u)
@@ -817,6 +881,8 @@ class InstagramService:
                                                     "snippet": snippet
                                                 }
                                             }
+                                            if enable_ai_filter and google_niche_filter:
+                                                data_audit.update(google_ai_data)
                                             if discovery_intent:
                                                 data_audit["discovery_intent"] = discovery_intent
                                             new_id = await db.fetchval(
@@ -1619,8 +1685,16 @@ class InstagramService:
             url = google_data.get('url')
             snippet = google_data.get('snippet')
             google_niche_filter = settings.get('google_niche_filter', '')
+            res = None
+            step_prefix = ""
             
-            if not google_niche_filter or not google_niche_filter.strip():
+            if existing_audit.get('google_ai_analyzed') and existing_audit.get('google_ai_match'):
+                logger.info(f"⚡ Reusing previous Google AI Match result for @{username}.")
+                res = {
+                    "match": True,
+                    "reason": existing_audit.get('google_ai_reason', 'Matched criteria.')
+                }
+            elif not google_niche_filter or not google_niche_filter.strip():
                 ai_trace_steps.append({
                     "step": "Deep AI Search Result Filter",
                     "status": "skipped",
@@ -1643,7 +1717,6 @@ class InstagramService:
                     })
                 else:
                     import random
-                    res = None
                     last_err = None
                     used_model = selected_model
                     for model in models_to_try:
@@ -1656,7 +1729,7 @@ class InstagramService:
                             
                             step_prefix = ""
                             await update_ui("analyzing", "Running Deep AI Search Result Filter...")
-                            res = await instagram_ai.analyze_google_result(
+                            res = await self._analyze_google_result_sequential(
                                 title=title,
                                 url=url or f"https://www.instagram.com/{username}/",
                                 snippet=snippet,
@@ -1674,33 +1747,34 @@ class InstagramService:
                             last_err = str(e)
                             logger.warning(f"⚠️ Search Result Filter exception on {model}: {last_err}. Trying fallback...")
 
-                    if not res or "error" in res:
-                        logger.error(f"❌ Deep AI Search Result Filter error: {last_err}")
+            if res is not None:
+                if "error" in res:
+                    logger.error(f"❌ Deep AI Search Result Filter error: {res.get('error')}")
+                    is_qualified = False
+                    ai_trace_steps.append({
+                        "step": "Deep AI Search Result Filter",
+                        "status": "failed",
+                        "details": f"AI Engine returned error: {res.get('error')}"
+                    })
+                else:
+                    is_match = res.get("match", False)
+                    reason = res.get("reason", "No reason provided.")
+                    
+                    if not is_match:
+                        rejection_reason = f"Deep AI Search Result Filter mismatch: {reason}"
+                        logger.info(f"❌ Deep AI Search Result Filter Rejected lead: {rejection_reason}")
                         is_qualified = False
                         ai_trace_steps.append({
                             "step": "Deep AI Search Result Filter",
                             "status": "failed",
-                            "details": f"AI Engine returned error: {last_err}"
+                            "details": f"{step_prefix}{reason}"
                         })
                     else:
-                        is_match = res.get("match", False)
-                        reason = res.get("reason", "No reason provided.")
-                        
-                        if not is_match:
-                            rejection_reason = f"Deep AI Search Result Filter mismatch: {reason}"
-                            logger.info(f"❌ Deep AI Search Result Filter Rejected lead: {rejection_reason}")
-                            is_qualified = False
-                            ai_trace_steps.append({
-                                "step": "Deep AI Search Result Filter",
-                                "status": "failed",
-                                "details": f"{step_prefix}{reason}"
-                            })
-                        else:
-                            ai_trace_steps.append({
-                                "step": "Deep AI Search Result Filter",
-                                "status": "passed",
-                                "details": f"{step_prefix}{reason}"
-                            })
+                        ai_trace_steps.append({
+                            "step": "Deep AI Search Result Filter",
+                            "status": "passed",
+                            "details": f"{step_prefix}{reason}"
+                        })
 
         # 2. 🧠 DEEP AI INTENT ANALYSIS
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
@@ -1884,8 +1958,37 @@ class InstagramService:
         if not is_qualified and rejection_reason:
             ai_analysis['rejection_reason'] = rejection_reason
 
-        # Merge pre-filter trace with AI trace steps for full end-to-end decision trace
-        full_trace = pre_filter_trace + ai_trace_steps
+        # Construct/find the Google AI Search step
+        google_ai_step = None
+        for step in ai_trace_steps:
+            if step.get("step") == "Deep AI Search Result Filter":
+                google_ai_step = step
+                break
+        if not google_ai_step:
+            for step in pre_filter_trace:
+                if step.get("step") == "Deep AI Search Result Filter":
+                    google_ai_step = step
+                    break
+        
+        # If not found but we did analyze it (e.g. from audit), construct one
+        if not google_ai_step and (existing_audit.get('google_ai_analyzed') or existing_audit.get('google_ai_match') is not None):
+            is_match = existing_audit.get('google_ai_match', False)
+            reason = existing_audit.get('google_ai_reason', 'Matched criteria.')
+            google_ai_step = {
+                "step": "Deep AI Search Result Filter",
+                "status": "passed" if is_match else "failed",
+                "details": f"Passed (Google AI Match: {reason})" if is_match else f"Failed: {reason}"
+            }
+
+        # Filter out Google AI step from pre_filter_trace and remaining_ai_steps to avoid duplicates
+        clean_pre_trace = [s for s in pre_filter_trace if s.get("step") != "Deep AI Search Result Filter"]
+        clean_ai_trace = [s for s in ai_trace_steps if s.get("step") != "Deep AI Search Result Filter"]
+        
+        if google_ai_step:
+            full_trace = [google_ai_step] + clean_pre_trace + clean_ai_trace
+        else:
+            full_trace = clean_pre_trace + clean_ai_trace
+            
         ai_analysis['filter_trace'] = full_trace
 
         new_status = 'qualified' if is_qualified else 'rejected'
@@ -2093,16 +2196,19 @@ class InstagramService:
                 where_clause += " AND status IN ('rejected', 'discarded')"
             elif status == 'discovered':
                 where_clause += " AND status IN ('discovered', 'queued')"
+            elif status == 'google_rejected':
+                where_clause += " AND status IN ('google_rejected', 'failed')"
             else:
                 params.append(status)
                 where_clause += f" AND status = ${len(params)}"
         else:
-            # Exclude discarded from 'all' view to keep it clean, unless explicitly asked for rejected
-            where_clause += " AND status != 'discarded'"
+            # Exclude discarded, google_rejected (trash), and failed from 'all' view to keep it clean
+            where_clause += " AND status NOT IN ('discarded', 'google_rejected', 'failed')"
             
         if keyword:
-            params.append(f"%{keyword}%")
-            where_clause += f" AND (discovery_keyword ILIKE ${len(params)} OR instagram_username ILIKE ${len(params)})"
+            clean_kw = keyword.lstrip('@')
+            params.append(f"{clean_kw}%")
+            where_clause += f" AND instagram_username ILIKE ${len(params)}"
 
         # 🧮 Count total matching records before applying LIMIT/OFFSET
         count_query = f"SELECT COUNT(*) FROM instagram_leads{where_clause}"
@@ -2305,7 +2411,7 @@ class InstagramService:
     async def get_stats(self, user_id: int):
         stats = await db.fetchrow("""
             SELECT 
-                COUNT(*) FILTER (WHERE status != 'discarded') as total, 
+                COUNT(*) FILTER (WHERE status NOT IN ('discarded', 'google_rejected', 'failed')) as total, 
                 COUNT(*) FILTER (WHERE status IN ('discovered', 'queued')) as discovered, 
                 COUNT(*) FILTER (WHERE status IN ('qualified', 'analyzed', 'vetted', 'harvested')) as analyzed,
                 COUNT(*) FILTER (WHERE status IN ('rejected', 'discarded')) as rejected,
@@ -3172,6 +3278,12 @@ class InstagramService:
         """🚀 THE AUTO-PILOT WORKER: Scans leads in parallel and applies AI filters sequentially."""
         logger.info(f"Auto-Pilot Analysis Worker started for User {user_id}")
         self.workers[user_id] = True
+        
+        # 0. Clean up any stuck 'analyzing' leads from previous run
+        try:
+            await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE user_id = $1 AND status = 'analyzing'", user_id)
+        except Exception as reset_err:
+            logger.error(f"Failed to reset analyzing status on startup: {reset_err}")
 
         # 1. Fetch user proxies to configure concurrency
         proxy_rows = await db.fetch("SELECT host, port, username, password FROM instagram_proxies WHERE user_id = $1 AND is_working = TRUE", user_id)
@@ -3262,6 +3374,11 @@ class InstagramService:
             for t in worker_tasks:
                 t.cancel()
             await asyncio.gather(*worker_tasks, return_exceptions=True)
+            # Reset any leads stuck in 'analyzing' status back to 'discovered' so they can be tried again
+            try:
+                await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE user_id = $1 AND status = 'analyzing'", user_id)
+            except Exception as reset_err:
+                logger.error(f"Failed to reset analyzing status on exit: {reset_err}")
             logger.info(f"Auto-Pilot Analysis Worker stopped for User {user_id}")
 
     async def _persistent_browser_worker(self, user_id: int, lead_queue: asyncio.Queue, proxy: Optional[dict]):
@@ -3301,59 +3418,129 @@ class InstagramService:
             ]
         }
 
-        async with async_playwright() as p:
-            browser = None
-            context = None
-            page = None
+        # Keep worker running as long as autopilot is active
+        while self.workers.get(user_id):
             try:
-                browser = await p.chromium.launch(**launch_args)
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-                    viewport={'width': 393, 'height': 852},
-                    is_mobile=True,
-                    has_touch=True,
-                    locale="en-US"
-                )
-                page = await context.new_page()
+                # Wait for a lead to become available first before launching the browser!
+                try:
+                    lead_id = await asyncio.wait_for(lead_queue.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    continue
 
-                while self.workers.get(user_id):
-                    try:
-                        # Get a lead from queue with timeout
+                # We have a lead! Now launch the browser context
+                logger.info(f"🚀 Worker starting browser dynamically for lead {lead_id}...")
+                
+                lead_processed = False
+                try:
+                    async with async_playwright() as p:
+                        browser = None
+                        context = None
+                        page = None
                         try:
-                            lead_id = await asyncio.wait_for(lead_queue.get(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            continue
+                            browser = await p.chromium.launch(**launch_args)
+                            context = await browser.new_context(
+                                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                                viewport={'width': 393, 'height': 852},
+                                is_mobile=True,
+                                has_touch=True,
+                                locale="en-US"
+                            )
+                            page = await context.new_page()
 
-                        # Process lead
-                        try:
-                            await self._scrape_and_pre_filter_lead_with_page(user_id, lead_id, page)
-                        except Exception as e:
-                            logger.error(f"Error scraping lead {lead_id} in persistent browser: {e}")
+                            # Process the first lead
+                            try:
+                                await self._scrape_and_pre_filter_lead_with_page(user_id, lead_id, page)
+                            except Exception as e:
+                                logger.error(f"Error scraping lead {lead_id}: {e}")
+                                try:
+                                    await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                                    await manager.send_personal_message({
+                                        "type": "instagram_lead_updated",
+                                        "lead_id": lead_id,
+                                        "status": "failed",
+                                        "current_action": f"Error: {str(e)}"
+                                    }, user_id)
+                                except: pass
+                            finally:
+                                lead_processed = True
+                                lead_queue.task_done()
+
+                            # Keep processing subsequent leads as long as they arrive quickly
+                            idle_seconds = 0
+                            while self.workers.get(user_id) and idle_seconds < 15:
+                                try:
+                                    sub_lead_id = await asyncio.wait_for(lead_queue.get(), timeout=1.0)
+                                    idle_seconds = 0  # reset idle timer
+                                    sub_lead_processed = False
+                                    try:
+                                        await self._scrape_and_pre_filter_lead_with_page(user_id, sub_lead_id, page)
+                                        sub_lead_processed = True
+                                    except Exception as e:
+                                        logger.error(f"Error scraping lead {sub_lead_id}: {e}")
+                                        try:
+                                            await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", sub_lead_id)
+                                            await manager.send_personal_message({
+                                                "type": "instagram_lead_updated",
+                                                "lead_id": sub_lead_id,
+                                                "status": "failed",
+                                                "current_action": f"Error: {str(e)}"
+                                            }, user_id)
+                                        except: pass
+                                    finally:
+                                        lead_queue.task_done()
+                                except asyncio.TimeoutError:
+                                    idle_seconds += 1
+                                    continue
+                        except Exception as inner_err:
+                            logger.error(f"Error in dynamic browser execution: {inner_err}")
+                            # If browser launching failed and we hadn't processed the lead yet, reset it to discovered!
+                            if not lead_processed:
+                                try:
+                                    await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE id = $1", lead_id)
+                                    await manager.send_personal_message({
+                                        "type": "instagram_lead_updated",
+                                        "lead_id": lead_id,
+                                        "status": "discovered",
+                                        "current_action": "Retrying (Browser launch failed)"
+                                    }, user_id)
+                                except: pass
+                                lead_processed = True
+                                lead_queue.task_done()
                         finally:
-                            lead_queue.task_done()
-                    except Exception as loop_err:
-                        logger.error(f"Error in persistent browser loop: {loop_err}")
-                        await asyncio.sleep(1)
-            except Exception as launch_err:
-                logger.error(f"Failed to launch persistent browser: {launch_err}")
-            finally:
-                if page:
-                    try: await asyncio.shield(page.close())
-                    except: pass
-                if context:
-                    try: await asyncio.shield(context.close())
-                    except: pass
-                if browser:
-                    try: await asyncio.shield(browser.close())
-                    except: pass
-                gc.collect()
+                            if page:
+                                try: await asyncio.shield(page.close())
+                                except: pass
+                            if context:
+                                try: await asyncio.shield(context.close())
+                                except: pass
+                            if browser:
+                                try: await asyncio.shield(browser.close())
+                                except: pass
+                            gc.collect()
+                except Exception as play_err:
+                    logger.error(f"Playwright block exception: {play_err}")
+                    if not lead_processed:
+                        try:
+                            await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE id = $1", lead_id)
+                            await manager.send_personal_message({
+                                        "type": "instagram_lead_updated",
+                                        "lead_id": lead_id,
+                                        "status": "discovered",
+                                        "current_action": "Retrying (Browser block failed)"
+                                    }, user_id)
+                        except: pass
+                        lead_processed = True
+                        lead_queue.task_done()
+            except Exception as outer_err:
+                logger.error(f"Outer worker exception: {outer_err}")
+                await asyncio.sleep(2)
 
     async def _scrape_and_pre_filter_lead_with_page(self, user_id: int, lead_id: int, page):
         """
         Step 1: Scrapes profile using an already open Playwright page, runs non-AI pre-filters.
         Sets status to 'pending_ai' if qualified, or 'rejected' if disqualified, or 'private'/'error'/'failed'.
         """
-        lead = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        lead = await db.fetchrow("SELECT instagram_username, data_audit_json FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
         if not lead: return {"error": "Lead not found"}
         username = lead['instagram_username']
 
@@ -3366,6 +3553,73 @@ class InstagramService:
                     "current_action": action
                 }, user_id)
             except: pass
+
+        # --- STEP 2 FIRST: Google Link AI Analysis ---
+        settings = await self.get_filter_settings(user_id)
+        enable_ai_filter = settings.get('enable_ai_filter', False)
+        google_niche_filter = settings.get('google_niche_filter', '')
+        ai_model = settings.get('ai_model', 'minimax-text-01')
+        minimax_api_key = settings.get('minimax_api_key', '')
+
+        audit = {}
+        if lead['data_audit_json']:
+            try:
+                audit = json.loads(lead['data_audit_json']) if isinstance(lead['data_audit_json'], str) else lead['data_audit_json']
+            except:
+                audit = {}
+
+        google_data = audit.get('google_snippet_data', {})
+        if enable_ai_filter and google_niche_filter and google_data and not audit.get('google_ai_analyzed'):
+            title = google_data.get('title', '')
+            snippet = google_data.get('snippet', '')
+            href = google_data.get('url', f"https://www.instagram.com/{username}/")
+            
+            if title or snippet:
+                msg = f"🧠 [Auto-Pilot AI] Evaluating @{username} Google link first..."
+                logger.info(msg)
+                await update_ui("analyzing", msg)
+                
+                try:
+                    res = await self._analyze_google_result_sequential(
+                        title=title,
+                        url=href,
+                        snippet=snippet,
+                        criteria=google_niche_filter,
+                        model_choice=ai_model,
+                        api_key=minimax_api_key
+                    )
+                    is_match = res.get("match", False)
+                    reason = res.get("reason", "No reason provided.")
+                    
+                    audit['google_ai_analyzed'] = True
+                    audit['google_ai_match'] = is_match
+                    audit['google_ai_reason'] = reason
+                    audit['rejection_reason'] = reason if not is_match else ""
+                    
+                    if not is_match:
+                        logger.info(f"❌ [Auto-Pilot AI] Google data rejected @{username}: {reason}")
+                        google_step = {
+                            "step": "Deep AI Search Result Filter",
+                            "status": "failed",
+                            "details": f"Failed: {reason}"
+                        }
+                        audit['filter_trace'] = [google_step]
+                        await db.execute("""
+                            UPDATE instagram_leads 
+                            SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
+                            WHERE id = $2
+                        """, json.dumps(audit), lead_id)
+                        await update_ui("google_rejected", f"Failed: {reason}")
+                        return {"success": True, "status": "google_rejected"}
+                    else:
+                        logger.info(f"✅ [Auto-Pilot AI] Google data matched @{username}. Saving and proceeding to scrape.")
+                        await db.execute("""
+                            UPDATE instagram_leads 
+                            SET data_audit_json = $1 
+                            WHERE id = $2
+                        """, json.dumps(audit), lead_id)
+                except Exception as ai_err:
+                    logger.error(f"⚠️ Google AI pre-filter error: {ai_err}. Scraping profile anyway.")
 
         await update_ui("analyzing", "Scraping profile details...")
 
@@ -3407,6 +3661,13 @@ class InstagramService:
                 await update_ui("error", "Profile not found")
                 return {"success": True, "status": "error"}
 
+            # If the page loads InstaCognito's default downloader home page instead of the profile, mark as failed
+            if 'download videos, photos, reels & stories' in bio_lower and followers == 0:
+                logger.warning(f"⚠️ Lead {lead_id} loaded InstaCognito landing page instead of profile. Marking as 'failed'.")
+                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+                await update_ui("failed", "Loaded landing page instead of profile")
+                return {"success": False, "status": "failed"}
+
             # Safety check
             if not bio and followers == 0 and following == 0:
                 logger.warning(f"⚠️ Lead {lead_id} has NO data. Marking as 'failed' for retry.")
@@ -3425,14 +3686,84 @@ class InstagramService:
                 await update_ui("private", "Private account")
                 return {"success": True, "status": "private"}
 
+            # Run fallback Google AI analysis if snippet-based analysis was skipped (e.g. legacy fallback or manually imported leads)
+            if enable_ai_filter and google_niche_filter and not audit.get('google_ai_analyzed'):
+                try:
+                    title = f"Instagram Profile: {full_name or username}"
+                    post_caps = [p.get('caption', '') for p in posts if isinstance(p, dict) and p.get('caption')]
+                    posts_text = " | ".join(post_caps[:3])
+                    snippet = f"Bio: {bio or ''}\nRecent Posts: {posts_text}"
+                    
+                    logger.info(f"⚡ Running fallback Google AI Filter using profile data for @{username}...")
+                    res = await self._analyze_google_result_sequential(
+                        title=title,
+                        url=f"https://www.instagram.com/{username}/",
+                        snippet=snippet,
+                        criteria=google_niche_filter,
+                        model_choice=ai_model,
+                        api_key=minimax_api_key
+                    )
+                    is_match = res.get("match", False)
+                    reason = res.get("reason", "No reason provided.")
+                    
+                    audit['google_ai_analyzed'] = True
+                    audit['google_ai_match'] = is_match
+                    audit['google_ai_reason'] = reason
+                    audit['rejection_reason'] = reason if not is_match else ""
+                    
+                    if not is_match:
+                        logger.info(f"❌ [Auto-Pilot AI] Fallback Google data rejected @{username}: {reason}")
+                        google_step = {
+                            "step": "Deep AI Search Result Filter",
+                            "status": "failed",
+                            "details": f"Failed: {reason}"
+                        }
+                        audit['filter_trace'] = [google_step]
+                        await db.execute("""
+                            UPDATE instagram_leads 
+                            SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
+                            WHERE id = $2
+                        """, json.dumps(audit), lead_id)
+                        await update_ui("google_rejected", f"Failed: {reason}")
+                        return {"success": True, "status": "google_rejected"}
+                    else:
+                        logger.info(f"✅ [Auto-Pilot AI] Fallback Google data matched @{username}.")
+                        # Save in DB and continue
+                        await db.execute("""
+                            UPDATE instagram_leads 
+                            SET data_audit_json = $1 
+                            WHERE id = $2
+                        """, json.dumps(audit), lead_id)
+                except Exception as ai_err:
+                    logger.error(f"⚠️ Fallback Google AI pre-filter error: {ai_err}")
+
             # Run non-AI filters
             settings = await self.get_filter_settings(user_id)
             is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
 
             trace_steps = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
+            
+            # Prepend Google AI Filter step to the beginning
+            google_status = "skipped"
+            google_details = "Skipped because Google AI analysis was not executed."
+            if audit.get('google_ai_analyzed'):
+                google_status = "passed" if audit.get('google_ai_match') else "failed"
+                google_details = f"Passed (Google AI Match: {audit.get('google_ai_reason', 'Matched criteria.')})" if audit.get('google_ai_match') else f"Failed: {audit.get('google_ai_reason', 'Mismatched.')}"
+            elif not settings.get('enable_ai_filter'):
+                google_status = "skipped"
+                google_details = "Skipped because Deep AI Search Result Filter is not enabled in settings."
+            
+            google_step = {
+                "step": "Deep AI Search Result Filter",
+                "status": google_status,
+                "details": google_details
+            }
+            trace_steps = [google_step] + trace_steps
+
             posts_json = json.dumps(posts or [])
             if not is_qualified:
-                ai_analysis = {"rejection_reason": rejection_reason, "filter_trace": trace_steps}
+                ai_analysis = audit.copy()
+                ai_analysis.update({"rejection_reason": rejection_reason, "filter_trace": trace_steps})
                 ai_data_json = json.dumps(ai_analysis)
                 await db.execute("""
                     UPDATE instagram_leads 
@@ -3445,7 +3776,8 @@ class InstagramService:
                 return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
 
             # Passed pre-filters -> set status to pending_ai
-            ai_analysis = {"filter_trace": trace_steps}
+            ai_analysis = audit.copy()
+            ai_analysis.update({"filter_trace": trace_steps})
             ai_data_json = json.dumps(ai_analysis)
             await db.execute("""
                 UPDATE instagram_leads 
@@ -3771,8 +4103,8 @@ class InstagramService:
         # ─── STRATEGY A: InstaCognito (Search-based, reliable data) ───
         try:
             logger.info(f"🔍 Trying InstaCognito for @{target_username}...")
-            await page.goto("https://instacognito.com/", wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(random.randint(2000, 3000))
+            await page.goto("https://instacognito.com/", wait_until="domcontentloaded", timeout=90000)
+            await page.wait_for_timeout(random.randint(3000, 5000))
 
             # Type the profile URL into the search box
             search_input = await page.query_selector('input[type="text"], input[type="search"], input[placeholder*="search"], input[placeholder*="Instagram"], input[name*="search"], input[name*="url"]')
@@ -3791,9 +4123,9 @@ class InstagramService:
                 else:
                     await page.keyboard.press("Enter")
 
-                # ── STEP 1: THE SEARCH WAIT (15s) ──
-                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username} (15s Search Wait)...")
-                await asyncio.sleep(15) 
+                # ── STEP 1: THE SEARCH WAIT (30s) ──
+                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username} (30s Search Wait)...")
+                await asyncio.sleep(30) 
 
                 # --- STEP 1.1: NOT FOUND CHECK ---
                 not_found_detected = await page.evaluate("""() => {

@@ -231,7 +231,7 @@ const InstagramLeadGenerator: React.FC = () => {
                 instagramAPI.getAccounts(),
                 instagramAPI.getProxies()
             ]);
-            
+
             if (requestId !== fetchRequestRef.current) {
                 return; // Stale request — a newer one is in flight, discard this
             }
@@ -598,7 +598,7 @@ const InstagramLeadGenerator: React.FC = () => {
         setAiSeedInput('');
         setAiChatInput('');
         setNotification({ msg: `🚀 Launched with ${kws.length} AI keywords! Live HUD active.`, type: 'success' });
- 
+
         try {
             await instagramAPI.discoverLeads(kws, 50, currentIntent);
             // 🧹 Auto-dedup after scraping
@@ -1077,6 +1077,7 @@ const InstagramLeadGenerator: React.FC = () => {
             case 'private': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
             case 'analyzed': case 'qualified': case 'vetted': case 'harvested': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
             case 'rejected': case 'discarded': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+            case 'google_rejected': case 'failed': return 'bg-gray-150 text-gray-500 border border-gray-200 dark:bg-gray-800/40 dark:text-gray-400 dark:border-white/5';
             case 'contacted': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
             case 'converted': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
             default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
@@ -1114,10 +1115,10 @@ const InstagramLeadGenerator: React.FC = () => {
                         <button
                             onClick={handleToggleAutoPilot}
                             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${isAutoPilotRunning
-                                    ? restTimer !== null
-                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
-                                        : 'bg-green-500 text-white shadow-lg shadow-green-500/25'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-green-500'
+                                ? restTimer !== null
+                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
+                                    : 'bg-green-500 text-white shadow-lg shadow-green-500/25'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-green-500'
                                 }`}
                         >
                             <Play className={`w-4 h-4 ${isAutoPilotRunning ? 'fill-current' : 'group-hover:fill-green-500'}`} />
@@ -1138,8 +1139,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                 }
                             }}
                             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all duration-500 ${filterSettings.enable_ai_analysis
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 animate-pulse'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-indigo-500'
+                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 animate-pulse'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-indigo-500'
                                 }`}
                         >
                             <Brain className={`w-4 h-4 ${filterSettings.enable_ai_analysis ? 'fill-current' : ''}`} />
@@ -1222,7 +1223,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
-                                    placeholder="Search by username or industry keyword..."
+                                    placeholder="Search by username..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full bg-gray-50 dark:bg-black/20 border-none rounded-xl pl-11 pr-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-pink-500/20"
@@ -1230,7 +1231,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">Quick Filter:</span>
-                                {['all', 'discovered', 'pending_ai', 'qualified', 'rejected', 'contacted'].map(status => (
+                                {['all', 'discovered', 'pending_ai', 'qualified', 'rejected', 'contacted', 'google_rejected'].map(status => (
                                     <button
                                         key={status}
                                         onClick={() => setFilterStatus(status)}
@@ -1239,7 +1240,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                             : 'bg-gray-50 dark:bg-black/20 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                                             }`}
                                     >
-                                        {status.replace('_', ' ')}
+                                        {status === 'google_rejected' ? 'trash' : status.replace('_', ' ')}
                                     </button>
                                 ))}
                             </div>
@@ -1264,8 +1265,7 @@ const InstagramLeadGenerator: React.FC = () => {
                             ))}
                         </div>
 
-                        {/* Inventory Table */}
-                        <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden relative">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
                                     <thead className="bg-gray-50/50 dark:bg-gray-800/20 text-[9px] font-black text-gray-400 uppercase tracking-tight border-b border-gray-100 dark:border-white/5">
@@ -1345,7 +1345,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="max-w-[140px]">
-                                                            {lead.bio ? (
+                                                            {(lead.status === 'google_rejected' || lead.status === 'failed') ? (
+                                                                <span className="text-[8px] text-gray-400/50 italic">
+                                                                    No bio 🧐
+                                                                </span>
+                                                            ) : lead.bio ? (
                                                                 <p className="text-[9px] text-gray-600 dark:text-gray-400 line-clamp-2 italic leading-tight">
                                                                     {lead.bio}
                                                                 </p>
@@ -1476,6 +1480,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <X className="w-3 h-3" /> Discard
                                                                     </button>
                                                                 </div>
+                                                            ) : (lead.status === 'google_rejected' || lead.status === 'failed') ? (
+                                                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-500 font-black text-[9px] uppercase tracking-widest border border-slate-500/20">
+                                                                    <X className="w-3.5 h-3.5 text-slate-400" /> {lead.status === 'failed' ? 'Scraping Failed 🗑️' : 'Rejected by Google AI 🗑️'}
+                                                                </div>
                                                             ) : lead.status === 'discovered' ? (
                                                                 <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-blue-500/10 text-blue-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`} title="Identify Profile">
                                                                     {analyzingId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
@@ -1604,11 +1612,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <button
                                                         key={p}
                                                         onClick={() => setCurrentPage(p as number)}
-                                                        className={`min-w-[36px] h-9 px-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
-                                                            currentPage === p
+                                                        className={`min-w-[36px] h-9 px-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${currentPage === p
                                                                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 scale-105'
                                                                 : 'bg-white dark:bg-[#1a2436] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:border-indigo-400 hover:text-indigo-500'
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {p}
                                                     </button>
@@ -1670,12 +1677,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-1.5">
                                                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${acc.status === 'active' ? 'bg-green-500 animate-pulse' :
-                                                                acc.status === 'frozen' ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' :
-                                                                    acc.status === 'rate_limited' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                            acc.status === 'frozen' ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' :
+                                                                acc.status === 'rate_limited' ? 'bg-yellow-500' : 'bg-gray-300'
                                                             }`}></span>
                                                         <span className={`text-[10px] font-black uppercase tracking-widest ${acc.status === 'active' ? 'text-green-500' :
-                                                                acc.status === 'frozen' ? 'text-blue-500' :
-                                                                    acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'
+                                                            acc.status === 'frozen' ? 'text-blue-500' :
+                                                                acc.status === 'rate_limited' ? 'text-yellow-500' : 'text-gray-400'
                                                             }`}>
                                                             {acc.status === 'frozen' ? 'Cold Sleep ❄️' :
                                                                 acc.daily_usage_count >= 10 ? 'Locked (Limit) ⏳' :
@@ -1783,8 +1790,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     onClick={() => handleConnectAccount(acc.id)}
                                                     disabled={connectingIds.has(acc.id)}
                                                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${connectingIds.has(acc.id)
-                                                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
-                                                            : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'
+                                                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                                        : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'
                                                         }`}
                                                 >
                                                     {connectingIds.has(acc.id) ? (
@@ -2297,23 +2304,23 @@ const InstagramLeadGenerator: React.FC = () => {
 
                                         {ai.strategy && (
                                             <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <Sparkles className="w-4 h-4 text-indigo-500" />
-                                                <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
-                                            </div>
-                                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
-                                                "{ai.strategy || 'No strategic summary available.'}"
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
-                                                    <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Detected Niche</span>
-                                                    <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">{ai.niche || 'General'}</span>
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                                                    <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
                                                 </div>
-                                                <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
-                                                    <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Intent Score</span>
-                                                    <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
+                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
+                                                    "{ai.strategy || 'No strategic summary available.'}"
+                                                </p>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Detected Niche</span>
+                                                        <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">{ai.niche || 'General'}</span>
+                                                    </div>
+                                                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
+                                                        <span className="text-[8px] font-black text-gray-400 uppercase block mb-1">Intent Score</span>
+                                                        <span className="text-xs font-black text-emerald-500 uppercase tracking-tighter">{ai.intent_score || 0}% Match</span>
+                                                    </div>
                                                 </div>
-                                            </div>
                                             </div>
                                         )}
 
@@ -2389,7 +2396,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <Target className="w-4 h-4 text-pink-500" />
                                         <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Execution Steps</h3>
                                     </div>
-                                    
+
                                     {filterTrace.length === 0 ? (
                                         <div className="text-center py-6">
                                             <p className="text-xs text-gray-400 italic">No decision steps recorded.</p>
@@ -2400,7 +2407,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                             {filterTrace.map((item: any, idx: number) => {
                                                 const isPassed = item.status === 'passed';
                                                 const isFailed = item.status === 'failed';
-                                                
+
                                                 let icon = "⏭️";
                                                 let dotColor = "bg-gray-100 dark:bg-slate-800 text-gray-400 border-gray-200 dark:border-white/10";
                                                 if (isPassed) {
@@ -2410,22 +2417,21 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     icon = "✕";
                                                     dotColor = "bg-red-500 text-white border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]";
                                                 }
-                                                
+
                                                 return (
                                                     <div key={idx} className="relative">
                                                         {/* Timeline dot */}
                                                         <div className={`absolute -left-[35px] top-0.5 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center text-[10px] font-extrabold transition-all duration-300 ${dotColor}`}>
                                                             {icon}
                                                         </div>
-                                                        
+
                                                         <div>
                                                             <div className="flex items-center justify-between gap-2">
                                                                 <h4 className="text-xs font-black text-gray-900 dark:text-white tracking-tight">{item.step}</h4>
-                                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${
-                                                                    isPassed ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400' :
-                                                                    isFailed ? 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400' :
-                                                                    'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
-                                                                }`}>
+                                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${isPassed ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400' :
+                                                                        isFailed ? 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400' :
+                                                                            'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
+                                                                    }`}>
                                                                     {item.status}
                                                                 </span>
                                                             </div>
@@ -2623,8 +2629,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                             aiChatHistory.map((msg, idx) => (
                                                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
-                                                            ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-br-none'
-                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
                                                         }`}>
                                                         {msg.role === 'assistant' && (
                                                             <div className="flex items-center gap-1.5 mb-1">
@@ -2747,8 +2753,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                         <div className="flex items-center justify-between flex-wrap gap-3">
                                             <div className="flex items-center gap-4">
                                                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${aiProxyInfo.mode === 'parallel'
-                                                        ? 'bg-green-500/10 text-green-600 border border-green-500/20'
-                                                        : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                                                    ? 'bg-green-500/10 text-green-600 border border-green-500/20'
+                                                    : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
                                                     }`}>
                                                     <Zap className="w-3 h-3" />
                                                     {aiProxyInfo.mode === 'parallel' ? `⚡ Parallel (${aiProxyInfo.count} proxies)` : '📶 Sequential (No Proxies)'}
@@ -2783,8 +2789,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     return next;
                                                 })}
                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${selectedKeywords.has(kw)
-                                                        ? 'bg-pink-500 text-white border-pink-400 shadow-md shadow-pink-500/20'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-pink-300'
+                                                    ? 'bg-pink-500 text-white border-pink-400 shadow-md shadow-pink-500/20'
+                                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-pink-300'
                                                     }`}
                                             >
                                                 {selectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
@@ -2959,8 +2965,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                             badAiChatHistory.map((msg, idx) => (
                                                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
-                                                            ? 'bg-gradient-to-br from-red-500 to-pink-600 text-white rounded-br-none'
-                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        ? 'bg-gradient-to-br from-red-500 to-pink-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
                                                         }`}>
                                                         {msg.role === 'assistant' && (
                                                             <div className="flex items-center gap-1.5 mb-1">
@@ -3097,8 +3103,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     return next;
                                                 })}
                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${badSelectedKeywords.has(kw)
-                                                        ? 'bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-red-300'
+                                                    ? 'bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20'
+                                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-red-300'
                                                     }`}
                                             >
                                                 {badSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}
@@ -3229,7 +3235,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
@@ -3266,8 +3272,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                             citiesAiChatHistory.map((msg, idx) => (
                                                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs font-medium leading-relaxed ${msg.role === 'user'
-                                                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
-                                                            : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
+                                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-br-none'
+                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-bl-none border border-gray-200 dark:border-white/5'
                                                         }`}>
                                                         {msg.role === 'assistant' && (
                                                             <div className="flex items-center gap-1.5 mb-1">
@@ -3403,8 +3409,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     return next;
                                                 })}
                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${citiesSelectedKeywords.has(kw)
-                                                        ? 'bg-indigo-500 text-white border-indigo-400 shadow-md shadow-indigo-500/20'
-                                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-indigo-300'
+                                                    ? 'bg-indigo-500 text-white border-indigo-400 shadow-md shadow-indigo-500/20'
+                                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/5 hover:border-indigo-300'
                                                     }`}
                                             >
                                                 {citiesSelectedKeywords.has(kw) && <CheckCircle2 className="w-3 h-3" />}

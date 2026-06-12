@@ -386,6 +386,7 @@ class InstagramAIEngine:
         """
         Evaluate whether a Google Search Result matches the target lead criteria.
         Supports MiniMax 2.7 (cloud), Ollama (local), Gemini, Groq, OpenRouter, and Hugging Face.
+        Implements a fallback chain: if the selected model fails, it tries other cloud models, then local ones.
         """
         system_prompt = (
             "You are an expert lead qualification assistant.\n"
@@ -406,184 +407,201 @@ class InstagramAIEngine:
             "Is this result a match for the lead criteria?"
         )
 
-        model_lower = model_choice.lower().strip() if model_choice else ""
+        # Build fallback model list
+        from app.core.config import settings
         
-        if model_lower == "qwen-35b-local":
-            print(f"🧠 [Qwen 35B] Filtering google result: {title} via llama.cpp/Ollama...")
-            return await self._call_llama_cpp(user_prompt, system_prompt)
-
-        elif model_lower.startswith("minimax"):
-            if not api_key:
-                return {"match": False, "reason": "MiniMax API key not provided"}
+        candidates = []
+        primary = model_choice.strip() if model_choice else "minimax-text-01"
+        candidates.append(primary)
+        
+        # Cloud candidates
+        if api_key and "minimax" not in primary.lower():
+            candidates.append("minimax-text-01")
+        if settings.gemini_api_key and primary.lower() != "gemini":
+            candidates.append("gemini")
+        if settings.groq_api_key and primary.lower() != "groq":
+            candidates.append("groq")
+        if settings.openrouter_api_key and primary.lower() != "openrouter":
+            candidates.append("openrouter")
+        if settings.huggingface_api_key and primary.lower() not in ("huggingface", "hf"):
+            candidates.append("huggingface")
             
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": model_choice,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "response_format": {"type": "json_object"}
-            }
+        # Local candidates
+        if primary.lower() != "qwen-35b-local":
+            candidates.append("qwen-35b-local")
+        if primary.lower() != "ollama-local" and primary.lower() != "ollama":
+            candidates.append("ollama-local")
+
+        last_error = "No models attempted"
+        
+        for model in candidates:
+            model_lower = model.lower().strip()
+            logger.info(f"🧠 [AI Filter] Attempting Google Result Filter with model: {model}...")
             
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(
-                        "https://api.minimax.chat/v1/chat/completions",
-                        json=payload,
-                        timeout=30
-                    ) as response:
-                        if response.status != 200:
-                            err_body = await response.text()
-                            logger.error(f"❌ MiniMax API error {response.status}: {err_body}")
-                            return {"match": False, "reason": f"MiniMax error: {response.status}"}
-                        
-                        data = await response.json()
-                        raw_content = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw_content)
-                except Exception as e:
-                    logger.error(f"❌ MiniMax request failed: {e}")
-                    return {"match": False, "reason": f"Request failed: {str(e)}"}
+            try:
+                result = None
+                if model_lower == "qwen-35b-local":
+                    logger.info(f"🧠 [Qwen 35B] Filtering google result: {title} via llama.cpp/Ollama...")
+                    result = await self._call_llama_cpp(user_prompt, system_prompt)
+                    
+                elif model_lower.startswith("minimax"):
+                    if not api_key:
+                        raise ValueError("MiniMax API key not provided")
+                    
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"}
+                    }
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            "https://api.minimax.chat/v1/chat/completions",
+                            json=payload,
+                            timeout=30
+                        ) as response:
+                            if response.status != 200:
+                                err_body = await response.text()
+                                raise ValueError(f"MiniMax API error {response.status}: {err_body}")
+                            
+                            data = await response.json()
+                            raw_content = data["choices"][0]["message"]["content"]
+                            result = self._extract_json(raw_content)
+                            
+                elif model_lower == "gemini":
+                    if not settings.gemini_api_key:
+                        raise ValueError("Gemini API key is missing")
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
+                    payload = {
+                        "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                        "generationConfig": {
+                            "temperature": 0.1,
+                            "responseMimeType": "application/json"
+                        }
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
+                            if response.status != 200:
+                                raise ValueError(f"Gemini error: {response.status}")
+                            data = await response.json()
+                            raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                            result = self._extract_json(raw)
+                            
+                elif model_lower == "groq":
+                    if not settings.groq_api_key:
+                        raise ValueError("Groq API key is missing")
+                    groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                    payload = {
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": 0.1,
+                        "response_format": {"type": "json_object"}
+                    }
+                    headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status != 200:
+                                raise ValueError(f"Groq error: {response.status}")
+                            data = await response.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            result = self._extract_json(raw)
+                            
+                elif model_lower == "openrouter":
+                    if not settings.openrouter_api_key:
+                        raise ValueError("OpenRouter API key is missing")
+                    or_url = "https://openrouter.ai/api/v1/chat/completions"
+                    payload = {
+                        "model": "google/gemini-2.5-flash",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": 0.1,
+                        "response_format": {"type": "json_object"}
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {settings.openrouter_api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:5173",
+                        "X-Title": "Telegram Translator"
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status != 200:
+                                raise ValueError(f"OpenRouter error: {response.status}")
+                            data = await response.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            result = self._extract_json(raw)
+                            
+                elif model_lower in ("huggingface", "hf"):
+                    if not settings.huggingface_api_key:
+                        raise ValueError("Hugging Face API key is missing")
+                    hf_url = "https://router.huggingface.co/v1/chat/completions"
+                    payload = {
+                        "model": "Qwen/Qwen2.5-72B-Instruct",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 500
+                    }
+                    headers = {"Authorization": f"Bearer {settings.huggingface_api_key}", "Content-Type": "application/json"}
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status != 200:
+                                raise ValueError(f"Hugging Face error: {response.status}")
+                            data = await response.json()
+                            raw = data["choices"][0]["message"]["content"]
+                            result = self._extract_json(raw)
+                            
+                else:
+                    # Local Ollama fallback
+                    url_to_use = ollama_url or self.ollama_url
+                    model_to_use = model if model and model != "ollama-local" else self.model
+                    prompt = f"{system_prompt}\n\n{user_prompt}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"{url_to_use}/api/generate",
+                            json={
+                                "model": model_to_use,
+                                "prompt": prompt,
+                                "stream": False,
+                                "options": {"temperature": 0.1}
+                            },
+                            timeout=120
+                        ) as response:
+                            if response.status != 200:
+                                err_body = await response.text()
+                                raise ValueError(f"Ollama API error {response.status}: {err_body}")
+                            
+                            data = await response.json()
+                            raw_content = data.get("response", "{}")
+                            result = self._extract_json(raw_content)
 
-        elif model_lower == "gemini":
-            from app.core.config import settings
-            if not settings.gemini_api_key:
-                return {"match": False, "reason": "Gemini API key is missing from backend .env"}
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
-            payload = {
-                "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "responseMimeType": "application/json"
-                }
-            }
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
-                        if response.status != 200:
-                            return {"match": False, "reason": f"Gemini error: {response.status}"}
-                        data = await response.json()
-                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"match": False, "reason": str(e)}
+                if result and isinstance(result, dict) and "match" in result and "error" not in result:
+                    logger.info(f"✅ [AI Filter] Successfully qualified result using model: {model}")
+                    return result
+                else:
+                    err_msg = result.get("error") if result else "JSON parsing or match key missing"
+                    raise ValueError(err_msg)
 
-        elif model_lower == "groq":
-            from app.core.config import settings
-            if not settings.groq_api_key:
-                return {"match": False, "reason": "Groq API key is missing from backend .env"}
-            groq_url = "https://api.groq.com/openai/v1/chat/completions"
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            }
-            headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"match": False, "reason": f"Groq error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"match": False, "reason": str(e)}
+            except Exception as e:
+                last_error = f"{model} failed: {str(e)}"
+                logger.warning(f"⚠️ [AI Filter] Model {model} failed. Trying fallback. Error: {last_error}")
 
-        elif model_lower == "openrouter":
-            from app.core.config import settings
-            if not settings.openrouter_api_key:
-                return {"match": False, "reason": "OpenRouter API key is missing from backend .env"}
-            or_url = "https://openrouter.ai/api/v1/chat/completions"
-            payload = {
-                "model": "google/gemini-2.5-flash",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            }
-            headers = {
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Telegram Translator"
-            }
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"match": False, "reason": f"OpenRouter error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"match": False, "reason": str(e)}
-
-        elif model_lower in ("huggingface", "hf"):
-            from app.core.config import settings
-            if not settings.huggingface_api_key:
-                return {"match": False, "reason": "Hugging Face API key is missing from backend .env"}
-            hf_url = "https://router.huggingface.co/v1/chat/completions"
-            payload = {
-                "model": "Qwen/Qwen2.5-72B-Instruct",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 500
-            }
-            headers = {"Authorization": f"Bearer {settings.huggingface_api_key}", "Content-Type": "application/json"}
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"match": False, "reason": f"Hugging Face error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"match": False, "reason": str(e)}
-
-        else:
-            # Local Ollama fallback
-            url_to_use = ollama_url or self.ollama_url
-            model_to_use = model_choice if model_choice and model_choice != "ollama-local" else self.model
-            
-            prompt = f"{system_prompt}\n\n{user_prompt}"
-            
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(
-                        f"{url_to_use}/api/generate",
-                        json={
-                            "model": model_to_use,
-                            "prompt": prompt,
-                            "stream": False,
-                            "options": {"temperature": 0.1}
-                        },
-                        timeout=120
-                    ) as response:
-                        if response.status != 200:
-                            err_body = await response.text()
-                            logger.error(f"❌ Ollama API error {response.status}: {err_body}")
-                            return {"match": False, "reason": f"Ollama error: {response.status}"}
-                        
-                        data = await response.json()
-                        raw_content = data.get("response", "{}")
-                        return self._extract_json(raw_content)
-                except Exception as e:
-                    err_msg = str(e) or type(e).__name__ or "Timeout/Connection Error"
-                    logger.error(f"❌ Ollama request failed: {err_msg}")
-                    return {"match": False, "reason": f"Request failed: {err_msg}"}
+        logger.error(f"❌ [AI Filter] All models failed in fallback chain. Last error: {last_error}")
+        return {"match": False, "reason": f"All AI models failed. Last error: {last_error}"}
 
 instagram_ai = InstagramAIEngine()
