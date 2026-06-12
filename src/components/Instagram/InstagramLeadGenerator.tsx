@@ -1253,7 +1253,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                 { label: 'Discovered', value: stats.discovered, icon: <Search className="w-5 h-5 text-indigo-500" /> },
                                 { label: 'Qualified', value: stats.analyzed, icon: <CheckCircle2 className="w-5 h-5 text-green-500" /> },
                                 { label: 'Rejected', value: stats.rejected, icon: <AlertCircle className="w-5 h-5 text-red-500" /> },
-                                { label: 'Contacted', value: stats.contacted, icon: <Zap className="w-5 h-5 text-orange-500" /> },
+                                { label: 'Trash', value: stats.trash, icon: <Trash2 className="w-5 h-5 text-gray-500" /> },
                             ].map(stat => (
                                 <div key={stat.label} className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-white/5 shadow-sm">
                                     <div className="flex items-center justify-between mb-3">

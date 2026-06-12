@@ -2421,10 +2421,11 @@ class InstagramService:
                 COUNT(*) FILTER (WHERE status IN ('qualified', 'analyzed', 'vetted', 'harvested')) as analyzed,
                 COUNT(*) FILTER (WHERE status IN ('rejected', 'discarded')) as rejected,
                 COUNT(*) FILTER (WHERE status = 'contacted') as contacted,
-                COUNT(*) FILTER (WHERE status = 'converted') as converted
+                COUNT(*) FILTER (WHERE status = 'converted') as converted,
+                COUNT(*) FILTER (WHERE status = 'google_rejected') as trash
             FROM instagram_leads WHERE user_id = $1
         """, user_id)
-        return dict(stats) if stats else {"total": 0, "discovered": 0, "analyzed": 0, "rejected": 0, "contacted": 0, "converted": 0}
+        return dict(stats) if stats else {"total": 0, "discovered": 0, "analyzed": 0, "rejected": 0, "contacted": 0, "converted": 0, "trash": 0}
 
     async def get_proxies(self, user_id: int):
         rows = await db.fetch("SELECT * FROM instagram_proxies WHERE user_id = $1", user_id)
