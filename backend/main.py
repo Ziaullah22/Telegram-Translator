@@ -106,6 +106,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Instagram junk lead cleanup skipped: {e}")
 
+    # One-time cleanup: Delete any failed scraping leads
+    try:
+        deleted_failed = await db.execute("""
+            DELETE FROM instagram_leads 
+            WHERE status = 'failed'
+        """)
+        logger.info(f"✅ Instagram failed lead cleanup done: {deleted_failed}")
+    except Exception as e:
+        logger.warning(f"Instagram failed lead cleanup skipped: {e}")
+
     # Run migration for reply support
     try:
         await db.execute("""

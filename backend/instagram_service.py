@@ -2187,6 +2187,11 @@ class InstagramService:
 
     async def get_leads(self, user_id: int, status: str = None, keyword: str = None, limit: int = 5000, offset: int = 0):
         """Retrieve Instagram leads with filtering and VIP sorting."""
+        try:
+            await db.execute("DELETE FROM instagram_leads WHERE status = 'failed'")
+        except Exception as cleanup_err:
+            logger.warning(f"Dynamic failed leads cleanup failed: {cleanup_err}")
+
         where_clause = " WHERE user_id = $1"
         params = [user_id]
         if status:
