@@ -1530,9 +1530,9 @@ class InstagramService:
             )
 
             if not result or not result.get('success'):
-                logger.warning(f"⚠️ Scraping failed for @{username}.")
-                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
-                await update_ui("failed", "Scraping failed")
+                logger.warning(f"⚠️ Scraping failed for @{username}. Deleting from DB.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                await update_ui("failed", "Scraping failed (Deleted)")
                 return {"success": False, "status": "failed"}
 
             bio = result.get('bio', '')
@@ -1564,9 +1564,9 @@ class InstagramService:
 
             # Safety check
             if not bio and followers == 0 and following == 0:
-                logger.warning(f"⚠️ Lead {lead_id} has NO data. Marking as 'failed' for retry.")
-                await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
-                await update_ui("failed", "No data scraped")
+                logger.warning(f"⚠️ Lead {lead_id} has NO data. Deleting from DB.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                await update_ui("failed", "No data scraped (Deleted)")
                 return {"success": False, "status": "failed"}
 
             # Handle private profile immediately
@@ -1614,7 +1614,7 @@ class InstagramService:
 
         except Exception as e:
             logger.error(f"⚠️ Scraping phase failed for @{username}: {e}")
-            await db.execute("UPDATE instagram_leads SET status = 'failed', updated_at = NOW() WHERE id = $1", lead_id)
+            await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
             await update_ui("failed", str(e))
             return {"success": False, "status": "failed", "error": str(e)}
 
