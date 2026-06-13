@@ -549,224 +549,242 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
         except Exception as db_err:
             logger.warning(f"Failed to fetch user proxies: {db_err}")
 
+    # Retrieve parsed key lists for rotation
+    gemini_keys = [k.strip() for k in (settings.gemini_api_key or "").split(",") if k.strip()]
+    groq_keys = [k.strip() for k in (settings.groq_api_key or "").split(",") if k.strip()]
+    openrouter_keys = [k.strip() for k in (settings.openrouter_api_key or "").split(",") if k.strip()]
+    huggingface_keys = [k.strip() for k in (settings.huggingface_api_key or "").split(",") if k.strip()]
+
     # 🚨 Configuration validation for explicitly requested providers
-    if prov_lower == "gemini" and not settings.gemini_api_key:
+    if prov_lower == "gemini" and not gemini_keys:
         return [], "⚠️ Gemini API key is missing from backend `.env`. Configure `GEMINI_API_KEY` to use Gemini.", False, False, "None"
-    if prov_lower == "groq" and not settings.groq_api_key:
+    if prov_lower == "groq" and not groq_keys:
         return [], "⚠️ Groq API key is missing from backend `.env`. Configure `GROQ_API_KEY` to use Groq.", False, False, "None"
-    if prov_lower == "openrouter" and not settings.openrouter_api_key:
+    if prov_lower == "openrouter" and not openrouter_keys:
         return [], "⚠️ OpenRouter API key is missing from backend `.env`. Configure `OPENROUTER_API_KEY` to use OpenRouter.", False, False, "None"
-    if prov_lower in ("huggingface", "hf") and not settings.huggingface_api_key:
+    if prov_lower in ("huggingface", "hf") and not huggingface_keys:
         return [], "⚠️ Hugging Face API key is missing from backend `.env`. Configure `HUGGINGFACE_API_KEY` to use Hugging Face.", False, False, "None"
 
     # 1. Try Gemini
-    if prov_lower == "gemini" or (prov_lower == "auto" and settings.gemini_api_key):
-        try:
-            logger.info("Sending request to Gemini API (gemini-2.5-flash-lite)...")
-            gemini_contents = []
-            for m in messages:
-                role = m.get("role")
-                content = m.get("content")
-                if role == "system":
-                    continue
-                role_mapped = "model" if role == "assistant" else "user"
-                gemini_contents.append({
-                    "role": role_mapped,
-                    "parts": [{"text": content}]
-                })
-            
-            payload = {
-                "contents": gemini_contents,
-                "generationConfig": {
-                    "temperature": temperature,
-                    "responseMimeType": "application/json"
+    if prov_lower == "gemini" or (prov_lower == "auto" and gemini_keys):
+        last_error_msg = ""
+        for key in gemini_keys:
+            try:
+                logger.info(f"Sending request to Gemini API (gemini-2.5-flash-lite) using key starting with {key[:6]}...")
+                gemini_contents = []
+                for m in messages:
+                    role = m.get("role")
+                    content = m.get("content")
+                    if role == "system":
+                        continue
+                    role_mapped = "model" if role == "assistant" else "user"
+                    gemini_contents.append({
+                        "role": role_mapped,
+                        "parts": [{"text": content}]
+                    })
+                
+                payload = {
+                    "contents": gemini_contents,
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "responseMimeType": "application/json"
+                    }
                 }
-            }
-            if system_prompt:
-                payload["systemInstruction"] = {
-                    "parts": [{"text": system_prompt}]
-                }
+                if system_prompt:
+                    payload["systemInstruction"] = {
+                        "parts": [{"text": system_prompt}]
+                    }
 
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
-            
-            async with aiohttp.ClientSession() as session:
-                status, raw_text = await make_proxied_post(
-                    session=session,
-                    url=gemini_url,
-                    json_data=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=15,
-                    user_proxies=proxies
-                )
-                if status == 200:
-                    data = json.loads(raw_text)
-                    raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                    if suggested_items:
-                        return suggested_items, explanation_msg or f"Suggestions generated via Gemini!", True, True, "Gemini API (gemini-2.5-flash)"
-                    elif raw.strip():
-                        return [], raw[:500], False, True, "Gemini API (gemini-2.5-flash)"
-                else:
-                    logger.warning(f"Gemini API returned status {status}: {raw_text}")
-                    if prov_lower != "auto":
-                        return [], f"❌ Gemini API Error (Status {status}): {raw_text[:500]}", False, True, "Gemini API"
-        except Exception as gemini_err:
-            logger.warning(f"Failed to query Gemini API: {gemini_err}")
-            if prov_lower != "auto":
-                return [], f"❌ Failed to query Gemini API: {gemini_err}", False, False, "Gemini API"
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
+                
+                async with aiohttp.ClientSession() as session:
+                    status, raw_text = await make_proxied_post(
+                        session=session,
+                        url=gemini_url,
+                        json_data=payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=15,
+                        user_proxies=proxies
+                    )
+                    if status == 200:
+                        data = json.loads(raw_text)
+                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via Gemini!", True, True, "Gemini API (gemini-2.5-flash)"
+                        elif raw.strip():
+                            return [], raw[:500], False, True, "Gemini API (gemini-2.5-flash)"
+                    else:
+                        logger.warning(f"Gemini API returned status {status} for key starting with {key[:6]}: {raw_text}")
+                        last_error_msg = f"Gemini API Error (Status {status}): {raw_text[:500]}"
+            except Exception as gemini_err:
+                logger.warning(f"Failed to query Gemini API using key starting with {key[:6]}: {gemini_err}")
+                last_error_msg = f"Failed to query Gemini API: {gemini_err}"
+
+        if prov_lower == "gemini":
+            return [], f"❌ All Gemini keys failed. Last error: {last_error_msg}", False, True if last_error_msg.startswith("Gemini API Error") else False, "Gemini API"
 
     # 2. Try Groq
-    if prov_lower == "groq" or (prov_lower == "auto" and settings.groq_api_key):
-        try:
-            logger.info("Sending request to Groq API (llama-3.3-70b-versatile)...")
-            groq_messages = []
-            if system_prompt:
-                groq_messages.append({"role": "system", "content": system_prompt})
-            for m in messages:
-                if m.get("role") != "system":
-                    groq_messages.append(m)
+    if prov_lower == "groq" or (prov_lower == "auto" and groq_keys):
+        last_error_msg = ""
+        for key in groq_keys:
+            try:
+                logger.info(f"Sending request to Groq API (llama-3.3-70b-versatile) using key starting with {key[:6]}...")
+                groq_messages = []
+                if system_prompt:
+                    groq_messages.append({"role": "system", "content": system_prompt})
+                for m in messages:
+                    if m.get("role") != "system":
+                        groq_messages.append(m)
 
-            groq_url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {settings.groq_api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": groq_messages,
-                "temperature": temperature,
-                "response_format": {"type": "json_object"},
-                "max_tokens": 4096
-            }
+                groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": groq_messages,
+                    "temperature": temperature,
+                    "response_format": {"type": "json_object"},
+                    "max_tokens": 4096
+                }
 
-            async with aiohttp.ClientSession() as session:
-                status, raw_text = await make_proxied_post(
-                    session=session,
-                    url=groq_url,
-                    json_data=payload,
-                    headers=headers,
-                    timeout=20,
-                    user_proxies=proxies
-                )
-                if status == 200:
-                    data = json.loads(raw_text)
-                    raw = data["choices"][0]["message"]["content"]
-                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                    if suggested_items:
-                        return suggested_items, explanation_msg or f"Suggestions generated via Groq!", True, True, "Groq API (llama-3.3-70b-versatile)"
-                    elif raw.strip():
-                        return [], raw[:500], False, True, "Groq API (llama-3.3-70b-versatile)"
-                else:
-                    logger.warning(f"Groq API returned status {status}: {raw_text}")
-                    if prov_lower != "auto":
-                        return [], f"❌ Groq API Error (Status {status}): {raw_text[:500]}", False, True, "Groq API"
-        except Exception as groq_err:
-            logger.warning(f"Failed to query Groq API: {groq_err}")
-            if prov_lower != "auto":
-                return [], f"❌ Failed to query Groq API: {groq_err}", False, False, "Groq API"
+                async with aiohttp.ClientSession() as session:
+                    status, raw_text = await make_proxied_post(
+                        session=session,
+                        url=groq_url,
+                        json_data=payload,
+                        headers=headers,
+                        timeout=20,
+                        user_proxies=proxies
+                    )
+                    if status == 200:
+                        data = json.loads(raw_text)
+                        raw = data["choices"][0]["message"]["content"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via Groq!", True, True, "Groq API (llama-3.3-70b-versatile)"
+                        elif raw.strip():
+                            return [], raw[:500], False, True, "Groq API (llama-3.3-70b-versatile)"
+                    else:
+                        logger.warning(f"Groq API returned status {status} for key starting with {key[:6]}: {raw_text}")
+                        last_error_msg = f"Groq API Error (Status {status}): {raw_text[:500]}"
+            except Exception as groq_err:
+                logger.warning(f"Failed to query Groq API using key starting with {key[:6]}: {groq_err}")
+                last_error_msg = f"Failed to query Groq API: {groq_err}"
+
+        if prov_lower == "groq":
+            return [], f"❌ All Groq keys failed. Last error: {last_error_msg}", False, True if last_error_msg.startswith("Groq API Error") else False, "Groq API"
 
     # 3. Try OpenRouter
-    if prov_lower == "openrouter" or (prov_lower == "auto" and settings.openrouter_api_key):
-        try:
-            logger.info("Sending request to OpenRouter API (google/gemini-2.5-flash)...")
-            or_messages = []
-            if system_prompt:
-                or_messages.append({"role": "system", "content": system_prompt})
-            for m in messages:
-                if m.get("role") != "system":
-                    or_messages.append(m)
+    if prov_lower == "openrouter" or (prov_lower == "auto" and openrouter_keys):
+        last_error_msg = ""
+        for key in openrouter_keys:
+            try:
+                logger.info(f"Sending request to OpenRouter API (google/gemini-2.5-flash) using key starting with {key[:6]}...")
+                or_messages = []
+                if system_prompt:
+                    or_messages.append({"role": "system", "content": system_prompt})
+                for m in messages:
+                    if m.get("role") != "system":
+                        or_messages.append(m)
 
-            or_url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Telegram Translator",
-                "User-Agent": "Mozilla/5.0"
-            }
-            payload = {
-                "model": "google/gemini-2.5-flash",
-                "messages": or_messages,
-                "temperature": temperature,
-                "max_tokens": 500,
-                "response_format": {"type": "json_object"}
-            }
+                or_url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "Telegram Translator",
+                    "User-Agent": "Mozilla/5.0"
+                }
+                payload = {
+                    "model": "google/gemini-2.5-flash",
+                    "messages": or_messages,
+                    "temperature": temperature,
+                    "max_tokens": 500,
+                    "response_format": {"type": "json_object"}
+                }
 
-            async with aiohttp.ClientSession() as session:
-                status, raw_text = await make_proxied_post(
-                    session=session,
-                    url=or_url,
-                    json_data=payload,
-                    headers=headers,
-                    timeout=20,
-                    user_proxies=proxies
-                )
-                if status == 200:
-                    data = json.loads(raw_text)
-                    raw = data["choices"][0]["message"]["content"]
-                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                    if suggested_items:
-                        return suggested_items, explanation_msg or f"Suggestions generated via OpenRouter!", True, True, "OpenRouter API (gemini-2.5-flash)"
-                    elif raw.strip():
-                        return [], raw[:500], False, True, "OpenRouter API (gemini-2.5-flash)"
-                else:
-                    logger.warning(f"OpenRouter API returned status {status}: {raw_text}")
-                    if prov_lower != "auto":
-                        return [], f"❌ OpenRouter API Error (Status {status}): {raw_text[:500]}", False, True, "OpenRouter API"
-        except Exception as or_err:
-            logger.warning(f"Failed to query OpenRouter API: {or_err}")
-            if prov_lower != "auto":
-                return [], f"❌ Failed to query OpenRouter API: {or_err}", False, False, "OpenRouter API"
+                async with aiohttp.ClientSession() as session:
+                    status, raw_text = await make_proxied_post(
+                        session=session,
+                        url=or_url,
+                        json_data=payload,
+                        headers=headers,
+                        timeout=20,
+                        user_proxies=proxies
+                    )
+                    if status == 200:
+                        data = json.loads(raw_text)
+                        raw = data["choices"][0]["message"]["content"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via OpenRouter!", True, True, "OpenRouter API (gemini-2.5-flash)"
+                        elif raw.strip():
+                            return [], raw[:500], False, True, "OpenRouter API (gemini-2.5-flash)"
+                    else:
+                        logger.warning(f"OpenRouter API returned status {status} for key starting with {key[:6]}: {raw_text}")
+                        last_error_msg = f"OpenRouter API Error (Status {status}): {raw_text[:500]}"
+            except Exception as or_err:
+                logger.warning(f"Failed to query OpenRouter API using key starting with {key[:6]}: {or_err}")
+                last_error_msg = f"Failed to query OpenRouter API: {or_err}"
+
+        if prov_lower == "openrouter":
+            return [], f"❌ All OpenRouter keys failed. Last error: {last_error_msg}", False, True if last_error_msg.startswith("OpenRouter API Error") else False, "OpenRouter API"
 
     # 4. Try Hugging Face
-    if prov_lower in ("huggingface", "hf") or (prov_lower == "auto" and settings.huggingface_api_key):
-        try:
-            logger.info("Sending request to Hugging Face Router API...")
-            hf_messages = []
-            if system_prompt:
-                hf_messages.append({"role": "system", "content": system_prompt})
-            for m in messages:
-                if m.get("role") != "system":
-                    hf_messages.append(m)
+    if prov_lower in ("huggingface", "hf") or (prov_lower == "auto" and huggingface_keys):
+        last_error_msg = ""
+        for key in huggingface_keys:
+            try:
+                logger.info(f"Sending request to Hugging Face Router API using key starting with {key[:6]}...")
+                hf_messages = []
+                if system_prompt:
+                    hf_messages.append({"role": "system", "content": system_prompt})
+                for m in messages:
+                    if m.get("role") != "system":
+                        hf_messages.append(m)
 
-            hf_url = "https://router.huggingface.co/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {settings.huggingface_api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "Qwen/Qwen2.5-72B-Instruct",
-                "messages": hf_messages,
-                "temperature": temperature,
-                "max_tokens": 4096
-            }
+                hf_url = "https://router.huggingface.co/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "Qwen/Qwen2.5-72B-Instruct",
+                    "messages": hf_messages,
+                    "temperature": temperature,
+                    "max_tokens": 4096
+                }
 
-            async with aiohttp.ClientSession() as session:
-                status, raw_text = await make_proxied_post(
-                    session=session,
-                    url=hf_url,
-                    json_data=payload,
-                    headers=headers,
-                    timeout=20,
-                    user_proxies=proxies
-                )
-                if status == 200:
-                    data = json.loads(raw_text)
-                    raw = data["choices"][0]["message"]["content"]
-                    suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
-                    if suggested_items:
-                        return suggested_items, explanation_msg or f"Suggestions generated via Hugging Face!", True, True, "Hugging Face API (Qwen2.5-72B)"
-                    elif raw.strip():
-                        return [], raw[:500], False, True, "Hugging Face API (Qwen2.5-72B)"
-                else:
-                    logger.warning(f"Hugging Face API returned status {status}: {raw_text}")
-                    if prov_lower != "auto":
-                        return [], f"❌ Hugging Face API Error (Status {status}): {raw_text[:500]}", False, True, "Hugging Face API"
-        except Exception as hf_err:
-            logger.warning(f"Failed to query Hugging Face API: {hf_err}")
-            if prov_lower != "auto":
-                return [], f"❌ Failed to query Hugging Face API: {hf_err}", False, False, "Hugging Face API"
+                async with aiohttp.ClientSession() as session:
+                    status, raw_text = await make_proxied_post(
+                        session=session,
+                        url=hf_url,
+                        json_data=payload,
+                        headers=headers,
+                        timeout=20,
+                        user_proxies=proxies
+                    )
+                    if status == 200:
+                        data = json.loads(raw_text)
+                        raw = data["choices"][0]["message"]["content"]
+                        suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
+                        if suggested_items:
+                            return suggested_items, explanation_msg or f"Suggestions generated via Hugging Face!", True, True, "Hugging Face API (Qwen2.5-72B)"
+                        elif raw.strip():
+                            return [], raw[:500], False, True, "Hugging Face API (Qwen2.5-72B)"
+                    else:
+                        logger.warning(f"Hugging Face API returned status {status} for key starting with {key[:6]}: {raw_text}")
+                        last_error_msg = f"Hugging Face API Error (Status {status}): {raw_text[:500]}"
+            except Exception as hf_err:
+                logger.warning(f"Failed to query Hugging Face API using key starting with {key[:6]}: {hf_err}")
+                last_error_msg = f"Failed to query Hugging Face API: {hf_err}"
+
+        if prov_lower in ("huggingface", "hf"):
+            return [], f"❌ All Hugging Face keys failed. Last error: {last_error_msg}", False, True if last_error_msg.startswith("Hugging Face API Error") else False, "Hugging Face API"
 
     # 4.5 Try Qwen Local (llama.cpp / Ollama fallback)
     if prov_lower == "qwen-35b-local":

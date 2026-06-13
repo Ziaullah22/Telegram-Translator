@@ -275,6 +275,22 @@ class InstagramService:
                     "message": f"📊 Mission complete! Found {new_count} NEW leads total."
                 }, user_id)
             except: pass
+
+            # 🚀 AUTO-PIPELINE STEP 2: Automatically start Auto-Pilot (profile scraping) after Discovery completes
+            try:
+                logger.info(f"🚀 Auto-Pipeline: Ensuring AI Analysis is paused during Autopilot scraping...")
+                await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = FALSE WHERE user_id = $1", user_id)
+                try:
+                    await manager.send_personal_message({
+                        "type": "filter_settings_updated",
+                        "settings": {"enable_ai_analysis": False}
+                    }, user_id)
+                except: pass
+
+                logger.info(f"🚀 Auto-Pipeline: Starting Auto-Pilot for user {user_id}...")
+                await self.start_auto_analysis(user_id)
+            except Exception as auto_pilot_err:
+                logger.error(f"❌ Auto-Pipeline: Failed to auto-trigger Auto-Pilot: {auto_pilot_err}")
             
         return new_count
 
@@ -3360,6 +3376,25 @@ class InstagramService:
                     
                     if not has_more_discovered and not has_more_analyzing:
                         logger.info(f"No more leads to analyze for User {user_id}. Auto-Pilot Resting. 😴")
+                        
+                        # 🚀 AUTO-PIPELINE STEP 3: Automatically start AI Analysis after Autopilot completes fully
+                        try:
+                            logger.info(f"🚀 Auto-Pipeline: Autopilot done. Enabling AI Analysis settings for user {user_id}...")
+                            await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = TRUE WHERE user_id = $1", user_id)
+                            try:
+                                await manager.send_personal_message({
+                                    "type": "filter_settings_updated",
+                                    "settings": {"enable_ai_analysis": True}
+                                }, user_id)
+                            except: pass
+                            
+                            # Start global sequential AI loop if it was stopped/not running
+                            if not hasattr(self, 'global_ai_task') or self.global_ai_task.done():
+                                self.global_ai_task = asyncio.create_task(self.global_ai_analysis_loop())
+                                logger.info("🚀 Auto-Pipeline: Global Sequential AI Task created/restarted.")
+                        except Exception as ai_trigger_err:
+                            logger.error(f"❌ Auto-Pipeline: Failed to auto-trigger AI Analysis: {ai_trigger_err}")
+
                         try:
                             await manager.send_personal_message({
                                 "type": "auto_analyze_stopped",

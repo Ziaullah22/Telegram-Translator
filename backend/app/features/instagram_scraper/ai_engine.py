@@ -202,98 +202,126 @@ class InstagramAIEngine:
             from app.core.config import settings
             if not settings.gemini_api_key:
                 return {"error": "Gemini API key is missing from backend .env"}
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
-            payload = {
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "responseMimeType": "application/json"
+            gemini_keys = [k.strip() for k in settings.gemini_api_key.split(",") if k.strip()]
+            if not gemini_keys:
+                return {"error": "Gemini API key is missing from backend .env"}
+            last_err = ""
+            for key in gemini_keys:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
+                payload = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "responseMimeType": "application/json"
+                    }
                 }
-            }
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
-                        if response.status != 200:
-                            return {"error": f"Gemini error: {response.status}"}
-                        data = await response.json()
-                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"error": str(e)}
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                                return self._extract_json(raw)
+                            else:
+                                last_err = f"Gemini status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return {"error": f"All Gemini keys failed. Last error: {last_err}"}
 
         elif model_lower == "groq":
             from app.core.config import settings
             if not settings.groq_api_key:
                 return {"error": "Groq API key is missing from backend .env"}
-            groq_url = "https://api.groq.com/openai/v1/chat/completions"
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            }
-            headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"error": f"Groq error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"error": str(e)}
+            groq_keys = [k.strip() for k in settings.groq_api_key.split(",") if k.strip()]
+            if not groq_keys:
+                return {"error": "Groq API key is missing from backend .env"}
+            last_err = ""
+            for key in groq_keys:
+                groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                }
+                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                raw = data["choices"][0]["message"]["content"]
+                                return self._extract_json(raw)
+                            else:
+                                last_err = f"Groq status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return {"error": f"All Groq keys failed. Last error: {last_err}"}
 
         elif model_lower == "openrouter":
             from app.core.config import settings
             if not settings.openrouter_api_key:
                 return {"error": "OpenRouter API key is missing from backend .env"}
-            or_url = "https://openrouter.ai/api/v1/chat/completions"
-            payload = {
-                "model": "google/gemini-2.5-flash",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            }
-            headers = {
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Telegram Translator"
-            }
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"error": f"OpenRouter error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"error": str(e)}
+            or_keys = [k.strip() for k in settings.openrouter_api_key.split(",") if k.strip()]
+            if not or_keys:
+                return {"error": "OpenRouter API key is missing from backend .env"}
+            last_err = ""
+            for key in or_keys:
+                or_url = "https://openrouter.ai/api/v1/chat/completions"
+                payload = {
+                    "model": "google/gemini-2.5-flash",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                }
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "Telegram Translator"
+                }
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                raw = data["choices"][0]["message"]["content"]
+                                return self._extract_json(raw)
+                            else:
+                                last_err = f"OpenRouter status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return {"error": f"All OpenRouter keys failed. Last error: {last_err}"}
 
         elif model_lower in ("huggingface", "hf"):
             from app.core.config import settings
             if not settings.huggingface_api_key:
                 return {"error": "Hugging Face API key is missing from backend .env"}
-            hf_url = "https://router.huggingface.co/v1/chat/completions"
-            payload = {
-                "model": "Qwen/Qwen2.5-72B-Instruct",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-                "max_tokens": 500
-            }
-            headers = {"Authorization": f"Bearer {settings.huggingface_api_key}", "Content-Type": "application/json"}
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            return {"error": f"Hugging Face error: {response.status}"}
-                        data = await response.json()
-                        raw = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw)
-                except Exception as e:
-                    return {"error": str(e)}
+            hf_keys = [k.strip() for k in settings.huggingface_api_key.split(",") if k.strip()]
+            if not hf_keys:
+                return {"error": "Hugging Face API key is missing from backend .env"}
+            last_err = ""
+            for key in hf_keys:
+                hf_url = "https://router.huggingface.co/v1/chat/completions"
+                payload = {
+                    "model": "Qwen/Qwen2.5-72B-Instruct",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "max_tokens": 500
+                }
+                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                raw = data["choices"][0]["message"]["content"]
+                                return self._extract_json(raw)
+                            else:
+                                last_err = f"Hugging Face status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return {"error": f"All Hugging Face keys failed. Last error: {last_err}"}
 
         else:
             # Local Ollama
@@ -478,92 +506,140 @@ class InstagramAIEngine:
                 elif model_lower == "gemini":
                     if not settings.gemini_api_key:
                         raise ValueError("Gemini API key is missing")
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={settings.gemini_api_key}"
-                    payload = {
-                        "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
-                        "generationConfig": {
-                            "temperature": 0.1,
-                            "responseMimeType": "application/json"
+                    gemini_keys = [k.strip() for k in settings.gemini_api_key.split(",") if k.strip()]
+                    if not gemini_keys:
+                        raise ValueError("Gemini API key list is empty")
+                    last_gemini_err = ""
+                    for key in gemini_keys:
+                        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
+                        payload = {
+                            "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                            "generationConfig": {
+                                "temperature": 0.1,
+                                "responseMimeType": "application/json"
+                            }
                         }
-                    }
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
-                            if response.status != 200:
-                                raise ValueError(f"Gemini error: {response.status}")
-                            data = await response.json()
-                            raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                            result = self._extract_json(raw)
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=30) as response:
+                                    if response.status == 200:
+                                        data = await response.json()
+                                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                                        result = self._extract_json(raw)
+                                        break
+                                    else:
+                                        last_gemini_err = f"Gemini status {response.status}"
+                        except Exception as e:
+                            last_gemini_err = str(e)
+                    else:
+                        raise ValueError(f"All Gemini keys failed: {last_gemini_err}")
                             
                 elif model_lower == "groq":
                     if not settings.groq_api_key:
                         raise ValueError("Groq API key is missing")
-                    groq_url = "https://api.groq.com/openai/v1/chat/completions"
-                    payload = {
-                        "model": "llama-3.3-70b-versatile",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.1,
-                        "response_format": {"type": "json_object"}
-                    }
-                    headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
-                            if response.status != 200:
-                                raise ValueError(f"Groq error: {response.status}")
-                            data = await response.json()
-                            raw = data["choices"][0]["message"]["content"]
-                            result = self._extract_json(raw)
+                    groq_keys = [k.strip() for k in settings.groq_api_key.split(",") if k.strip()]
+                    if not groq_keys:
+                        raise ValueError("Groq API key list is empty")
+                    last_groq_err = ""
+                    for key in groq_keys:
+                        groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                        payload = {
+                            "model": "llama-3.3-70b-versatile",
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": 0.1,
+                            "response_format": {"type": "json_object"}
+                        }
+                        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(groq_url, json=payload, headers=headers, timeout=30) as response:
+                                    if response.status == 200:
+                                        data = await response.json()
+                                        raw = data["choices"][0]["message"]["content"]
+                                        result = self._extract_json(raw)
+                                        break
+                                    else:
+                                        last_groq_err = f"Groq status {response.status}"
+                        except Exception as e:
+                            last_groq_err = str(e)
+                    else:
+                        raise ValueError(f"All Groq keys failed: {last_groq_err}")
                             
                 elif model_lower == "openrouter":
                     if not settings.openrouter_api_key:
                         raise ValueError("OpenRouter API key is missing")
-                    or_url = "https://openrouter.ai/api/v1/chat/completions"
-                    payload = {
-                        "model": "google/gemini-2.5-flash",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.1,
-                        "response_format": {"type": "json_object"}
-                    }
-                    headers = {
-                        "Authorization": f"Bearer {settings.openrouter_api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:5173",
-                        "X-Title": "Telegram Translator"
-                    }
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
-                            if response.status != 200:
-                                raise ValueError(f"OpenRouter error: {response.status}")
-                            data = await response.json()
-                            raw = data["choices"][0]["message"]["content"]
-                            result = self._extract_json(raw)
+                    or_keys = [k.strip() for k in settings.openrouter_api_key.split(",") if k.strip()]
+                    if not or_keys:
+                        raise ValueError("OpenRouter API key list is empty")
+                    last_or_err = ""
+                    for key in or_keys:
+                        or_url = "https://openrouter.ai/api/v1/chat/completions"
+                        payload = {
+                            "model": "google/gemini-2.5-flash",
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": 0.1,
+                            "response_format": {"type": "json_object"}
+                        }
+                        headers = {
+                            "Authorization": f"Bearer {key}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "http://localhost:5173",
+                            "X-Title": "Telegram Translator"
+                        }
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(or_url, json=payload, headers=headers, timeout=30) as response:
+                                    if response.status == 200:
+                                        data = await response.json()
+                                        raw = data["choices"][0]["message"]["content"]
+                                        result = self._extract_json(raw)
+                                        break
+                                    else:
+                                        last_or_err = f"OpenRouter status {response.status}"
+                        except Exception as e:
+                            last_or_err = str(e)
+                    else:
+                        raise ValueError(f"All OpenRouter keys failed: {last_or_err}")
                             
                 elif model_lower in ("huggingface", "hf"):
                     if not settings.huggingface_api_key:
                         raise ValueError("Hugging Face API key is missing")
-                    hf_url = "https://router.huggingface.co/v1/chat/completions"
-                    payload = {
-                        "model": "Qwen/Qwen2.5-72B-Instruct",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.1,
-                        "max_tokens": 500
-                    }
-                    headers = {"Authorization": f"Bearer {settings.huggingface_api_key}", "Content-Type": "application/json"}
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
-                            if response.status != 200:
-                                raise ValueError(f"Hugging Face error: {response.status}")
-                            data = await response.json()
-                            raw = data["choices"][0]["message"]["content"]
-                            result = self._extract_json(raw)
+                    hf_keys = [k.strip() for k in settings.huggingface_api_key.split(",") if k.strip()]
+                    if not hf_keys:
+                        raise ValueError("Hugging Face API key list is empty")
+                    last_hf_err = ""
+                    for key in hf_keys:
+                        hf_url = "https://router.huggingface.co/v1/chat/completions"
+                        payload = {
+                            "model": "Qwen/Qwen2.5-72B-Instruct",
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": 0.1,
+                            "max_tokens": 500
+                        }
+                        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(hf_url, json=payload, headers=headers, timeout=30) as response:
+                                    if response.status == 200:
+                                        data = await response.json()
+                                        raw = data["choices"][0]["message"]["content"]
+                                        result = self._extract_json(raw)
+                                        break
+                                    else:
+                                        last_hf_err = f"Hugging Face status {response.status}"
+                        except Exception as e:
+                            last_hf_err = str(e)
+                    else:
+                        raise ValueError(f"All Hugging Face keys failed: {last_hf_err}")
                             
                 else:
                     # Local Ollama fallback
