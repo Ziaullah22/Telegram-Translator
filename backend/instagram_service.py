@@ -42,6 +42,82 @@ class InstagramService:
     _discovery_status = {} # user_id: {"active": bool, "progress": str}
     _google_ai_lock = None
 
+    async def _perform_google_warmup_search(self, page) -> bool:
+        """
+        Performs a warm-up search on Google using a random query.
+        Returns True if successful, or False if CAPTCHA cannot be resolved.
+        """
+        random_queries = [
+            "video games news", "popular travel destinations", "healthy chicken recipes",
+            "easy home workouts", "best sci fi movies", "latest technology trends",
+            "how to learn guitar", "gardening tips for beginners", "diy home decor ideas",
+            "famous space discoveries", "best coffee shops nearby", "simple baking recipes",
+            "history of ancient egypt", "national parks to visit", "learn photography basics"
+        ]
+        
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            logger.info(f"🔄 Google Warmup Attempt {attempt+1}/{max_attempts}...")
+            try:
+                await page.goto("https://www.google.com", wait_until="domcontentloaded")
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+
+                # Dismiss consent/cookie popups
+                popup_selectors = [
+                    "button#L2AGLb", "button:has-text('Accept all')",
+                    "button:has-text('I agree')", "button:has-text('Agree')",
+                    "button:has-text('Consent')", "button:has-text('No thanks')",
+                    "button:has-text('Stay signed out')"
+                ]
+                for selector in popup_selectors:
+                    try:
+                        btn = await page.query_selector(selector)
+                        if btn and await btn.is_visible():
+                            logger.info(f"🧹 Dismissing popup: '{selector}'")
+                            await btn.click()
+                            await asyncio.sleep(random.uniform(1.0, 2.0))
+                    except:
+                        pass
+
+                # Choose random query
+                rand_query = random.choice(random_queries)
+                logger.info(f"⌨️ Typing random warm-up query: '{rand_query}'")
+                
+                search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
+                if search_box:
+                    await search_box.click()
+                    await asyncio.sleep(random.uniform(0.5, 1.2))
+                    for char in rand_query:
+                        await page.keyboard.type(char)
+                        await asyncio.sleep(random.uniform(0.08, 0.22))
+                    await asyncio.sleep(random.uniform(0.8, 1.5))
+                    await page.keyboard.press("Enter")
+                else:
+                    logger.warning("⚠️ Search box not found on home page. Trying direct navigation...")
+                    await page.goto(f"https://www.google.com/search?q={quote(rand_query)}", wait_until="domcontentloaded")
+
+                # Wait and check CAPTCHA
+                await asyncio.sleep(4)
+                current_url = page.url
+                is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                if is_captcha:
+                    logger.warning("🚨 CAPTCHA detected during warm-up! Waiting for cooldown...")
+                    await asyncio.sleep(20) # wait 20 seconds before next attempt
+                    continue
+                
+                # Check if results are visible
+                results_el = await page.query_selector("#search, div.g")
+                if results_el:
+                    logger.info("✅ Google warm-up search successful (results loaded, no CAPTCHA).")
+                    return True
+                else:
+                    logger.warning("⚠️ No search results container found. Retrying...")
+            except Exception as e:
+                logger.error(f"❌ Error during Google warm-up attempt: {e}")
+                await asyncio.sleep(5)
+                
+        return False
+
     async def _analyze_google_result_sequential(self, **kwargs):
         """Ensures that Google AI analysis runs sequentially to prevent rate limits."""
         if self._google_ai_lock is None:
@@ -377,49 +453,22 @@ class InstagramService:
         seen = set()
         new_leads_count = 0
         search_query = f"{keyword} site:instagram.com"
- 
-        # ---- FIRST keyword: open Google home and type ----
+
+        # ---- WARMUP & SEARCH ----
         if is_first_keyword:
-            logger.info("🌐 Opening Google homepage for first keyword...")
-            await page.goto("https://www.google.com", wait_until="domcontentloaded")
-            await asyncio.sleep(random.uniform(2.0, 4.0))
- 
-            # Dismiss consent/cookie popups
-            try:
-                popup_selectors = [
-                    "button#L2AGLb", "button:has-text('Accept all')",
-                    "button:has-text('I agree')", "button:has-text('Agree')",
-                    "button:has-text('Consent')", "button:has-text('No thanks')",
-                    "button:has-text('Stay signed out')"
-                ]
-                for selector in popup_selectors:
-                    btn = await page.query_selector(selector)
-                    if btn and await btn.is_visible():
-                        logger.info(f"🧹 Dismissing popup: '{selector}'")
-                        await btn.click()
-                        await asyncio.sleep(random.uniform(1.0, 2.0))
-            except Exception as pe:
-                logger.warning(f"⚠️ Popup bypass warning: {pe}")
- 
-            search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
-            if search_box:
-                await search_box.click()
-                await asyncio.sleep(random.uniform(0.5, 1.2))
-                for char in search_query:
-                    await page.keyboard.type(char)
-                    await asyncio.sleep(random.uniform(0.08, 0.22))
-                await asyncio.sleep(random.uniform(0.8, 1.5))
-                await page.keyboard.press("Enter")
-            else:
-                logger.warning("⚠️ Search box not found. Direct URL navigation...")
-                await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
- 
-        # ---- SUBSEQUENT keywords: reuse the same tab, clear search box ----
-        else:
-            logger.info(f"♻️ Reusing browser — clearing search box for next keyword: '{keyword}'")
+            logger.info("🌐 Opening Google homepage for first keyword and performing warm-up...")
+            warmup_ok = await self._perform_google_warmup_search(page)
+            if not warmup_ok:
+                logger.warning("⚠️ Warmup failed. Proceeding anyway...")
+
+        # Now clear the search box and type the actual query, with CAPTCHA detection and retry
+        search_success = False
+        max_search_attempts = 3
+        for search_attempt in range(max_search_attempts):
             try:
                 search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
                 if search_box:
+                    logger.info(f"⌨️ Typing target footprint query: '{search_query}' (Attempt {search_attempt+1}/{max_search_attempts})")
                     await search_box.click()
                     await asyncio.sleep(random.uniform(0.3, 0.7))
                     # Select all + delete (like a human pressing Ctrl+A then typing)
@@ -434,12 +483,23 @@ class InstagramService:
                     await asyncio.sleep(random.uniform(0.8, 1.5))
                     await page.keyboard.press("Enter")
                 else:
-                    # Fallback: direct URL if search box not found
-                    logger.warning("⚠️ Search box not found after reuse. Direct URL navigation...")
+                    logger.warning("⚠️ Search box not found. Direct URL navigation...")
                     await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
             except Exception as e:
-                logger.warning(f"⚠️ Search box reuse failed: {e}. Falling back to direct URL...")
+                logger.warning(f"⚠️ Search box input failed: {e}. Falling back to direct URL...")
                 await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
+
+            # Wait and check if CAPTCHA page loaded
+            await asyncio.sleep(4)
+            current_url = page.url
+            is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+            if is_captcha:
+                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}! Retrying with new warmup...")
+                await asyncio.sleep(20) # Cool down
+                await self._perform_google_warmup_search(page)
+            else:
+                search_success = True
+                break
  
         # ---- Scrape multiple pages for this keyword ----
         for page_num in range(20):
@@ -684,50 +744,51 @@ class InstagramService:
  
                 try:
                     if page_num == 0:
-                        # 1. Open Google home page directly
-                        logger.info("🌐 Opening Google homepage...")
-                        await page.goto("https://www.google.com", wait_until="domcontentloaded")
-                        await asyncio.sleep(random.uniform(2.0, 4.0))
-                        
-                        # 1.5 Clear Google Cookie Consent or Sign-in Popups
-                        try:
-                            popup_selectors = [
-                                "button#L2AGLb",                   # EU Cookie Accept All
-                                "button:has-text('Accept all')",   # Generic Accept All
-                                "button:has-text('I agree')",      # Generic Agree
-                                "button:has-text('Agree')",
-                                "button:has-text('Consent')",
-                                "button:has-text('No thanks')",    # Sign-in popup bypass
-                                "button:has-text('Stay signed out')" # Sign-in popup bypass alternate
-                            ]
-                            for selector in popup_selectors:
-                                btn = await page.query_selector(selector)
-                                if btn and await btn.is_visible():
-                                    logger.info(f"🧹 Dismissing Google popup using button '{selector}'...")
-                                    await btn.click()
-                                    await asyncio.sleep(random.uniform(1.0, 2.0))
-                        except Exception as pe:
-                            logger.warning(f"⚠️ Popup bypass warning: {pe}")
-                        
-                        # 2. Find the search input field
-                        search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
-                        if search_box:
-                            logger.info(f"⌨️ Typing search query: '{search_query}' with human speed...")
-                            await search_box.click()
-                            await asyncio.sleep(random.uniform(0.5, 1.2))
-                            
-                            # Type character-by-character with random delays
-                            for char in search_query:
-                                await page.keyboard.type(char)
-                                await asyncio.sleep(random.uniform(0.08, 0.22))
-                                
-                            await asyncio.sleep(random.uniform(0.8, 1.5))
-                            logger.info("🚀 Pressing Enter to search...")
-                            await page.keyboard.press("Enter")
-                        else:
-                            # Fallback if search input field is not found
-                            logger.warning("⚠️ Search input field not found. Loading search query directly...")
-                            await page.goto(url, wait_until="domcontentloaded")
+                        # Perform warmup search
+                        logger.info("🌐 Opening Google homepage and performing warm-up...")
+                        warmup_ok = await self._perform_google_warmup_search(page)
+                        if not warmup_ok:
+                            logger.warning("⚠️ Warmup failed. Proceeding anyway...")
+
+                        # Now clear the search box and type the actual query, with CAPTCHA detection and retry
+                        search_success = False
+                        max_search_attempts = 3
+                        for search_attempt in range(max_search_attempts):
+                            try:
+                                search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
+                                if search_box:
+                                    logger.info(f"⌨️ Typing target footprint query: '{search_query}' (Attempt {search_attempt+1}/{max_search_attempts})")
+                                    await search_box.click()
+                                    await asyncio.sleep(random.uniform(0.3, 0.7))
+                                    # Select all + delete
+                                    await page.keyboard.press("Control+A")
+                                    await asyncio.sleep(random.uniform(0.2, 0.4))
+                                    await page.keyboard.press("Delete")
+                                    await asyncio.sleep(random.uniform(0.3, 0.6))
+                                    # Type new search query character by character
+                                    for char in search_query:
+                                        await page.keyboard.type(char)
+                                        await asyncio.sleep(random.uniform(0.08, 0.22))
+                                    await asyncio.sleep(random.uniform(0.8, 1.5))
+                                    await page.keyboard.press("Enter")
+                                else:
+                                    logger.warning("⚠️ Search box not found. Direct URL navigation...")
+                                    await page.goto(url, wait_until="domcontentloaded")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Search box input failed: {e}. Falling back to direct URL...")
+                                await page.goto(url, wait_until="domcontentloaded")
+
+                            # Wait and check if CAPTCHA page loaded
+                            await asyncio.sleep(4)
+                            current_url = page.url
+                            is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
+                            if is_captcha:
+                                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}! Retrying with new warmup...")
+                                await asyncio.sleep(20) # Cool down
+                                await self._perform_google_warmup_search(page)
+                            else:
+                                search_success = True
+                                break
                     else:
                         # 3. For page 2+, scroll down and try to click the "Next" button
                         logger.info("⏬ Scrolling down to find the Next page button...")
