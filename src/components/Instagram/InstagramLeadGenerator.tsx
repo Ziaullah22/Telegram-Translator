@@ -2374,6 +2374,20 @@ const InstagramLeadGenerator: React.FC = () => {
                 const liveLead = leads.find(l => l.id === selectedLead.id) || selectedLead;
                 const ai = typeof liveLead.data_audit_json === 'string' ? JSON.parse(liveLead.data_audit_json || '{}') : liveLead.data_audit_json;
                 const filterTrace = ai?.filter_trace || [];
+                const stepOrder = [
+                    "Deep AI Search Result Filter",
+                    "Follower Count Check",
+                    "Exclude Keyword Filter",
+                    "Cities Whitelist Filter",
+                    "Bio Keyword Match",
+                    "Deep AI Intent Check",
+                    "Visual Match Filter"
+                ];
+                const sortedTrace = [...filterTrace].sort((a: any, b: any) => {
+                    const idxA = stepOrder.indexOf(a.step);
+                    const idxB = stepOrder.indexOf(b.step);
+                    return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
+                });
 
                 return (
                     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
@@ -2412,7 +2426,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                         </div>
                                     ) : (
                                         <div className="relative pl-6 border-l border-gray-200 dark:border-white/10 space-y-5">
-                                            {filterTrace.filter((item: any) => item.step !== 'Visual Match Filter').map((item: any, idx: number) => {
+                                            {sortedTrace.filter((item: any) => item.step !== 'Visual Match Filter').map((item: any, idx: number) => {
                                                 const isPassed = item.status === 'passed';
                                                 const isFailed = item.status === 'failed';
 
