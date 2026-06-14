@@ -2856,6 +2856,29 @@ class InstagramService:
             except Exception as clear_err:
                 logger.warning(f"Failed to clear metrics for trash leads: {clear_err}")
 
+            # Correct any existing miscategorized rejected leads that failed Google AI search analysis
+            try:
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET status = 'google_rejected',
+                        follower_count = NULL, 
+                        following_count = NULL, 
+                        recent_posts = NULL
+                    WHERE status = 'rejected'
+                      AND data_audit_json IS NOT NULL
+                      AND (
+                        data_audit_json->>'google_ai_match' = 'false'
+                        OR EXISTS (
+                            SELECT 1 FROM jsonb_to_recordset(data_audit_json->'filter_trace') 
+                            AS x(step text, status text)
+                            WHERE x.step = 'Deep AI Search Result Filter' AND x.status = 'failed'
+                        )
+                      );
+                """)
+                logger.info("🧹 Corrected miscategorized rejected leads to google_rejected (Trash) and cleared their metrics.")
+            except Exception as fix_err:
+                logger.warning(f"Failed to fix miscategorized rejected leads: {fix_err}")
+
             # Start global sequential AI loop if not already started
             if not hasattr(self, 'global_ai_task') or self.global_ai_task.done():
                 self.global_ai_task = asyncio.create_task(self.global_ai_analysis_loop())
@@ -3340,15 +3363,32 @@ class InstagramService:
                             if not is_qualified and rejection_reason:
                                 ai_analysis['rejection_reason'] = rejection_reason
 
-                            new_status = 'qualified' if is_qualified else 'rejected'
+                            if is_qualified:
+                                new_status = 'qualified'
+                            else:
+                                if not match_val:
+                                    new_status = 'google_rejected'
+                                else:
+                                    new_status = 'rejected'
+                                    
                             ai_data_json = json.dumps(ai_analysis)
 
-                            logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to {new_status.upper()}")
-                            await db.execute("""
-                                UPDATE instagram_leads 
-                                SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
-                                WHERE id = $4
-                            """, new_status, score_val, ai_data_json, lead_id_val)
+                            if new_status == 'google_rejected':
+                                logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to GOOGLE_REJECTED (Trash) and clearing metrics")
+                                await db.execute("""
+                                    UPDATE instagram_leads 
+                                    SET status = $1, score = $2, data_audit_json = $3, 
+                                        follower_count = NULL, following_count = NULL, recent_posts = NULL,
+                                        updated_at = NOW() 
+                                    WHERE id = $4
+                                """, new_status, score_val, ai_data_json, lead_id_val)
+                            else:
+                                logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to {new_status.upper()}")
+                                await db.execute("""
+                                    UPDATE instagram_leads 
+                                    SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
+                                    WHERE id = $4
+                                """, new_status, score_val, ai_data_json, lead_id_val)
 
                             # Send UI notification
                             try:
