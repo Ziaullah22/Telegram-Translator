@@ -283,8 +283,9 @@ class InstagramService:
                                 data_audit["discovery_intent"] = discovery_intent
                             status = await db.execute(
                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                "VALUES ($1, $2, $3, 'discovered', $4) "
+                                "VALUES ($1, $2, $3, 'google_discovered', $4) "
                                 "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                 "discovery_keyword = EXCLUDED.discovery_keyword",
                                 user_id, u, keyword, json.dumps(data_audit)
@@ -547,74 +548,92 @@ class InstagramService:
                     await asyncio.sleep(random.uniform(0.8, 1.5))
  
                 # Extract leads from cards
-                cards = await page.query_selector_all('div.g, div[data-ved]')
+                # Extract all instagram links on the page directly to skip absolutely NO ONE
+                link_elements = await page.query_selector_all('a[href*="instagram.com"]')
                 processed_card_leads = 0
-                links = []
- 
-                if cards and len(cards) > 0:
-                    logger.info(f"📋 Found {len(cards)} result cards for '{keyword}'")
-                    for card in cards:
+                
+                if link_elements and len(link_elements) > 0:
+                    logger.info(f"📋 Found {len(link_elements)} Instagram links on page {page_num+1} for '{keyword}'")
+                    for link_el in link_elements:
                         if len(found_usernames) >= limit:
                             break
-                        link_el = await card.query_selector('a[href*="instagram.com"]')
-                        if not link_el:
-                            continue
                         href = await link_el.get_attribute('href')
                         if href and '/url?q=' in href:
                             href = href.split('/url?q=')[1].split('&')[0]
-                        if href:
-                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                            if match:
-                                u = match.group(1).strip().strip('./_').lower()
-                                if self._is_valid_username(u) and u not in seen:
-                                    processed_card_leads += 1
-                                    logger.info(f"✨ Approved Lead: @{u}")
-                                    found_usernames.append(u)
-                                    seen.add(u)
-                                    # Extract title and snippet from card for later AI filter use
-                                    try:
-                                        title_el = await card.query_selector('h3')
-                                        card_title = await title_el.inner_text() if title_el else ""
-                                        card_snippet = await card.inner_text()
-                                        if card_title and card_title in card_snippet:
-                                            card_snippet = card_snippet.replace(card_title, "").strip()
-                                    except:
-                                        card_title = ""
-                                        card_snippet = ""
-                                    try:
-                                        data_audit = {
-                                            "google_snippet_data": {
-                                                "title": card_title,
-                                                "url": href,
-                                                "snippet": card_snippet
-                                            }
-                                        }
-                                        if discovery_intent:
-                                            data_audit["discovery_intent"] = discovery_intent
-                                        new_id = await db.fetchval(
-                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                            "VALUES ($1, $2, $3, 'discovered', $4) "
-                                            "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                            "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                            "discovery_keyword = EXCLUDED.discovery_keyword "
-                                            "RETURNING id",
-                                            user_id, u, keyword, json.dumps(data_audit)
-                                        )
-                                        if new_id:
-                                            new_leads_count += 1
-                                            try:
-                                                await manager.send_personal_message({
-                                                    "type": "new_lead_discovered",
-                                                    "lead_id": new_id,
-                                                    "status": "discovered"
-                                                }, user_id)
-                                            except:
-                                                pass
-                                    except Exception as db_err:
-                                        logger.error(f"❌ DB insert error for @{u}: {db_err}")
+                        if not href:
+                            continue
+                        
+                        match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
+                        if not match:
+                            continue
+                        
+                        u = match.group(1).strip().strip('./_').lower()
+                        # Skip common static paths
+                        if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms'):
+                            continue
 
-                if not cards or len(cards) == 0:
-                    logger.info("📋 No result cards found on this page. Ending search.")
+                        if self._is_valid_username(u) and u not in seen:
+                            processed_card_leads += 1
+                            logger.info(f"✨ Approved Lead: @{u}")
+                            found_usernames.append(u)
+                            seen.add(u)
+                            
+                            # Extract title and snippet via closest container
+                            card_title = ""
+                            card_snippet = ""
+                            try:
+                                parent_text_data = await page.evaluate("""(el) => {
+                                    const container = el.closest('div.g, div[data-ved], div.MjjYud, div.v7wOcf, div.N5s3Zc');
+                                    if (!container) return null;
+                                    const h3 = container.querySelector('h3');
+                                    return {
+                                        title: h3 ? h3.innerText : '',
+                                        text: container.innerText
+                                    };
+                                }""", link_el)
+                                if parent_text_data:
+                                    card_title = parent_text_data.get("title", "")
+                                    card_snippet = parent_text_data.get("text", "")
+                                    if card_title and card_title in card_snippet:
+                                        card_snippet = card_snippet.replace(card_title, "").strip()
+                            except:
+                                pass
+                                
+                            try:
+                                data_audit = {
+                                    "google_snippet_data": {
+                                        "title": card_title,
+                                        "url": href,
+                                        "snippet": card_snippet
+                                    }
+                                }
+                                if discovery_intent:
+                                    data_audit["discovery_intent"] = discovery_intent
+                                new_id = await db.fetchval(
+                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
+                                    "VALUES ($1, $2, $3, 'google_discovered', $4) "
+                                    "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                    "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
+                                    "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
+                                    "discovery_keyword = EXCLUDED.discovery_keyword "
+                                    "RETURNING id",
+                                    user_id, u, keyword, json.dumps(data_audit)
+                                )
+                                if new_id:
+                                    new_leads_count += 1
+                                    try:
+                                        await manager.send_personal_message({
+                                            "type": "new_lead_discovered",
+                                            "lead_id": new_id,
+                                            "status": "google_discovered"
+                                        }, user_id)
+                                    except:
+                                        pass
+                            except Exception as db_err:
+                                logger.error(f"❌ DB insert error for @{u}: {db_err}")
+
+                if not link_elements or len(link_elements) == 0:
+                    logger.info("📋 No Instagram link elements found on this page. Ending search.")
                     break
 
                 await asyncio.sleep(random.uniform(4, 7))
@@ -762,20 +781,15 @@ class InstagramService:
                         scroll_step = random.randint(300, 600)
                         await page.evaluate(f"window.scrollBy(0, {scroll_step})")
                         await asyncio.sleep(random.uniform(0.8, 1.5)) # Human reading pause
- 
-                    # 🎯 CARD-BASED AI DISCOVERY WITH ROBUST FALLBACK
-                    cards = await page.query_selector_all('div.g, div[data-ved]')
+
+                    # 🎯 COMPLETE INSTAGRAM LINK EXTRACTION (NO SKIPS)
+                    link_elements = await page.query_selector_all('a[href*="instagram.com"]')
                     processed_card_leads = 0
- 
-                    if cards and len(cards) > 0:
-                        logger.info(f"📋 Found {len(cards)} Google result cards. Starting card-based analysis...")
-                        for card in cards:
+                    
+                    if link_elements and len(link_elements) > 0:
+                        logger.info(f"📋 Found {len(link_elements)} Instagram links on Google Page {page_num+1} for '{keyword}'")
+                        for link_el in link_elements:
                             if len(found_usernames) >= limit: break
-                            
-                            # Extract link
-                            link_el = await card.query_selector('a[href*="instagram.com"]')
-                            if not link_el:
-                                continue
                             
                             href = await link_el.get_attribute('href')
                             if href and '/url?q=' in href: 
@@ -785,129 +799,76 @@ class InstagramService:
                                 match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
                                 if match:
                                     u = match.group(1).strip().strip('./_').lower()
+                                    # Skip common static paths
+                                    if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms'):
+                                        continue
+
                                     if self._is_valid_username(u) and u not in seen:
                                         processed_card_leads += 1
-                                        
-                                        # Extract title
-                                        title_el = await card.query_selector('h3')
-                                        title = await title_el.inner_text() if title_el else ""
-                                        
-                                        # Extract snippet
-                                        snippet = await card.inner_text()
-                                        if title and title in snippet:
-                                            snippet = snippet.replace(title, "").strip()
- 
-                                        # Deep AI Filter logic
-                                        if enable_ai_filter and google_niche_filter:
-                                            msg = f"🧠 [AI Filter] Evaluating @{u} ({ai_model})..."
-                                            logger.info(msg)
-                                            try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                            except: pass
-                                            
-                                            res = await self._analyze_google_result_sequential(
-                                                title=title,
-                                                url=href,
-                                                snippet=snippet,
-                                                criteria=google_niche_filter,
-                                                model_choice=ai_model,
-                                                api_key=minimax_api_key
-                                            )
-                                            
-                                            is_match = res.get("match", False)
-                                            reason = res.get("reason", "No reason provided.")
-                                            
-                                            if not is_match:
-                                                msg = f"❌ [AI Filter] Skipped @{u} (Reason: {reason})"
-                                                logger.info(msg)
-                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                                except: pass
-                                                
-                                                try:
-                                                    data_audit = {
-                                                        "google_snippet_data": {
-                                                            "title": title,
-                                                            "url": href,
-                                                            "snippet": snippet
-                                                        },
-                                                        "rejection_reason": reason,
-                                                        "google_ai_analyzed": True,
-                                                        "google_ai_match": False
-                                                    }
-                                                    if discovery_intent:
-                                                        data_audit["discovery_intent"] = discovery_intent
-                                                    
-                                                    new_id = await db.fetchval(
-                                                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                                        "VALUES ($1, $2, $3, 'google_rejected', $4) "
-                                                        "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                                        "status = CASE WHEN instagram_leads.status IN ('discovered', 'queued', 'pending_ai', 'qualified') THEN instagram_leads.status ELSE 'google_rejected' END, "
-                                                        "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                                        "discovery_keyword = EXCLUDED.discovery_keyword "
-                                                        "RETURNING id",
-                                                        user_id, u, keyword, json.dumps(data_audit)
-                                                    )
-                                                    if new_id:
-                                                        try:
-                                                            await manager.send_personal_message({
-                                                                "type": "new_lead_discovered",
-                                                                "lead_id": new_id,
-                                                                "status": "google_rejected"
-                                                            }, user_id)
-                                                        except: pass
-                                                except Exception as db_err:
-                                                    logger.error(f"❌ Failed to insert google_rejected lead {u}: {db_err}")
-                                                continue
-                                            else:
-                                                msg = f"✅ [AI Filter] MATCHED @{u} (Reason: {reason})"
-                                                logger.info(msg)
-                                                try: await manager.send_personal_message({"type": "discovery_progress", "message": msg}, user_id)
-                                                except: pass
-                                                
-                                                # Mark the audit data so we don't repeat the AI filter later
-                                                google_ai_data = {
-                                                    "google_ai_analyzed": True,
-                                                    "google_ai_match": True,
-                                                    "google_ai_reason": reason
-                                                }
                                         logger.info(f"✨ Approved Lead: @{u}")
                                         found_usernames.append(u)
                                         seen.add(u)
                                         
-                                        # Save lead to database immediately in real-time!
-                                        db_status = "discovered"
+                                        # Extract title and snippet via closest container
+                                        card_title = ""
+                                        card_snippet = ""
+                                        try:
+                                            parent_text_data = await page.evaluate("""(el) => {
+                                                const container = el.closest('div.g, div[data-ved], div.MjjYud, div.v7wOcf, div.N5s3Zc');
+                                                if (!container) return null;
+                                                const h3 = container.querySelector('h3');
+                                                return {
+                                                    title: h3 ? h3.innerText : '',
+                                                    text: container.innerText
+                                                };
+                                            }""", link_el)
+                                            if parent_text_data:
+                                                card_title = parent_text_data.get("title", "")
+                                                card_snippet = parent_text_data.get("text", "")
+                                                if card_title and card_title in card_snippet:
+                                                    card_snippet = card_snippet.replace(card_title, "").strip()
+                                        except:
+                                            pass
+                                        
+                                        # Save lead with status 'google_discovered' to database immediately
                                         try:
                                             data_audit = {
                                                 "google_snippet_data": {
-                                                    "title": title,
+                                                    "title": card_title,
                                                     "url": href,
-                                                    "snippet": snippet
+                                                    "snippet": card_snippet
                                                 }
                                             }
-                                            if enable_ai_filter and google_niche_filter:
-                                                data_audit.update(google_ai_data)
                                             if discovery_intent:
                                                 data_audit["discovery_intent"] = discovery_intent
+                                            
                                             new_id = await db.fetchval(
                                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                                "VALUES ($1, $2, $3, $4, $5) "
+                                                "VALUES ($1, $2, $3, 'google_discovered', $4) "
                                                 "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
+                                                "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE 'google_discovered' END, "
                                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                                 "discovery_keyword = EXCLUDED.discovery_keyword "
                                                 "RETURNING id",
-                                                user_id, u, keyword, db_status, json.dumps(data_audit)
+                                                user_id, u, keyword, json.dumps(data_audit)
                                             )
                                             if new_id:
                                                 try:
                                                     await manager.send_personal_message({
                                                         "type": "new_lead_discovered",
                                                         "lead_id": new_id,
-                                                        "status": db_status
+                                                        "status": "google_discovered"
                                                     }, user_id)
                                                 except: pass
                                         except Exception as db_err:
                                             logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
- 
+
                     # Extra pause before next page
+                    await asyncio.sleep(random.uniform(4, 7))
+
+                    if not link_elements or len(link_elements) == 0:
+                        logger.info("📋 No Instagram link elements found on this page. Ending search.")
+                        break # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
 
                     if not cards or len(cards) == 0:
@@ -2871,6 +2832,17 @@ class InstagramService:
                   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             """)
 
+            # Clean up stale/bad leads without discovery intent in discovered/google_discovered statuses
+            try:
+                await db.execute("""
+                    DELETE FROM instagram_leads 
+                    WHERE status IN ('discovered', 'google_discovered') 
+                      AND (data_audit_json IS NULL OR NOT (data_audit_json ? 'discovery_intent') OR data_audit_json->>'discovery_intent' = '');
+                """)
+                logger.info("🧹 Cleaned up stale/bad leads missing a discovery intent.")
+            except Exception as clean_err:
+                logger.warning(f"Failed to clean up stale leads: {clean_err}")
+
             # Start global sequential AI loop if not already started
             if not hasattr(self, 'global_ai_task') or self.global_ai_task.done():
                 self.global_ai_task = asyncio.create_task(self.global_ai_analysis_loop())
@@ -2883,13 +2855,13 @@ class InstagramService:
         logger.info("🧠 Global Sequential AI Analysis Loop started...")
         while True:
             try:
-                # Auto-disable AI analysis for users who have no pending AI leads
+                # Auto-disable AI analysis for users who have no pending AI leads or google_discovered leads
                 users_to_disable = await db.fetch("""
                     SELECT user_id FROM instagram_filter_settings 
                     WHERE enable_ai_analysis = TRUE 
                       AND NOT EXISTS (
                           SELECT 1 FROM instagram_leads 
-                          WHERE user_id = instagram_filter_settings.user_id AND status = 'pending_ai'
+                          WHERE user_id = instagram_filter_settings.user_id AND status IN ('pending_ai', 'google_discovered')
                       )
                 """)
                 for u_row in users_to_disable:
@@ -2903,41 +2875,492 @@ class InstagramService:
                         }, u_id)
                     except: pass
 
-                # Fetch the oldest pending_ai lead for users who have enable_ai_analysis = TRUE
-                pending_lead = await db.fetchrow("""
-                    SELECT l.id, l.user_id 
+                # Fetch all active users who have google_discovered leads to batch vet them first
+                google_user_rows = await db.fetch("""
+                    SELECT DISTINCT l.user_id 
+                    FROM instagram_leads l
+                    JOIN instagram_filter_settings s ON l.user_id = s.user_id
+                    WHERE l.status = 'google_discovered'
+                """)
+                google_user_row = None
+                for u_row in google_user_rows:
+                    u_id = u_row["user_id"]
+                    cnt_row = await db.fetchrow("""
+                        SELECT COUNT(*) as cnt FROM instagram_leads 
+                        WHERE user_id = $1 AND status = 'google_discovered'
+                    """, u_id)
+                    google_count = cnt_row["cnt"] if cnt_row else 0
+                    is_discovery_active = self._discovery_status.get(u_id, {}).get("active", False)
+                    if is_discovery_active and google_count < 30:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 30...")
+                        continue
+                    google_user_row = u_row
+                    break
+
+                if google_user_row:
+                    user_id = google_user_row["user_id"]
+                    google_leads = await db.fetch("""
+                        SELECT id, instagram_username, data_audit_json 
+                        FROM instagram_leads
+                        WHERE user_id = $1 AND status = 'google_discovered'
+                        ORDER BY created_at ASC LIMIT 30
+                    """, user_id)
+
+                    settings = await self.get_filter_settings(user_id)
+                    enable_ai_filter = settings.get('enable_ai_filter', False)
+                    google_niche_filter = settings.get('google_niche_filter', '')
+                    selected_model = settings.get('ai_model') or 'gemma4'
+
+                    if enable_ai_filter and google_niche_filter:
+                        # Setup fallback models list
+                        cloud_fallbacks = ["gemini", "groq", "huggingface"]
+                        models_to_try = [selected_model]
+                        for m in cloud_fallbacks:
+                            if not any(m in x.lower() for x in models_to_try):
+                                models_to_try.append(m)
+
+                        remaining_google = []
+                        for row in google_leads:
+                            audit_val = row['data_audit_json']
+                            audit_json = json.loads(audit_val) if isinstance(audit_val, str) else (audit_val or {})
+                            if not isinstance(audit_json, dict):
+                                audit_json = {}
+                            remaining_google.append({
+                                "id": row["id"],
+                                "username": row["instagram_username"],
+                                "google_data": audit_json.get("google_snippet_data", {}),
+                                "audit_json": audit_json
+                            })
+
+                        logger.info(f"🧠 [Global Google AI Batch] Processing {len(google_leads)} google_discovered leads for user {user_id}...")
+
+                        # Try models sequentially
+                        for model in models_to_try:
+                            if not remaining_google:
+                                break
+
+                            logger.info(f"🚀 Sending Google snippets batch of {len(remaining_google)} to model {model}...")
+                            import random
+                            if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf"]):
+                                await asyncio.sleep(random.uniform(2.0, 4.0))
+
+                            try:
+                                raw_response = await instagram_ai.analyze_leads_batch(
+                                    leads=remaining_google,
+                                    model_choice=model,
+                                    intent_description="", # Empty since this is snippet filter
+                                    google_criteria=google_niche_filter
+                                )
+                            except Exception as batch_err:
+                                logger.error(f"❌ Batch Google AI Exception on {model}: {batch_err}. Fallback...")
+                                continue
+
+                            if not raw_response or raw_response.startswith("error"):
+                                logger.warning(f"⚠️ Batch Google AI returned error on {model}: {raw_response}. Fallback...")
+                                continue
+
+                            # Parse response line-by-line
+                            lines = raw_response.strip().split("\n")
+                            processed_ids = set()
+
+                            for line in lines:
+                                line = line.strip()
+                                if not line.startswith("RESULT|"):
+                                    continue
+
+                                parts = line.split("|")
+                                if len(parts) < 6:
+                                    continue
+
+                                try:
+                                    lead_id_val = int(parts[1])
+                                    match_val = parts[2].lower().strip() == "true"
+                                    strategy_val = parts[5].strip()
+                                except ValueError:
+                                    continue
+
+                                lead_item = next((x for x in remaining_google if x["id"] == lead_id_val), None)
+                                if not lead_item:
+                                    continue
+
+                                processed_ids.add(lead_id_val)
+                                ai_analysis = lead_item["audit_json"]
+
+                                # Record google_ai decision
+                                ai_analysis['google_ai_analyzed'] = True
+                                ai_analysis['google_ai_match'] = match_val
+                                ai_analysis['google_ai_reason'] = strategy_val
+
+                                trace_steps = ai_analysis.get('filter_trace', [])
+                                trace_steps = [s for s in trace_steps if s.get("step") != "Deep AI Search Result Filter"]
+                                trace_steps.append({
+                                    "step": "Deep AI Search Result Filter",
+                                    "status": "passed" if match_val else "failed",
+                                    "details": strategy_val
+                                })
+                                ai_analysis['filter_trace'] = trace_steps
+
+                                if match_val:
+                                    # Passed Google snippet check -> mark as 'discovered' so Playwright scraper can run it
+                                    logger.info(f"✅ Lead {lead_id_val} passed batch Google AI filter. Status -> DISCOVERED.")
+                                    await db.execute("""
+                                        UPDATE instagram_leads 
+                                        SET status = 'discovered', data_audit_json = $1, updated_at = NOW() 
+                                        WHERE id = $2
+                                    """, json.dumps(ai_analysis), lead_id_val)
+
+                                    try:
+                                        await manager.send_personal_message({
+                                            "type": "instagram_lead_updated",
+                                            "lead_id": lead_id_val,
+                                            "status": "discovered",
+                                            "current_action": "Google snippet filter passed"
+                                        }, user_id)
+                                    except: pass
+                                else:
+                                    # Failed -> Move to Trash (status = 'google_rejected')
+                                    logger.info(f"❌ Lead {lead_id_val} failed batch Google AI filter. Moving to Trash (google_rejected).")
+                                    await db.execute("""
+                                        UPDATE instagram_leads 
+                                        SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
+                                        WHERE id = $2
+                                    """, json.dumps(ai_analysis), lead_id_val)
+                                    try:
+                                        await manager.send_personal_message({
+                                            "type": "instagram_lead_updated",
+                                            "lead_id": lead_id_val,
+                                            "status": "google_rejected",
+                                            "reason": f"Google AI mismatch: {strategy_val}"
+                                        }, user_id)
+                                    except: pass
+
+                            # Remove successfully processed
+                            remaining_google = [x for x in remaining_google if x["id"] not in processed_ids]
+
+                        # If any remaining leads in this batch failed completely after all fallback models, do NOT trash them.
+                        # Keep them in 'google_discovered' status and wait for API cooldown.
+                        if remaining_google:
+                            logger.warning(f"⚠️ {len(remaining_google)} google_discovered leads failed AI vetting due to API limits/errors. Keeping in queue and sleeping 30s to cool down.")
+                            await asyncio.sleep(30)
+
+                    else:
+                        # AI search filter is disabled -> immediately mark all as 'discovered' so they bypass the filter
+                        logger.info(f"⚡ Google AI Filter is disabled. Bypassing and promoting {len(google_leads)} leads to 'discovered'.")
+                        for row in google_leads:
+                            await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE id = $1", row["id"])
+                            try:
+                                await manager.send_personal_message({
+                                    "type": "instagram_lead_updated",
+                                    "lead_id": row["id"],
+                                    "status": "discovered"
+                                }, user_id)
+                            except: pass
+
+                    # Short sleep before next check so we don't spam the CPU
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Fetch active users who have pending leads and enable_ai_analysis = TRUE
+                active_user_rows = await db.fetch("""
+                    SELECT DISTINCT l.user_id 
                     FROM instagram_leads l
                     JOIN instagram_filter_settings s ON l.user_id = s.user_id
                     WHERE l.status = 'pending_ai' AND COALESCE(s.enable_ai_analysis, TRUE) = TRUE
-                    ORDER BY l.updated_at ASC LIMIT 1
                 """)
-                if pending_lead:
-                    lead_id = pending_lead["id"]
-                    user_id = pending_lead["user_id"]
-                    logger.info(f"🧠 [Global AI] Processing pending lead {lead_id} for user {user_id}...")
-                    
-                    try:
-                        await manager.send_personal_message({
-                            "type": "auto_analyze_started",
-                            "lead_id": lead_id
-                        }, user_id)
-                    except: pass
+                active_user_row = None
+                for u_row in active_user_rows:
+                    u_id = u_row["user_id"]
+                    cnt_row = await db.fetchrow("""
+                        SELECT COUNT(*) as cnt FROM instagram_leads 
+                        WHERE user_id = $1 AND status = 'pending_ai'
+                    """, u_id)
+                    pending_count = cnt_row["cnt"] if cnt_row else 0
+                    is_scraping_active = self.workers.get(u_id, False)
+                    if is_scraping_active and pending_count < 30:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active Playwright scraping but only {pending_count} pending_ai leads. Waiting for 30...")
+                        continue
+                    active_user_row = u_row
+                    break
 
-                    try:
-                        await self.run_sequential_ai_analysis(user_id, lead_id)
-                    except Exception as e:
-                        logger.error(f"Error in global AI analysis for lead {lead_id}: {e}")
-                    finally:
+                if active_user_row:
+                    user_id = active_user_row["user_id"]
+                    pending_leads = await db.fetch("""
+                        SELECT id, instagram_username, bio, follower_count, following_count, full_name, recent_posts, is_private, data_audit_json 
+                        FROM instagram_leads
+                        WHERE user_id = $1 AND status = 'pending_ai'
+                        ORDER BY updated_at ASC LIMIT 30
+                    """, user_id)
+
+                    settings = await self.get_filter_settings(user_id)
+                    google_niche_filter = settings.get('google_niche_filter', '')
+                    intent_description = settings.get('ai_intent_filter', '')
+                    selected_model = settings.get('ai_model') or 'gemma4'
+
+                    # Setup fallback models list
+                    cloud_fallbacks = ["gemini", "groq", "huggingface"]
+                    models_to_try = [selected_model]
+                    for m in cloud_fallbacks:
+                        if not any(m in x.lower() for x in models_to_try):
+                            models_to_try.append(m)
+
+                    logger.info(f"🧠 [Global AI Batch] Processing {len(pending_leads)} pending leads for user {user_id} using {selected_model}...")
+
+                    # Map rows to dicts for batch processing
+                    remaining_leads = []
+                    for row in pending_leads:
+                        audit_val = row['data_audit_json']
+                        audit_json = json.loads(audit_val) if isinstance(audit_val, str) else (audit_val or {})
+                        if not isinstance(audit_json, dict):
+                            audit_json = {}
+                        posts_val = row["recent_posts"]
+                        recent_posts = json.loads(posts_val) if isinstance(posts_val, str) else (posts_val or [])
+                        remaining_leads.append({
+                            "id": row["id"],
+                            "username": row["instagram_username"],
+                            "bio": row["bio"] or "",
+                            "followers": row["follower_count"] or 0,
+                            "google_data": audit_json.get("google_snippet_data", {}),
+                            "audit_json": audit_json,
+                            "recent_posts": recent_posts,
+                            "is_private": row["is_private"]
+                        })
+
+                    # Try models sequentially to process the remaining leads
+                    for model in models_to_try:
+                        if not remaining_leads:
+                            break
+
+                        logger.info(f"🚀 Sending batch of {len(remaining_leads)} leads to model {model}...")
+                        import random
+                        # Delay if cloud model
+                        if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf"]):
+                            sleep_time = random.uniform(2.0, 4.0)
+                            await asyncio.sleep(sleep_time)
+
+                        # Call the batch AI method
                         try:
-                            await manager.send_personal_message({
-                                "type": "auto_analyze_finished",
-                                "lead_id": lead_id
-                            }, user_id)
-                        except: pass
+                            raw_response = await instagram_ai.analyze_leads_batch(
+                                leads=remaining_leads,
+                                model_choice=model,
+                                intent_description=intent_description,
+                                google_criteria=google_niche_filter
+                            )
+                        except Exception as batch_err:
+                            logger.error(f"❌ Batch AI Exception on {model}: {batch_err}. Trying fallback...")
+                            continue
+
+                        if not raw_response or raw_response.startswith("error"):
+                            logger.warning(f"⚠️ Batch AI returned error on {model}: {raw_response}. Trying fallback...")
+                            continue
+
+                        # Parse response line-by-line
+                        lines = raw_response.strip().split("\n")
+                        processed_ids = set()
+
+                        for line in lines:
+                            line = line.strip()
+                            if not line.startswith("RESULT|"):
+                                continue
+
+                            parts = line.split("|")
+                            # Format: RESULT|LEAD_ID|MATCH_STATUS|INTENT_SCORE|NICHE|STRATEGY
+                            if len(parts) < 6:
+                                continue
+
+                            try:
+                                lead_id_val = int(parts[1])
+                                match_val = parts[2].lower().strip() == "true"
+                                score_val = int(parts[3])
+                                niche_val = parts[4].strip()
+                                strategy_val = parts[5].strip()
+                            except ValueError:
+                                continue
+
+                            # Find lead in our current remaining list
+                            lead_item = next((x for x in remaining_leads if x["id"] == lead_id_val), None)
+                            if not lead_item:
+                                continue
+
+                            # Mark as processed in this loop
+                            processed_ids.add(lead_id_val)
+                            
+                            # Determine status:
+                            is_qualified = match_val and (score_val >= 70)
+                            
+                            # Perform Visual Match Filter if enabled
+                            visual_niche = settings.get('visual_niche', '')
+                            target_hashes = settings.get('sample_hashes', [])
+                            recent_posts = lead_item["recent_posts"]
+                            ai_analysis = lead_item["audit_json"]
+                            
+                            # Update AI trace details
+                            ai_analysis['intent_score'] = score_val
+                            ai_analysis['intent_score_details'] = strategy_val
+                            ai_analysis['niche'] = niche_val
+                            ai_analysis['strategy'] = strategy_val
+                            ai_analysis['google_ai_analyzed'] = True
+                            ai_analysis['google_ai_match'] = match_val
+                            ai_analysis['google_ai_reason'] = strategy_val
+                            
+                            trace_steps = ai_analysis.get('filter_trace', [])
+                            # Add/overwrite AI steps
+                            trace_steps = [s for s in trace_steps if s.get("step") not in ("Deep AI Search Result Filter", "Deep AI Intent Check")]
+                            trace_steps.append({
+                                "step": "Deep AI Search Result Filter",
+                                "status": "passed" if match_val else "failed",
+                                "details": strategy_val
+                            })
+                            trace_steps.append({
+                                "step": "Deep AI Intent Check",
+                                "status": "passed" if is_qualified else "failed",
+                                "details": f"Intent match score {score_val}% " + ("meets/exceeds 70%." if score_val >= 70 else "is below 70%.") + f" Reason: {strategy_val}"
+                            })
+
+                            rejection_reason = ""
+                            if not is_qualified:
+                                if not match_val:
+                                    rejection_reason = f"Deep AI Search Result Filter mismatch: {strategy_val}"
+                                else:
+                                    rejection_reason = f"Low intent score: intent match score is only {score_val}% (below 70%)."
+
+                            if visual_niche or target_hashes:
+                                if not is_qualified:
+                                    trace_steps.append({
+                                        "step": "Visual Match Filter",
+                                        "status": "skipped",
+                                        "details": "Skipped because previous step failed."
+                                    })
+                                elif not recent_posts:
+                                    reason = "Visual scanner failed: Profile has no photos to scan."
+                                    is_qualified = False
+                                    ai_analysis['vision_reason'] = reason
+                                    rejection_reason = reason
+                                    trace_steps.append({
+                                        "step": "Visual Match Filter",
+                                        "status": "failed",
+                                        "details": reason
+                                    })
+                                else:
+                                    image_matched = False
+                                    vision_res = {}
+                                    import httpx
+                                    # Try AI Vision FIRST
+                                    if visual_niche:
+                                        logger.info(f"👁️ AI VISION ACTIVE for batch lead: Checking photos for '{visual_niche}'...")
+                                        async with httpx.AsyncClient(timeout=20.0) as client:
+                                            for post in recent_posts[:2]:
+                                                try:
+                                                    img_b64 = None
+                                                    if isinstance(post, dict) and post.get('b64_data'):
+                                                        raw_b64 = post['b64_data']
+                                                        if len(raw_b64) >= 5000:
+                                                            img_b64 = raw_b64
+                                                    elif isinstance(post, dict) and post.get('display_url'):
+                                                        res_img = await client.get(post['display_url'])
+                                                        if res_img.status_code == 200 and len(res_img.content) > 5000:
+                                                            import base64
+                                                            img_b64 = base64.b64encode(res_img.content).decode('utf-8')
+                                                    
+                                                    if img_b64:
+                                                        vision_res = await instagram_ai.analyze_vision(img_b64, visual_niche)
+                                                        if vision_res.get('match'):
+                                                            reason = vision_res.get('reason', 'Visual match confirmed.')
+                                                            image_matched = True
+                                                            ai_analysis['vision_reason'] = reason
+                                                            break
+                                                except Exception as vision_err:
+                                                    logger.warning(f"⚠️ Batch AI Vision check failed: {vision_err}")
+
+                                    # Fallback to Math Hashing
+                                    if not image_matched and target_hashes:
+                                        try:
+                                            async with httpx.AsyncClient(timeout=10.0) as client:
+                                                for post in recent_posts:
+                                                    try:
+                                                        res_img = await client.get(post['display_url'])
+                                                        if res_img.status_code == 200:
+                                                            post_hash = await asyncio.get_event_loop().run_in_executor(None, self._get_image_hash, res_img.content)
+                                                            if post_hash:
+                                                                import imagehash
+                                                                p_hashes = post_hash.split('|')
+                                                                for target_hash in target_hashes:
+                                                                    t_hashes = target_hash.split('|')
+                                                                    if len(p_hashes) == 2 and len(t_hashes) == 2:
+                                                                        p_obj1, p_obj2 = imagehash.hex_to_hash(p_hashes[0]), imagehash.hex_to_hash(p_hashes[1])
+                                                                        t_obj1, t_obj2 = imagehash.hex_to_hash(t_hashes[0]), imagehash.hex_to_hash(t_hashes[1])
+                                                                        if (p_obj1 - t_obj1) <= 32 and (p_obj2 - t_obj2) <= 38:
+                                                                            image_matched = True
+                                                                            break
+                                                                    else:
+                                                                        if (imagehash.hex_to_hash(p_hashes[0]) - imagehash.hex_to_hash(t_hashes[0])) <= 26:
+                                                                            image_matched = True
+                                                                            break
+                                                    except: pass
+                                                    if image_matched: break
+                                        except: pass
+
+                                    if not image_matched:
+                                        reason = vision_res.get('reason', 'No photos matched the target criteria') if visual_niche else 'No structural match found'
+                                        is_qualified = False
+                                        ai_analysis['vision_reason'] = reason
+                                        rejection_reason = f"Visual check failed: {reason}"
+                                        trace_steps.append({
+                                            "step": "Visual Match Filter",
+                                            "status": "failed",
+                                            "details": reason
+                                        })
+                                    else:
+                                        v_reason = ai_analysis.get('vision_reason', 'Visual match confirmed.')
+                                        trace_steps.append({
+                                            "step": "Visual Match Filter",
+                                            "status": "passed",
+                                            "details": v_reason
+                                        })
+                            else:
+                                trace_steps.append({
+                                    "step": "Visual Match Filter",
+                                    "status": "skipped",
+                                    "details": "No visual criteria or sample hashes set."
+                                })
+
+                            ai_analysis['filter_trace'] = trace_steps
+                            if not is_qualified and rejection_reason:
+                                ai_analysis['rejection_reason'] = rejection_reason
+
+                            new_status = 'qualified' if is_qualified else 'rejected'
+                            ai_data_json = json.dumps(ai_analysis)
+
+                            logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to {new_status.upper()}")
+                            await db.execute("""
+                                UPDATE instagram_leads 
+                                SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
+                                WHERE id = $4
+                            """, new_status, score_val, ai_data_json, lead_id_val)
+
+                            # Send UI notification
+                            try:
+                                await manager.send_personal_message({
+                                    "type": "instagram_lead_updated",
+                                    "lead_id": lead_id_val,
+                                    "status": new_status,
+                                    "current_action": "Analysis Complete"
+                                }, user_id)
+                            except: pass
+
+                        # Remove successfully processed leads from remaining list
+                        remaining_leads = [x for x in remaining_leads if x["id"] not in processed_ids]
+
+                    # If we tried all models and there are STILL remaining unprocessed leads in this batch, mark them as rejected
+                    # If we tried all models and there are STILL remaining unprocessed leads in this batch, do NOT reject them.
+                    # Keep them in 'pending_ai' status and wait for API cooldown.
+                    if remaining_leads:
+                        logger.warning(f"⚠️ {len(remaining_leads)} pending_ai leads failed AI deep vetting due to API limits/errors. Keeping in queue and sleeping 30s to cool down.")
+                        await asyncio.sleep(30)
                 else:
                     await asyncio.sleep(2)
             except Exception as e:
-                logger.error(f"Error in global AI analysis loop: {e}")
+                import traceback
+                logger.error(f"Error in global AI analysis loop: {e}\n{traceback.format_exc()}")
                 await asyncio.sleep(5)
 
     async def get_filter_settings(self, user_id: int):

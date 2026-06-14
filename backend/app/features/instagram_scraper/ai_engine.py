@@ -373,6 +373,198 @@ class InstagramAIEngine:
                 print(f"❌ [Ollama] Vision error: {e}")
                 return {"match": False, "confidence": 0, "reason": "Connection Error"}
 
+    async def analyze_leads_batch(self, leads: list, model_choice: str = None, intent_description: str = "", google_criteria: str = "", api_key: str = "") -> str:
+        """
+        Analyze a list of leads in a single prompt.
+        Instructs the model to evaluate each lead and print the result in format:
+        RESULT|LEAD_ID|MATCH_STATUS|INTENT_SCORE|NICHE|STRATEGY
+        Returns the raw response text.
+        """
+        system_prompt = (
+            "You are an expert lead qualification assistant.\n"
+            "You will be given a list of leads (Instagram profiles and Google snippet data).\n"
+            "You must analyze each lead against the Target Lead Criteria and Target Intent.\n"
+            "For each lead, you MUST output exactly one line in this format:\n"
+            "RESULT|LEAD_ID|MATCH_STATUS|INTENT_SCORE|NICHE|STRATEGY\n"
+            "Where:\n"
+            "- LEAD_ID: The numeric ID of the lead provided in the input.\n"
+            "- MATCH_STATUS: 'true' if the lead meets the criteria, 'false' otherwise.\n"
+            "- INTENT_SCORE: An integer from 0 to 100 indicating the intent strength.\n"
+            "- NICHE: A short one-word or two-word niche/category name.\n"
+            "- STRATEGY: A short one-sentence explanation of why it is a match or mismatch.\n\n"
+            "IMPORTANT: Do not output any intro, markdown formatting, backticks, json blocks, or explanation. "
+            "Output ONLY the RESULT lines, one line per lead. Example output:\n"
+            "RESULT|123|true|85|fitness|Focuses on bodybuilding routines\n"
+            "RESULT|124|false|20|lifestyle|Does not focus on target bodybuilding niche"
+        )
+
+        leads_str = ""
+        for lead in leads:
+            l_id = lead.get('id')
+            username = lead.get('username')
+            bio = lead.get('bio', '')
+            followers = lead.get('followers', 0)
+            google_data = lead.get('google_data', {})
+            g_title = google_data.get('title', 'N/A')
+            g_snippet = google_data.get('snippet', 'N/A')
+            leads_str += (
+                f"--- LEAD START ---\n"
+                f"ID: {l_id}\n"
+                f"Instagram Username: @{username}\n"
+                f"Bio: {bio}\n"
+                f"Followers: {followers}\n"
+                f"Google Title: {g_title}\n"
+                f"Google Snippet: {g_snippet}\n"
+                f"--- LEAD END ---\n\n"
+            )
+
+        user_prompt = (
+            f"Target Lead Criteria: \"{google_criteria}\"\n"
+            f"Target Intent: \"{intent_description}\"\n\n"
+            f"Leads to evaluate:\n{leads_str}"
+            f"Analyze each lead and output exactly one line starting with RESULT| for each."
+        )
+
+        prompt = f"{system_prompt}\n\n{user_prompt}"
+        model_lower = model_choice.lower().strip() if model_choice else ""
+        from app.core.config import settings
+
+        if model_lower == "gemini":
+            if not settings.gemini_api_key:
+                return "error: Gemini API key is missing from backend .env"
+            gemini_keys = [k.strip() for k in settings.gemini_api_key.split(",") if k.strip()]
+            if not gemini_keys:
+                return "error: Gemini API key is missing from backend .env"
+            last_err = ""
+            for key in gemini_keys:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
+                payload = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.1
+                    }
+                }
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=45) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                return data["candidates"][0]["content"]["parts"][0]["text"]
+                            else:
+                                last_err = f"Gemini status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return f"error: All Gemini keys failed. Last error: {last_err}"
+
+        elif model_lower == "groq":
+            if not settings.groq_api_key:
+                return "error: Groq API key is missing from backend .env"
+            groq_keys = [k.strip() for k in settings.groq_api_key.split(",") if k.strip()]
+            if not groq_keys:
+                return "error: Groq API key is missing from backend .env"
+            last_err = ""
+            for key in groq_keys:
+                groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1
+                }
+                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(groq_url, json=payload, headers=headers, timeout=45) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                return data["choices"][0]["message"]["content"]
+                            else:
+                                last_err = f"Groq status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return f"error: All Groq keys failed. Last error: {last_err}"
+
+        elif model_lower == "openrouter":
+            if not settings.openrouter_api_key:
+                return "error: OpenRouter API key is missing from backend .env"
+            or_keys = [k.strip() for k in settings.openrouter_api_key.split(",") if k.strip()]
+            if not or_keys:
+                return "error: OpenRouter API key is missing from backend .env"
+            last_err = ""
+            for key in or_keys:
+                or_url = "https://openrouter.ai/api/v1/chat/completions"
+                payload = {
+                    "model": "google/gemini-2.5-flash",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1
+                }
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "Telegram Translator"
+                }
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(or_url, json=payload, headers=headers, timeout=45) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                return data["choices"][0]["message"]["content"]
+                            else:
+                                last_err = f"OpenRouter status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return f"error: All OpenRouter keys failed. Last error: {last_err}"
+
+        elif model_lower in ("huggingface", "hf"):
+            if not settings.huggingface_api_key:
+                return "error: Hugging Face API key is missing from backend .env"
+            hf_keys = [k.strip() for k in settings.huggingface_api_key.split(",") if k.strip()]
+            if not hf_keys:
+                return "error: Hugging Face API key is missing from backend .env"
+            last_err = ""
+            for key in hf_keys:
+                hf_url = "https://router.huggingface.co/v1/chat/completions"
+                payload = {
+                    "model": "Qwen/Qwen2.5-72B-Instruct",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "max_tokens": 1000
+                }
+                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(hf_url, json=payload, headers=headers, timeout=45) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                return data["choices"][0]["message"]["content"]
+                            else:
+                                last_err = f"Hugging Face status {response.status}"
+                    except Exception as e:
+                        last_err = str(e)
+            return f"error: All Hugging Face keys failed. Last error: {last_err}"
+
+        else:
+            # Local Ollama
+            model_to_use = model_choice if model_choice and model_choice != "ollama-local" else self.model
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.post(
+                        f"{self.ollama_url}/api/generate",
+                        json={
+                            "model": model_to_use,
+                            "prompt": prompt,
+                            "stream": False,
+                            "options": {"temperature": 0.1}
+                        },
+                        timeout=240
+                    ) as response:
+                        if response.status != 200:
+                            return f"error: Ollama error {response.status}"
+                        data = await response.json()
+                        return data.get("response", "")
+                except Exception as e:
+                    return f"error: {str(e)}"
+
     async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "gemini", api_key: str = "", ollama_url: str = None) -> dict:
         """
         Evaluate whether a Google Search Result matches the target lead criteria.

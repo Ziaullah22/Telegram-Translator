@@ -1514,6 +1514,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-500 font-black text-[9px] uppercase tracking-widest border border-amber-500/20 animate-pulse" title="Ready for AI Analysis">
                                                                             <Brain className="w-3 h-3" /> PENDING AI 🧠
                                                                         </div>
+                                                                    ) : lead.status === 'google_discovered' ? (
+                                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-500/10 text-blue-500 font-black text-[9px] uppercase tracking-widest border border-blue-500/20 animate-pulse" title="Vetting Google snippet in batch...">
+                                                                            <Brain className="w-3 h-3" /> Vetting Snippet... ⏳
+                                                                        </div>
                                                                     ) : (
                                                                         <button
                                                                             onClick={() => handleHarvest(lead.id)}
@@ -2404,7 +2408,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                         </div>
                                     ) : (
                                         <div className="relative pl-6 border-l border-gray-200 dark:border-white/10 space-y-5">
-                                            {filterTrace.map((item: any, idx: number) => {
+                                            {filterTrace.filter((item: any) => item.step !== 'Visual Match Filter').map((item: any, idx: number) => {
                                                 const isPassed = item.status === 'passed';
                                                 const isFailed = item.status === 'failed';
 
