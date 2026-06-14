@@ -852,7 +852,7 @@ export const instagramAPI = {
     await api.delete('/instagram/leads/clear');
   },
 
-  getStats: async (): Promise<{ total: number; discovered: number; analyzed: number; rejected: number; contacted: number; converted: number }> => {
+  getStats: async (): Promise<{ total: number; discovered: number; analyzed: number; rejected: number; contacted: number; converted: number; trash: number }> => {
     const response = await api.get('/instagram/stats');
     return response.data;
   },

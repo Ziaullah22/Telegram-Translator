@@ -62,7 +62,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [totalLeadsCount, setTotalLeadsCount] = useState(0);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [proxies, setProxies] = useState<any[]>([]);
-    const [stats, setStats] = useState({ total: 0, discovered: 0, analyzed: 0, rejected: 0, contacted: 0, converted: 0 });
+    const [stats, setStats] = useState({ total: 0, discovered: 0, analyzed: 0, rejected: 0, contacted: 0, converted: 0, trash: 0 });
     const [activeTab, setActiveTab] = useState<'leads' | 'accounts' | 'proxies' | 'campaign' | 'filters'>('leads');
     const [messageTemplate, setMessageTemplate] = useState('Hello [username], I saw your profile and loved your content! We help brands like yours grow. Would you be open to a quick chat?');
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
@@ -1370,7 +1370,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex -space-x-1.5 isolate justify-center">
-                                                            {lead.recent_posts && lead.recent_posts.length > 0 ? (
+                                                            {(lead.status === 'google_rejected' || !lead.recent_posts || lead.recent_posts.length === 0) ? (
+                                                                <span className="text-[8px] text-gray-400 italic">No posts</span>
+                                                            ) : (
                                                                 <>
                                                                     {lead.recent_posts.map((post: any, idx: number) => {
                                                                         const b64 = typeof post === 'object' && post?.b64_data ? post.b64_data : null;
@@ -1404,19 +1406,21 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <Eye className="w-3 text-gray-400" />
                                                                     </button>
                                                                 </>
-                                                            ) : (
-                                                                <span className="text-[8px] text-gray-400 italic">No posts</span>
                                                             )}
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-col">
                                                             <div className="flex items-center gap-1">
-                                                                <span className="text-[11px] font-black text-gray-900 dark:text-white">{lead.follower_count ? lead.follower_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[11px] font-black text-gray-900 dark:text-white">
+                                                                    {lead.status === 'google_rejected' ? '---' : (lead.follower_count ? lead.follower_count.toLocaleString() : '---')}
+                                                                </span>
                                                                 <span className="text-[8px] text-gray-400 font-bold uppercase">Fol</span>
                                                             </div>
                                                             <div className="flex items-center gap-1 border-t border-gray-100 dark:border-white/5">
-                                                                <span className="text-[9px] text-gray-500 dark:text-gray-400">{lead.following_count ? lead.following_count.toLocaleString() : '---'}</span>
+                                                                <span className="text-[9px] text-gray-500 dark:text-gray-400">
+                                                                    {lead.status === 'google_rejected' ? '---' : (lead.following_count ? lead.following_count.toLocaleString() : '---')}
+                                                                </span>
                                                                 <span className="text-[8px] text-gray-400 font-bold uppercase">Wng</span>
                                                             </div>
                                                             {lead.assigned_account_name && (

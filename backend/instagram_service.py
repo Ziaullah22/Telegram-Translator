@@ -2843,6 +2843,19 @@ class InstagramService:
             except Exception as clean_err:
                 logger.warning(f"Failed to clean up stale leads: {clean_err}")
 
+            # Clear post/follower data from google_rejected leads (Trash)
+            try:
+                await db.execute("""
+                    UPDATE instagram_leads 
+                    SET follower_count = NULL, 
+                        following_count = NULL, 
+                        recent_posts = NULL 
+                    WHERE status = 'google_rejected';
+                """)
+                logger.info("🧹 Cleared post/follower metrics for all trash (google_rejected) leads.")
+            except Exception as clear_err:
+                logger.warning(f"Failed to clear metrics for trash leads: {clear_err}")
+
             # Start global sequential AI loop if not already started
             if not hasattr(self, 'global_ai_task') or self.global_ai_task.done():
                 self.global_ai_task = asyncio.create_task(self.global_ai_analysis_loop())
@@ -3965,7 +3978,9 @@ class InstagramService:
                         audit['filter_trace'] = [google_step]
                         await db.execute("""
                             UPDATE instagram_leads 
-                            SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
+                            SET status = 'google_rejected', data_audit_json = $1, 
+                                follower_count = NULL, following_count = NULL, recent_posts = NULL,
+                                updated_at = NOW() 
                             WHERE id = $2
                         """, json.dumps(audit), lead_id)
                         await update_ui("google_rejected", f"Failed: {reason}")
@@ -4080,7 +4095,9 @@ class InstagramService:
                         audit['filter_trace'] = [google_step]
                         await db.execute("""
                             UPDATE instagram_leads 
-                            SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
+                            SET status = 'google_rejected', data_audit_json = $1, 
+                                follower_count = NULL, following_count = NULL, recent_posts = NULL,
+                                updated_at = NOW() 
                             WHERE id = $2
                         """, json.dumps(audit), lead_id)
                         await update_ui("google_rejected", f"Failed: {reason}")
