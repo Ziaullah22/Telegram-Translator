@@ -362,7 +362,7 @@ class FilterSettingsRequest(BaseModel):
     minimax_api_key: str = ""
     enable_ai_filter: bool = False
     google_niche_filter: str = ""
-    ai_model: str = "minimax-text-01"
+    ai_model: str = "gemini"
     bio_exclude_keywords: str = ""
     bio_cities_whitelist: str = ""
     enable_ai_analysis: bool = True

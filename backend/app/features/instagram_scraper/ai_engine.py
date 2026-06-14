@@ -161,43 +161,6 @@ class InstagramAIEngine:
             print(f"🧠 [Qwen 35B] Analyzing @{username} via llama.cpp/Ollama...")
             return await self._call_llama_cpp(prompt)
 
-        elif model_lower.startswith("minimax"):
-            if not api_key:
-                return {"error": "MiniMax API key not provided"}
-            
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": model_choice,
-                "messages": [
-                    {"role": "system", "content": "You are an expert lead qualification assistant. Analyze the Instagram profile info against the target intent and return JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                "response_format": {"type": "json_object"}
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.post(
-                        "https://api.minimax.chat/v1/chat/completions",
-                        json=payload,
-                        headers=headers,
-                        timeout=30
-                    ) as response:
-                        if response.status != 200:
-                            err_body = await response.text()
-                            logger.error(f"❌ MiniMax API error {response.status}: {err_body}")
-                            return {"error": f"MiniMax error: {response.status}"}
-                        
-                        data = await response.json()
-                        raw_content = data["choices"][0]["message"]["content"]
-                        return self._extract_json(raw_content)
-                except Exception as e:
-                    logger.error(f"❌ MiniMax request failed: {e}")
-                    return {"error": f"Request failed: {str(e)}"}
-
         elif model_lower == "gemini":
             from app.core.config import settings
             if not settings.gemini_api_key:
@@ -410,10 +373,10 @@ class InstagramAIEngine:
                 print(f"❌ [Ollama] Vision error: {e}")
                 return {"match": False, "confidence": 0, "reason": "Connection Error"}
 
-    async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "minimax-text-01", api_key: str = "", ollama_url: str = None) -> dict:
+    async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "gemini", api_key: str = "", ollama_url: str = None) -> dict:
         """
         Evaluate whether a Google Search Result matches the target lead criteria.
-        Supports MiniMax 2.7 (cloud), Ollama (local), Gemini, Groq, OpenRouter, and Hugging Face.
+        Supports Ollama (local), Gemini, Groq, OpenRouter, and Hugging Face.
         Implements a fallback chain: if the selected model fails, it tries other cloud models, then local ones.
         """
         system_prompt = (
@@ -439,12 +402,10 @@ class InstagramAIEngine:
         from app.core.config import settings
         
         candidates = []
-        primary = model_choice.strip() if model_choice else "minimax-text-01"
+        primary = model_choice.strip() if model_choice else "gemini"
         candidates.append(primary)
         
         # Cloud candidates
-        if api_key and "minimax" not in primary.lower():
-            candidates.append("minimax-text-01")
         if settings.gemini_api_key and primary.lower() != "gemini":
             candidates.append("gemini")
         if settings.groq_api_key and primary.lower() != "groq":
@@ -472,37 +433,6 @@ class InstagramAIEngine:
                     logger.info(f"🧠 [Qwen 35B] Filtering google result: {title} via llama.cpp/Ollama...")
                     result = await self._call_llama_cpp(user_prompt, system_prompt)
                     
-                elif model_lower.startswith("minimax"):
-                    if not api_key:
-                        raise ValueError("MiniMax API key not provided")
-                    
-                    headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    }
-                    payload = {
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "response_format": {"type": "json_object"}
-                    }
-                    
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            "https://api.minimax.chat/v1/chat/completions",
-                            json=payload,
-                            timeout=30
-                        ) as response:
-                            if response.status != 200:
-                                err_body = await response.text()
-                                raise ValueError(f"MiniMax API error {response.status}: {err_body}")
-                            
-                            data = await response.json()
-                            raw_content = data["choices"][0]["message"]["content"]
-                            result = self._extract_json(raw_content)
-                            
                 elif model_lower == "gemini":
                     if not settings.gemini_api_key:
                         raise ValueError("Gemini API key is missing")

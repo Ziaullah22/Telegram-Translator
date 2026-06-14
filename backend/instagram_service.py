@@ -213,7 +213,7 @@ class InstagramService:
             # AI vetting happens exclusively in Stage 2 (auto-analyze)
             enable_ai_filter = False  # ✅ Always disabled in Stage 1
             google_niche_filter = ""
-            ai_model = "minimax-text-01"
+            ai_model = "gemini"
             minimax_api_key = ""
  
             # Fetch proxies for user
@@ -502,7 +502,7 @@ class InstagramService:
                 break
  
         # ---- Scrape multiple pages for this keyword ----
-        for page_num in range(20):
+        for page_num in range(15):
             if len(found_usernames) >= limit:
                 break
             start_idx = page_num * 10
@@ -608,89 +608,14 @@ class InstagramService:
                                                     "lead_id": new_id,
                                                     "status": "discovered"
                                                 }, user_id)
-                                            except: pass
+                                            except:
+                                                pass
                                     except Exception as db_err:
                                         logger.error(f"❌ DB insert error for @{u}: {db_err}")
- 
-                # Fallback: regex from page text if cards returned nothing
-                if processed_card_leads == 0:
-                    logger.warning("⚠️ Card selector found no leads. Using regex fallback...")
-                    page_content = await page.evaluate("() => document.body.innerText")
-                    links = await page.query_selector_all('a[href*="instagram.com"]')
-                    for link in links:
-                        href = await link.get_attribute('href')
-                        if href and '/url?q=' in href:
-                            href = href.split('/url?q=')[1].split('&')[0]
-                        if href:
-                            match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                            if match:
-                                u = match.group(1).strip().strip('./_').lower()
-                                if self._is_valid_username(u) and u not in seen:
-                                    logger.info(f"✨ Link Lead: @{u}")
-                                    found_usernames.append(u)
-                                    seen.add(u)
-                                    try:
-                                        data_audit = {
-                                            "google_snippet_data": {
-                                                "title": "",
-                                                "url": href,
-                                                "snippet": ""
-                                            }
-                                        }
-                                        if discovery_intent:
-                                            data_audit["discovery_intent"] = discovery_intent
-                                        new_id = await db.fetchval(
-                                            "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                            "VALUES ($1, $2, $3, 'discovered', $4) "
-                                            "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                            "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                            "discovery_keyword = EXCLUDED.discovery_keyword "
-                                            "RETURNING id",
-                                            user_id, u, keyword, json.dumps(data_audit)
-                                        )
-                                        if new_id:
-                                            new_leads_count += 1
-                                            try:
-                                                await manager.send_personal_message({"type": "new_lead_discovered", "lead_id": new_id, "status": "discovered"}, user_id)
-                                            except: pass
-                                    except Exception as db_err:
-                                        logger.error(f"❌ DB insert error for @{u}: {db_err}")
- 
-                    snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
-                    for u in snippets:
-                        u = u.strip().strip('./_')
-                        if self._is_valid_username(u) and u not in seen:
-                            found_usernames.append(u)
-                            seen.add(u)
-                            try:
-                                data_audit = {
-                                    "google_snippet_data": {
-                                        "title": "",
-                                        "url": f"https://www.instagram.com/{u}/",
-                                        "snippet": ""
-                                    }
-                                }
-                                if discovery_intent:
-                                    data_audit["discovery_intent"] = discovery_intent
-                                new_id = await db.fetchval(
-                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                    "VALUES ($1, $2, $3, 'discovered', $4) "
-                                    "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                    "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                    "discovery_keyword = EXCLUDED.discovery_keyword "
-                                    "RETURNING id",
-                                    user_id, u, keyword, json.dumps(data_audit)
-                                )
-                                if new_id:
-                                    new_leads_count += 1
-                                    try:
-                                        await manager.send_personal_message({"type": "new_lead_discovered", "lead_id": new_id, "status": "discovered"}, user_id)
-                                    except: pass
-                            except Exception as db_err:
-                                logger.error(f"❌ DB insert error for @{u}: {db_err}")
 
-                    if processed_card_leads == 0 and len(links) < 5:
-                        break
+                if not cards or len(cards) == 0:
+                    logger.info("📋 No result cards found on this page. Ending search.")
+                    break
 
                 await asyncio.sleep(random.uniform(4, 7))
 
@@ -701,7 +626,7 @@ class InstagramService:
         logger.info(f"🎯 Keyword '{keyword}' done. Found {len(found_usernames)} leads ({new_leads_count} new).")
         return new_leads_count
 
-    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None, discovery_intent: str = None):
+    async def _perform_scrapling_discovery(self, keyword: str, limit: int = 50, enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "gemini", minimax_api_key: str = "", user_id: int = None, proxy: Optional[dict] = None, discovery_intent: str = None):
         """
         🚀 ULTRA DISCOVERY SURGE (PATCHRIGHT GHOST MODE)
         Uses raw patchright for total control and visible navigation.
@@ -733,8 +658,8 @@ class InstagramService:
             )
             page = await context.new_page()
  
-            # 🚀 MAX RESULTS MODE (Up to 20 pages or until results end)
-            for page_num in range(20):
+            # 🚀 MAX RESULTS MODE (Up to 15 pages or until results end)
+            for page_num in range(15):
                 if len(found_usernames) >= limit: break
                 start_idx = page_num * 10
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
@@ -982,102 +907,11 @@ class InstagramService:
                                         except Exception as db_err:
                                             logger.error(f"❌ Failed to insert lead {u} in real-time: {db_err}")
  
-                    # 🛡️ STEALTH FALLBACK: If card selector returned nothing, extract links and text snippet-style
-                    if processed_card_leads == 0:
-                        logger.warning("⚠️ Card-based selector found no leads. Using legacy regex fallback parser...")
-                        # 💡 VISIBLE TEXT ONLY: Extract inner text rather than HTML code to completely avoid CSS stylesheet leakage
-                        page_content = await page.evaluate("() => document.body.innerText")
-                        
-                        # 1. Scrape from Links
-                        links = await page.query_selector_all('a[href*="instagram.com"]')
-                        for link in links:
-                            href = await link.get_attribute('href')
-                            if href and '/url?q=' in href: href = href.split('/url?q=')[1].split('&')[0]
-                            if href:
-                                match = re.search(r'instagram\.com/([a-zA-Z0-9._]{3,30})', href)
-                                if match:
-                                    u = match.group(1).strip().strip('./_').lower()
-                                    if self._is_valid_username(u) and u not in seen:
-                                        logger.info(f"✨ Found Link Lead: @{u}")
-                                        found_usernames.append(u)
-                                        seen.add(u)
-                                        
-                                        # Save fallback link lead immediately!
-                                        try:
-                                            data_audit = {
-                                                "google_snippet_data": {
-                                                    "title": "",
-                                                    "url": href,
-                                                    "snippet": ""
-                                                }
-                                            }
-                                            if discovery_intent:
-                                                data_audit["discovery_intent"] = discovery_intent
-                                            new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                                "VALUES ($1, $2, $3, 'discovered', $4) "
-                                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                                "discovery_keyword = EXCLUDED.discovery_keyword "
-                                                "RETURNING id",
-                                                user_id, u, keyword, json.dumps(data_audit)
-                                            )
-                                            if new_id:
-                                                try:
-                                                    await manager.send_personal_message({
-                                                        "type": "new_lead_discovered",
-                                                        "lead_id": new_id,
-                                                        "status": "discovered"
-                                                    }, user_id)
-                                                except: pass
-                                        except Exception as db_err:
-                                            logger.error(f"❌ Failed to insert fallback lead {u} in real-time: {db_err}")
- 
-                        # 2. Scrape from Text Snippets (Deep Scan)
-                        snippets = re.findall(r'(?:@|instagram\.com/)([a-z0-9._]{3,30})', page_content.lower())
-                        for u in snippets:
-                            u = u.strip().strip('./_')
-                            if self._is_valid_username(u) and u not in seen:
-                                logger.info(f"✨ Found Snippet Lead: @{u}")
-                                found_usernames.append(u)
-                                seen.add(u)
-                                
-                                # Save fallback snippet lead immediately!
-                                try:
-                                    data_audit = {
-                                        "google_snippet_data": {
-                                            "title": "",
-                                            "url": f"https://www.instagram.com/{u}/",
-                                            "snippet": ""
-                                        }
-                                    }
-                                    if discovery_intent:
-                                        data_audit["discovery_intent"] = discovery_intent
-                                    new_id = await db.fetchval(
-                                         "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                         "VALUES ($1, $2, $3, 'discovered', $4) "
-                                         "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                         "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                         "discovery_keyword = EXCLUDED.discovery_keyword "
-                                         "RETURNING id",
-                                         user_id, u, keyword, json.dumps(data_audit)
-                                    )
-                                    if new_id:
-                                        try:
-                                            await manager.send_personal_message({
-                                                "type": "new_lead_discovered",
-                                                "lead_id": new_id,
-                                                "status": "discovered"
-                                            }, user_id)
-                                        except: pass
-                                except Exception as db_err:
-                                    logger.error(f"❌ Failed to insert snippet lead {u} in real-time: {db_err}")
-                    
                     # Extra pause before next page
                     await asyncio.sleep(random.uniform(4, 7))
-                    
-                    # If we found nothing at all on this page, stop early
-                    if processed_card_leads == 0 and len(links) < 5: 
+
+                    if not cards or len(cards) == 0:
+                        logger.info("📋 No result cards found on this page. Ending search.")
                         break
                 except Exception as e:
                     logger.error(f"❌ Google Scrape Error: {e}")
@@ -1329,11 +1163,20 @@ class InstagramService:
             await update_ui(f"AI ({selected_model}): Analyzing Bio & Intent...")
             username_val = lead_row['instagram_username'] if lead_row else "unknown"
             logger.info(f"🧠 [{selected_model}] Analyzing @{username_val}...")
-            ai_result = await instagram_ai.analyze_lead_deep({
-                "username": username_val,
-                "bio": bio,
-                "followers": followers
-            }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+            ai_result = None
+            try:
+                ai_result = await instagram_ai.analyze_lead_deep({
+                    "username": username_val,
+                    "bio": bio,
+                    "followers": followers
+                }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+            except Exception as e:
+                logger.error(f"❌ AI analysis exception for @{username_val}: {e}. Deleting lead {lead_id} from database.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                try:
+                    await manager.send_personal_message({"type": "instagram_lead_updated", "lead_id": lead_id, "status": "deleted", "reason": f"AI exception: {e}"}, user_id)
+                except: pass
+                return "deleted"
             
             if ai_result and "error" not in ai_result:
                 ai_analysis.update(ai_result)
@@ -1360,14 +1203,12 @@ class InstagramService:
                     })
             else:
                 err_msg = ai_result.get('error', 'Unknown Error') if ai_result else 'Unknown Error'
-                logger.warning(f"⚠️ AI was unavailable or returned error: {err_msg}")
-                rejection_reason = f"AI Analysis failed: {err_msg}"
-                is_qualified = False
-                trace_steps.append({
-                    "step": "Deep AI Intent Check",
-                    "status": "failed",
-                    "details": f"AI Engine returned error: {err_msg}"
-                })
+                logger.warning(f"⚠️ AI was unavailable or returned error: {err_msg}. Deleting lead {lead_id} from database.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                try:
+                    await manager.send_personal_message({"type": "instagram_lead_updated", "lead_id": lead_id, "status": "deleted", "reason": f"AI failed: {err_msg}"}, user_id)
+                except: pass
+                return "deleted"
 
         # 6. Visual Match Filter (Only if enabled)
         visual_niche = settings.get('visual_niche', '')
@@ -1738,7 +1579,7 @@ class InstagramService:
         selected_model = settings.get('ai_model') or 'gemma4'
         
         # Setup fallback models list
-        cloud_fallbacks = ["gemini", "groq", "huggingface", "minimax-text-01"]
+        cloud_fallbacks = ["gemini", "groq", "huggingface"]
         models_to_try = [selected_model]
         for m in cloud_fallbacks:
             if not any(m in x.lower() for x in models_to_try):
@@ -1799,7 +1640,7 @@ class InstagramService:
                     for model in models_to_try:
                         try:
                             # Delay only if calling a cloud model
-                            if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf", "minimax"]):
+                            if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf"]):
                                 sleep_time = random.uniform(5.0, 6.0)
                                 logger.info(f"⏳ Sleeping {sleep_time:.2f}s before calling cloud model {model}...")
                                 await asyncio.sleep(sleep_time)
@@ -1818,40 +1659,38 @@ class InstagramService:
                                 used_model = model
                                 break
                             else:
-                                last_err = res.get("error", "Unknown error")
+                                last_err = res.get("error", "Unknown error") if res else "Unknown error"
                                 logger.warning(f"⚠️ Search Result Filter failed on {model}: {last_err}. Trying fallback...")
                         except Exception as e:
                             last_err = str(e)
                             logger.warning(f"⚠️ Search Result Filter exception on {model}: {last_err}. Trying fallback...")
 
+                    if not res or "error" in res:
+                        err_msg = res.get("error", last_err or "Unknown error") if res else (last_err or "Unknown error")
+                        logger.error(f"❌ Deep AI Search Result Filter error: {err_msg}. Deleting lead {lead_id} from database.")
+                        await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                        await update_ui("deleted", f"AI Search Filter failed: {err_msg}")
+                        return {"success": False, "status": "deleted", "error": f"AI Search Filter failed: {err_msg}"}
+
             if res is not None:
-                if "error" in res:
-                    logger.error(f"❌ Deep AI Search Result Filter error: {res.get('error')}")
+                is_match = res.get("match", False)
+                reason = res.get("reason", "No reason provided.")
+                
+                if not is_match:
+                    rejection_reason = f"Deep AI Search Result Filter mismatch: {reason}"
+                    logger.info(f"❌ Deep AI Search Result Filter Rejected lead: {rejection_reason}")
                     is_qualified = False
                     ai_trace_steps.append({
                         "step": "Deep AI Search Result Filter",
                         "status": "failed",
-                        "details": f"AI Engine returned error: {res.get('error')}"
+                        "details": f"{step_prefix}{reason}"
                     })
                 else:
-                    is_match = res.get("match", False)
-                    reason = res.get("reason", "No reason provided.")
-                    
-                    if not is_match:
-                        rejection_reason = f"Deep AI Search Result Filter mismatch: {reason}"
-                        logger.info(f"❌ Deep AI Search Result Filter Rejected lead: {rejection_reason}")
-                        is_qualified = False
-                        ai_trace_steps.append({
-                            "step": "Deep AI Search Result Filter",
-                            "status": "failed",
-                            "details": f"{step_prefix}{reason}"
-                        })
-                    else:
-                        ai_trace_steps.append({
-                            "step": "Deep AI Search Result Filter",
-                            "status": "passed",
-                            "details": f"{step_prefix}{reason}"
-                        })
+                    ai_trace_steps.append({
+                        "step": "Deep AI Search Result Filter",
+                        "status": "passed",
+                        "details": f"{step_prefix}{reason}"
+                    })
 
         # 2. 🧠 DEEP AI INTENT ANALYSIS
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
@@ -1878,7 +1717,7 @@ class InstagramService:
                 for model in models_to_try:
                     try:
                         # Delay only if calling a cloud model
-                        if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf", "minimax"]):
+                        if any(x in model.lower() for x in ["gemini", "groq", "openrouter", "huggingface", "hf"]):
                             sleep_time = random.uniform(5.0, 6.0)
                             logger.info(f"⏳ Sleeping {sleep_time:.2f}s before calling cloud model {model} for Intent Check...")
                             await asyncio.sleep(sleep_time)
@@ -1900,13 +1739,10 @@ class InstagramService:
                         logger.warning(f"⚠️ Intent Check exception on {model}: {last_err}. Trying fallback...")
 
                 if not ai_result or "error" in ai_result:
-                    logger.warning(f"⚠️ AI was unavailable or returned error: {last_err}")
-                    is_qualified = False
-                    ai_trace_steps.append({
-                        "step": "Deep AI Intent Check",
-                        "status": "failed",
-                        "details": f"AI Engine returned error: {last_err}"
-                    })
+                    logger.warning(f"⚠️ AI was unavailable or returned error: {last_err}. Deleting lead {lead_id} from database.")
+                    await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                    await update_ui("deleted", f"AI Intent Check failed: {last_err}")
+                    return {"success": False, "status": "deleted", "error": f"AI Intent Check failed: {last_err}"}
                 else:
                     ai_analysis.update(ai_result)
                     score = ai_result.get("intent_score", 0)
@@ -1930,12 +1766,10 @@ class InstagramService:
                             "details": f"Intent match score {score}% meets/exceeds 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
                         })
         except Exception as ai_err:
-            logger.error(f"❌ AI analysis error: {ai_err}")
-            ai_trace_steps.append({
-                "step": "Deep AI Intent Check",
-                "status": "failed",
-                "details": f"AI analysis exception: {ai_err}"
-            })
+            logger.error(f"❌ AI analysis error: {ai_err}. Deleting lead {lead_id} from database.")
+            await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+            await update_ui("deleted", f"AI analysis error: {ai_err}")
+            return {"success": False, "status": "deleted", "error": str(ai_err)}
 
         # 3. Visual Match Filter (Only if enabled)
         visual_niche = settings.get('visual_niche', '')
@@ -3127,14 +2961,14 @@ class InstagramService:
             "minimax_api_key": "",
             "enable_ai_filter": False,
             "google_niche_filter": "",
-            "ai_model": "minimax-text-01",
+            "ai_model": "gemini",
             "bio_exclude_keywords": "",
             "bio_cities_whitelist": "",
             "enable_ai_analysis": True,
             "ai_intent_filter": ""
         }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "minimax-text-01", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True, ai_intent_filter: str = ""):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "gemini", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True, ai_intent_filter: str = ""):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
             INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter, updated_at)
@@ -3660,7 +3494,7 @@ class InstagramService:
         settings = await self.get_filter_settings(user_id)
         enable_ai_filter = settings.get('enable_ai_filter', False)
         google_niche_filter = settings.get('google_niche_filter', '')
-        ai_model = settings.get('ai_model', 'minimax-text-01')
+        ai_model = settings.get('ai_model', 'gemini')
         minimax_api_key = settings.get('minimax_api_key', '')
 
         audit = {}
