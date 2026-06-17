@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Camera, Loader2, Check, Bell, BellOff } from 'lucide-react';
+import { X, Camera, Loader2, Check, Bell, BellOff, AlertCircle } from 'lucide-react';
 import { telegramAPI } from '../../services/api';
 import type { TelegramAccount } from '../../types';
 
@@ -22,6 +22,10 @@ interface ProfileModalProps {
 }
 
 export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate }: ProfileModalProps) {
+    const isRestricted = account
+        ? (new Date().getTime() - new Date(account.createdAt).getTime()) < 24 * 60 * 60 * 1000
+        : false;
+
     const [profile, setProfile] = useState<ProfileData | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -197,6 +201,15 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
 
                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                     {/* Alerts */}
+                    {isRestricted && (
+                        <div className="mb-4 p-3.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2.5">
+                            <AlertCircle className="w-4.5 h-4.5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-500" />
+                            <div>
+                                <span className="font-semibold block mb-0.5 text-[13px]">24h Security Lock Active</span>
+                                Profile edits, photo uploads, and session management are temporarily locked for 24 hours after adding this account to protect it from sudden verification checks.
+                            </div>
+                        </div>
+                    )}
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg text-sm text-red-600 dark:text-red-400">{error}</div>
                     )}
@@ -225,14 +238,16 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
                                                     {(firstName || '?').charAt(0).toUpperCase()}
                                                 </div>
                                             )}
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="absolute bottom-0 right-0 w-7 h-7 bg-[#3390ec] text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-[#212121] transition-transform group-hover:scale-110"
-                                                title="Change photo"
-                                            >
-                                                <Camera className="w-3.5 h-3.5" />
-                                            </button>
-                                            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                                            {!isRestricted && (
+                                                <button
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="absolute bottom-0 right-0 w-7 h-7 bg-[#3390ec] text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-[#212121] transition-transform group-hover:scale-110"
+                                                    title="Change photo"
+                                                >
+                                                    <Camera className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} disabled={isRestricted} />
                                         </div>
                                         <div className="min-w-0">
                                             <p className="font-medium text-gray-900 dark:text-white text-lg truncate">{firstName} {lastName}</p>
@@ -248,7 +263,8 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
                                             <input
                                                 value={firstName}
                                                 onChange={e => setFirstName(e.target.value)}
-                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
+                                                disabled={isRestricted}
+                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition disabled:opacity-60 disabled:cursor-not-allowed"
                                                 placeholder="First name"
                                             />
                                         </div>
@@ -257,7 +273,8 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
                                             <input
                                                 value={lastName}
                                                 onChange={e => setLastName(e.target.value)}
-                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition"
+                                                disabled={isRestricted}
+                                                className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition disabled:opacity-60 disabled:cursor-not-allowed"
                                                 placeholder="Last name"
                                             />
                                         </div>
@@ -268,9 +285,10 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
                                         <textarea
                                             value={bio}
                                             onChange={e => setBio(e.target.value)}
+                                            disabled={isRestricted}
                                             rows={3}
                                             maxLength={70}
-                                            className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition resize-none"
+                                            className="w-full px-4 py-2 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-[14px] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#3390ec] transition resize-none disabled:opacity-60 disabled:cursor-not-allowed"
                                             placeholder="A few words about yourself..."
                                         />
                                         <div className="flex justify-between items-center mt-1">
@@ -282,8 +300,12 @@ export default function ProfileModal({ isOpen, account, onClose, onAccountUpdate
                                     <div className="flex justify-end pt-2">
                                         <button
                                             onClick={handleSaveInfo}
-                                            disabled={saving}
-                                            className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[120px] justify-center"
+                                            disabled={saving || isRestricted}
+                                            className={`px-4 py-2 font-medium rounded-md transition-colors uppercase text-sm tracking-wide flex items-center gap-2 min-w-[120px] justify-center ${
+                                                isRestricted
+                                                    ? 'text-gray-400 cursor-not-allowed bg-gray-100 dark:bg-white/5'
+                                                    : 'text-[#3390ec] hover:bg-[#3390ec]/10'
+                                            }`}
                                         >
                                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Profile"}
                                         </button>

@@ -244,8 +244,14 @@ async def lifespan(app: FastAPI):
         CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_invite_hash 
         ON conversations (telegram_account_id, invite_hash) 
         WHERE telegram_peer_id = 0 AND invite_hash IS NOT NULL;
+
+        -- Pinning support
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+
+        -- Device Info fingerprinting support
+        ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS device_info JSONB;
         """)
-        logger.info("Database migration (Partial Unique Indexes for Conversations) completed")
+        logger.info("Database migration (Partial Unique Indexes, Pinning, and Device Info) completed")
     except Exception as e:
         logger.error(f"Migration error: {e}")
     
@@ -464,6 +470,9 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 if "unique constraint" in str(e).lower():
                     logger.debug(f"DB Deduplication: Message {message_data['message_id']} was just saved by another worker. Skipping.")
+                    return
+                if "foreign key" in str(e).lower():
+                    logger.warning(f"Could not save message: conversation {conversation_id} no longer exists (possibly account or conversation was deleted)")
                     return
                 raise e
 

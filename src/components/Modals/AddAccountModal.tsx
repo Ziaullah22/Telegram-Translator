@@ -25,6 +25,8 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
     exists: boolean;
     isActive: boolean;
     currentDisplayName?: string;
+    is_bulk?: boolean;
+    count?: number;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,35 +60,40 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
       return;
     }
 
-    setValidating(true);
-    try {
-      const result = await telegramAPI.validateTData(files[0]);
-      setValidationInfo({
-        accountName: result.account_name,
-        exists: result.exists,
-        isActive: result.is_active,
-        currentDisplayName: result.current_display_name,
-      });
+    // Only validate if exactly 1 file is selected (Single Account Mode)
+    if (files.length === 1) {
+      setValidating(true);
+      try {
+        const result = await telegramAPI.validateTData(files[0]);
+        setValidationInfo({
+          accountName: result.account_name,
+          exists: result.exists,
+          isActive: result.is_active,
+          currentDisplayName: result.current_display_name,
+          is_bulk: result.is_bulk,
+          count: result.count,
+        });
 
-      // Show warning if account exists and is active
-      if (result.exists && result.is_active) {
-        setError(`Account "${result.account_name}" already exists with display name "${result.current_display_name}". Please use a different TData file.`);
+        // Show warning if account exists and is active
+        if (!result.is_bulk && result.exists && result.is_active) {
+          setError(`Account "${result.account_name}" already exists with display name "${result.current_display_name}". Please use a different TData file.`);
+          setTdataFile(null);
+          // Reset file input
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || err.message || 'Invalid TData archive';
+        setError(errorMessage);
         setTdataFile(null);
         // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+      } finally {
+        setValidating(false);
       }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Invalid TData archive';
-      setError(errorMessage);
-      setTdataFile(null);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } finally {
-      setValidating(false);
     }
   };
 
@@ -100,13 +107,32 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('displayName', data.displayName);
-      formData.append('sourceLanguage', data.sourceLanguage);
-      formData.append('targetLanguage', data.targetLanguage);
-      formData.append('tdata', tdataFile[0]);
+      if (tdataFile.length > 1 || validationInfo?.is_bulk) {
+        // Bulk Upload Mode
+        const formData = new FormData();
+        formData.append('sourceLanguage', data.sourceLanguage || 'auto');
+        formData.append('targetLanguage', data.targetLanguage || 'en');
+        for (let i = 0; i < tdataFile.length; i++) {
+          formData.append('tdatas', tdataFile[i]);
+        }
 
-      await telegramAPI.addAccount(formData);
+        const result = await telegramAPI.bulkAddAccounts(formData);
+        
+        if (result.failed > 0) {
+          alert(`Bulk upload complete:\n✅ Successfully added: ${result.success}\n❌ Failed: ${result.failed}\n\nErrors:\n${result.errors.join('\n')}`);
+        } else {
+          alert(`Successfully connected all ${result.success} accounts!`);
+        }
+      } else {
+        // Single Account Mode
+        const formData = new FormData();
+        formData.append('displayName', data.displayName);
+        formData.append('sourceLanguage', data.sourceLanguage);
+        formData.append('targetLanguage', data.targetLanguage);
+        formData.append('tdata', tdataFile[0]);
+
+        await telegramAPI.addAccount(formData);
+      }
 
       reset();
       setTdataFile(null);
@@ -173,6 +199,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
                 className="w-full px-4 py-3 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[#3390ec]/20 file:text-[#3390ec] file:text-[11px] file:font-medium transition-all focus:ring-1 focus:ring-[#3390ec] disabled:opacity-50 text-sm"
                 accept=".zip,.rar"
                 disabled={loading || validating}
+                multiple
               />
               {validating && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -187,22 +214,40 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
-              Account Display Name
-            </label>
-            <input
-              {...register('displayName', { required: 'Display name is required' })}
-              id="display-name-input"
-              type="text"
-              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm transition-all"
-              placeholder="e.g., Marketing Team"
-              disabled={loading}
-            />
-            {errors.displayName && (
-              <p className="text-[11px] text-red-500 ml-1">{errors.displayName.message}</p>
-            )}
-          </div>
+          {((tdataFile && tdataFile.length > 1) || validationInfo?.is_bulk) && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-lg space-y-1">
+              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                Bulk Mode: {tdataFile && tdataFile.length > 1 ? `${tdataFile.length} files selected` : `1 file selected (${validationInfo?.count || 0} accounts found)`}
+              </p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                Display names will be automatically assigned sequentially (e.g. 1, 2, 3...) excluding already used numbers.
+              </p>
+              <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 max-h-24 overflow-y-auto space-y-1 bg-white/50 dark:bg-black/10 p-2 rounded border border-gray-100 dark:border-white/5">
+                {Array.from(tdataFile || []).map((file, i) => (
+                  <div key={i} className="truncate">• {file.name}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(!tdataFile || (tdataFile.length <= 1 && !validationInfo?.is_bulk)) && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-gray-400 font-medium ml-1 uppercase tracking-wider">
+                Account Display Name
+              </label>
+              <input
+                {...register('displayName', { required: !tdataFile || (tdataFile.length <= 1 && !validationInfo?.is_bulk) ? 'Display name is required' : false })}
+                id="display-name-input"
+                type="text"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#2b3d4f] border border-gray-200 dark:border-white/5 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3390ec] text-sm transition-all"
+                placeholder="e.g., Marketing Team"
+                disabled={loading}
+              />
+              {errors.displayName && (
+                <p className="text-[11px] text-red-500 ml-1">{errors.displayName.message}</p>
+              )}
+            </div>
+          )}
 
           <div id="language-selection-container" className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">

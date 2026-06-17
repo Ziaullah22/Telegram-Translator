@@ -21,7 +21,7 @@ from telethon.sessions import SQLiteSession
 # Core wrapper class managing the connection lifecycle and cached entities for a single Telegram account
 class TelegramSession:
     # Initialize the session container with API credentials and rate limiting configurations
-    def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str):
+    def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str, device_info: Optional[dict] = None):
         self.account_id = account_id
         self.client: Optional[TelegramClient] = None
         self.telegram_api_id = telegram_api_id
@@ -38,6 +38,7 @@ class TelegramSession:
         self.connection_lock = asyncio.Lock()
         self.is_connecting = False
         self.secret_chat_manager: Optional[SecretChatManager] = None
+        self.device_info = device_info
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
@@ -57,13 +58,29 @@ class TelegramSession:
                 if session_id.endswith('.session'):
                     session_id = session_id[:-8]
 
+                # Use custom device fingerprint if available (for anti-detection), otherwise fallback to default
+                device_model = "PC"
+                system_version = "Windows 11"
+                app_version = "4.15.0"
+                lang_code = "en"
+                system_lang_code = "en-US"
+
+                if self.device_info and isinstance(self.device_info, dict):
+                    device_model = self.device_info.get("device_model", device_model)
+                    system_version = self.device_info.get("system_version", system_version)
+                    app_version = self.device_info.get("app_version", app_version)
+                    lang_code = self.device_info.get("lang_code", lang_code)
+                    system_lang_code = self.device_info.get("system_lang_code", system_lang_code)
+
                 self.client = TelegramClient(
                     session_id,
                     self.telegram_api_id,
                     self.telegram_api_hash,
-                    device_model="PC",
-                    system_version="Windows 11",
-                    app_version="4.15.0"
+                    device_model=device_model,
+                    system_version=system_version,
+                    app_version=app_version,
+                    lang_code=lang_code,
+                    system_lang_code=system_lang_code
                 )
 
                 # Max retries for "database is locked" errors on Windows
@@ -1294,9 +1311,9 @@ class TelethonService:
         session = self.sessions.get(account_id)
         
         if not session:
-            # 2. Fetch account details to create session
+            # 2. Fetch account details to create session (including custom device fingerprint info)
             row = await db.fetchrow(
-                "SELECT app_id, app_hash, user_id, account_name FROM telegram_accounts WHERE id = $1",
+                "SELECT app_id, app_hash, user_id, account_name, device_info FROM telegram_accounts WHERE id = $1",
                 account_id
             )
 
@@ -1307,9 +1324,10 @@ class TelethonService:
             app_hash = row['app_hash']
             user_id = row['user_id']
             account_name = row['account_name']
+            device_info = row['device_info']
 
             session_file = f"sessions/{user_id}_{account_name}.session"
-            session = TelegramSession(account_id, app_id, app_hash, session_file)
+            session = TelegramSession(account_id, app_id, app_hash, session_file, device_info=device_info)
             self.sessions[account_id] = session
 
         # 3. Connect (TelegramSession handles locking and idempotency internally now)

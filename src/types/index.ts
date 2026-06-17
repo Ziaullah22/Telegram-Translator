@@ -65,6 +65,7 @@ export interface TelegramChat {
   is_hidden?: boolean;
   is_muted?: boolean;
   photo_url?: string;
+  is_pinned?: boolean;
 }
 
 export interface TranslationResult {

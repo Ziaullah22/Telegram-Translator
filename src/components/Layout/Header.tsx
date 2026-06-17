@@ -1,4 +1,4 @@
-import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings, ShieldAlert, Instagram, Menu, X, ChevronDown, Flame } from 'lucide-react';
+import { MessageCircle, LogOut, User, Zap, HelpCircle, Sun, Moon, BarChart2, ShoppingBag, Settings, ShieldAlert, Instagram, Menu, X, ChevronDown, Flame, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -17,6 +17,7 @@ export default function Header({ onStartTour }: HeaderProps) {
 
   const navItems = [
     { path: '/', label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-3.5 h-3.5 text-indigo-500" /> },
     { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
     { path: '/analytics', label: 'Performance', icon: <BarChart2 className="w-3.5 h-3.5" /> },
     { path: '/crm', label: 'CRM / Leads', icon: <User className="w-3.5 h-3.5 text-green-500" />, id: 'nav-crm' },
@@ -59,8 +60,34 @@ export default function Header({ onStartTour }: HeaderProps) {
 
             {/* Desktop Navigation */}
             <nav className="hidden xl:flex items-center gap-1">
+              {/* Chat & Dashboard Dropdown */}
+              <div className="relative group">
+                <button id="nav-chat-group" className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${['/', '/dashboard'].includes(location.pathname) ? 'text-blue-600 dark:text-blue-500 bg-blue-50/50 dark:bg-white/5' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                   <MessageCircle className="w-3.5 h-3.5" />
+                   <span>Chat & Stats</span>
+                   <ChevronDown className="w-3 h-3 transition-transform group-hover:rotate-180" />
+                </button>
+                <div className="absolute top-[80%] left-0 mt-2 w-48 z-[100] bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-white/5 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 overflow-hidden py-1">
+                  {[
+                    { path: '/', label: 'Live Chat', icon: <MessageCircle className="w-3.5 h-3.5 text-blue-500" />, id: 'nav-live-chat' },
+                    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-3.5 h-3.5 text-indigo-500" />, id: 'nav-dashboard' }
+                  ].map(item => (
+                    <button
+                      key={item.path}
+                      id={item.id}
+                      onClick={() => navigate(item.path)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all hover:bg-gray-50 dark:hover:bg-white/5 ${
+                        location.pathname === item.path ? 'text-blue-600 dark:text-blue-500 bg-blue-50/50 dark:bg-blue-500/10' : 'text-gray-500 dark:text-gray-400'
+                      }`}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {[
-                { path: '/', label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" /> },
                 { path: '/auto-responder', label: 'Auto-Responder', icon: <Zap className="w-3.5 h-3.5" /> },
                 { path: '/campaigns', label: 'Campaigns', icon: <Zap className="w-3.5 h-3.5 text-orange-500" />, id: 'nav-campaigns' },
                 { path: '/crm', label: 'CRM', icon: <User className="w-3.5 h-3.5 text-green-500" /> },

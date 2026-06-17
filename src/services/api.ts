@@ -7,7 +7,7 @@
  */
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair, Product, Order, SalesSettings, InstagramAccount, InstagramChat, InstagramMessage } from '../types';
+import type { User, TelegramAccount, TelegramChat, TelegramMessage, TranslationResult, Language, MessageTemplate, ScheduledMessage, ContactInfo, AutoResponderRule, AutoResponderLog, Campaign, CampaignStep, CampaignLead, AutoReplyPair, Product, Order, SalesSettings, InstagramChat, InstagramMessage } from '../types';
 
 // --- CONFIGURATION & INTERCEPTORS ---
 const API_BASE_URL = '/api';
@@ -73,6 +73,8 @@ export const telegramAPI = {
     exists: boolean;
     is_active: boolean;
     current_display_name?: string;
+    is_bulk?: boolean;
+    count?: number;
   }> => {
     const formData = new FormData();
     formData.append('tdata', file);
@@ -123,6 +125,15 @@ export const telegramAPI = {
       unreadCount: a.unread_count,
       notificationsEnabled: a.notifications_enabled !== false,
     } as TelegramAccount;
+  },
+
+  bulkAddAccounts: async (data: FormData): Promise<{ success: number; failed: number; errors: string[] }> => {
+    const response = await api.post('/telegram/accounts/bulk', data, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
   },
 
   updateAccount: async (
@@ -220,6 +231,16 @@ export const telegramAPI = {
 
   deleteConversation: async (conversationId: number) => {
     const response = await api.delete(`/telegram/conversations/${conversationId}`);
+    return response.data;
+  },
+
+  bulkDeleteConversations: async (conversationIds: number[]) => {
+    const response = await api.post('/telegram/conversations/bulk-delete', { conversation_ids: conversationIds });
+    return response.data;
+  },
+
+  togglePinConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/toggle_pin`);
     return response.data;
   },
 
@@ -336,6 +357,7 @@ export const conversationsAPI = {
       type: c.type,
       is_muted: c.is_muted || false,
       is_hidden: c.is_hidden || false,
+      is_pinned: c.is_pinned || false,
       lastMessage: c.last_message ? {
         ...c.last_message,
         sender_user_id: c.last_message.sender_user_id,
@@ -604,6 +626,12 @@ export const autoResponderAPI = {
 
 // Analytics API
 export const analyticsAPI = {
+  getDashboardData: async (accountId?: number) => {
+    const response = await api.get('/analytics/dashboard', {
+      params: { ...(accountId ? { account_id: accountId } : {}) }
+    });
+    return response.data;
+  },
   getConversationRanking: async (limit: number = 10, accountId?: number) => {
     const response = await api.get('/analytics/ranking/conversations', {
       params: { limit, account_id: accountId }

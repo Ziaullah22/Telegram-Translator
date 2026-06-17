@@ -38,6 +38,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 
+def check_24h_restriction(account):
+    """Restricts operations on an account for the first 24 hours after creation"""
+    if account and account.get('created_at'):
+        from datetime import datetime, timezone, timedelta
+        created_at = account['created_at']
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if now - created_at < timedelta(hours=24):
+            remaining = timedelta(hours=24) - (now - created_at)
+            hours, remainder = divmod(remaining.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Security restriction: Profile updates, photo changes, and session management are disabled for the first 24 hours after upload. Time remaining: {time_str}."
+            )
+
+
 # Validate a directly uploaded TData archive file and parse its configuration without persisting an account
 @router.post("/accounts/validate-tdata")
 async def validate_tdata(
@@ -87,31 +106,47 @@ async def validate_tdata(
                 detail=f"Failed to extract file: {str(e)}",
             )
         
-        # Find the .json configuration file in the extracted directory
-        json_file = None
-        tg_account_id = None
+        extract_nested_archives(temp_path)
         
+        sessions_found = []
         for root, dirs, files in os.walk(temp_path):
             for file in files:
                 if file.endswith('.json'):
                     potential_account_id = file[:-5]
-                    if os.path.exists(os.path.join(root, f"{potential_account_id}.session")):
-                        json_file = os.path.join(root, file)
-                        session_file = os.path.join(root, f"{potential_account_id}.session")
-                        tg_account_id = potential_account_id
-                        break
-            if json_file:
-                break
-        
-        if not json_file or not os.path.exists(session_file):
+                    potential_session = os.path.join(root, f"{potential_account_id}.session")
+                    if os.path.exists(potential_session):
+                        sessions_found.append({
+                            "json_path": os.path.join(root, file),
+                            "session_path": potential_session,
+                            "tg_account_id": potential_account_id
+                        })
+                        
+        if not sessions_found:
             if os.path.exists(temp_path):
                 shutil.rmtree(temp_path)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Missing account configuration or session file (.json/.session). Please export a fresh TData from Telegram Desktop.",
             )
+            
+        if len(sessions_found) > 1:
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            return {
+                "valid": True,
+                "account_name": "Multiple Accounts",
+                "exists": False,
+                "is_active": False,
+                "current_display_name": None,
+                "is_bulk": True,
+                "count": len(sessions_found)
+            }
+            
+        # Parse single account data
+        session = sessions_found[0]
+        json_file = session['json_path']
+        tg_account_id = session['tg_account_id']
         
-        # Parse account data
         try:
             with open(json_file, 'r', encoding='utf-8') as f:
                 app_data = json.load(f)
@@ -234,6 +269,175 @@ async def get_accounts(current_user = Depends(get_current_user)):
     return result
 
 
+# Helper function to recursively find and extract nested archives (e.g. zip inside zip)
+def extract_nested_archives(parent_dir: str):
+    """Recursively find and extract any zip/rar files inside parent_dir"""
+    has_extracted = False
+    for root, dirs, files in os.walk(parent_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            # Skip temp folders themselves to prevent loops
+            if file.lower().endswith('.zip') and not root.endswith('_extracted'):
+                sub_temp = os.path.join(root, file[:-4] + "_extracted")
+                try:
+                    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                        zip_ref.extractall(sub_temp)
+                    has_extracted = True
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                except Exception as e:
+                    logger.error(f"Failed to extract nested zip {file}: {e}")
+            elif file.lower().endswith('.rar') and not root.endswith('_extracted'):
+                sub_temp = os.path.join(root, file[:-4] + "_extracted")
+                try:
+                    with rarfile.RarFile(file_path, 'r') as rar_ref:
+                        rar_ref.extractall(sub_temp)
+                    has_extracted = True
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                except Exception as e:
+                    logger.error(f"Failed to extract nested rar {file}: {e}")
+                    
+    # Recursively clean up extracted archives within extracted directories
+    if has_extracted:
+        extract_nested_archives(parent_dir)
+
+
+# Helper function to generate a randomized but realistic device fingerprint
+def generate_random_device_info() -> dict:
+    """Generates a randomized, realistic anti-detection device profile."""
+    import random
+    profiles = [
+        # Android
+        {"device_model": "Samsung Galaxy S23 Ultra", "system_version": "SDK 34", "app_version": "10.6.1", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "Google Pixel 8 Pro", "system_version": "SDK 34", "app_version": "10.6.1", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "Xiaomi 13 Pro", "system_version": "SDK 33", "app_version": "10.5.0", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "OnePlus 11 Pro", "system_version": "SDK 33", "app_version": "10.5.0", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "Samsung Galaxy S22 Ultra", "system_version": "SDK 33", "app_version": "10.3.2", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "Google Pixel 7 Pro", "system_version": "SDK 33", "app_version": "10.3.2", "lang_code": "en", "system_lang_code": "en-US"},
+        
+        # iOS
+        {"device_model": "iPhone 15 Pro Max", "system_version": "iOS 17.2", "app_version": "10.4.0", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "iPhone 14 Pro", "system_version": "iOS 17.0", "app_version": "10.3.0", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "iPhone 13", "system_version": "iOS 16.6", "app_version": "10.2.1", "lang_code": "en", "system_lang_code": "en-US"},
+        
+        # Desktop
+        {"device_model": "Desktop PC", "system_version": "Windows 11", "app_version": "4.16.2", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "Desktop PC", "system_version": "Windows 10", "app_version": "4.15.2", "lang_code": "en", "system_lang_code": "en-US"},
+        {"device_model": "MacBook Pro", "system_version": "macOS 14.2", "app_version": "10.4.0", "lang_code": "en", "system_lang_code": "en-US"}
+    ]
+    return random.choice(profiles)
+
+
+# Helper function to register an extracted Telegram session in the database and filesystem
+async def register_session_account(
+    json_path: str,
+    session_path: str,
+    tg_account_id: str,
+    display_name: str,
+    source_language: str,
+    target_language: str,
+    user_id: int
+) -> dict:
+    with open(json_path, 'r', encoding='utf-8') as f:
+        app_data = json.load(f)
+        
+    account_name = app_data.get('username') or app_data.get('phone') or tg_account_id
+    app_id = app_data['app_id']
+    app_hash = app_data['app_hash']
+    
+    existing = await db.fetchrow(
+        "SELECT id, is_active FROM telegram_accounts WHERE user_id = $1 AND account_name = $2",
+        user_id,
+        account_name,
+    )
+    
+    if existing and existing['is_active']:
+        raise ValueError(f"Account '{account_name}' already exists")
+        
+    tg_username = app_data.get('username')
+    
+    if existing:
+        account_id = existing['id']
+        await db.execute(
+            """
+            UPDATE telegram_accounts 
+            SET is_active = true, 
+                display_name = $1, 
+                source_language = $2, 
+                target_language = $3,
+                app_id = $4,
+                app_hash = $5,
+                username = $6,
+                last_used = NULL
+            WHERE id = $7
+            """,
+            display_name,
+            source_language,
+            target_language,
+            app_id,
+            app_hash,
+            tg_username,
+            account_id,
+        )
+    else:
+        # Generate random device fingerprint for new accounts only
+        device_info = generate_random_device_info()
+        
+        account_id = await db.fetchval(
+            """
+            INSERT INTO telegram_accounts
+            (user_id, display_name, account_name, username, source_language, target_language, app_id, app_hash, device_info)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+            """,
+            user_id,
+            display_name,
+            account_name,
+            tg_username,
+            source_language,
+            target_language,
+            app_id,
+            app_hash,
+            device_info,
+        )
+        
+    # Move session file to sessions directory
+    tdata_path = f"sessions"
+    os.makedirs(tdata_path, exist_ok=True)
+    session_location = f"{tdata_path}/{user_id}_{account_name}.session"
+    
+    if os.path.exists(session_location):
+        os.remove(session_location)
+        
+    shutil.move(session_path, session_location)
+    
+    # Start connection in background
+    async def start_initial_connection(acc_id=account_id, name=account_name):
+        try:
+            connected = await telethon_service.connect_session(acc_id)
+            if connected:
+                await db.execute(
+                    "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
+                    acc_id
+                )
+                await telethon_service.sync_initial_dialogs(acc_id)
+        except Exception as e:
+            logger.error(f"Error in background connection for {name}: {e}")
+            
+    asyncio.create_task(start_initial_connection())
+    
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND is_active = true",
+        account_id,
+    )
+    return dict(account)
+
+
 # Create a brand new Telegram account record by extracting and validating an uploaded TData session archive
 @router.post("/accounts", response_model=TelegramAccountResponse)
 async def create_account(
@@ -249,13 +453,11 @@ async def create_account(
             detail="TData file (Zip format) is required",
         )
 
-    # Create temporary extraction directory with timestamp to avoid conflicts
     import time
     temp_id = f"{current_user.user_id}_{int(time.time())}"
     temp_path = f"temp/TData/{temp_id}"
     
     try:
-        # Read the file content into memory
         file_content = await tdata.read()
         filename = tdata.filename.lower()
         os.makedirs(temp_path, exist_ok=True)
@@ -272,183 +474,182 @@ async def create_account(
                 detail="Unsupported file format. Please upload a .zip or .rar file.",
             )
             
-        # Find the .json configuration file in the extracted directory
-        json_file = None
-        tg_account_id = None
-        session_file_path = None
+        extract_nested_archives(temp_path)
         
+        sessions_found = []
         for root, dirs, files in os.walk(temp_path):
             for file in files:
                 if file.endswith('.json'):
                     potential_account_id = file[:-5]
                     potential_session = os.path.join(root, f"{potential_account_id}.session")
                     if os.path.exists(potential_session):
-                        json_file = os.path.join(root, file)
-                        session_file_path = potential_session
-                        tg_account_id = potential_account_id
-                        break
-            if json_file:
-                break
-        
-        if not json_file or not session_file_path:
-            raise ValueError("Missing .json or .session file in archive")
+                        sessions_found.append({
+                            "json_path": os.path.join(root, file),
+                            "session_path": potential_session,
+                            "tg_account_id": potential_account_id
+                        })
+                        
+        if not sessions_found:
+            raise ValueError("No valid session pairs (.json and .session) found in archive")
             
-        with open(json_file, 'r', encoding='utf-8') as f:
-            app_data = json.load(f)
+        rows = await db.fetch(
+            "SELECT display_name FROM telegram_accounts WHERE user_id = $1",
+            current_user.user_id
+        )
+        existing_names = {row['display_name'] for row in rows if row['display_name']}
+        
+        accounts_registered = []
+        for idx, session in enumerate(sessions_found):
+            # If multiple sessions are found inside the uploaded archive, auto-assign sequential display names
+            if len(sessions_found) > 1:
+                num = 1
+                while str(num) in existing_names:
+                    num += 1
+                disp_name = str(num)
+                existing_names.add(disp_name)
+            else:
+                disp_name = displayName
+                
+            acc = await register_session_account(
+                json_path=session['json_path'],
+                session_path=session['session_path'],
+                tg_account_id=session['tg_account_id'],
+                display_name=disp_name,
+                source_language=sourceLanguage,
+                target_language=targetLanguage,
+                user_id=current_user.user_id
+            )
+            accounts_registered.append(acc)
             
-        # Fallback order: username -> phone -> tg_account_id
-        account_name = app_data.get('username') or app_data.get('phone') or tg_account_id
-        app_id = app_data['app_id']
-        app_hash = app_data['app_hash']
-    except Exception as e:
-        # Clean up temp directory on error
-        if os.path.exists(temp_path):
-            shutil.rmtree(temp_path)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid TData archive: {str(e)}",
-        )
-
-    # Check for existing account (only active accounts)
-    existing = await db.fetchrow(
-        "SELECT id, is_active FROM telegram_accounts WHERE user_id = $1 AND account_name = $2",
-        current_user.user_id,
-        account_name,
-    )
-
-    if existing and existing['is_active']:
-        # Clean up temp directory
-        if os.path.exists(temp_path):
-            shutil.rmtree(temp_path)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Account name already exists",
-        )
-
-    # If account exists but is inactive, reactivate it
-    try:
-        tg_username = app_data.get('username')
+        first_acc = accounts_registered[0]
+        return {
+            "id": first_acc['id'],
+            "account_name": first_acc['account_name'],
+            "display_name": first_acc['display_name'],
+            "is_active": first_acc['is_active'],
+            "source_language": first_acc['source_language'],
+            "target_language": first_acc['target_language'],
+            "translation_enabled": first_acc['translation_enabled'] if 'translation_enabled' in first_acc else True,
+            "created_at": first_acc['created_at'],
+            "last_used": first_acc['last_used'],
+            "is_connected": False,
+            "notifications_enabled": first_acc['notifications_enabled'] if 'notifications_enabled' in first_acc else True
+        }
         
-        if existing:
-            # Reactivate and update configuration
-            account_id = existing['id']
-            await db.execute(
-                """
-                UPDATE telegram_accounts 
-                SET is_active = true, 
-                    display_name = $1, 
-                    source_language = $2, 
-                    target_language = $3,
-                    app_id = $4,
-                    app_hash = $5,
-                    username = $6,
-                    last_used = NULL
-                WHERE id = $7
-                """,
-                displayName,
-                sourceLanguage,
-                targetLanguage,
-                app_id,
-                app_hash,
-                tg_username,
-                account_id,
-            )
-            logger.info(f"Reactivated telegram account: {account_name} for user {current_user.user_id}")
-        else:
-            # Create new account
-            account_id = await db.fetchval(
-                """
-                INSERT INTO telegram_accounts
-                (user_id, display_name, account_name, username, source_language, target_language, app_id, app_hash)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING id
-                """,
-                current_user.user_id,
-                displayName,
-                account_name,
-                tg_username,
-                sourceLanguage,
-                targetLanguage,
-                app_id,
-                app_hash,
-            )
     except Exception as e:
-        # Clean up temp directory on database error
-        if os.path.exists(temp_path):
-            shutil.rmtree(temp_path)
-        
-        # Handle specific database errors
         error_msg = str(e)
         if "uq_telegram_accounts_user_display_name" in error_msg or "duplicate key" in error_msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Display name '{displayName}' is already in use. Please choose a different display name.",
+                detail=f"Display name is already in use. Please choose a different display name.",
             )
         else:
-            logger.error(f"Database error creating account: {e}")
+            logger.error(f"Error creating account: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to add account: {str(e)}",
             )
+    finally:
+        if os.path.exists(temp_path):
+            shutil.rmtree(temp_path)
+        tdata.file.close()
 
-    # Move session file to sessions directory
-    tdata_path = f"sessions"
-    os.makedirs(tdata_path, exist_ok=True)
 
-    session_location = f"{tdata_path}/{current_user.user_id}_{account_name}.session"
+# Create multiple Telegram accounts in bulk by extracting archives and assigning sequential names
+@router.post("/accounts/bulk")
+async def create_accounts_bulk(
+    tdatas: List[UploadFile] = File(...),
+    sourceLanguage: str = Form("auto"),
+    targetLanguage: str = Form("en"),
+    current_user = Depends(get_current_user),
+):
+    """Bulk create Telegram accounts from multiple TData session archives"""
+    if not tdatas:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TData files are required",
+        )
     
-    # Remove old session file if exists
-    if os.path.exists(session_location):
-        os.remove(session_location)
-    
-    shutil.move(session_file_path, session_location)
-    
-    # Clean up temp directory
-    if os.path.exists(temp_path):
-        shutil.rmtree(temp_path)
-    
-    tdata.file.close()
-
-    # Start connection in background to avoid HTTP timeout
-    async def start_initial_connection():
-        try:
-            connected = await telethon_service.connect_session(account_id)
-            if connected:
-                # Update last_used to place account at top of list
-                await db.execute(
-                    "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
-                    account_id
-                )
-                logger.info(f"Background connection successful for new account: {account_name}")
-                
-                # Sync initial dialogs from Telegram to populate the UI immediately
-                await telethon_service.sync_initial_dialogs(account_id)
-            else:
-                logger.error(f"Background connection failed for new account: {account_name}")
-        except Exception as e:
-            logger.error(f"Error in background connection for {account_name}: {e}")
-
-    # Fire and forget the connection task
-    asyncio.create_task(start_initial_connection())
-
-    account = await db.fetchrow(
-        "SELECT * FROM telegram_accounts WHERE id = $1 AND is_active = true",
-        account_id,
+    rows = await db.fetch(
+        "SELECT display_name FROM telegram_accounts WHERE user_id = $1",
+        current_user.user_id
     )
-
-    return {
-        "id": account['id'],
-        "account_name": account['account_name'],
-        "display_name": account['display_name'],
-        "is_active": account['is_active'],
-        "source_language": account['source_language'],
-        "target_language": account['target_language'],
-        "translation_enabled": account['translation_enabled'] if 'translation_enabled' in account else True,
-        "created_at": account['created_at'],
-        "last_used": account['last_used'],
-        "is_connected": False, # Initially false as it's connecting in background
-        "notifications_enabled": account['notifications_enabled'] if 'notifications_enabled' in account else True
-    }
+    existing_names = {row['display_name'] for row in rows if row['display_name']}
+    
+    success_count = 0
+    failed_count = 0
+    errors = []
+    
+    for tdata in tdatas:
+        import time
+        temp_id = f"{current_user.user_id}_{int(time.time())}_{success_count}_{failed_count}"
+        temp_path = f"temp/TData/{temp_id}"
+        
+        try:
+            file_content = await tdata.read()
+            filename = tdata.filename.lower()
+            os.makedirs(temp_path, exist_ok=True)
+            
+            if filename.endswith('.zip'):
+                with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
+                    zip_ref.extractall(temp_path)
+            elif filename.endswith('.rar'):
+                with rarfile.RarFile(io.BytesIO(file_content), 'r') as rar_ref:
+                    rar_ref.extractall(temp_path)
+            else:
+                raise ValueError("Unsupported file format. Please upload .zip or .rar files.")
+                
+            extract_nested_archives(temp_path)
+            
+            sessions_found = []
+            for root, dirs, files in os.walk(temp_path):
+                for file in files:
+                    if file.endswith('.json'):
+                        potential_account_id = file[:-5]
+                        potential_session = os.path.join(root, f"{potential_account_id}.session")
+                        if os.path.exists(potential_session):
+                            sessions_found.append({
+                                "json_path": os.path.join(root, file),
+                                "session_path": potential_session,
+                                "tg_account_id": potential_account_id
+                            })
+                            
+            if not sessions_found:
+                raise ValueError("No valid session pairs (.json and .session) found in archive")
+                
+            for session in sessions_found:
+                num = 1
+                while str(num) in existing_names:
+                    num += 1
+                disp_name = str(num)
+                existing_names.add(disp_name)
+                
+                try:
+                    await register_session_account(
+                        json_path=session['json_path'],
+                        session_path=session['session_path'],
+                        tg_account_id=session['tg_account_id'],
+                        display_name=disp_name,
+                        source_language=sourceLanguage,
+                        target_language=targetLanguage,
+                        user_id=current_user.user_id
+                    )
+                    success_count += 1
+                except Exception as e:
+                    failed_count += 1
+                    errors.append(f"Session {session['tg_account_id']} in file {tdata.filename}: {str(e)}")
+                    existing_names.discard(disp_name)
+                    
+        except Exception as e:
+            failed_count += 1
+            errors.append(f"File {tdata.filename}: {str(e)}")
+            
+        finally:
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+            await tdata.close()
+            
+    return {"success": success_count, "failed": failed_count, "errors": errors}
 
 
 # Manually initiate a Telethon connection for a specific saved Telegram account
@@ -794,7 +995,7 @@ async def get_conversations(
         FROM conversations c
         LEFT JOIN LastMessages lm ON c.id = lm.conversation_id AND lm.rn = 1
         WHERE c.telegram_account_id = $1 AND c.is_hidden = false
-        ORDER BY COALESCE(lm.created_at, c.created_at) DESC
+        ORDER BY c.is_pinned DESC, COALESCE(lm.created_at, c.created_at) DESC
         """,
         account_id,
     )
@@ -843,6 +1044,7 @@ async def get_conversations(
             "username": conv['username'],
             "is_muted": conv.get('is_muted', False),
             "is_hidden": conv.get('is_hidden', False),
+            "is_pinned": conv.get('is_pinned', False),
         })
 
     return result
@@ -1228,6 +1430,91 @@ async def delete_conversation(
     return {"status": "success", "message": "Conversation and messages deleted permanently"}
 
 
+@router.post("/conversations/{conversation_id}/toggle_pin")
+async def toggle_pin(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Toggle the pinned status of a conversation"""
+    conv = await db.fetchrow(
+        """SELECT c.id, c.telegram_account_id, c.is_pinned FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = $1 AND ta.user_id = $2""",
+        conversation_id, current_user.user_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    await db.execute(
+        "UPDATE conversations SET is_pinned = NOT is_pinned WHERE id = $1",
+        conversation_id
+    )
+    new_pinned = await db.fetchval("SELECT is_pinned FROM conversations WHERE id = $1", conversation_id)
+    
+    # Notify via WebSocket
+    await manager.send_to_account(
+        {
+            "type": "conversation_pinned_toggle",
+            "conversation_id": conversation_id,
+            "is_pinned": new_pinned
+        },
+        conv['telegram_account_id'],
+        current_user.user_id,
+    )
+    
+    return {"status": "success", "is_pinned": new_pinned}
+
+
+@router.post("/conversations/bulk-delete")
+async def bulk_delete_conversations(
+    data: dict,
+    current_user = Depends(get_current_user),
+):
+    """Bulk delete conversations and their messages permanently"""
+    conversation_ids = data.get("conversation_ids", [])
+    if not conversation_ids:
+        raise HTTPException(status_code=400, detail="No conversation IDs provided")
+    
+    # Verify ownership of all conversations
+    convs = await db.fetch(
+        """SELECT c.id, c.telegram_account_id, c.telegram_peer_id FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = ANY($1) AND ta.user_id = $2""",
+        conversation_ids, current_user.user_id
+    )
+    
+    if len(convs) != len(conversation_ids):
+        raise HTTPException(status_code=404, detail="One or more conversations not found or access denied")
+    
+    # Delete from database in bulk
+    await db.execute("DELETE FROM messages WHERE conversation_id = ANY($1)", conversation_ids)
+    await db.execute("DELETE FROM conversations WHERE id = ANY($1)", conversation_ids)
+    
+    # Notify via WebSocket immediately
+    for conv in convs:
+        await manager.send_to_account(
+            {
+                "type": "conversation_deleted",
+                "conversation_id": conv['id']
+            },
+            conv['telegram_account_id'],
+            current_user.user_id,
+        )
+
+    # Delete from Telegram side in background task
+    async def background_delete():
+        for conv in convs:
+            try:
+                await telethon_service.delete_dialog(conv['telegram_account_id'], conv['telegram_peer_id'])
+            except Exception as e:
+                logger.error(f"Failed to delete Telegram dialog for conversation {conv['id']} in background: {e}")
+
+    asyncio.create_task(background_delete())
+    
+    return {"status": "success", "message": f"Successfully deleted {len(convs)} conversations"}
+
+
+
 @router.get("/accounts/{account_id}/profile")
 async def get_profile(
     account_id: int,
@@ -1277,6 +1564,8 @@ async def update_profile(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    check_24h_restriction(account)
+    
     # Try to get session, if not connected and account is active, try to connect it first
     session = await telethon_service.get_session(account_id)
     if not session or not session.is_connected:
@@ -1309,6 +1598,8 @@ async def upload_profile_photo(
     )
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    
+    check_24h_restriction(account)
     
     # Try to get session, if not connected and account is active, try to connect it first
     session = await telethon_service.get_session(account_id)
@@ -1401,6 +1692,8 @@ async def logout_account(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    check_24h_restriction(account)
+    
     try:
         result = await telethon_service.logout(account_id)
         # Also mark as disconnected in DB or just let it be
@@ -1423,6 +1716,8 @@ async def terminate_all_sessions(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    check_24h_restriction(account)
+    
     try:
         result = await telethon_service.terminate_all_sessions(account_id)
         return result
@@ -1444,6 +1739,8 @@ async def terminate_session(
     )
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    
+    check_24h_restriction(account)
     
     try:
         result = await telethon_service.terminate_session(account_id, int(session_hash))

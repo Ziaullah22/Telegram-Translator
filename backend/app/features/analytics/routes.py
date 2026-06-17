@@ -436,3 +436,203 @@ async def get_admin_user_account_ranking(
             total_responses=row['total_responses']
         ) for row in rows
     ]
+
+
+@router.get("/dashboard")
+async def get_dashboard_data(
+    account_id: Optional[int] = Query(None),
+    current_user = Depends(get_current_user)
+):
+    """
+    Returns aggregated metrics, unread messages, 24-hour activity, and conversations requiring follow-ups.
+    """
+    from datetime import timedelta, timezone
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+
+    # 1. Metrics count queries
+    received_24h_count = await db.fetchval(
+        """
+        SELECT COUNT(*)::INT FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.created_at >= $2
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($3::BIGINT IS NULL OR ta.id = $3)
+        """,
+        current_user.user_id,
+        day_ago,
+        account_id
+    ) or 0
+
+    sent_24h_count = await db.fetchval(
+        """
+        SELECT COUNT(*)::INT FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND m.is_outgoing = TRUE AND m.created_at >= $2
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($3::BIGINT IS NULL OR ta.id = $3)
+        """,
+        current_user.user_id,
+        day_ago,
+        account_id
+    ) or 0
+
+    unread_count = await db.fetchval(
+        """
+        SELECT COUNT(*)::INT FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($2::BIGINT IS NULL OR ta.id = $2)
+        """,
+        current_user.user_id,
+        account_id
+    ) or 0
+
+    follow_ups_count = await db.fetchval(
+        """
+        WITH last_messages AS (
+            SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at
+            FROM messages
+            ORDER BY conversation_id, created_at DESC
+        )
+        SELECT COUNT(*)::INT FROM last_messages lm
+        JOIN conversations c ON lm.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($2::BIGINT IS NULL OR ta.id = $2)
+        """,
+        current_user.user_id,
+        account_id
+    ) or 0
+
+    # 2. Retrieve unread messages details
+    unread_rows = await db.fetch(
+        """
+        SELECT m.id, m.conversation_id, m.sender_name, m.original_text, m.translated_text, m.created_at, m.is_encrypted,
+               c.title as conversation_title, ta.display_name as account_name
+        FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($2::BIGINT IS NULL OR ta.id = $2)
+        ORDER BY m.created_at DESC
+        LIMIT 50
+        """,
+        current_user.user_id,
+        account_id
+    )
+
+    from app.core.encryption import decrypt_message_if_encrypted
+    unread_messages = []
+    for r in unread_rows:
+        orig_t, trans_t = await decrypt_message_if_encrypted(r['is_encrypted'], r['original_text'], r['translated_text'])
+        unread_messages.append({
+            "id": r['id'],
+            "conversation_id": r['conversation_id'],
+            "sender_name": r['sender_name'],
+            "text": trans_t or orig_t or "",
+            "created_at": r['created_at'].isoformat() if r['created_at'] else None,
+            "conversation_title": r['conversation_title'],
+            "account_name": r['account_name']
+        })
+
+    # 3. Retrieve 24h activity log
+    activity_rows = await db.fetch(
+        """
+        SELECT m.id, m.conversation_id, m.sender_name, m.original_text, m.translated_text, m.created_at, m.is_outgoing, m.is_encrypted,
+               c.title as conversation_title, ta.display_name as account_name
+        FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        WHERE ta.user_id = $1 AND m.created_at >= $2
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($3::BIGINT IS NULL OR ta.id = $3)
+        ORDER BY m.created_at DESC
+        LIMIT 100
+        """,
+        current_user.user_id,
+        day_ago,
+        account_id
+    )
+
+    activity_24h = []
+    for r in activity_rows:
+        orig_t, trans_t = await decrypt_message_if_encrypted(r['is_encrypted'], r['original_text'], r['translated_text'])
+        activity_24h.append({
+            "id": r['id'],
+            "conversation_id": r['conversation_id'],
+            "sender_name": r['sender_name'],
+            "text": trans_t or orig_t or "",
+            "is_outgoing": r['is_outgoing'],
+            "created_at": r['created_at'].isoformat() if r['created_at'] else None,
+            "conversation_title": r['conversation_title'],
+            "account_name": r['account_name']
+        })
+
+    # 4. Retrieve follow ups (conversations where last message is incoming)
+    follow_up_rows = await db.fetch(
+        """
+        WITH last_messages AS (
+            SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at, original_text, translated_text, is_encrypted
+            FROM messages
+            ORDER BY conversation_id, created_at DESC
+        )
+        SELECT 
+            c.id as conversation_id, 
+            c.title as conversation_title, 
+            c.telegram_peer_id,
+            c.telegram_account_id,
+            ta.display_name as account_name,
+            lm.created_at as last_message_at,
+            lm.original_text as last_message_text,
+            lm.translated_text as last_message_translated,
+            lm.is_encrypted,
+            ci.tags,
+            ci.pipeline_stage
+        FROM last_messages lm
+        JOIN conversations c ON lm.conversation_id = c.id
+        JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+        LEFT JOIN contact_info ci ON c.id = ci.conversation_id
+        WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
+          AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND ($2::BIGINT IS NULL OR ta.id = $2)
+        ORDER BY lm.created_at DESC
+        LIMIT 50
+        """,
+        current_user.user_id,
+        account_id
+    )
+
+    follow_ups = []
+    for r in follow_up_rows:
+        orig_t, trans_t = await decrypt_message_if_encrypted(r['is_encrypted'], r['last_message_text'], r['last_message_translated'])
+        follow_ups.append({
+            "conversation_id": r['conversation_id'],
+            "conversation_title": r['conversation_title'],
+            "telegram_peer_id": r['telegram_peer_id'],
+            "telegram_account_id": r['telegram_account_id'],
+            "account_name": r['account_name'],
+            "last_message_at": r['last_message_at'].isoformat() if r['last_message_at'] else None,
+            "last_message_text": trans_t or orig_t or "",
+            "tags": r['tags'] or [],
+            "pipeline_stage": r['pipeline_stage'] or "Lead"
+        })
+
+    return {
+        "metrics": {
+            "received_24h_count": received_24h_count,
+            "sent_24h_count": sent_24h_count,
+            "unread_count": unread_count,
+            "follow_ups_count": follow_ups_count
+        },
+        "unread_messages": unread_messages,
+        "activity_24h": activity_24h,
+        "follow_ups": follow_ups
+    }
+

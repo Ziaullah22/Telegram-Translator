@@ -27,6 +27,10 @@ interface ActiveSessionsModalProps {
 }
 
 export default function ActiveSessionsModal({ isOpen, account, onClose }: ActiveSessionsModalProps) {
+    const isRestricted = account
+        ? (new Date().getTime() - new Date(account.createdAt).getTime()) < 24 * 60 * 60 * 1000
+        : false;
+
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -135,6 +139,15 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                 </div>
 
                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                    {isRestricted && (
+                        <div className="mb-4 p-3.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2.5">
+                            <Info className="w-4.5 h-4.5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-500" />
+                            <div>
+                                <span className="font-semibold block mb-0.5 text-[13px]">24h Security Lock Active</span>
+                                Profile edits, photo uploads, and session management are temporarily locked for 24 hours after adding this account to protect it from sudden verification checks.
+                            </div>
+                        </div>
+                    )}
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg text-sm text-red-600 dark:text-red-400">{error}</div>
                     )}
@@ -188,8 +201,12 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                                         <h3 className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Other Sessions</h3>
                                         <button
                                             onClick={handleTerminateAll}
-                                            disabled={terminatingAll}
-                                            className="text-[11px] font-medium text-red-500 uppercase tracking-wider hover:underline"
+                                            disabled={terminatingAll || isRestricted}
+                                            className={`text-[11px] font-medium uppercase tracking-wider ${
+                                                isRestricted
+                                                    ? 'text-gray-400 cursor-not-allowed bg-transparent'
+                                                    : 'text-red-500 hover:underline hover:text-red-600'
+                                            }`}
                                         >
                                             Terminate All Others
                                         </button>
@@ -203,9 +220,13 @@ export default function ActiveSessionsModal({ isOpen, account, onClose }: Active
                                                         <p className="font-medium text-gray-900 dark:text-white text-[14px]">{session.device_model}</p>
                                                         <button
                                                             onClick={() => handleTerminate(session)}
-                                                            disabled={terminatingHash === session.hash}
-                                                            className="text-red-500 hover:text-red-600 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                                                            title="Terminate"
+                                                            disabled={terminatingHash === session.hash || isRestricted}
+                                                            className={`p-1 rounded-md transition-colors ${
+                                                                isRestricted
+                                                                    ? 'text-gray-400 cursor-not-allowed bg-transparent'
+                                                                    : 'text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10'
+                                                            }`}
+                                                            title={isRestricted ? "Security Lock Active" : "Terminate"}
                                                         >
                                                             {terminatingHash === session.hash ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                                         </button>

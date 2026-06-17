@@ -25,6 +25,7 @@ import CampaignPage from './components/Campaigns/CampaignPage';
 import ProductsPage from './components/Products/ProductsPage';
 import AdvancedSettings from './components/Settings/AdvancedSettings';
 import CRMDashboard from './components/CRM/CRMDashboard';
+import DashboardPage from './components/Dashboard/DashboardPage';
 import InstagramLeadGenerator from './components/Instagram/InstagramLeadGenerator';
 import InstagramWarmingDashboard from './components/InstagramWarming/InstagramWarmingDashboard';
 import InstagramAccountSettingsModal from './components/InstagramChat/InstagramAccountSettingsModal';
@@ -580,6 +581,16 @@ function App() {
         if (currentConversationRef.current?.id === delId) { setCurrentConversation(null); setMessages([]); }
       }
 
+      // HANDLE: Conversation pinned toggle
+      if (data?.type === 'conversation_pinned_toggle') {
+        const toggleId = Number(data.conversation_id);
+        const isPinned = !!data.is_pinned;
+        setConversations(prev => prev.map(c => c.id === toggleId ? { ...c, is_pinned: isPinned } : c));
+        if (currentConversationRef.current?.id === toggleId) {
+          setCurrentConversation(prev => prev ? { ...prev, is_pinned: isPinned } : null);
+        }
+      }
+
       // HANDLE: Remote message deletion (single or bulk)
       if (data?.type === 'messages_deleted') {
         const delId = Number(data.conversation_id);
@@ -664,6 +675,16 @@ function App() {
     try {
       const convs = await conversationsAPI.getConversations(accountId);
       setConversations(convs);
+
+      // Clear current conversation if it is no longer in the list (e.g. deleted in bulk)
+      if (currentConversationRef.current) {
+        const stillExists = convs.some(c => Number(c.id) === Number(currentConversationRef.current?.id));
+        if (!stillExists) {
+          setCurrentConversation(null);
+          setMessages([]);
+        }
+      }
+
       setUnreadCounts(prev => {
         const next = { ...prev };
         const counts: Record<number, number> = {};
@@ -838,7 +859,10 @@ function App() {
     try {
       const res = await messagesAPI.sendMessage(currentConversation.id, text, currentAccount?.isTranslationEnabled, replyId);
       if (res && res.id) setMessages(prev => prev.map(m => m.id === temp.id ? res : m));
-    } catch (e) { setMessages(prev => prev.filter(m => m.id !== temp.id)); alert('Failed'); }
+    } catch (e: any) { 
+      setMessages(prev => prev.filter(m => m.id !== temp.id)); 
+      alert(e?.response?.data?.detail || 'Failed to send message'); 
+    }
   };
 
   const handleSendMedia = async (file: File, caption: string) => {
@@ -857,7 +881,10 @@ function App() {
       const fd = new FormData(); fd.append('file', file); fd.append('conversation_id', currentConversation.id.toString()); fd.append('caption', caption);
       const res = await messagesAPI.sendMedia(fd);
       if (res && res.id) setMessages(prev => prev.map(m => m.id === tid ? res : m));
-    } catch (e) { setMessages(prev => prev.filter(m => m.id !== tid)); alert('Failed'); }
+    } catch (e: any) { 
+      setMessages(prev => prev.filter(m => m.id !== tid)); 
+      alert(e?.response?.data?.detail || 'Failed to send media'); 
+    }
   };
 
   const handleLeaveConversation = async (id: number) => {
@@ -975,6 +1002,7 @@ function App() {
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/advanced-settings" element={<AdvancedSettings />} />
           <Route path="/crm" element={<CRMDashboard />} />
+          <Route path="/dashboard" element={<DashboardPage accounts={accounts} />} />
           <Route path="/instagram-leads" element={<InstagramLeadGenerator />} />
           <Route path="/instagram-warming" element={<InstagramWarmingDashboard />} />
           <Route path="/" element={

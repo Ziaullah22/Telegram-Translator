@@ -85,6 +85,7 @@ class ConversationResponse(BaseModel):
     username: Optional[str] = None
     is_hidden: bool = False
     is_muted: bool = False
+    is_pinned: bool = False
 
 class MessageType(str, Enum):
     text = "text"

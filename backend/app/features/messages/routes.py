@@ -20,6 +20,51 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
+async def check_30d_new_user_restriction(telegram_account_id: int, conversation_id: int, account_created_at: datetime):
+    """Throttles contact initiation with new users for accounts created in the last 30 days.
+
+    Young accounts are only allowed to initiate contact with 1 new user per 24 hours.
+    """
+    if not account_created_at:
+        return
+
+    from datetime import timezone, timedelta
+    if account_created_at.tzinfo is None:
+        account_created_at = account_created_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    if now - account_created_at < timedelta(days=30):
+        # Check if we have ever sent an outgoing message in this conversation
+        has_outgoing = await db.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND is_outgoing = true)",
+            conversation_id
+        )
+        if not has_outgoing:
+            # Check if we initiated any other new conversations in the last 24 hours
+            limit_time = now - timedelta(hours=24)
+            initiated_count = await db.fetchval(
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT conversation_id, MIN(created_at) as first_out_time
+                    FROM messages
+                    WHERE conversation_id IN (
+                        SELECT id FROM conversations WHERE telegram_account_id = $1
+                    ) AND is_outgoing = true
+                    GROUP BY conversation_id
+                ) t
+                WHERE t.first_out_time > $2 AND t.conversation_id != $3
+                """,
+                telegram_account_id,
+                limit_time,
+                conversation_id
+            )
+            if initiated_count >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Security restriction: Accounts younger than 30 days can only initiate contact with 1 new user per 24 hours to prevent account bans."
+                )
+
+
 # Mark all incoming messages in a conversation as read
 @router.post("/conversations/{conversation_id}/read")
 async def mark_as_read(
@@ -205,7 +250,7 @@ async def send_message(
 ):
     conversation = await db.fetchrow(
         """
-        SELECT c.*, ta.user_id, ta.target_language, ta.source_language
+        SELECT c.*, ta.user_id, ta.target_language, ta.source_language, ta.created_at as account_created_at
         FROM conversations c
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE c.id = $1
@@ -230,6 +275,13 @@ async def send_message(
             conversation['source_language'] if conversation['source_language'] != 'auto' else 'en',
             current_user.user_id
         )
+
+    # Throttles contact initiation with new users for accounts created in the last 30 days
+    await check_30d_new_user_restriction(
+        conversation['telegram_account_id'],
+        message_data.conversation_id,
+        conversation['account_created_at']
+    )
 
     try:
         # Check if this is a Secret Chat
@@ -353,7 +405,7 @@ async def send_media(
     """Send a media file (photo, video, document) to a conversation"""
     conversation = await db.fetchrow(
         """
-        SELECT c.*, ta.user_id, ta.target_language, ta.source_language
+        SELECT c.*, ta.user_id, ta.target_language, ta.source_language, ta.created_at as account_created_at
         FROM conversations c
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE c.id = $1
@@ -366,6 +418,13 @@ async def send_media(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found",
         )
+
+    # Throttles contact initiation with new users for accounts created in the last 30 days
+    await check_30d_new_user_restriction(
+        conversation['telegram_account_id'],
+        conversation_id,
+        conversation['account_created_at']
+    )
 
     try:
         # Translate caption if provided
@@ -724,7 +783,7 @@ async def forward_messages(
     # Verify target conversation (must belong to same account)
     target = await db.fetchrow(
         """
-        SELECT c.*, ta.user_id, ta.target_language, ta.source_language
+        SELECT c.*, ta.user_id, ta.target_language, ta.source_language, ta.created_at as account_created_at
         FROM conversations c
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE c.id = $1 AND ta.user_id = $2 AND c.telegram_account_id = $3
@@ -735,6 +794,13 @@ async def forward_messages(
     )
     if not target:
         raise HTTPException(status_code=404, detail="Target conversation not found or belongs to different account")
+
+    # Throttles contact initiation with new users for accounts created in the last 30 days
+    await check_30d_new_user_restriction(
+        target['telegram_account_id'],
+        target_conversation_id,
+        target['account_created_at']
+    )
 
     # Get the Telegram message IDs for these local DB IDs
     db_messages = await db.fetch(

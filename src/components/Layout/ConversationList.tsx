@@ -8,7 +8,7 @@
  * 3. Avatar pre-fetching for smooth scrolling
  * 4. Context menu for chat actions (Mute, Delete)
  */
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft, MessageSquare } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft, MessageSquare, Pin, CheckSquare } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult, TelegramGlobalMessageSearchResult } from '../../types';
 import { telegramAPI, messagesAPI } from '../../services/api';
@@ -66,7 +66,20 @@ export default function ConversationList({
     conversationId: null,
   });
   const [contextMenu, setContextMenu] = useState<{ conversation: TelegramChat; x: number; y: number } | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [optimisticDeletedIds, setOptimisticDeletedIds] = useState<Set<number>>(new Set());
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   // Close context menu when clicking anywhere
   useEffect(() => {
@@ -218,49 +231,159 @@ export default function ConversationList({
   return (
     <div id="conversation-list" className="w-full h-full bg-telegram-side-list-light dark:bg-telegram-side-list-dark border-r border-gray-100 dark:border-white/5 flex flex-col transition-all duration-300">
       {/* Header with Search Bar and Back Button */}
+      {/* Header with Search Bar, Back Button OR Selection Actions */}
       <div id="search-container" className="p-3 border-b border-gray-100 dark:border-white/5 flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
-              title="Back to Accounts"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div className="relative group flex-1">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
-            </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)} // Delay to allow filter clicks
-              disabled={!isConnected}
-              autoComplete="no-autofill-search"
-              spellCheck={false}
-              name="search-query-field"
-              placeholder={isConnected ? "Search chats..." : "Connect account..."}
-              className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
-            />
-            {searchQuery && (
+        {isSelectionMode ? (
+          <div className="flex items-center justify-between h-9 px-1 animate-fade-in">
+            {/* Left side: Cancel & Select All */}
+            <div className="flex items-center space-x-3">
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+                onClick={() => {
+                  setIsSelectionMode(false);
+                  setSelectedIds(new Set());
+                }}
+                className="flex items-center justify-center p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
+                title="Cancel selection"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => {
+                  const currentVisible = conversations.filter(c => {
+                    if (optimisticDeletedIds.has(c.id)) return false;
+                    
+                    if (searchQuery.trim()) {
+                      const title = (c.title || '').toLowerCase();
+                      const username = (c.username || '').toLowerCase();
+                      const query = searchQuery.toLowerCase();
+                      if (!title.includes(query) && !username.includes(query)) return false;
+                    }
+
+                    if (searchFilter === 'all') return true;
+                    if (searchFilter === 'users') return c.type === 'private';
+                    if (searchFilter === 'groups') return c.type === 'group' || c.type === 'supergroup';
+                    if (searchFilter === 'channels') return c.type === 'channel';
+                    return true;
+                  });
+
+                  const visibleIds = currentVisible.map(c => c.id);
+                  const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+
+                  if (allSelected) {
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      visibleIds.forEach(id => next.delete(id));
+                      return next;
+                    });
+                  } else {
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      visibleIds.forEach(id => next.add(id));
+                      return next;
+                    });
+                  }
+                }}
+                className="text-[13px] font-bold text-[#3390ec] hover:text-[#2879c9] transition-colors uppercase tracking-wide"
+              >
+                {(() => {
+                  const currentVisible = conversations.filter(c => {
+                    if (optimisticDeletedIds.has(c.id)) return false;
+                    
+                    if (searchQuery.trim()) {
+                      const title = (c.title || '').toLowerCase();
+                      const username = (c.username || '').toLowerCase();
+                      const query = searchQuery.toLowerCase();
+                      if (!title.includes(query) && !username.includes(query)) return false;
+                    }
+
+                    if (searchFilter === 'all') return true;
+                    if (searchFilter === 'users') return c.type === 'private';
+                    if (searchFilter === 'groups') return c.type === 'group' || c.type === 'supergroup';
+                    if (searchFilter === 'channels') return c.type === 'channel';
+                    return true;
+                  });
+                  
+                  const visibleIds = currentVisible.map(c => c.id);
+                  const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+                  return allSelected ? 'None' : 'All';
+                })()}
+              </button>
+            </div>
+
+            {/* Center: Selected Count */}
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+              {selectedIds.size} selected
+            </span>
+
+            {/* Right side: Delete button */}
+            <button
+              disabled={selectedIds.size === 0}
+              onClick={() => setBulkDeleteModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-[#e53935] hover:bg-[#d32f2f] disabled:bg-gray-200 dark:disabled:bg-[#2c2c2c] disabled:text-gray-400 dark:disabled:text-gray-600 text-white font-bold rounded-lg transition-all uppercase text-[12px] tracking-wide disabled:opacity-50"
+            >
+              <span>Delete</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="xl:hidden p-2 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-all"
+                title="Back to Accounts"
+              >
+                <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            {isSearching && (
-              <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
-                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+            <div className="relative group flex-1">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-blue-600' : 'text-gray-400 dark:text-gray-500'}`} />
               </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)} // Delay to allow filter clicks
+                disabled={!isConnected}
+                autoComplete="no-autofill-search"
+                spellCheck={false}
+                name="search-query-field"
+                placeholder={isConnected ? "Search chats..." : "Connect account..."}
+                className="w-full pl-9 pr-9 py-2 bg-gray-100 dark:bg-white/5 border border-transparent focus:border-blue-600 dark:focus:border-blue-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-all outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {isSearching && (
+                <div className="absolute inset-y-0 right-8 pr-3 flex items-center">
+                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                </div>
+              )}
+            </div>
+            {isConnected && conversations.length > 0 && (
+              <button
+                onClick={() => {
+                  setIsSelectionMode(!isSelectionMode);
+                  setSelectedIds(new Set());
+                }}
+                className={`p-2 rounded-xl border transition-all shrink-0 ${
+                  isSelectionMode 
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-md' 
+                    : 'bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10 dark:text-gray-400'
+                }`}
+                title="Bulk Edit Chats"
+              >
+                <CheckSquare className="w-4.5 h-4.5" />
+              </button>
             )}
           </div>
-        </div>
+        )}
 
         {/* Global Search Filters */}
         {(searchQuery.trim() || isSearchFocused || searchFilter !== 'all') && (
@@ -301,6 +424,7 @@ export default function ConversationList({
               // I will follow the user's request: only show "Your Chats" section if "All" is selected OR if it matches.
               
               const localMatches = conversations.filter(conv => {
+                if (optimisticDeletedIds.has(conv.id)) return false;
                 const title = (conv.title || '').toLowerCase();
                 const username = (conv.username || '').toLowerCase();
                 const query = searchQuery.toLowerCase();
@@ -319,22 +443,61 @@ export default function ConversationList({
 
               if (localMatches.length === 0) return null;
 
+              const sortedLocalMatches = [...localMatches].sort((a, b) => {
+                const aPinned = a.is_pinned ? 1 : 0;
+                const bPinned = b.is_pinned ? 1 : 0;
+                if (aPinned !== bPinned) return bPinned - aPinned;
+                const aTime = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
+                const bTime = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
+                return bTime - aTime;
+              });
+
               return (
                 <>
                   <div className="px-4 py-2 text-[11px] font-bold text-blue-600 dark:text-blue-500 uppercase tracking-widest bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
                     Your Chats
                   </div>
-                  {localMatches.map(conv => (
-                    <div
-                      key={conv.id}
-                      onClick={() => {
-                        onConversationSelect(conv);
-                        setSearchQuery('');
-                      }}
-                      className={`flex items-center px-3 py-2.5 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5 last:border-0 ${
-                        currentConversation?.id === conv.id ? 'bg-blue-50 dark:bg-blue-500/10' : ''
-                      }`}
-                    >
+                  {sortedLocalMatches.map(conv => {
+                    const isActive = currentConversation?.id === conv.id;
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => {
+                          if (isSelectionMode) {
+                            toggleSelect(conv.id);
+                          } else {
+                            onConversationSelect(conv);
+                            setSearchQuery('');
+                          }
+                        }}
+                        className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group border-l-4 border-b border-gray-50 dark:border-white/5 last:border-0 ${isActive
+                          ? 'bg-blue-600 border-l-blue-600 shadow-inner'
+                          : conv.is_pinned
+                            ? 'bg-gray-50/70 dark:bg-white/[0.04] border-l-blue-500 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                            : 'border-l-transparent hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                          }`}
+                      >
+                      {isSelectionMode && (
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(conv.id);
+                          }}
+                          className="pr-2 pl-1 flex-shrink-0"
+                        >
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                            selectedIds.has(conv.id)
+                              ? 'bg-blue-600 border-blue-600 text-white scale-110'
+                              : 'border-gray-300 dark:border-white/20 bg-transparent'
+                          }`}>
+                            {selectedIds.has(conv.id) && (
+                              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <PeerAvatar
                         accountId={accountId}
                         peerId={conv.telegram_peer_id!}
@@ -350,7 +513,8 @@ export default function ConversationList({
                         </p>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </>
               );
             })()}
@@ -474,6 +638,7 @@ export default function ConversationList({
           /* Normal Conversations View */
           (() => {
             const filteredConversations = conversations.filter(conv => {
+              if (optimisticDeletedIds.has(conv.id)) return false;
               if (searchFilter === 'all') return true;
               if (searchFilter === 'users') return conv.type === 'private';
               if (searchFilter === 'groups') return conv.type === 'group' || conv.type === 'supergroup';
@@ -492,7 +657,16 @@ export default function ConversationList({
               );
             }
 
-            return filteredConversations.map((conversation) => {
+            const sortedConversations = [...filteredConversations].sort((a, b) => {
+              const aPinned = a.is_pinned ? 1 : 0;
+              const bPinned = b.is_pinned ? 1 : 0;
+              if (aPinned !== bPinned) return bPinned - aPinned;
+              const aTime = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
+              const bTime = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
+              return bTime - aTime;
+            });
+
+            return sortedConversations.map((conversation) => {
               const isActive = currentConversation?.id === conversation.id;
               const unread = unreadCounts[conversation.id] || 0;
               const lastPreview = getLastMessagePreview(conversation);
@@ -502,10 +676,17 @@ export default function ConversationList({
               return (
                 <div
                   key={conversation.id}
-                  onClick={() => onConversationSelect(conversation)}
+                  onClick={() => {
+                    if (isSelectionMode) {
+                      toggleSelect(conversation.id);
+                    } else {
+                      onConversationSelect(conversation);
+                    }
+                  }}
                   onContextMenu={(e) => {
+                    if (isSelectionMode) return;
                     e.preventDefault();
-                    const menuHeight = 110; // Approximate menu height in pixels
+                    const menuHeight = 145; // Adjusted for Pin option
                     const menuWidth = 208;  // w-52 is 13rem = 208px
                     
                     let y = e.clientY;
@@ -523,11 +704,34 @@ export default function ConversationList({
                     
                     setContextMenu({ conversation, x, y });
                   }}
-                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group ${isActive
-                    ? 'bg-blue-600 shadow-inner'
-                    : 'hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                  className={`flex items-center px-3 py-2.5 cursor-pointer transition-all duration-200 group border-l-4 ${isActive
+                    ? 'bg-blue-600 border-l-blue-600 shadow-inner'
+                    : conversation.is_pinned
+                      ? 'bg-gray-50/70 dark:bg-white/[0.04] border-l-blue-500 hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
+                      : 'border-l-transparent hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark'
                     }`}
                 >
+                  {isSelectionMode && (
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(conversation.id);
+                      }}
+                      className="pr-2 pl-1 flex-shrink-0"
+                    >
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                        selectedIds.has(conversation.id)
+                          ? 'bg-blue-600 border-blue-600 text-white scale-110'
+                          : 'border-gray-300 dark:border-white/20 bg-transparent'
+                      }`}>
+                        {selectedIds.has(conversation.id) && (
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {/* Avatar */}
                   <PeerAvatar
                     accountId={accountId}
@@ -565,6 +769,9 @@ export default function ConversationList({
                             )}
                           </div>
                         )}
+                        {conversation.is_pinned && (
+                          <Pin className={`w-3.5 h-3.5 rotate-45 ${isActive ? 'text-blue-100' : 'text-blue-500'}`} />
+                        )}
                         {conversation.is_muted && (
                           <BellOff className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`} />
                         )}
@@ -601,10 +808,40 @@ export default function ConversationList({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Pin/Unpin */}
+          <button
+            onClick={async () => {
+              const conv = contextMenu.conversation;
+              try {
+                await telegramAPI.togglePinConversation(conv.id);
+                if (onConversationCreated) {
+                  await onConversationCreated();
+                }
+              } catch (e) {
+                console.error("Pin toggle failed:", e);
+              }
+              setContextMenu(null);
+            }}
+            className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          >
+            <Pin className="w-[18px] h-[18px] text-gray-500 rotate-45" />
+            <span className="text-[15px]">{contextMenu.conversation.is_pinned ? 'Unpin from top' : 'Pin to top'}</span>
+          </button>
+
+          <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
+
           {/* Mute/Unmute */}
           <button
-            onClick={() => {
-              // Trigger mute logic if available, for now just placeholder as per logic in main window
+            onClick={async () => {
+              const conv = contextMenu.conversation;
+              try {
+                await telegramAPI.toggleMute(conv.id);
+                if (onConversationCreated) {
+                  await onConversationCreated();
+                }
+              } catch (e) {
+                console.error("Mute toggle failed:", e);
+              }
               setContextMenu(null);
             }}
             className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
@@ -629,54 +866,124 @@ export default function ConversationList({
         </div>
       )}
 
+
+
+      {/* Modern Bulk Deletion Modal */}
+      {bulkDeleteModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-[0.5px] animate-fade-in">
+          <div className="bg-white dark:bg-[#212121] rounded-2xl shadow-xl w-full max-w-[320px] overflow-hidden animate-scale-in border border-gray-100 dark:border-white/5">
+            <div className="p-6">
+              <h3 className="text-[18px] font-medium text-gray-900 dark:text-white mb-2.5">
+                Delete {selectedIds.size} {selectedIds.size === 1 ? 'chat' : 'chats'}?
+              </h3>
+              <p className="text-[#707579] dark:text-[#aaaaaa] text-[14.5px] leading-relaxed mb-6">
+                Are you sure you want to delete and leave {selectedIds.size === 1 ? 'this chat' : 'these chats'}? All message history will be lost.
+              </p>
+
+              <div className="flex items-center justify-end space-x-1 mt-2">
+                <button
+                  onClick={() => setBulkDeleteModalOpen(false)}
+                  className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-bold rounded-lg transition-colors uppercase text-sm tracking-wide bg-transparent border-0 outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const idsToDelete = Array.from(selectedIds);
+                      
+                      // Optimistically hide them immediately
+                      setOptimisticDeletedIds(prev => {
+                        const next = new Set(prev);
+                        idsToDelete.forEach(id => next.add(id));
+                        return next;
+                      });
+
+                      setSelectedIds(new Set());
+                      setIsSelectionMode(false);
+                      setBulkDeleteModalOpen(false);
+
+                      // Run the deletion in background
+                      telegramAPI.bulkDeleteConversations(idsToDelete).catch(e => {
+                        console.error("Bulk deletion failed:", e);
+                        // Revert optimistic delete if it failed
+                        setOptimisticDeletedIds(prev => {
+                          const next = new Set(prev);
+                          idsToDelete.forEach(id => next.delete(id));
+                          return next;
+                        });
+                      });
+                    } catch (e) {
+                      console.error("Bulk deletion click error:", e);
+                    }
+                  }}
+                  className="px-4 py-2 text-[#e53935] hover:bg-[#e53935]/10 font-bold rounded-lg transition-colors uppercase text-sm tracking-wide bg-transparent border-0 outline-none"
+                >
+                  Delete All
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modern Deletion Modal (Same template as single message delete) */}
       {deleteModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 animate-fade-in">
-          <div className="bg-white dark:bg-[#212121] rounded-xl shadow-xl w-full max-w-[320px] overflow-hidden animate-scale-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-[0.5px] animate-fade-in">
+          <div className="bg-white dark:bg-[#212121] rounded-2xl shadow-xl w-full max-w-[320px] overflow-hidden animate-scale-in border border-gray-100 dark:border-white/5">
             <div className="p-6">
               {(() => {
                 const chatToDelete = conversations.find(c => c.id === deleteModal.conversationId);
                 const isGroup = chatToDelete?.type === 'group' || chatToDelete?.type === 'supergroup';
                 const isChannel = chatToDelete?.type === 'channel';
 
-                let title = 'Delete Chat';
-                let message = 'Are you sure you want to delete this chat? This cannot be undone.';
+                let title = 'Delete Chat?';
+                let message = 'Are you sure you want to delete this chat? All message history will be lost.';
                 let confirmText = 'Delete';
 
                 if (isGroup) {
-                  title = 'Leave Group';
+                  title = 'Leave Group?';
                   message = 'Are you sure you want to leave this group? You will no longer receive messages from it.';
                   confirmText = 'Leave';
                 } else if (isChannel) {
-                  title = 'Leave Channel';
+                  title = 'Leave Channel?';
                   message = 'Are you sure you want to leave this channel? You will no longer receive updates.';
                   confirmText = 'Leave';
                 }
 
                 return (
                   <>
-                    <h3 className="text-[19px] font-medium text-gray-900 dark:text-white mb-2">
+                    <h3 className="text-[18px] font-medium text-gray-900 dark:text-white mb-2.5">
                       {title}
                     </h3>
-                    <p className="text-gray-600 dark:text-gray-300 text-[15px] mb-5">
+                    <p className="text-[#707579] dark:text-[#aaaaaa] text-[14.5px] leading-relaxed mb-6">
                       {message}
                     </p>
 
-                    <div className="flex items-center justify-end space-x-2 mt-2">
+                    <div className="flex items-center justify-end space-x-1 mt-2">
                       <button
                         onClick={() => setDeleteModal({ isOpen: false, conversationId: null })}
-                        className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
+                        className="px-4 py-2 text-[#3390ec] hover:bg-[#3390ec]/10 font-bold rounded-lg transition-colors uppercase text-sm tracking-wide bg-transparent border-0 outline-none"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={() => {
-                          if (deleteModal.conversationId && onDeleteConversation) {
-                            onDeleteConversation(deleteModal.conversationId);
+                          const id = deleteModal.conversationId;
+                          if (id) {
+                            // Optimistically hide immediately
+                            setOptimisticDeletedIds(prev => {
+                              const next = new Set(prev);
+                              next.add(id);
+                              return next;
+                            });
+                            if (onDeleteConversation) {
+                              onDeleteConversation(id);
+                            }
                           }
                           setDeleteModal({ isOpen: false, conversationId: null });
                         }}
-                        className="px-4 py-2 text-[#e53935] hover:bg-[#e53935]/10 font-medium rounded-md transition-colors uppercase text-sm tracking-wide"
+                        className="px-4 py-2 text-[#e53935] hover:bg-[#e53935]/10 font-bold rounded-lg transition-colors uppercase text-sm tracking-wide bg-transparent border-0 outline-none"
                       >
                         {confirmText}
                       </button>
