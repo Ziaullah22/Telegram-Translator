@@ -175,6 +175,7 @@ export default function ConversationList({
         username: user.username,
         type: targetType as any,
         is_hidden: conversation.is_hidden,
+        can_post: conversation.can_post !== undefined ? conversation.can_post : true,
       } as TelegramChat);
 
       // Refresh list in background
@@ -605,12 +606,17 @@ export default function ConversationList({
                   <div
                     key={msg.id}
                     onClick={() => {
-                      onConversationSelect({
-                        id: msg.conversation_id,
-                        title: msg.conversation_title,
-                        type: msg.conversation_type as any,
-                        telegram_account_id: msg.telegram_account_id
-                      } as any);
+                      const fullConv = conversations.find(c => c.id === msg.conversation_id);
+                      if (fullConv) {
+                        onConversationSelect(fullConv);
+                      } else {
+                        onConversationSelect({
+                          id: msg.conversation_id,
+                          title: msg.conversation_title,
+                          type: msg.conversation_type as any,
+                          telegram_account_id: msg.telegram_account_id
+                        } as any);
+                      }
                       setSearchQuery('');
                     }}
                     className="flex flex-col px-4 py-3 cursor-pointer hover:bg-telegram-hover-light dark:hover:bg-telegram-hover-dark transition-colors border-b border-gray-50 dark:border-white/5"

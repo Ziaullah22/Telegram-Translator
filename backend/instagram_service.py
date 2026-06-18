@@ -2386,9 +2386,6 @@ class InstagramService:
         lines = proxy_input.strip().split('\n')
         results = {"success": 0, "failed": 0}
         
-        # 1. Clear old global pool (or we could append, but full refresh is cleaner for rebalancing)
-        await db.execute("DELETE FROM instagram_global_proxies")
-
         for line in lines:
             if not line.strip(): continue
             try:
@@ -2400,6 +2397,9 @@ class InstagramService:
                 await db.execute("""
                     INSERT INTO instagram_global_proxies (host, port, username, password, proxy_type) 
                     VALUES ($1, $2, $3, $4, 'http')
+                    ON CONFLICT (host, port) DO UPDATE SET
+                        username = EXCLUDED.username,
+                        password = EXCLUDED.password
                 """, p_data['host'], p_data['port'], p_data['user'], p_data['pass'])
                 results["success"] += 1
             except Exception as e:
@@ -2414,9 +2414,10 @@ class InstagramService:
 
     async def rebalance_global_proxies(self):
         """
-        🚀 THE BALANCING ENGINE: Redistributes global proxies across all users.
+        🚀 THE BALANCING ENGINE: Incremental sync of global proxies to users.
+        Does not delete existing proxy relations to avoid resetting active connections.
         """
-        logger.info("⚖️ Starting Global Proxy Rebalance...")
+        logger.info("⚖️ Starting Global Proxy Rebalance (Sync/Append Mode)...")
         
         # 1. Get all active users and all global proxies
         users = await db.fetch("SELECT id FROM users WHERE is_active = TRUE")
@@ -2426,42 +2427,29 @@ class InstagramService:
             logger.warning("⚖️ Rebalance skipped: No users or no global proxies found.")
             return
 
-        # 2. Clear ONLY admin-assigned proxies for all users
-        # This keeps user-private proxies safe!
-        await db.execute("DELETE FROM instagram_proxies WHERE is_admin_assigned = TRUE")
+        # 2. Incremental distribution: Insert only missing proxies for each user
+        for user in users:
+            user_id = user['id']
+            # Find which global_proxy_ids are already assigned to this user
+            assigned_rows = await db.fetch(
+                "SELECT global_proxy_id FROM instagram_proxies WHERE user_id = $1 AND is_admin_assigned = TRUE AND global_proxy_id IS NOT NULL",
+                user_id
+            )
+            assigned_global_ids = {r['global_proxy_id'] for r in assigned_rows}
+            
+            # Find which global proxies are missing for this user
+            for gp in global_proxies:
+                if gp['id'] not in assigned_global_ids:
+                    await db.execute("""
+                        INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type, global_proxy_id, is_admin_assigned)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+                    """, user_id, gp['host'], gp['port'], gp['username'], gp['password'], gp['proxy_type'], gp['id'])
 
-        # 3. Perform Round-Robin Distribution
-        # We handle two cases to ensure maximum coverage:
-        # Case A: More proxies than users (Distribute all proxies so users get multiple)
-        # Case B: More users than proxies (Share proxies so every user has at least one)
-        
-        if len(global_proxies) >= len(users):
-            # Every global proxy gets assigned to a user in a rotating cycle.
-            for i, gp in enumerate(global_proxies):
-                assigned_user = users[i % len(users)]
-                user_id = assigned_user['id']
-                
-                await db.execute("""
-                    INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type, global_proxy_id, is_admin_assigned)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-                """, user_id, gp['host'], gp['port'], gp['username'], gp['password'], gp['proxy_type'], gp['id'])
-        else:
-            # Every user gets assigned a global proxy in a rotating cycle.
-            for j, user in enumerate(users):
-                gp = global_proxies[j % len(global_proxies)]
-                user_id = user['id']
-                
-                await db.execute("""
-                    INSERT INTO instagram_proxies (user_id, host, port, username, password, proxy_type, global_proxy_id, is_admin_assigned)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-                """, user_id, gp['host'], gp['port'], gp['username'], gp['password'], gp['proxy_type'], gp['id'])
-
-        # 4. Final Safety: Trigger auto-rescue for ALL users
-        # This ensures all accounts pick up their newly assigned proxies
+        # 3. Final Safety: Trigger auto-rescue for ALL users (Instagram only)
         for user in users:
             await self.auto_rescue_user_accounts(user['id'])
             
-        logger.info(f"✅ Rebalanced {len(global_proxies)} proxies across {len(users)} users.")
+        logger.info(f"✅ Rebalanced and auto-rescued Instagram proxies for {len(users)} users.")
 
     async def assign_global_proxies_to_user(self, user_id: int):
         """

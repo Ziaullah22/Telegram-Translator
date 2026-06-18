@@ -53,6 +53,8 @@ class TelegramAccountResponse(BaseModel):
     last_used: Optional[datetime]
     is_connected: bool = False
     unread_count: int = 0
+    proxy_id: Optional[int] = None
+    proxy: Optional[str] = None
 
 class TelegramAccountUpdate(BaseModel):
     account_name: Optional[str] = None
@@ -62,6 +64,14 @@ class TelegramAccountUpdate(BaseModel):
     is_active: Optional[bool] = None
     translation_enabled: Optional[bool] = None
     notifications_enabled: Optional[bool] = None
+    proxy_id: Optional[int] = None
+    proxy: Optional[str] = None
+
+class ChannelCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    about: Optional[str] = ""
+    is_public: bool = False
+    username: Optional[str] = None
 
 # --- Conversation & Message Models ---
 # Enumeration of supported Telegram conversation types
@@ -86,6 +96,7 @@ class ConversationResponse(BaseModel):
     is_hidden: bool = False
     is_muted: bool = False
     is_pinned: bool = False
+    can_post: bool = True
 
 class MessageType(str, Enum):
     text = "text"

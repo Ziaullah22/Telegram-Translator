@@ -2058,7 +2058,7 @@ export default function ChatWindow({
                     Join {currentConversation.type === 'channel' ? 'Channel' : 'Group'}
                   </button>
                 </div>
-              ) : currentConversation?.type === 'channel' ? (
+              ) : currentConversation?.type === 'channel' && currentConversation?.can_post === false ? (
                 // --- INPUT AREA: CHANNEL (READ-ONLY) ---
                 <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
                   <button

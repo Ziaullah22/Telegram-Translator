@@ -248,10 +248,28 @@ async def lifespan(app: FastAPI):
         -- Pinning support
         ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
 
+        -- Channel post rights support
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS can_post BOOLEAN DEFAULT TRUE;
+
         -- Device Info fingerprinting support
         ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS device_info JSONB;
+
+        -- Proxy support for Telegram accounts
+        ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS proxy_id BIGINT REFERENCES instagram_proxies(id) ON DELETE SET NULL;
+        ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS proxy TEXT;
+
+        -- Unique constraint for global proxies to support conflict resolution (clean duplicates first)
+        DELETE FROM instagram_global_proxies a USING instagram_global_proxies b 
+        WHERE a.id < b.id AND a.host = b.host AND a.port = b.port;
+        
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_uq_global_proxies_host_port ON instagram_global_proxies(host, port);
+
+        -- Fix: reset can_post=TRUE for ALL channel conversations so the next dialog sync
+        -- can correctly determine posting rights using the improved logic.
+        -- Previously the creator check was unreliable and set many owned channels to FALSE.
+        UPDATE conversations SET can_post = TRUE WHERE type = 'channel';
         """)
-        logger.info("Database migration (Partial Unique Indexes, Pinning, and Device Info) completed")
+        logger.info("Database migration (Partial Unique Indexes, Pinning, Device Info, and Proxy Support) completed")
     except Exception as e:
         logger.error(f"Migration error: {e}")
     
@@ -312,15 +330,16 @@ async def lifespan(app: FastAPI):
 
                 conversation_id = await db.fetchval(
                     """
-                    INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, can_post)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING id
                     """,
                     account_id,
                     peer_id,
                     peer_title,
                     message_data.get('conversation_type', 'private'),
-                    peer_username
+                    peer_username,
+                    message_data.get('can_post', True)
                 )
             else:
                 conversation_id = conversation['id']

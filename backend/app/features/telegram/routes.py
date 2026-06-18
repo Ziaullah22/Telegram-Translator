@@ -13,6 +13,7 @@ from models import (
     MessageSend,
     UserSearchResult,
     ConversationCreate,
+    ChannelCreate,
 )
 from telethon_service import telethon_service
 from translation_service import translation_service
@@ -233,6 +234,7 @@ async def get_accounts(current_user = Depends(get_current_user)):
         SELECT ta.id, ta.account_name, ta.display_name, ta.is_active,
                ta.source_language, ta.target_language, ta.translation_enabled,
                ta.notifications_enabled, ta.created_at, ta.last_used,
+               ta.proxy_id, ta.proxy,
                (
                    SELECT COUNT(*) 
                    FROM messages m
@@ -263,7 +265,9 @@ async def get_accounts(current_user = Depends(get_current_user)):
             "last_used": account['last_used'],
             "is_connected": is_connected,
             "unread_count": account['total_unread'] or 0,
-            "notifications_enabled": account['notifications_enabled'] if 'notifications_enabled' in account else True
+            "notifications_enabled": account['notifications_enabled'] if 'notifications_enabled' in account else True,
+            "proxy_id": account['proxy_id'],
+            "proxy": account['proxy']
         })
 
     return result
@@ -351,7 +355,7 @@ async def register_session_account(
     app_hash = app_data['app_hash']
     
     existing = await db.fetchrow(
-        "SELECT id, is_active FROM telegram_accounts WHERE user_id = $1 AND account_name = $2",
+        "SELECT id, is_active, proxy_id, proxy FROM telegram_accounts WHERE user_id = $1 AND account_name = $2",
         user_id,
         account_name,
     )
@@ -361,6 +365,23 @@ async def register_session_account(
         
     tg_username = app_data.get('username')
     
+    # Assign a random proxy if none is currently assigned
+    proxy_id = existing['proxy_id'] if existing else None
+    proxy_str = existing['proxy'] if existing else None
+    
+    if not proxy_id:
+        proxy_rows = await db.fetch(
+            "SELECT id, host, port, username, password FROM instagram_proxies WHERE user_id = $1 ORDER BY id ASC",
+            user_id
+        )
+        if proxy_rows:
+            import random
+            p = random.choice(proxy_rows)
+            proxy_id = p['id']
+            proxy_str = f"{p['host']}:{p['port']}"
+            if p['username']:
+                proxy_str += f":{p['username']}:{p['password']}"
+
     if existing:
         account_id = existing['id']
         await db.execute(
@@ -373,8 +394,10 @@ async def register_session_account(
                 app_id = $4,
                 app_hash = $5,
                 username = $6,
-                last_used = NULL
-            WHERE id = $7
+                last_used = NULL,
+                proxy_id = $7,
+                proxy = $8
+            WHERE id = $9
             """,
             display_name,
             source_language,
@@ -382,6 +405,8 @@ async def register_session_account(
             app_id,
             app_hash,
             tg_username,
+            proxy_id,
+            proxy_str,
             account_id,
         )
     else:
@@ -391,8 +416,8 @@ async def register_session_account(
         account_id = await db.fetchval(
             """
             INSERT INTO telegram_accounts
-            (user_id, display_name, account_name, username, source_language, target_language, app_id, app_hash, device_info)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (user_id, display_name, account_name, username, source_language, target_language, app_id, app_hash, device_info, proxy_id, proxy)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             """,
             user_id,
@@ -404,6 +429,8 @@ async def register_session_account(
             app_id,
             app_hash,
             device_info,
+            proxy_id,
+            proxy_str,
         )
         
     # Move session file to sessions directory
@@ -533,7 +560,9 @@ async def create_account(
             "created_at": first_acc['created_at'],
             "last_used": first_acc['last_used'],
             "is_connected": False,
-            "notifications_enabled": first_acc['notifications_enabled'] if 'notifications_enabled' in first_acc else True
+            "notifications_enabled": first_acc['notifications_enabled'] if 'notifications_enabled' in first_acc else True,
+            "proxy_id": first_acc.get('proxy_id'),
+            "proxy": first_acc.get('proxy')
         }
         
     except Exception as e:
@@ -703,6 +732,44 @@ async def connect_account(
         )
 
 
+@router.post("/accounts/{account_id}/channels")
+async def create_channel(
+    account_id: int,
+    channel_data: ChannelCreate,
+    current_user = Depends(get_current_user),
+):
+    account = await db.fetchrow(
+        "SELECT * FROM telegram_accounts WHERE id = $1 AND user_id = $2",
+        account_id,
+        current_user.user_id,
+    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+
+    try:
+        result = await telethon_service.create_channel(
+            account_id=account_id,
+            title=channel_data.title,
+            about=channel_data.about,
+            is_public=channel_data.is_public,
+            username=channel_data.username,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error creating channel for account {account_id}: {e}")
+        err_msg = str(e)
+        err_msg_lower = err_msg.lower()
+        if "username" in err_msg_lower or "nobody is using" in err_msg_lower or "occupied" in err_msg_lower or "invalid" in err_msg_lower or "bad_request" in err_msg_lower:
+            err_msg = "This username is already taken. Please try another one."
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg,
+        )
+
+
 # Forcibly disconnect the active Telethon session for a specific account
 @router.post("/accounts/{account_id}/disconnect")
 async def disconnect_account(
@@ -784,6 +851,16 @@ async def update_account(
         values.append(update_data.notifications_enabled)
         param_count += 1
 
+    if update_data.proxy_id is not None:
+        update_fields.append(f"proxy_id = ${param_count}")
+        values.append(update_data.proxy_id)
+        param_count += 1
+
+    if update_data.proxy is not None:
+        update_fields.append(f"proxy = ${param_count}")
+        values.append(update_data.proxy)
+        param_count += 1
+
     if not update_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -813,7 +890,9 @@ async def update_account(
         "created_at": updated_account['created_at'],
         "last_used": updated_account['last_used'],
         "is_connected": is_connected,
-        "notifications_enabled": updated_account['notifications_enabled'] if 'notifications_enabled' in updated_account else True
+        "notifications_enabled": updated_account['notifications_enabled'] if 'notifications_enabled' in updated_account else True,
+        "proxy_id": updated_account['proxy_id'],
+        "proxy": updated_account['proxy']
     }
 
     # Notify frontend via WebSocket for instant UI updates
@@ -1045,6 +1124,7 @@ async def get_conversations(
             "is_muted": conv.get('is_muted', False),
             "is_hidden": conv.get('is_hidden', False),
             "is_pinned": conv.get('is_pinned', False),
+            "can_post": conv.get('can_post', True),
         })
 
     return result
@@ -1196,13 +1276,15 @@ async def create_conversation(
             "username": existing.get('username'),
             "is_hidden": existing.get('is_hidden', False),
             "is_muted": existing.get('is_muted', False),
+            "can_post": existing.get('can_post', True),
         }
 
     # Create new conversation
+    can_post_val = False if conversation_data.type == 'channel' else True
     conversation_id = await db.fetchval(
         """
-        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, invite_hash)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, invite_hash, can_post)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
         """,
         account_id,
@@ -1212,7 +1294,8 @@ async def create_conversation(
         conversation_data.username,
         conversation_data.is_hidden,
         False, # is_muted
-        conversation_data.invite_hash
+        conversation_data.invite_hash,
+        can_post_val
     )
 
     conversation = await db.fetchrow(
@@ -1235,6 +1318,7 @@ async def create_conversation(
         "username": conversation['username'],
         "is_hidden": conversation.get('is_hidden', False),
         "is_muted": conversation.get('is_muted', False),
+        "can_post": conversation.get('can_post', True),
     }
 
 @router.post("/conversations/{conversation_id}/join")
@@ -1262,15 +1346,17 @@ async def join_conversation(
             real_type = join_result.get('type')
             
             # If join_result has more info, update title as well to avoid "Unknown"
+            can_post_val = False if real_type == 'channel' else True
             await db.execute(
                 """
                 UPDATE conversations 
-                SET telegram_peer_id = $1, is_hidden = false, type = COALESCE($3, type)
+                SET telegram_peer_id = $1, is_hidden = false, type = COALESCE($3, type), can_post = $4
                 WHERE id = $2
                 """,
                 real_peer_id,
                 conversation_id,
-                real_type
+                real_type,
+                can_post_val
             )
             logger.info(f"Synchronized REAL peer_id {real_peer_id} and type {real_type} for conversation {conversation_id}")
         else:

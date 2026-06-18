@@ -28,6 +28,15 @@ async def check_30d_new_user_restriction(telegram_account_id: int, conversation_
     if not account_created_at:
         return
 
+    # Check if conversation is private
+    conv = await db.fetchrow(
+        "SELECT type FROM conversations WHERE id = $1",
+        conversation_id
+    )
+    if not conv or conv['type'] != 'private':
+        # Skip for groups, channels, supergroups, etc.
+        return
+
     from datetime import timezone, timedelta
     if account_created_at.tzinfo is None:
         account_created_at = account_created_at.replace(tzinfo=timezone.utc)
@@ -40,6 +49,15 @@ async def check_30d_new_user_restriction(telegram_account_id: int, conversation_
             conversation_id
         )
         if not has_outgoing:
+            # Check if there are any incoming messages (meaning they contacted us first)
+            has_incoming = await db.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND is_outgoing = false)",
+                conversation_id
+            )
+            if has_incoming:
+                # We are just replying to their message, not initiating contact. Allow.
+                return
+
             # Check if we initiated any other new conversations in the last 24 hours
             limit_time = now - timedelta(hours=24)
             initiated_count = await db.fetchval(

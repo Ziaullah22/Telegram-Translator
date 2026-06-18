@@ -15,6 +15,7 @@ import InstagramConversationList from './components/InstagramChat/InstagramConve
 import InstagramChatWindow from './components/InstagramChat/InstagramChatWindow';
 import AnalyticsPage from './components/Analytics/AnalyticsPage';
 import AddAccountModal from './components/Modals/AddAccountModal';
+import CreateChannelModal from './components/Modals/CreateChannelModal';
 import EditAccountModal from './components/Modals/EditAccountModal';
 import ConfirmModal from './components/Modals/ConfirmModal';
 import AutoResponderPage from './components/AutoResponder/AutoResponderPage';
@@ -82,6 +83,7 @@ function App() {
 
   // --- UI & INTERACTION STATE ---
   const [showAddAccountModal, setShowAddAccountModal] = useState(false); // Modal for uploading new TData
+  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false); // Modal for creating channel
   const [showEditAccountModal, setShowEditAccountModal] = useState(false); // Modal for changing account languages/names
   const [editingAccount, setEditingAccount] = useState<TelegramAccount | null>(null); // Reference for the account being edited
   const [unreadCounts, setUnreadCounts] = useState<Record<number, Record<number, number>>>({}); // Nest map: {AccountId: {ConversationId: count}}
@@ -676,10 +678,14 @@ function App() {
       const convs = await conversationsAPI.getConversations(accountId);
       setConversations(convs);
 
-      // Clear current conversation if it is no longer in the list (e.g. deleted in bulk)
+      // Sync currentConversation with fresh data so fields like can_post are always up to date
       if (currentConversationRef.current) {
-        const stillExists = convs.some(c => Number(c.id) === Number(currentConversationRef.current?.id));
-        if (!stillExists) {
+        const fresh = convs.find(c => Number(c.id) === Number(currentConversationRef.current?.id));
+        if (fresh) {
+          // Merge fresh data into currentConversation so live properties (can_post, is_muted etc) are current
+          setCurrentConversation(prev => prev ? { ...prev, ...fresh } : null);
+        } else if (!currentConversationRef.current.is_hidden) {
+          // It no longer exists and wasn't hidden (unjoined) — clear it
           setCurrentConversation(null);
           setMessages([]);
         }
@@ -1036,6 +1042,7 @@ function App() {
                   onDeleteInstagram={handleDeleteInstagram}
                   onAddInstagramAccount={handleAddInstagramAccount}
                   onManageProxies={() => setShowInstagramProxyModal(true)}
+                  onCreateChannel={() => setShowCreateChannelModal(true)}
                 />
               </div>
 
@@ -1127,6 +1134,16 @@ function App() {
         </Routes>
 
         <AddAccountModal isOpen={showAddAccountModal} onClose={() => setShowAddAccountModal(false)} onSuccess={loadAccounts} />
+        <CreateChannelModal
+          isOpen={showCreateChannelModal}
+          onClose={() => setShowCreateChannelModal(false)}
+          accountId={currentAccount?.id || 0}
+          onChannelCreated={() => {
+            if (currentAccount) {
+              loadConversations(currentAccount.id);
+            }
+          }}
+        />
         <EditAccountModal isOpen={showEditAccountModal} account={editingAccount} onClose={() => { setShowEditAccountModal(false); setEditingAccount(null); }} onSuccess={loadAccounts} />
         <ProfileModal 
           isOpen={showProfileModal} 

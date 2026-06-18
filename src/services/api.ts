@@ -102,6 +102,8 @@ export const telegramAPI = {
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
       notificationsEnabled: a.notifications_enabled !== false,
+      proxyId: a.proxy_id ?? undefined,
+      proxy: a.proxy ?? undefined,
     }));
   },
 
@@ -124,6 +126,8 @@ export const telegramAPI = {
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
       notificationsEnabled: a.notifications_enabled !== false,
+      proxyId: a.proxy_id ?? undefined,
+      proxy: a.proxy ?? undefined,
     } as TelegramAccount;
   },
 
@@ -162,6 +166,8 @@ export const telegramAPI = {
       isConnected: a.is_connected === true,
       unreadCount: a.unread_count,
       notificationsEnabled: a.notifications_enabled !== false,
+      proxyId: a.proxy_id ?? undefined,
+      proxy: a.proxy ?? undefined,
     } as TelegramAccount;
   },
 
@@ -190,8 +196,13 @@ export const telegramAPI = {
     return response.data;
   },
 
-  getPeerProfile: async (accountId: number, peerId: number): Promise<{ phone: string, bio: string }> => {
+  getPeerProfile: async (accountId: number, peerId: number): Promise<any> => {
     const response = await api.get(`/telegram/accounts/${accountId}/peers/${peerId}/profile`);
+    return response.data;
+  },
+
+  createChannel: async (accountId: number, data: { title: string; about?: string; is_public?: boolean; username?: string }): Promise<any> => {
+    const response = await api.post(`/telegram/accounts/${accountId}/channels`, data);
     return response.data;
   },
 
@@ -358,6 +369,7 @@ export const conversationsAPI = {
       is_muted: c.is_muted || false,
       is_hidden: c.is_hidden || false,
       is_pinned: c.is_pinned || false,
+      can_post: c.can_post !== undefined ? c.can_post : true,
       lastMessage: c.last_message ? {
         ...c.last_message,
         sender_user_id: c.last_message.sender_user_id,

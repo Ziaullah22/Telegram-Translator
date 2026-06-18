@@ -9,7 +9,7 @@
  * 4. Manage account settings (Profile, 2FA, Sessions)
  * 5. Display unread message counts per account
  */
-import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare, Eye, EyeOff } from 'lucide-react';
+import { Plus, Smartphone, Wifi, WifiOff, Pencil, Trash2, Bell, BellOff, User, Shield, Brain, Zap, Instagram, MessageSquare, Eye, EyeOff, Globe } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { aiService, AIStatus } from '../../services/aiService';
 import type { TelegramAccount, InstagramAccount } from '../../types';
@@ -42,6 +42,7 @@ interface SidebarProps {
   onDeleteInstagram: (account: InstagramAccount) => void;
   onAddInstagramAccount: () => void;
   onManageProxies: () => void;
+  onCreateChannel?: () => void;
 }
 
 export default function Sidebar({
@@ -70,6 +71,7 @@ export default function Sidebar({
   onDeleteInstagram,
   onAddInstagramAccount,
   onManageProxies,
+  onCreateChannel,
 }: SidebarProps) {
   const [aiStatus, setAiStatus] = useState<AIStatus>(aiService.getStatus().status);
   const [aiProgress, setAiProgress] = useState(aiService.getStatus().progress);
@@ -129,7 +131,7 @@ export default function Sidebar({
       </div>
 
       {currentPlatform === 'telegram' && (
-        <div className="p-3 border-b border-gray-100 dark:border-white/5">
+        <div className="p-3 border-b border-gray-100 dark:border-white/5 space-y-2">
           <button
             id="add-account-btn"
             onClick={onAddAccount}
@@ -138,6 +140,21 @@ export default function Sidebar({
             <Plus className="w-4 h-4" />
             <span>Add Telegram</span>
           </button>
+          {onCreateChannel && (
+            <button
+              id="create-channel-btn"
+              onClick={onCreateChannel}
+              disabled={!currentAccount?.isConnected}
+              className={`w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg transition-all duration-300 text-sm border font-medium ${
+                currentAccount?.isConnected
+                  ? 'bg-white hover:bg-gray-50 border-gray-200 dark:bg-transparent dark:border-white/10 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 shadow-sm'
+                  : 'bg-gray-100 border-transparent text-gray-400 dark:bg-white/5 dark:text-gray-500 cursor-not-allowed opacity-50'
+              }`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Channel</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -304,6 +321,11 @@ export default function Sidebar({
                           </span>
                         </div>
                         <div className="flex gap-1">
+                          {account.proxy && (
+                            <span className="p-1 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center" title={account.proxy}>
+                              <Globe className="w-3 h-3" />
+                            </span>
+                          )}
                           {account.notificationsEnabled === false && (
                             <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-1">
                               <BellOff className="w-2.5 h-2.5" />

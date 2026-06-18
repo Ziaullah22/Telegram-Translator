@@ -21,7 +21,7 @@ from telethon.sessions import SQLiteSession
 # Core wrapper class managing the connection lifecycle and cached entities for a single Telegram account
 class TelegramSession:
     # Initialize the session container with API credentials and rate limiting configurations
-    def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str, device_info: Optional[dict] = None):
+    def __init__(self, account_id: int, telegram_api_id: int, telegram_api_hash: str, session_filepath: str, device_info: Optional[dict] = None, proxy: Optional[dict] = None):
         self.account_id = account_id
         self.client: Optional[TelegramClient] = None
         self.telegram_api_id = telegram_api_id
@@ -39,6 +39,7 @@ class TelegramSession:
         self.is_connecting = False
         self.secret_chat_manager: Optional[SecretChatManager] = None
         self.device_info = device_info
+        self.proxy = proxy
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
@@ -72,6 +73,26 @@ class TelegramSession:
                     lang_code = self.device_info.get("lang_code", lang_code)
                     system_lang_code = self.device_info.get("system_lang_code", system_lang_code)
 
+                import socks
+                telethon_proxy = None
+                if self.proxy:
+                    proxy_type_str = self.proxy.get('proxy_type', 'http').lower()
+                    ptype = socks.HTTP
+                    if proxy_type_str == 'socks5':
+                        ptype = socks.SOCKS5
+                    elif proxy_type_str == 'socks4':
+                        ptype = socks.SOCKS4
+                    
+                    telethon_proxy = (
+                        ptype,
+                        self.proxy['host'],
+                        int(self.proxy['port']),
+                        False,
+                        self.proxy.get('username') or None,
+                        self.proxy.get('password') or None
+                    )
+                    logger.info(f"Connecting Telegram Client for account {self.account_id} via proxy: {self.proxy['host']}:{self.proxy['port']}")
+
                 self.client = TelegramClient(
                     session_id,
                     self.telegram_api_id,
@@ -80,7 +101,8 @@ class TelegramSession:
                     system_version=system_version,
                     app_version=app_version,
                     lang_code=lang_code,
-                    system_lang_code=system_lang_code
+                    system_lang_code=system_lang_code,
+                    proxy=telethon_proxy
                 )
 
                 # Max retries for "database is locked" errors on Windows
@@ -116,7 +138,8 @@ class TelegramSession:
                 
                 # Load existing secret chats from DB
                 try:
-                    secret_chats = await db.fetch(
+                    from database import db as _db_local
+                    secret_chats = await _db_local.fetch(
                         "SELECT peer_id, auth_key FROM telegram_secret_chats WHERE telegram_account_id = $1",
                         self.account_id
                     )
@@ -331,13 +354,36 @@ class TelegramSession:
                 elif not title:
                     title = "Unknown Chat"
 
+                can_post = True
+                if conv_type == 'channel':
+                    entity = dialog.entity
+                    is_creator = getattr(entity, 'creator', False)
+                    admin_rights = getattr(entity, 'admin_rights', None)
+                    # Check if admin rights include post_messages permission
+                    can_post_admin = False
+                    if admin_rights:
+                        can_post_admin = getattr(admin_rights, 'post_messages', False)
+                    # Check if user is banned from posting
+                    banned_rights = getattr(entity, 'banned_rights', None)
+                    is_banned = False
+                    if banned_rights:
+                        is_banned = getattr(banned_rights, 'send_messages', False)
+                    # A broadcast channel: can post only if creator or admin with post_messages right
+                    is_broadcast = getattr(entity, 'broadcast', False)
+                    if is_broadcast:
+                        can_post = is_creator or can_post_admin
+                    else:
+                        # Megagroup/supergroup: anyone can post unless banned
+                        can_post = not is_banned
+
                 result.append({
                     "peer_id": peer_id,
                     "title": title,
                     "username": username,
                     "type": conv_type,
                     "unread_count": dialog.unread_count,
-                    "last_message_date": dialog.date
+                    "last_message_date": dialog.date,
+                    "can_post": can_post
                 })
 
             return result
@@ -1313,7 +1359,7 @@ class TelethonService:
         if not session:
             # 2. Fetch account details to create session (including custom device fingerprint info)
             row = await db.fetchrow(
-                "SELECT app_id, app_hash, user_id, account_name, device_info FROM telegram_accounts WHERE id = $1",
+                "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
                 account_id
             )
 
@@ -1325,9 +1371,17 @@ class TelethonService:
             user_id = row['user_id']
             account_name = row['account_name']
             device_info = row['device_info']
+            proxy_id = row['proxy_id']
+
+            proxy_row = None
+            if proxy_id:
+                proxy_row = await db.fetchrow(
+                    "SELECT host, port, username, password, proxy_type FROM instagram_proxies WHERE id = $1",
+                    proxy_id
+                )
 
             session_file = f"sessions/{user_id}_{account_name}.session"
-            session = TelegramSession(account_id, app_id, app_hash, session_file, device_info=device_info)
+            session = TelegramSession(account_id, app_id, app_hash, session_file, device_info=device_info, proxy=proxy_row)
             self.sessions[account_id] = session
 
         # 3. Connect (TelegramSession handles locking and idempotency internally now)
@@ -1528,7 +1582,7 @@ class TelethonService:
                 
                 # Check if conversation already exists
                 existing = await db.fetchrow(
-                    "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                    "SELECT id, can_post FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
                     account_id,
                     peer_id
                 )
@@ -1537,16 +1591,30 @@ class TelethonService:
                     # Create conversation
                     await db.execute(
                         """
-                        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted)
-                        VALUES ($1, $2, $3, $4, $5, false, false)
+                        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, can_post)
+                        VALUES ($1, $2, $3, $4, $5, false, false, $6)
                         """,
                         account_id,
                         peer_id,
                         dialog['title'] or 'Unknown',
                         dialog['type'],
-                        dialog['username']
+                        dialog['username'],
+                        dialog.get('can_post', True)
                     )
                     logger.debug(f"Created new conversation record for peer {peer_id} ({dialog['title']})")
+                else:
+                    # Update can_post and details
+                    await db.execute(
+                        """
+                        UPDATE conversations SET can_post = $2, type = $3, title = $4, username = $5
+                        WHERE id = $1
+                        """,
+                        existing['id'],
+                        dialog.get('can_post', True),
+                        dialog['type'],
+                        dialog['title'] or 'Unknown',
+                        dialog['username']
+                    )
                 
                 # 3. Queue up history fetching for this peer (limit to 20 messages to be fast)
                 # fetch_and_save_history already spins up a background task
@@ -1682,6 +1750,7 @@ class TelethonService:
                     "sender_username": sender_info["username"],
                     "peer_title": peer_title,
                     "conversation_type": conversation_type,
+                    "can_post": getattr(chat, 'creator', False) or (getattr(chat, 'admin_rights', None) is not None) if conversation_type == "channel" else True,
                     "date": message.date,
                     "is_outgoing": message.out,
                     "is_read": not message.out, # Incoming is immediately marked read by send_read_acknowledge below
@@ -2227,13 +2296,30 @@ class TelethonService:
                     except Exception as pe:
                         logger.warning(f"Could not fetch participants for {peer_id}: {pe}")
                         
+                    invite_link = ""
+                    if getattr(entity, 'username', None):
+                        invite_link = f"https://t.me/{entity.username}"
+                    else:
+                        exported_invite = getattr(full.full_chat, 'exported_invite', None)
+                        if exported_invite:
+                            invite_link = getattr(exported_invite, 'link', '')
+                        if not invite_link:
+                            try:
+                                from telethon.tl.functions.messages import ExportChatInviteRequest
+                                exported = await session.client(ExportChatInviteRequest(peer=entity))
+                                if exported:
+                                    invite_link = getattr(exported, 'link', '')
+                            except Exception as ie:
+                                logger.warning(f"Could not export invite link for channel {peer_id}: {ie}")
+
                     return {
                         "id": entity.id,
                         "type": "channel" if hasattr(entity, 'broadcast') and entity.broadcast else "group",
                         "phone": "",
                         "bio": getattr(full.full_chat, 'about', '') or "",
                         "participants_count": count,
-                        "members": members
+                        "members": members,
+                        "invite_link": invite_link
                     }
                 else:
                     full = await session.client(GetFullChatRequest(entity.id))
@@ -2251,16 +2337,127 @@ class TelethonService:
                     except Exception as pe:
                         logger.warning(f"Could not fetch participants for {peer_id}: {pe}")
 
+                    invite_link = ""
+                    exported_invite = getattr(full.full_chat, 'exported_invite', None)
+                    if exported_invite:
+                        invite_link = getattr(exported_invite, 'link', '')
+                    if not invite_link:
+                        try:
+                            from telethon.tl.functions.messages import ExportChatInviteRequest
+                            exported = await session.client(ExportChatInviteRequest(peer=entity))
+                            if exported:
+                                invite_link = getattr(exported, 'link', '')
+                        except Exception as ie:
+                            logger.warning(f"Could not export invite link for chat {peer_id}: {ie}")
+
                     return {
                         "id": entity.id,
                         "type": "group",
                         "phone": "",
                         "bio": getattr(full.full_chat, 'about', '') or "",
                         "participants_count": count,
-                        "members": members
+                        "members": members,
+                        "invite_link": invite_link
                     }
         except Exception as e:
             logger.error(f"Error fetching peer profile for {peer_id}: {e}")
+            raise e
+
+    async def create_channel(self, account_id: int, title: str, about: str, is_public: bool = False, username: Optional[str] = None) -> dict:
+        """Create a new broadcast channel and return its details (including invite link)"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+
+        from telethon.tl.functions.channels import CreateChannelRequest
+        from telethon.tl.functions.messages import ExportChatInviteRequest
+
+        try:
+            # Create channel
+            updates = await session.client(CreateChannelRequest(
+                title=title,
+                about=about,
+                megagroup=False
+            ))
+            
+            if not updates or not updates.chats:
+                raise Exception("Failed to create channel: no chat info returned")
+
+            created_channel = updates.chats[0]
+            peer_id = int(f"-100{created_channel.id}")
+
+            # If public, set the username
+            if is_public and username:
+                from telethon.tl.functions.channels import UpdateUsernameRequest
+                clean_username = username.strip().replace("@", "")
+                try:
+                    await session.client(UpdateUsernameRequest(
+                        channel=created_channel,
+                        username=clean_username
+                    ))
+                    # Reload entity to get updated username
+                    created_channel = await session.client.get_entity(created_channel)
+                except Exception as ue:
+                    logger.error(f"Failed to set username '{clean_username}' for channel: {ue}")
+                    err_str = str(ue).lower()
+                    if "nobody is using this username" in err_str or "unacceptable" in err_str:
+                        friendly = "This username is already taken or unacceptable. Please try another one."
+                    else:
+                        from telethon.errors import RPCError
+                        if isinstance(ue, RPCError):
+                            err_msg = ue.message
+                            if err_msg == "USERNAME_OCCUPIED":
+                                friendly = "This username is already taken. Please try another one."
+                            elif err_msg == "USERNAME_INVALID":
+                                friendly = "This username is invalid. Use a-z, 0-9, and underscores (min 5 characters)."
+                            elif err_msg == "CHANNELS_ADMIN_PUBLIC_TOO_MUCH":
+                                friendly = "You have created too many public channels. Please delete one or make it private first."
+                            elif err_msg == "USERNAME_PURCHASE_AVAILABLE":
+                                friendly = "This username is only available for purchase on Fragment."
+                            else:
+                                friendly = ue.message or str(ue)
+                        else:
+                            friendly = str(ue)
+                    raise Exception(friendly)
+
+            username_val = getattr(created_channel, 'username', None) or ""
+
+            # Try to export / fetch invite link
+            invite_link = ""
+            if username_val:
+                invite_link = f"https://t.me/{username_val}"
+            else:
+                try:
+                    exported = await session.client(ExportChatInviteRequest(peer=created_channel))
+                    if exported:
+                        invite_link = getattr(exported, 'link', '')
+                except Exception as ie:
+                    logger.warning(f"Could not export invite link for new channel {peer_id}: {ie}")
+
+            # Insert into database conversations table so it appears in active chats
+            await db.execute(
+                """
+                INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, can_post)
+                VALUES ($1, $2, $3, $4, $5, FALSE, FALSE, TRUE)
+                ON CONFLICT (telegram_account_id, telegram_peer_id) WHERE telegram_peer_id != 0 
+                DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username, type = EXCLUDED.type, can_post = TRUE
+                """,
+                account_id,
+                peer_id,
+                title,
+                "channel",
+                username_val if username_val else None
+            )
+
+            return {
+                "peer_id": peer_id,
+                "title": title,
+                "username": username_val,
+                "type": "channel",
+                "invite_link": invite_link
+            }
+        except Exception as e:
+            logger.error(f"Error creating channel for account {account_id}: {e}")
             raise e
 
     async def send_reaction(self, account_id: int, peer_id: int, message_id: int, emoji: str):

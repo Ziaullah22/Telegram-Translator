@@ -16,6 +16,7 @@ interface PeerProfile {
     last_name: string;
     username: string;
   }>;
+  invite_link?: string;
 }
 
 interface ChatProfileModalProps {
@@ -195,6 +196,33 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
                     {displayBio}
                   </p>
                   <span className="block text-[13px] text-gray-400 mt-0.5">{chat.type === 'private' ? 'Bio' : 'Description'}</span>
+                </div>
+              )}
+
+              {/* Invite Link */}
+              {profile?.invite_link && (
+                <div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-[14px] text-[#3390ec] dark:text-[#5288c1] leading-relaxed font-medium break-all select-all flex-1">
+                      {profile.invite_link}
+                    </p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(profile.invite_link || '');
+                          setSuccessMessage('Invite link copied to clipboard!');
+                          setTimeout(() => setSuccessMessage(null), 2000);
+                        } catch (e) {
+                          console.error(e);
+                          alert('Failed to copy link');
+                        }
+                      }}
+                      className="text-[11px] px-2.5 py-1.5 bg-[#3390ec]/10 text-[#3390ec] dark:bg-[#5288c1]/10 dark:text-[#5288c1] rounded-lg hover:bg-[#3390ec]/20 dark:hover:bg-[#5288c1]/20 transition-colors whitespace-nowrap font-bold uppercase tracking-wider"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                  <span className="block text-[13px] text-gray-400 mt-0.5">Invite Link</span>
                 </div>
               )}
 

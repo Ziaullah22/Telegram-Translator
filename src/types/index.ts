@@ -25,6 +25,8 @@ export interface TelegramAccount {
   isConnected: boolean;
   unreadCount?: number;
   unreadTotal?: number;
+  proxyId?: number;
+  proxy?: string;
 }
 
 export interface TelegramMessage {
@@ -66,6 +68,7 @@ export interface TelegramChat {
   is_muted?: boolean;
   photo_url?: string;
   is_pinned?: boolean;
+  can_post?: boolean;
 }
 
 export interface TranslationResult {
