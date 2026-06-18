@@ -83,15 +83,18 @@ class TelegramSession:
                     elif proxy_type_str == 'socks4':
                         ptype = socks.SOCKS4
                     
+                    proxy_user = self.proxy.get('username') or None
+                    proxy_pass = self.proxy.get('password') or None
+                    
                     telethon_proxy = (
                         ptype,
                         self.proxy['host'],
                         int(self.proxy['port']),
-                        False,
-                        self.proxy.get('username') or None,
-                        self.proxy.get('password') or None
+                        True,  # rdns=True: let proxy resolve DNS (required for HTTP CONNECT proxies like Webshare)
+                        proxy_user,
+                        proxy_pass
                     )
-                    logger.info(f"Connecting Telegram Client for account {self.account_id} via proxy: {self.proxy['host']}:{self.proxy['port']}")
+                    logger.info(f"Connecting Telegram Client for account {self.account_id} via proxy: {self.proxy['host']}:{self.proxy['port']} (type={proxy_type_str}, auth={'yes' if proxy_user else 'no'})")
 
                 self.client = TelegramClient(
                     session_id,
