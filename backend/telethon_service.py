@@ -96,46 +96,53 @@ class TelegramSession:
                         _ph, _pp, _pu, _pw = proxy_host, proxy_port, proxy_user, proxy_pass
 
                         class _HTTPProxyTcpFull(ConnectionTcpFull):
-                            """Telethon connection that tunnels through an HTTP CONNECT proxy with auth."""
+                            """Telethon connection that tunnels through an HTTP CONNECT proxy with auth.
+                            Primary: asyncio-based CONNECT (works reliably on Linux, avoids PySocks 407 bug).
+                            Fallback: PySocks HTTP (works on Windows where IP whitelist is active).
+                            """
                             async def _connect(self, timeout=None, ssl=None):
                                 import base64
-                                # Open socket to proxy
-                                reader, writer = await asyncio.wait_for(
-                                    asyncio.open_connection(_ph, _pp),
-                                    timeout=timeout or 30
-                                )
-                                # Build CONNECT request — send auth upfront, no waiting for 407
-                                target = f"{self._ip}:{self._port}"
-                                req_lines = [
-                                    f"CONNECT {target} HTTP/1.1",
-                                    f"Host: {target}",
-                                    "Proxy-Connection: keep-alive",
-                                ]
-                                if _pu and _pw:
-                                    creds = base64.b64encode(f"{_pu}:{_pw}".encode("utf-8")).decode("ascii")
-                                    req_lines.append(f"Proxy-Authorization: Basic {creds}")
-                                req_lines.append("")  # blank line = end of headers
-                                req_lines.append("")
-                                writer.write("\r\n".join(req_lines).encode("utf-8"))
-                                await writer.drain()
-                                # Read proxy response
-                                resp = b""
-                                while b"\r\n\r\n" not in resp:
-                                    chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout or 30)
-                                    if not chunk:
-                                        break
-                                    resp += chunk
-                                status_line = resp.split(b"\r\n")[0].decode("utf-8", errors="replace")
-                                if "200" not in status_line:
-                                    writer.close()
-                                    raise ConnectionError(f"HTTP proxy CONNECT failed: {status_line}")
-                                # Tunnel established — give the streams to Telethon
-                                self._reader = reader
-                                self._writer = writer
-                                # Initialize Telethon's transport codec (required — same as parent _connect does)
-                                self._codec = self.packet_codec(self)
-                                self._init_conn()
-                                await self._writer.drain()
+                                _timeout = timeout or 30
+                                # --- PRIMARY: asyncio CONNECT tunnel (auth in first request) ---
+                                try:
+                                    reader, writer = await asyncio.wait_for(
+                                        asyncio.open_connection(_ph, _pp),
+                                        timeout=_timeout
+                                    )
+                                    target = f"{self._ip}:{self._port}"
+                                    req_lines = [
+                                        f"CONNECT {target} HTTP/1.1",
+                                        f"Host: {target}",
+                                        "Proxy-Connection: keep-alive",
+                                    ]
+                                    if _pu and _pw:
+                                        creds = base64.b64encode(f"{_pu}:{_pw}".encode("utf-8")).decode("ascii")
+                                        req_lines.append(f"Proxy-Authorization: Basic {creds}")
+                                    req_lines.extend(["", ""])
+                                    writer.write("\r\n".join(req_lines).encode("utf-8"))
+                                    await writer.drain()
+                                    resp = b""
+                                    while b"\r\n\r\n" not in resp:
+                                        chunk = await asyncio.wait_for(reader.read(4096), timeout=_timeout)
+                                        if not chunk:
+                                            break
+                                        resp += chunk
+                                    status_line = resp.split(b"\r\n")[0].decode("utf-8", errors="replace")
+                                    if "200" not in status_line:
+                                        writer.close()
+                                        raise ConnectionError(f"HTTP proxy CONNECT failed: {status_line}")
+                                    self._reader = reader
+                                    self._writer = writer
+                                    self._codec = self.packet_codec(self)
+                                    self._init_conn()
+                                    await self._writer.drain()
+                                    return  # success
+                                except Exception as asyncio_err:
+                                    logger.warning(f"HTTP asyncio CONNECT failed ({asyncio_err}), falling back to PySocks")
+                                # --- FALLBACK: PySocks HTTP (Windows IP-whitelisted proxies) ---
+                                import socks
+                                self._proxy = (socks.HTTP, _ph, _pp, True, _pu, _pw)
+                                await super()._connect(timeout=timeout, ssl=ssl)
 
                         custom_connection_class = _HTTPProxyTcpFull
 
@@ -1422,7 +1429,7 @@ class TelethonService:
         session = self.sessions.get(account_id)
         
         if not session:
-            # 2. Fetch account details to create session (including custom device fingerprint info)
+            # 2. Fetch account details to create session
             row = await db.fetchrow(
                 "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
                 account_id
@@ -1437,22 +1444,70 @@ class TelethonService:
             account_name = row['account_name']
             device_info = row['device_info']
             proxy_id = row['proxy_id']
+            user_id_for_proxies = user_id
+            session_file = f"sessions/{user_id}_{account_name}.session"
 
-            proxy_row = None
+            # Build ordered proxy list: [assigned proxy, ...other proxies, None (direct)]
+            proxy_candidates = []
+
             if proxy_id:
-                proxy_row = await db.fetchrow(
-                    "SELECT host, port, username, password, proxy_type FROM instagram_proxies WHERE id = $1",
+                assigned = await db.fetchrow(
+                    "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE id = $1",
                     proxy_id
                 )
+                if assigned:
+                    proxy_candidates.append(dict(assigned))
 
-            session_file = f"sessions/{user_id}_{account_name}.session"
-            session = TelegramSession(account_id, app_id, app_hash, session_file, device_info=device_info, proxy=proxy_row)
-            self.sessions[account_id] = session
+            # Add other proxies from the same user's pool as fallbacks
+            fallback_proxies = await db.fetch(
+                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 ORDER BY id",
+                user_id_for_proxies,
+                proxy_id or -1
+            )
+            for p in fallback_proxies:
+                proxy_candidates.append(dict(p))
 
-        # 3. Connect (TelegramSession handles locking and idempotency internally now)
-        connected = await session.connect()
+            # Always add direct (no proxy) as last resort
+            proxy_candidates.append(None)
+
+            # 3. Try each proxy candidate in order until one works
+            connected = False
+            for proxy_candidate in proxy_candidates:
+                proxy_label = f"{proxy_candidate['host']}:{proxy_candidate['port']}" if proxy_candidate else "direct (no proxy)"
+                try:
+                    # Remove stale session object between attempts
+                    if account_id in self.sessions:
+                        try:
+                            await self.sessions[account_id].disconnect()
+                        except Exception:
+                            pass
+                        del self.sessions[account_id]
+
+                    session = TelegramSession(
+                        account_id, app_id, app_hash, session_file,
+                        device_info=device_info,
+                        proxy=proxy_candidate
+                    )
+                    self.sessions[account_id] = session
+
+                    logger.info(f"Trying to connect account {account_id} via {proxy_label}")
+                    connected = await session.connect()
+                    if connected:
+                        if proxy_candidate and proxy_candidate.get('id') != proxy_id:
+                            logger.warning(f"Account {account_id} connected via fallback proxy {proxy_label}")
+                        elif not proxy_candidate:
+                            logger.warning(f"Account {account_id} connected via direct IP (all proxies failed)")
+                        break
+                    else:
+                        logger.warning(f"Account {account_id}: connect() returned False via {proxy_label}, trying next")
+                except Exception as e:
+                    logger.warning(f"Account {account_id}: failed via {proxy_label}: {e}, trying next")
+        else:
+            # Session already exists — just try connecting it
+            connected = await session.connect()
 
         if connected:
+            session = self.sessions.get(account_id)
             await self._setup_event_handlers(session)
             await db.execute(
                 "UPDATE telegram_accounts SET last_used = NOW() WHERE id = $1",
