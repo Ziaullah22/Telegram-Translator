@@ -75,37 +75,99 @@ class TelegramSession:
 
                 import socks
                 telethon_proxy = None
+                custom_connection_class = None
+
                 if self.proxy:
                     proxy_type_str = self.proxy.get('proxy_type', 'http').lower()
-                    ptype = socks.HTTP
-                    if proxy_type_str == 'socks5':
-                        ptype = socks.SOCKS5
-                    elif proxy_type_str == 'socks4':
-                        ptype = socks.SOCKS4
-                    
+                    proxy_host = self.proxy['host']
+                    proxy_port = int(self.proxy['port'])
                     proxy_user = self.proxy.get('username') or None
                     proxy_pass = self.proxy.get('password') or None
-                    
-                    telethon_proxy = (
-                        ptype,
-                        self.proxy['host'],
-                        int(self.proxy['port']),
-                        True,  # rdns=True: let proxy resolve DNS (required for HTTP CONNECT proxies like Webshare)
-                        proxy_user,
-                        proxy_pass
-                    )
-                    logger.info(f"Connecting Telegram Client for account {self.account_id} via proxy: {self.proxy['host']}:{self.proxy['port']} (type={proxy_type_str}, auth={'yes' if proxy_user else 'no'})")
 
-                self.client = TelegramClient(
-                    session_id,
-                    self.telegram_api_id,
-                    self.telegram_api_hash,
+                    logger.info(f"Connecting Telegram Client for account {self.account_id} via proxy: {proxy_host}:{proxy_port} (type={proxy_type_str}, auth={'yes' if proxy_user else 'no'})")
+
+                    if proxy_type_str == 'http':
+                        # PySocks HTTP proxy auth is broken on Linux — it sends auth only after a 407
+                        # challenge-response cycle that often fails. Instead, bypass PySocks entirely
+                        # and use a custom Telethon connection class that sends Proxy-Authorization
+                        # preemptively in the initial CONNECT request.
+                        from telethon.network.connection.tcpfull import ConnectionTcpFull
+
+                        _ph, _pp, _pu, _pw = proxy_host, proxy_port, proxy_user, proxy_pass
+
+                        class _HTTPProxyTcpFull(ConnectionTcpFull):
+                            """Telethon connection that tunnels through an HTTP CONNECT proxy with auth."""
+                            async def _connect(self, timeout=None, ssl=None):
+                                import base64
+                                # Open socket to proxy
+                                reader, writer = await asyncio.wait_for(
+                                    asyncio.open_connection(_ph, _pp),
+                                    timeout=timeout or 30
+                                )
+                                # Build CONNECT request — send auth upfront, no waiting for 407
+                                target = f"{self._ip}:{self._port}"
+                                req_lines = [
+                                    f"CONNECT {target} HTTP/1.1",
+                                    f"Host: {target}",
+                                    "Proxy-Connection: keep-alive",
+                                ]
+                                if _pu and _pw:
+                                    creds = base64.b64encode(f"{_pu}:{_pw}".encode("utf-8")).decode("ascii")
+                                    req_lines.append(f"Proxy-Authorization: Basic {creds}")
+                                req_lines.append("")  # blank line = end of headers
+                                req_lines.append("")
+                                writer.write("\r\n".join(req_lines).encode("utf-8"))
+                                await writer.drain()
+                                # Read proxy response
+                                resp = b""
+                                while b"\r\n\r\n" not in resp:
+                                    chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout or 30)
+                                    if not chunk:
+                                        break
+                                    resp += chunk
+                                status_line = resp.split(b"\r\n")[0].decode("utf-8", errors="replace")
+                                if "200" not in status_line:
+                                    writer.close()
+                                    raise ConnectionError(f"HTTP proxy CONNECT failed: {status_line}")
+                                # Tunnel established — give the streams to Telethon
+                                self._reader = reader
+                                self._writer = writer
+                                # Initialize Telethon's transport codec (required — same as parent _connect does)
+                                self._codec = self.packet_codec(self)
+                                self._init_conn()
+                                await self._writer.drain()
+
+                        custom_connection_class = _HTTPProxyTcpFull
+
+                    else:
+                        # SOCKS4/SOCKS5 — PySocks handles these reliably across platforms
+                        ptype = socks.SOCKS5 if proxy_type_str == 'socks5' else socks.SOCKS4
+                        telethon_proxy = (
+                            ptype,
+                            proxy_host,
+                            proxy_port,
+                            True,  # rdns=True
+                            proxy_user,
+                            proxy_pass
+                        )
+
+                client_kwargs = dict(
                     device_model=device_model,
                     system_version=system_version,
                     app_version=app_version,
                     lang_code=lang_code,
                     system_lang_code=system_lang_code,
-                    proxy=telethon_proxy
+                )
+                if custom_connection_class:
+                    client_kwargs['connection'] = custom_connection_class
+                elif telethon_proxy:
+                    client_kwargs['proxy'] = telethon_proxy
+
+                self.client = TelegramClient(
+                    session_id,
+                    self.telegram_api_id,
+                    self.telegram_api_hash,
+                    **client_kwargs
                 )
 
                 # Max retries for "database is locked" errors on Windows
