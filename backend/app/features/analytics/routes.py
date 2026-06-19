@@ -457,6 +457,7 @@ async def get_dashboard_data(
         JOIN conversations c ON m.conversation_id = c.id
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.created_at >= $2
+          AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($3::BIGINT IS NULL OR ta.id = $3)
         """,
@@ -471,6 +472,7 @@ async def get_dashboard_data(
         JOIN conversations c ON m.conversation_id = c.id
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND m.is_outgoing = TRUE AND m.created_at >= $2
+          AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($3::BIGINT IS NULL OR ta.id = $3)
         """,
@@ -485,6 +487,7 @@ async def get_dashboard_data(
         JOIN conversations c ON m.conversation_id = c.id
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
+          AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($2::BIGINT IS NULL OR ta.id = $2)
         """,
@@ -526,6 +529,7 @@ async def get_dashboard_data(
         JOIN conversations c ON m.conversation_id = c.id
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
+          AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($2::BIGINT IS NULL OR ta.id = $2)
         ORDER BY m.created_at DESC
@@ -558,6 +562,7 @@ async def get_dashboard_data(
         JOIN conversations c ON m.conversation_id = c.id
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND m.created_at >= $2
+          AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($3::BIGINT IS NULL OR ta.id = $3)
         ORDER BY m.created_at DESC
