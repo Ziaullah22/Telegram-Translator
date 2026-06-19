@@ -138,6 +138,10 @@ class TelegramSession:
                                     await self._writer.drain()
                                     return  # success
                                 except Exception as asyncio_err:
+                                    asyncio_err_str = str(asyncio_err)
+                                    # 407 = wrong credentials — PySocks will also fail, skip it
+                                    if "407" in asyncio_err_str:
+                                        raise ConnectionError(f"HTTP proxy auth failed (407): {_ph}:{_pp}")
                                     logger.warning(f"HTTP asyncio CONNECT failed ({asyncio_err}), falling back to PySocks")
                                 # --- FALLBACK: PySocks HTTP (Windows IP-whitelisted proxies) ---
                                 import socks
@@ -1458,9 +1462,9 @@ class TelethonService:
                 if assigned:
                     proxy_candidates.append(dict(assigned))
 
-            # Add other proxies from the same user's pool as fallbacks
+            # Add other proxies from the same user's pool as fallbacks (max 2 to avoid long waits)
             fallback_proxies = await db.fetch(
-                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 ORDER BY id",
+                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 ORDER BY id LIMIT 2",
                 user_id_for_proxies,
                 proxy_id or -1
             )
