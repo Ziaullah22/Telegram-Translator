@@ -39,7 +39,6 @@ interface FollowUpItem {
   account_name: string;
   last_message_at: string;
   last_message_text: string;
-  last_sender_name: string;
   tags: string[];
   pipeline_stage: string;
 }
@@ -299,41 +298,35 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                   <p className="text-sm">Great work! You have replied to all conversations.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar flex-1 max-h-[420px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse min-w-[700px]">
+                <div className="max-h-[350px] overflow-y-auto custom-scrollbar flex-1">
+                  <table className="w-full text-left border-collapse min-w-[600px] lg:min-w-0">
                     <thead className="sticky top-0 bg-white dark:bg-[#1e293b] z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.05)]">
                       <tr className="bg-gray-50/50 dark:bg-[#0f141a] text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        <th className="px-5 py-3 w-[160px]">User Contact</th>
-                        <th className="px-5 py-3">Last Message</th>
-                        <th className="px-5 py-3 text-center w-[100px]">CRM Stage</th>
-                        <th className="px-5 py-3 w-[120px]">Tags</th>
-                        <th className="px-5 py-3 text-right w-[110px]">Time</th>
+                        <th className="px-6 py-3">User Contact</th>
+                        <th className="px-6 py-3">Last Message Text</th>
+                        <th className="px-6 py-3 text-center">CRM Stage</th>
+                        <th className="px-6 py-3">Tags</th>
+                        <th className="px-6 py-3 text-right">Time Since Last Msg</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-white/5">
                       {followUps.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-blue-500/5 transition-colors align-top">
-                          <td className="px-5 py-4">
-                            <div className="font-bold text-sm text-gray-900 dark:text-white leading-tight">{item.conversation_title}</div>
-                            <div className="text-[10px] text-gray-400 mt-0.5">via {item.account_name}</div>
+                        <tr key={idx} className="hover:bg-blue-500/5 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-sm text-gray-900 dark:text-white">{item.conversation_title}</div>
+                            <div className="text-[10px] text-gray-400">via {item.account_name}</div>
                           </td>
-                          <td className="px-5 py-4">
-                            {item.last_sender_name && (
-                              <div className="text-[10px] font-bold text-blue-500 dark:text-blue-400 mb-1 uppercase tracking-wide">{item.last_sender_name}</div>
-                            )}
-                            <p
-                              className="text-xs text-gray-600 dark:text-gray-300 line-clamp-3 leading-relaxed"
-                              title={item.last_message_text}
-                            >
+                          <td className="px-6 py-4">
+                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate max-w-[150px] sm:max-w-[200px]" title={item.last_message_text}>
                               {item.last_message_text || <span className="text-gray-400 italic">No text</span>}
                             </p>
                           </td>
-                          <td className="px-5 py-4 text-center">
+                          <td className="px-6 py-4 text-center">
                             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getStageColor(item.pipeline_stage)}`}>
                               {item.pipeline_stage}
                             </span>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-6 py-4">
                             <div className="flex flex-wrap gap-1">
                               {item.tags && item.tags.length > 0 ? (
                                 item.tags.map(t => (
@@ -346,7 +339,7 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                               )}
                             </div>
                           </td>
-                          <td className="px-5 py-4 text-right">
+                          <td className="px-6 py-4 text-right">
                             <span className="inline-flex items-center gap-1 text-xs text-gray-500">
                               <Clock className="w-3.5 h-3.5" />
                               {formatTimeAgo(item.last_message_at)}

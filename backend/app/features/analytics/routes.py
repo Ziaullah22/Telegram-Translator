@@ -495,15 +495,9 @@ async def get_dashboard_data(
     follow_ups_count = await db.fetchval(
         """
         WITH last_messages AS (
-            SELECT DISTINCT ON (m.conversation_id)
-                m.conversation_id, m.is_outgoing, m.created_at, m.sender_name, m.original_text
-            FROM messages m
-            JOIN conversations c ON m.conversation_id = c.id
-            WHERE c.type IN ('private', 'group')
-              AND c.telegram_peer_id != 777000
-              AND (c.title IS NULL OR c.title NOT ILIKE '%bot%')
-              AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
-            ORDER BY m.conversation_id, m.created_at DESC
+            SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at
+            FROM messages
+            ORDER BY conversation_id, created_at DESC
         )
         SELECT COUNT(*)::INT FROM last_messages lm
         JOIN conversations c ON lm.conversation_id = c.id
@@ -511,15 +505,6 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($2::BIGINT IS NULL OR ta.id = $2)
-          -- Exclude Telegram system messages and bot notifications
-          AND lm.sender_name NOT ILIKE 'telegram'
-          AND (lm.original_text IS NULL OR (
-              lm.original_text NOT ILIKE 'login code%'
-              AND lm.original_text NOT ILIKE '%you joined%'
-              AND lm.original_text NOT ILIKE '%joined this group%'
-              AND lm.original_text NOT ILIKE '%left the group%'
-              AND lm.original_text NOT ILIKE '%added%to the group%'
-          ))
         """,
         current_user.user_id,
         account_id
@@ -594,19 +579,9 @@ async def get_dashboard_data(
     follow_up_rows = await db.fetch(
         """
         WITH last_messages AS (
-            SELECT DISTINCT ON (m.conversation_id)
-                m.conversation_id, m.is_outgoing, m.created_at,
-                m.original_text, m.translated_text, m.is_encrypted, m.sender_name
-            FROM messages m
-            JOIN conversations c ON m.conversation_id = c.id
-            -- Only private chats and groups (no channels)
-            WHERE c.type IN ('private', 'group')
-              -- Exclude Telegram system account (777000 = official Telegram notifications)
-              AND c.telegram_peer_id != 777000
-              -- Exclude obvious bot conversations
-              AND (c.title IS NULL OR c.title NOT ILIKE '%bot%')
-              AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
-            ORDER BY m.conversation_id, m.created_at DESC
+            SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at, original_text, translated_text, is_encrypted
+            FROM messages
+            ORDER BY conversation_id, created_at DESC
         )
         SELECT 
             c.id as conversation_id, 
@@ -618,7 +593,6 @@ async def get_dashboard_data(
             lm.original_text as last_message_text,
             lm.translated_text as last_message_translated,
             lm.is_encrypted,
-            lm.sender_name as last_sender_name,
             ci.tags,
             ci.pipeline_stage
         FROM last_messages lm
@@ -628,16 +602,6 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
           AND ($2::BIGINT IS NULL OR ta.id = $2)
-          -- Exclude Telegram system sender (login codes, notifications)
-          AND lm.sender_name NOT ILIKE 'telegram'
-          -- Exclude common Telegram system message texts
-          AND (lm.original_text IS NULL OR (
-              lm.original_text NOT ILIKE 'login code%'
-              AND lm.original_text NOT ILIKE '%you joined%'
-              AND lm.original_text NOT ILIKE '%joined this group%'
-              AND lm.original_text NOT ILIKE '%left the group%'
-              AND lm.original_text NOT ILIKE '%added%to the group%'
-          ))
         ORDER BY lm.created_at DESC
         LIMIT 50
         """,
@@ -656,7 +620,6 @@ async def get_dashboard_data(
             "account_name": r['account_name'],
             "last_message_at": r['last_message_at'].isoformat() if r['last_message_at'] else None,
             "last_message_text": trans_t or orig_t or "",
-            "last_sender_name": r['last_sender_name'],
             "tags": r['tags'] or [],
             "pipeline_stage": r['pipeline_stage'] or "Lead"
         })
