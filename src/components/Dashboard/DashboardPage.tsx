@@ -371,7 +371,7 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                           <span className="font-bold text-sm text-gray-900 dark:text-white">{msg.sender_name}</span>
                           <span className="text-[10px] text-gray-400">in {msg.conversation_title} ({msg.account_name})</span>
                         </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 line-clamp-1">
+                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap break-words">
                           {msg.text}
                         </p>
                       </div>
@@ -412,7 +412,7 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                         <span className="text-[10px] text-gray-400 flex-shrink-0">{formatTimeAgo(item.created_at)}</span>
                       </div>
                       <p className="text-[11px] text-gray-400 truncate">in {item.conversation_title} ({item.account_name})</p>
-                      <p className="text-gray-600 dark:text-gray-300 mt-1 line-clamp-2 bg-blue-50/50 dark:bg-blue-500/5 p-2 rounded-lg border border-blue-100 dark:border-blue-500/10">
+                      <p className="text-gray-600 dark:text-gray-300 mt-1 bg-blue-50/50 dark:bg-blue-500/5 p-2 rounded-lg border border-blue-100 dark:border-blue-500/10 whitespace-pre-wrap break-words">
                         {item.text || <span className="text-gray-400 italic">No text content</span>}
                       </p>
                     </div>
@@ -444,7 +444,7 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                         <span className="text-[10px] text-gray-400 flex-shrink-0">{formatTimeAgo(item.created_at)}</span>
                       </div>
                       <p className="text-[11px] text-gray-400 truncate">in {item.conversation_title} ({item.account_name})</p>
-                      <p className="text-gray-600 dark:text-gray-300 mt-1 line-clamp-2 bg-emerald-50/50 dark:bg-emerald-500/5 p-2 rounded-lg border border-emerald-100 dark:border-emerald-500/10">
+                      <p className="text-gray-600 dark:text-gray-300 mt-1 bg-emerald-50/50 dark:bg-emerald-500/5 p-2 rounded-lg border border-emerald-100 dark:border-emerald-500/10 whitespace-pre-wrap break-words">
                         {item.text || <span className="text-gray-400 italic">No text content</span>}
                       </p>
                     </div>

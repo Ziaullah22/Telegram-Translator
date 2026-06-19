@@ -497,6 +497,9 @@ async def get_dashboard_data(
         WITH last_messages AS (
             SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at
             FROM messages
+            WHERE type != 'system'
+              AND original_text IS NOT NULL
+              AND original_text != ''
             ORDER BY conversation_id, created_at DESC
         )
         SELECT COUNT(*)::INT FROM last_messages lm
@@ -585,6 +588,9 @@ async def get_dashboard_data(
         WITH last_messages AS (
             SELECT DISTINCT ON (conversation_id) conversation_id, is_outgoing, created_at, original_text, translated_text, is_encrypted
             FROM messages
+            WHERE type != 'system'
+              AND original_text IS NOT NULL
+              AND original_text != ''
             ORDER BY conversation_id, created_at DESC
         )
         SELECT 
