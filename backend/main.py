@@ -759,12 +759,14 @@ async def lifespan(app: FastAPI):
             # 1. Telegram Auto-Connect
             tg_accounts = await db.fetch("SELECT id, display_name FROM telegram_accounts WHERE is_active = true")
             logger.info(f"Auto-connecting {len(tg_accounts)} active Telegram account(s)...")
-            for acc in tg_accounts:
+            async def connect_one(acc):
                 try:
                     await telethon_service.connect_session(acc['id'])
-                    logger.info(f"✓ Connected Telegram: {acc['display_name']}")
+                    logger.info(f"✓ Connected Telegram: {acc['id']}")
                 except Exception as e:
-                    logger.error(f"✗ Error connecting Telegram {acc['display_name']}: {e}")
+                    logger.error(f"✗ Error connecting Telegram {acc['id']}: {e}")
+
+            await asyncio.gather(*[connect_one(acc) for acc in tg_accounts])
 
             # 2. Instagram Auto-Connect (Invisible/Background session recovery)
             # Only connect accounts that have a session stored

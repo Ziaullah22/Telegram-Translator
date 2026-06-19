@@ -168,6 +168,7 @@ class TelegramSession:
                     app_version=app_version,
                     lang_code=lang_code,
                     system_lang_code=system_lang_code,
+                    connection_retries=0,  # We handle retries/fallback ourselves in connect_session
                 )
                 if custom_connection_class:
                     client_kwargs['connection'] = custom_connection_class
