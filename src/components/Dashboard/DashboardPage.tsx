@@ -298,57 +298,54 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                   <p className="text-sm">Great work! You have replied to all conversations.</p>
                 </div>
               ) : (
-                <div className="max-h-[350px] overflow-y-auto custom-scrollbar flex-1">
-                  <table className="w-full text-left border-collapse min-w-[600px] lg:min-w-0">
-                    <thead className="sticky top-0 bg-white dark:bg-[#1e293b] z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.05)]">
-                      <tr className="bg-gray-50/50 dark:bg-[#0f141a] text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        <th className="px-6 py-3">User Contact</th>
-                        <th className="px-6 py-3">Last Message Text</th>
-                        <th className="px-6 py-3 text-center">CRM Stage</th>
-                        <th className="px-6 py-3">Tags</th>
-                        <th className="px-6 py-3 text-right">Time Since Last Msg</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-                      {followUps.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-blue-500/5 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="font-bold text-sm text-gray-900 dark:text-white">{item.conversation_title}</div>
-                            <div className="text-[10px] text-gray-400">via {item.account_name}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate max-w-[150px] sm:max-w-[200px]" title={item.last_message_text}>
-                              {item.last_message_text || <span className="text-gray-400 italic">No text</span>}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getStageColor(item.pipeline_stage)}`}>
-                              {item.pipeline_stage}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-wrap gap-1">
-                              {item.tags && item.tags.length > 0 ? (
-                                item.tags.map(t => (
-                                  <span key={t} className="inline-flex px-1.5 py-0.5 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 text-[9px] font-bold rounded">
-                                    {t}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-[10px] text-gray-400 italic">No tags</span>
-                              )}
+                <div className="max-h-[600px] overflow-y-auto custom-scrollbar flex-1 p-4 sm:p-6 space-y-4">
+                  {followUps.map((item, idx) => (
+                    <div 
+                      key={idx} 
+                      className="group bg-white dark:bg-[#1e293b] rounded-xl border border-gray-200/80 dark:border-white/5 p-4 shadow-sm hover:shadow-md hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all duration-300 flex flex-col gap-3"
+                    >
+                      {/* Card Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-500/10">
+                            {item.conversation_title?.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                              {item.conversation_title}
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                              <Clock className="w-3.5 h-3.5" />
-                              {formatTimeAgo(item.last_message_at)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500">
+                              via {item.account_name}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getStageColor(item.pipeline_stage)}`}>
+                            {item.pipeline_stage}
+                          </span>
+                          {item.tags && item.tags.length > 0 ? (
+                            item.tags.map(t => (
+                              <span key={t} className="inline-flex px-2 py-0.5 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 text-[9px] font-bold rounded">
+                                {t}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[9px] text-gray-450 italic">No tags</span>
+                          )}
+                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-505 bg-gray-55/80 dark:bg-white/5 px-2 py-0.5 rounded ml-auto sm:ml-0 font-medium">
+                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                            {formatTimeAgo(item.last_message_at)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Body - Full Text Content */}
+                      <div className="bg-gray-50 dark:bg-[#0f172a] rounded-xl p-3 border border-gray-100 dark:border-white/5 text-xs sm:text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
+                        {item.last_message_text || <span className="text-gray-400 italic">No text content</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -504,6 +504,10 @@ async def get_dashboard_data(
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%bot%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
         """,
         current_user.user_id,
@@ -601,6 +605,10 @@ async def get_dashboard_data(
         LEFT JOIN contact_info ci ON c.id = ci.conversation_id
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
+          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%bot%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
         ORDER BY lm.created_at DESC
         LIMIT 50
