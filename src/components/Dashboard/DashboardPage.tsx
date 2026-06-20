@@ -440,7 +440,7 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                   activity24h.filter(i => i.is_outgoing).map((item, idx) => (
                     <div key={idx} className="text-xs leading-normal">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-gray-900 dark:text-white truncate">To: {item.sender_name}</span>
+                        <span className="font-bold text-gray-900 dark:text-white truncate">To: {item.conversation_title}</span>
                         <span className="text-[10px] text-gray-400 flex-shrink-0">{formatTimeAgo(item.created_at)}</span>
                       </div>
                       <p className="text-[11px] text-gray-400 truncate">in {item.conversation_title} ({item.account_name})</p>

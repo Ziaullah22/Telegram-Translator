@@ -459,8 +459,10 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.created_at >= $2
           AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.type IN ('private', 'group', 'supergroup', 'channel')
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($3::BIGINT IS NULL OR ta.id = $3)
@@ -478,8 +480,10 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND m.is_outgoing = TRUE AND m.created_at >= $2
           AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.type IN ('private', 'group', 'supergroup', 'channel')
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($3::BIGINT IS NULL OR ta.id = $3)
@@ -497,8 +501,10 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
           AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.type IN ('private', 'group', 'supergroup', 'channel')
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
@@ -522,8 +528,10 @@ async def get_dashboard_data(
         JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND (c.type = 'private' OR (c.type IN ('group', 'supergroup') AND (c.username IS NULL OR c.username = '')))
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
@@ -543,8 +551,10 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND m.is_outgoing = FALSE AND m.is_read = FALSE
           AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.type IN ('private', 'group', 'supergroup', 'channel')
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
@@ -580,8 +590,10 @@ async def get_dashboard_data(
         WHERE ta.user_id = $1 AND m.created_at >= $2
           AND m.type != 'system' AND m.original_text IS NOT NULL AND m.original_text != ''
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND c.type IN ('private', 'group', 'supergroup', 'channel')
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($3::BIGINT IS NULL OR ta.id = $3)
@@ -636,8 +648,10 @@ async def get_dashboard_data(
         LEFT JOIN contact_info ci ON c.id = ci.conversation_id
         WHERE ta.user_id = $1 AND lm.is_outgoing = FALSE
           AND c.is_hidden = FALSE AND c.is_archived = FALSE
-          AND c.type IN ('private', 'group', 'supergroup')
+          AND (c.type = 'private' OR (c.type IN ('group', 'supergroup') AND (c.username IS NULL OR c.username = '')))
           AND c.telegram_peer_id != 777000
+          AND c.title NOT ILIKE '%telegram%'
+          AND (c.username IS NULL OR c.username NOT ILIKE '%telegram%')
           AND c.title NOT ILIKE '%bot%'
           AND (c.username IS NULL OR c.username NOT ILIKE '%bot%')
           AND ($2::BIGINT IS NULL OR ta.id = $2)
