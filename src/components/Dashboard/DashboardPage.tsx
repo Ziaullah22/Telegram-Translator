@@ -285,6 +285,40 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
           
           {/* Left Column: Follow Ups & Unread Messages */}
           <div className="lg:col-span-8 space-y-6 sm:space-y-8">
+            {/* Unread Messages List */}
+            <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden animate-slide-up flex flex-col">
+              <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
+                <h3 className="text-sm font-black uppercase tracking-widest text-gray-900 dark:text-white">Unchecked Incoming Messages</h3>
+                <p className="text-[11px] text-gray-400 mt-1">Recent unread messages that haven't been clicked on.</p>
+              </div>
+              
+              {unreadMessages.length === 0 ? (
+                <div className="py-12 text-center text-gray-400">
+                  <Inbox className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                  <p className="text-sm">No unchecked messages.</p>
+                </div>
+              ) : (
+                <div className="max-h-[300px] overflow-y-auto custom-scrollbar flex-1 divide-y divide-gray-50 dark:divide-white/5">
+                  {unreadMessages.map((msg, idx) => (
+                    <div key={idx} className="px-6 py-4 flex items-start justify-between gap-4 hover:bg-red-500/[0.02] transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-gray-900 dark:text-white">{msg.sender_name}</span>
+                          <span className="text-[10px] text-gray-400">in {msg.conversation_title} ({msg.account_name})</span>
+                        </div>
+                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap break-words">
+                          {msg.text}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className="text-[10px] text-gray-400">{formatTimeAgo(msg.created_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Follow Ups Section */}
             <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden animate-slide-up flex flex-col">
               <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
@@ -331,9 +365,9 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                               </span>
                             ))
                           ) : (
-                            <span className="text-[9px] text-gray-450 italic">No tags</span>
+                            <span className="text-[9px] text-gray-455 italic">No tags</span>
                           )}
-                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-505 bg-gray-55/80 dark:bg-white/5 px-2 py-0.5 rounded ml-auto sm:ml-0 font-medium">
+                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-555 bg-gray-55/80 dark:bg-white/5 px-2 py-0.5 rounded ml-auto sm:ml-0 font-medium">
                             <Clock className="w-3.5 h-3.5 text-gray-400" />
                             {formatTimeAgo(item.last_message_at)}
                           </span>
@@ -343,40 +377,6 @@ export default function DashboardPage({ accounts }: DashboardPageProps) {
                       {/* Card Body - Full Text Content */}
                       <div className="bg-gray-50 dark:bg-[#0f172a] rounded-xl p-3 border border-gray-100 dark:border-white/5 text-xs sm:text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
                         {item.last_message_text || <span className="text-gray-400 italic">No text content</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Unread Messages List */}
-            <div className="bg-white dark:bg-[#1e293b] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden animate-slide-up flex flex-col">
-              <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex-shrink-0">
-                <h3 className="text-sm font-black uppercase tracking-widest text-gray-900 dark:text-white">Unchecked Incoming Messages</h3>
-                <p className="text-[11px] text-gray-400 mt-1">Recent unread messages that haven't been clicked on.</p>
-              </div>
-              
-              {unreadMessages.length === 0 ? (
-                <div className="py-12 text-center text-gray-400">
-                  <Inbox className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-                  <p className="text-sm">No unchecked messages.</p>
-                </div>
-              ) : (
-                <div className="max-h-[300px] overflow-y-auto custom-scrollbar flex-1 divide-y divide-gray-50 dark:divide-white/5">
-                  {unreadMessages.map((msg, idx) => (
-                    <div key={idx} className="px-6 py-4 flex items-start justify-between gap-4 hover:bg-red-500/[0.02] transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-gray-900 dark:text-white">{msg.sender_name}</span>
-                          <span className="text-[10px] text-gray-400">in {msg.conversation_title} ({msg.account_name})</span>
-                        </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap break-words">
-                          {msg.text}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className="text-[10px] text-gray-400">{formatTimeAgo(msg.created_at)}</span>
                       </div>
                     </div>
                   ))}
