@@ -3016,14 +3016,34 @@ class InstagramService:
                 """)
                 for u_row in users_to_disable:
                     u_id = u_row["user_id"]
-                    logger.info(f"🛑 [Global AI] No pending AI leads left for user {u_id}. Auto-disabling enable_ai_analysis.")
-                    await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = FALSE WHERE user_id = $1", u_id)
-                    try:
-                        await manager.send_personal_message({
-                            "type": "filter_settings_updated",
-                            "settings": {"enable_ai_analysis": False}
-                        }, u_id)
-                    except: pass
+                    # Check if there are discovered leads that need scraping
+                    has_discovered = await db.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM instagram_leads WHERE user_id = $1 AND status = 'discovered')", u_id
+                    )
+                    
+                    if has_discovered:
+                        logger.info(f"🚀 [Global AI] Auto-Pipeline: User {u_id} has 'discovered' leads waiting to be scraped. Temporarily pausing AI to start Auto-Pilot Scraper...")
+                        await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = FALSE WHERE user_id = $1", u_id)
+                        try:
+                            await manager.send_personal_message({
+                                "type": "filter_settings_updated",
+                                "settings": {"enable_ai_analysis": False}
+                            }, u_id)
+                        except: pass
+                        
+                        try:
+                            await self.start_auto_analysis(u_id)
+                        except Exception as auto_pilot_err:
+                            logger.error(f"❌ [Global AI] Auto-Pipeline: Failed to auto-trigger Auto-Pilot: {auto_pilot_err}")
+                    else:
+                        logger.info(f"🛑 [Global AI] No pending AI or google_discovered leads left for user {u_id}. Auto-disabling enable_ai_analysis.")
+                        await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = FALSE WHERE user_id = $1", u_id)
+                        try:
+                            await manager.send_personal_message({
+                                "type": "filter_settings_updated",
+                                "settings": {"enable_ai_analysis": False}
+                            }, u_id)
+                        except: pass
 
                 # Fetch all active users who have google_discovered leads to batch vet them first
                 google_user_rows = await db.fetch("""
@@ -3041,8 +3061,8 @@ class InstagramService:
                     """, u_id)
                     google_count = cnt_row["cnt"] if cnt_row else 0
                     is_discovery_active = self._discovery_status.get(u_id, {}).get("active", False)
-                    if is_discovery_active and google_count < 30:
-                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 30...")
+                    if is_discovery_active and google_count < 50:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 50...")
                         continue
                     google_user_row = u_row
                     break
@@ -3053,7 +3073,7 @@ class InstagramService:
                         SELECT id, instagram_username, data_audit_json 
                         FROM instagram_leads
                         WHERE user_id = $1 AND status = 'google_discovered'
-                        ORDER BY created_at ASC LIMIT 30
+                        ORDER BY created_at ASC LIMIT 50
                     """, user_id)
 
                     settings = await self.get_filter_settings(user_id)

@@ -391,11 +391,11 @@ class InstagramAIEngine:
             "- MATCH_STATUS: 'true' if the lead meets the criteria, 'false' otherwise.\n"
             "- INTENT_SCORE: An integer from 0 to 100 indicating the intent strength.\n"
             "- NICHE: A short one-word or two-word niche/category name.\n"
-            "- STRATEGY: A short one-sentence explanation of why it is a match or mismatch.\n\n"
+            "- STRATEGY: A grammatically complete, professional sentence explaining the precise reason why the lead qualifies or fails to qualify based on the target lead criteria.\n\n"
             "IMPORTANT: Do not output any intro, markdown formatting, backticks, json blocks, or explanation. "
             "Output ONLY the RESULT lines, one line per lead. Example output:\n"
-            "RESULT|123|true|85|fitness|Focuses on bodybuilding routines\n"
-            "RESULT|124|false|20|lifestyle|Does not focus on target bodybuilding niche"
+            "RESULT|123|true|85|fitness|The profile qualifies because the owner actively posts bodybuilding routines and fat loss coaching client results.\n"
+            "RESULT|124|false|20|lifestyle|This profile is rejected because it appears to be a personal lifestyle account with no indication of business service offerings or professional niche relevance."
         )
 
         leads_str = ""
@@ -577,7 +577,7 @@ class InstagramAIEngine:
             "You MUST respond ONLY with a JSON object in this format:\n"
             "{\n"
             "  \"match\": true or false,\n"
-            "  \"reason\": \"A brief explanation of why the result matches or does not match\"\n"
+            "  \"reason\": \"A grammatically complete, professional sentence explaining the precise reason why the result matches or fails to match the target lead criteria.\"\n"
             "}"
         )
         

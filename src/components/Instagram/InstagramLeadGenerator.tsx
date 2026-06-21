@@ -2465,7 +2465,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                         </div>
                                     ) : (
                                         <div className="relative pl-6 border-l border-gray-200 dark:border-white/10 space-y-5">
-                                            {sortedTrace.filter((item: any) => item.step !== 'Visual Match Filter').map((item: any, idx: number) => {
+                                            {sortedTrace.filter((item: any) => {
+                                                if (liveLead.status === 'google_rejected') {
+                                                    return item.step === 'Deep AI Search Result Filter';
+                                                }
+                                                return item.step !== 'Visual Match Filter';
+                                            }).map((item: any, idx: number) => {
                                                 const isPassed = item.status === 'passed';
                                                 const isFailed = item.status === 'failed';
 
