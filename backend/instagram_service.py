@@ -2789,6 +2789,116 @@ class InstagramService:
         
         return {"status": "success"}
 
+    async def reset_lead_analysis(self, user_id: int, lead_id: int):
+        """Resets a single lead's status and analysis metadata back to google_discovered."""
+        row = await db.fetchrow("SELECT data_audit_json FROM instagram_leads WHERE id = $1 AND user_id = $2", lead_id, user_id)
+        if not row:
+            return {"status": "error", "message": "Lead not found"}
+        
+        audit_json = {}
+        try:
+            audit_val = row['data_audit_json']
+            audit_json = json.loads(audit_val) if isinstance(audit_val, str) else (audit_val or {})
+        except:
+            pass
+        
+        clean_audit = {}
+        if isinstance(audit_json, dict):
+            if "google_snippet_data" in audit_json:
+                clean_audit["google_snippet_data"] = audit_json["google_snippet_data"]
+            if "discovery_intent" in audit_json:
+                clean_audit["discovery_intent"] = audit_json["discovery_intent"]
+            
+        await db.execute("""
+            UPDATE instagram_leads 
+            SET status = 'google_discovered',
+                follower_count = NULL,
+                following_count = NULL,
+                recent_posts = NULL,
+                score = 0,
+                is_private = FALSE,
+                data_audit_json = $1,
+                updated_at = NOW()
+            WHERE id = $2 AND user_id = $3
+        """, json.dumps(clean_audit), lead_id, user_id)
+
+        # Force-enable AI analysis so background loop processes it
+        await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = TRUE WHERE user_id = $1", user_id)
+        
+        try:
+            await manager.send_personal_message({
+                "type": "filter_settings_updated",
+                "settings": {"enable_ai_analysis": True}
+            }, user_id)
+        except: pass
+
+        try:
+            await manager.send_personal_message({
+                "type": "instagram_lead_updated",
+                "lead_id": lead_id,
+                "status": "google_discovered"
+            }, user_id)
+        except: pass
+        
+        return {"status": "success"}
+
+    async def bulk_reset_leads_analysis(self, user_id: int):
+        """Bulk resets all google_rejected (trash) leads back to google_discovered."""
+        rows = await db.fetch("SELECT id, data_audit_json FROM instagram_leads WHERE user_id = $1 AND status = 'google_rejected'", user_id)
+        if not rows:
+            return {"status": "success", "count": 0}
+            
+        count = 0
+        for row in rows:
+            lead_id = row['id']
+            audit_json = {}
+            try:
+                audit_val = row['data_audit_json']
+                audit_json = json.loads(audit_val) if isinstance(audit_val, str) else (audit_val or {})
+            except:
+                pass
+            
+            clean_audit = {}
+            if isinstance(audit_json, dict):
+                if "google_snippet_data" in audit_json:
+                    clean_audit["google_snippet_data"] = audit_json["google_snippet_data"]
+                if "discovery_intent" in audit_json:
+                    clean_audit["discovery_intent"] = audit_json["discovery_intent"]
+                
+            await db.execute("""
+                UPDATE instagram_leads 
+                SET status = 'google_discovered',
+                    follower_count = NULL,
+                    following_count = NULL,
+                    recent_posts = NULL,
+                    score = 0,
+                    is_private = FALSE,
+                    data_audit_json = $1,
+                    updated_at = NOW()
+                WHERE id = $2 AND user_id = $3
+            """, json.dumps(clean_audit), lead_id, user_id)
+            
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": "google_discovered"
+                }, user_id)
+            except: pass
+            count += 1
+
+        # Force-enable AI analysis so background loop processes the batch
+        await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = TRUE WHERE user_id = $1", user_id)
+        
+        try:
+            await manager.send_personal_message({
+                "type": "filter_settings_updated",
+                "settings": {"enable_ai_analysis": True}
+            }, user_id)
+        except: pass
+            
+        return {"status": "success", "count": count}
+
     async def clear_all_leads(self, user_id: int):
         await db.execute("DELETE FROM instagram_leads WHERE user_id = $1", user_id)
         return {"status": "success"}

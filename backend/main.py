@@ -116,6 +116,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Instagram failed lead cleanup skipped: {e}")
 
+    # One-time cleanup: Delete any search leads without a valid Google snippet
+    try:
+        deleted_no_snippet = await db.execute("""
+            DELETE FROM instagram_leads 
+            WHERE (source IS NULL OR source != 'network_expansion')
+              AND (
+                  data_audit_json IS NULL 
+                  OR NOT (data_audit_json::jsonb ? 'google_snippet_data')
+                  OR data_audit_json::jsonb -> 'google_snippet_data' ->> 'snippet' IS NULL
+                  OR trim(COALESCE(data_audit_json::jsonb -> 'google_snippet_data' ->> 'snippet', '')) = ''
+              )
+        """)
+        logger.info(f"✅ Instagram leads without Google snippet cleanup done: {deleted_no_snippet}")
+    except Exception as e:
+        logger.warning(f"Instagram leads without Google snippet cleanup skipped: {e}")
+
     # Run migration for reply support
     try:
         await db.execute("""

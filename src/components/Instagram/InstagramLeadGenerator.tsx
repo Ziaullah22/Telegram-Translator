@@ -467,6 +467,27 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    const handleResetLeadAnalysis = async (leadId: number) => {
+        try {
+            await instagramAPI.resetLeadAnalysis(leadId);
+            notify('Lead reset to analysis pipeline!');
+            fetchData();
+        } catch (err) {
+            notify('Failed to reset lead.', 'alert');
+        }
+    };
+
+    const handleBulkResetLeadsAnalysis = async () => {
+        if (!window.confirm('Are you sure you want to rerun analysis for ALL leads in trash?')) return;
+        try {
+            const res = await instagramAPI.bulkResetLeadsAnalysis();
+            notify(`Reset ${res.count || res.reset_count || 0} leads back to analysis pipeline!`);
+            fetchData();
+        } catch (err) {
+            notify('Failed to reset trash leads.', 'alert');
+        }
+    };
+
     const handleClearLeads = async () => {
         if (!window.confirm('Are you absolutely sure you want to clear ALL leads?')) return;
         try {
@@ -1146,7 +1167,12 @@ const InstagramLeadGenerator: React.FC = () => {
                             <Brain className={`w-4 h-4 ${filterSettings.enable_ai_analysis ? 'fill-current' : ''}`} />
                             {filterSettings.enable_ai_analysis ? 'AI Analysis ON 🧠' : 'AI Analysis OFF 🛑'}
                         </button>
-                        <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
+                        {filterStatus === 'google_rejected' && (
+                            <button onClick={handleBulkResetLeadsAnalysis} className="flex items-center gap-2 px-6 py-3 bg-amber-500/10 hover:bg-amber-500 text-amber-600 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300 border border-amber-500/20">
+                                <RefreshCw className="w-4 h-4" /> Rerun All Trash
+                            </button>
+                        )}
+                        <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-50 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
                             <Trash2 className="w-4 h-4" /> Clear All
                         </button>
                         <button onClick={() => setShowDiscoveryModal(true)} className="flex items-center gap-2 px-6 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-pink-500/25 transition-all duration-300">
@@ -1484,9 +1510,22 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         <X className="w-3 h-3" /> Discard
                                                                     </button>
                                                                 </div>
-                                                            ) : (lead.status === 'google_rejected' || lead.status === 'failed') ? (
+                                                            ) : lead.status === 'google_rejected' ? (
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-500 font-black text-[9px] uppercase tracking-widest border border-slate-500/20">
+                                                                        <X className="w-3.5 h-3.5 text-slate-400" /> Rejected by Google AI 🗑️
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => handleResetLeadAnalysis(lead.id)}
+                                                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-tight bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white border border-amber-500/20 transition-all"
+                                                                        title="Rerun analysis pipeline starting from Google snippet AI check"
+                                                                    >
+                                                                        <RefreshCw className="w-3.5 h-3.5" /> Rerun
+                                                                    </button>
+                                                                </div>
+                                                            ) : lead.status === 'failed' ? (
                                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-500 font-black text-[9px] uppercase tracking-widest border border-slate-500/20">
-                                                                    <X className="w-3.5 h-3.5 text-slate-400" /> {lead.status === 'failed' ? 'Scraping Failed 🗑️' : 'Rejected by Google AI 🗑️'}
+                                                                    <X className="w-3.5 h-3.5 text-slate-400" /> Scraping Failed 🗑️
                                                                 </div>
                                                             ) : lead.status === 'discovered' ? (
                                                                 <button onClick={() => handleAnalyze(lead.id)} disabled={analyzingId === lead.id} className={`p-2 rounded-xl transition-all ${analyzingId === lead.id ? 'bg-blue-500/10 text-blue-500 animate-pulse' : 'bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white'}`} title="Identify Profile">

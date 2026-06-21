@@ -977,6 +977,16 @@ export const instagramAPI = {
     return response.data;
   },
 
+  resetLeadAnalysis: async (leadId: number): Promise<any> => {
+    const response = await api.post(`/instagram/leads/${leadId}/reset-analysis`);
+    return response.data;
+  },
+
+  bulkResetLeadsAnalysis: async (): Promise<any> => {
+    const response = await api.post('/instagram/leads/bulk-reset-analysis');
+    return response.data;
+  },
+
   startAutoPilot: async (): Promise<any> => {
     const response = await api.post('/instagram/auto-analyze/start');
     return response.data;

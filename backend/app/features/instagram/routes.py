@@ -281,7 +281,20 @@ async def harvest_lead_network(
     background_tasks.add_task(instagram_service.harvest_lead_network, current_user.user_id, lead_id)
     return {"status": "success", "message": "💎 Harvest started in background! New leads will appear in your table shortly."}
 
-@router.delete("/leads/{lead_id}")
+@router.post("/leads/{lead_id}/reset-analysis")
+async def reset_lead_analysis(
+    lead_id: int,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Reset a lead's analysis status back to google_discovered to rerun the entire pipeline."""
+    return await instagram_service.reset_lead_analysis(current_user.user_id, lead_id)
+
+@router.post("/leads/bulk-reset-analysis")
+async def bulk_reset_leads_analysis(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Bulk reset all 'google_rejected' (trash) leads back to google_discovered to rerun the entire pipeline."""
+    return await instagram_service.bulk_reset_leads_analysis(current_user.user_id)
 
 # --- Analysis ---
 
