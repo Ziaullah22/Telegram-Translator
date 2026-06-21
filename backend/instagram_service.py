@@ -599,6 +599,14 @@ class InstagramService:
                             except:
                                 pass
                                 
+                            # Skip leads without search snippet or without discovery intent
+                            if not card_snippet or not card_snippet.strip():
+                                logger.info(f"⏭️ Skipping lead @{u}: No Google snippet found.")
+                                continue
+                            if not discovery_intent or not discovery_intent.strip():
+                                logger.info(f"⏭️ Skipping lead @{u}: No discovery intent provided.")
+                                continue
+                                
                             try:
                                 data_audit = {
                                     "google_snippet_data": {
@@ -829,6 +837,14 @@ class InstagramService:
                                                     card_snippet = card_snippet.replace(card_title, "").strip()
                                         except:
                                             pass
+                                        
+                                        # Skip leads without search snippet or without discovery intent
+                                        if not card_snippet or not card_snippet.strip():
+                                            logger.info(f"⏭️ Skipping lead @{u}: No Google snippet found.")
+                                            continue
+                                        if not discovery_intent or not discovery_intent.strip():
+                                            logger.info(f"⏭️ Skipping lead @{u}: No discovery intent provided.")
+                                            continue
                                         
                                         # Save lead with status 'google_discovered' to database immediately
                                         try:
@@ -2820,16 +2836,16 @@ class InstagramService:
                   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             """)
 
-            # Clean up stale/bad leads without discovery intent in discovered/google_discovered statuses
-            try:
-                await db.execute("""
-                    DELETE FROM instagram_leads 
-                    WHERE status IN ('discovered', 'google_discovered') 
-                      AND (data_audit_json IS NULL OR NOT (data_audit_json ? 'discovery_intent') OR data_audit_json->>'discovery_intent' = '');
-                """)
-                logger.info("🧹 Cleaned up stale/bad leads missing a discovery intent.")
-            except Exception as clean_err:
-                logger.warning(f"Failed to clean up stale leads: {clean_err}")
+            # Clean up stale/bad leads without discovery intent in discovered/google_discovered statuses (disabled to prevent deletion)
+            # try:
+            #     await db.execute("""
+            #         DELETE FROM instagram_leads 
+            #         WHERE status IN ('discovered', 'google_discovered') 
+            #           AND (data_audit_json IS NULL OR NOT (data_audit_json ? 'discovery_intent') OR data_audit_json->>'discovery_intent' = '');
+            #     """)
+            #     logger.info("🧹 Cleaned up stale/bad leads missing a discovery intent.")
+            # except Exception as clean_err:
+            #     logger.warning(f"Failed to clean up stale leads: {clean_err}")
 
             # Clear post/follower data from google_rejected leads (Trash)
             try:
@@ -3497,7 +3513,7 @@ class InstagramService:
                 trace.append({"step": "Exclude Keyword Filter", "status": "passed", "details": "Profile bio is empty, so no exclude keywords matched."})
             else:
                 exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
-                matched = [kw for kw in exclude_kws if kw in bio.lower()]
+                matched = [kw for kw in exclude_kws if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio.lower())]
                 if matched:
                     is_ok = False
                     trace.append({"step": "Exclude Keyword Filter", "status": "failed", "details": f"Bio contains blacklisted keyword(s): {', '.join(matched)}."})
@@ -3559,7 +3575,7 @@ class InstagramService:
             if bio_exclude and bio_exclude.strip():
                 exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
                 bio_lower = bio.lower()
-                matched_kws = [kw for kw in exclude_kws if kw in bio_lower]
+                matched_kws = [kw for kw in exclude_kws if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower)]
                 if matched_kws:
                     return False, f"Bio contains a blacklisted keyword: '{matched_kws[0]}'."
 
@@ -3592,7 +3608,7 @@ class InstagramService:
             return False  # Filter is set but lead has no bio = reject
         keywords = [k.strip().lower() for k in keywords_raw.split(',') if k.strip()]
         bio_lower = bio.lower()
-        return any(kw in bio_lower for kw in keywords)
+        return any(re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower) for kw in keywords)
 
     async def _ai_city_check(self, username: str, full_name: str, bio: str, cities: list) -> tuple[bool, str]:
         """
@@ -4504,11 +4520,35 @@ class InstagramService:
         """Playwright scraper using AnonyIG/Picuki — No login, reliable data."""
         # target_username is passed directly as a string from browser_engine
 
-        # ─── STRATEGY A: InstaCognito (Search-based, reliable data) ───
+        # ─── STRATEGY A: Picnob (Search-based, reliable data) ───
         try:
-            logger.info(f"🔍 Trying InstaCognito for @{target_username}...")
-            await page.goto("https://instacognito.com/", wait_until="domcontentloaded", timeout=90000)
+            logger.info(f"🔍 Trying Picnob for @{target_username}...")
+            await page.goto("https://www.picnob.com/", wait_until="domcontentloaded", timeout=90000)
             await page.wait_for_timeout(random.randint(3000, 5000))
+
+            # 🧹 DISMISS CONSENT POPUPS & OVERLAYS
+            logger.info("⏳ Dismissing consent popups/overlays...")
+            for _ in range(5):  # Check every 2 seconds for 10 seconds total
+                try:
+                    # Look for buttons containing Consent/Agree/Accept
+                    for btn_text in ["Consent", "AGREE", "Agree", "Accept", "Accept all", "OK"]:
+                        btn = await page.query_selector(f'button:has-text("{btn_text}"), .fc-button:has-text("{btn_text}")')
+                        if btn and await btn.is_visible():
+                            logger.info(f"Clicking consent button: {btn_text}")
+                            await btn.click(timeout=3000)
+                            await page.wait_for_timeout(1000)
+                except:
+                    pass
+                
+                # Delete any cookie consent elements/overlays
+                try:
+                    await page.evaluate("""() => {
+                        const elements = document.querySelectorAll('.fc-consent-root, .fc-dialog-overlay, [class*="consent" i], [class*="cookie" i]');
+                        elements.forEach(el => el.remove());
+                    }""")
+                except:
+                    pass
+                await asyncio.sleep(2)
 
             # Type the profile URL into the search box
             search_input = await page.query_selector('input[type="text"], input[type="search"], input[placeholder*="search"], input[placeholder*="Instagram"], input[name*="search"], input[name*="url"]')
@@ -4520,16 +4560,33 @@ class InstagramService:
                     await search_input.type(char, delay=random.randint(50, 100))
                 await page.wait_for_timeout(1000)
 
-                # Click the search/submit button
-                search_btn = await page.query_selector('button[type="submit"], button:has-text("Search"), input[type="submit"], .search-btn, .btn-search, form button')
-                if search_btn:
-                    await search_btn.click()
-                else:
-                    await page.keyboard.press("Enter")
+                # Press Enter directly to trigger search
+                logger.info("Pressing Enter to trigger search...")
+                await page.keyboard.press("Enter")
 
-                # ── STEP 1: THE SEARCH WAIT (30s) ──
-                logger.info(f"⏳ Waiting for InstaCognito to load @{target_username} (30s Search Wait)...")
-                await asyncio.sleep(30) 
+                # ── STEP 1: DYNAMIC SEARCH WAIT ──
+                logger.info(f"⏳ Waiting for Picnob to load @{target_username} profile page...")
+                profile_loaded = False
+                for wait_sec in range(60): # Max 60 seconds
+                    # Check URL first to avoid evaluating on the wrong page/state
+                    if "/profile/" in page.url or "/user/" in page.url or target_username in page.url:
+                        try:
+                            profile_loaded = await page.evaluate(r"""() => {
+                                const has_stats = document.querySelector('.stats, .info, .sum, .posts, .followers, [class*="followers" i], .num') !== null;
+                                const text = document.body.innerText.toLowerCase();
+                                const not_found = text.includes('user not found') || 
+                                                   text.includes('profile not found') || 
+                                                   text.includes('not found') ||
+                                                   text.includes('something went wrong');
+                                return has_stats || not_found;
+                            }""")
+                            if profile_loaded:
+                                logger.info(f"✅ Profile page responded after {wait_sec}s.")
+                                break
+                        except Exception as eval_err:
+                            # Context was destroyed due to navigation, wait for next cycle
+                            pass
+                    await asyncio.sleep(1)
 
                 # --- STEP 1.1: NOT FOUND CHECK ---
                 not_found_detected = await page.evaluate("""() => {
@@ -4540,8 +4597,13 @@ class InstagramService:
                            text.includes('something went wrong');
                 }""")
                 if not_found_detected:
-                    logger.warning(f"🚫 @{target_username} NOT FOUND on InstaCognito.")
+                    logger.warning(f"🚫 @{target_username} NOT FOUND on Picnob.")
                     return {"success": False, "error_type": "not_found"}
+
+                # Wait 10 to 20 seconds after the page appears
+                extra_wait = random.randint(10, 20)
+                logger.info(f"⏳ Waiting an additional {extra_wait} seconds for profile details to stabilize...")
+                await asyncio.sleep(extra_wait)
 
                 # ── STEP 1.2: Read Profile Header (Bio/Stats) ──
                 logger.info(f"👁️ Scrapping profile data for @{target_username}...")
@@ -4552,13 +4614,36 @@ class InstagramService:
                     header_data = await page.evaluate(r"""() => {
                         let bio = "", followers = "0", following = "0";
 
-                        // Bio — try MANY more selectors
-                        const bioSelectors = ['.biography', '.bio', '.description', '.about', '.profile-bio',
-                                             '[class*="bio"]', '[class*="desc"]', '[class*="about"]', '.user-bio',
-                                             '.profile-description', '.profile-details', '.user-description'];
+                        // Bio — try MANY more selectors, prioritizing Picnob/Pixwox specific class (.sum)
+                        const bioSelectors = [
+                            '.sum', '.info .sum', 'div.sum', '.profile-info .sum', '.biography', '.bio', 
+                            '.description', '.about', '.profile-bio', '[class*="bio"]', '[class*="desc"]', 
+                            '[class*="about"]', '.user-bio', '.profile-description', '.profile-details', 
+                            '.user-description', '.desc'
+                        ];
                         for (const sel of bioSelectors) {
                             const el = document.querySelector(sel);
                             if (el && el.innerText.trim().length > 1) { bio = el.innerText.trim(); break; }
+                        }
+                        
+                        // Smart fallback for bio if selectors didn't match:
+                        if (!bio) {
+                            const infoEl = document.querySelector('.info, .profile-info, .user-info, .header-info');
+                            if (infoEl) {
+                                const divs = infoEl.querySelectorAll('div, p, span');
+                                for (const div of divs) {
+                                    const txt = div.innerText.trim();
+                                    const isNameOrStats = div.querySelector('.fullname, .username, .stats, .posts, .followers, .following') || 
+                                                          div.classList.contains('fullname') || 
+                                                          div.classList.contains('username') ||
+                                                          div.classList.contains('stats') ||
+                                                          /followers|following|posts/i.test(txt);
+                                    if (!isNameOrStats && txt.length > 2 && txt.length < 500) {
+                                        bio = txt;
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         
                         // Counts — scan full page text or specific stats
@@ -4567,15 +4652,14 @@ class InstagramService:
                         const followingMatch = fullText.match(/([\d,]+\.?\d*[KkMm]?)\s*[Ff]ollowing/i);
                         
                         if (followerMatch) followers = followerMatch[1];
-                        else {
-                            // Try selector based extraction
-                            const statVals = document.querySelectorAll('.stat-value, .count, .number, .stat-counter, .stats-item span');
-                            statVals.forEach(v => {
-                                const p = v.parentElement?.innerText?.toLowerCase() || "";
-                                if (p.includes('follower')) followers = v.innerText;
-                                if (p.includes('following')) following = v.innerText;
-                            });
-                        }
+                        
+                        // Try selector based extraction with wider set of selectors
+                        const statVals = document.querySelectorAll('.stat-value, .count, .number, .stat-counter, .stats-item span, .num, .profile-info span, .info span, .stats span');
+                        statVals.forEach(v => {
+                            const p = v.parentElement?.innerText?.toLowerCase() || "";
+                            if (p.includes('follower')) followers = v.innerText;
+                            if (p.includes('following')) following = v.innerText;
+                        });
                         
                         if (followingMatch && following === "0") following = followingMatch[1];
 
@@ -4622,16 +4706,26 @@ class InstagramService:
                         "is_private": True
                     }
 
-                # ── STEP 3: Public Account — The "Nudge" & Post Wait ──
-                logger.info(f"✅ @{target_username} is PUBLIC — nudging page down...")
-                await page.evaluate("window.scrollBy(0, 300)") # A little nudge
-                
-                logger.info("⏳ Waiting for posts to appear (15s Post Wait)...")
-                await asyncio.sleep(15) 
-
-                # Final scroll to ensure they are visible
-                await page.evaluate("window.scrollBy(0, 600)")
-                await asyncio.sleep(2)
+                # ── STEP 3: Public Account — Scroll until 3 posts are loaded (max 20 seconds) ──
+                logger.info("📜 Scrolling down to load posts (max 20 seconds)...")
+                for scroll_attempt in range(10): # Scroll up to 10 times (20 seconds max)
+                    # Scroll down using both mouse wheel and JS scroll
+                    await page.mouse.wheel(0, 800)
+                    await page.evaluate("window.scrollBy(0, 800)")
+                    await asyncio.sleep(2)
+                    
+                    # Check if at least 3 posts are loaded in the DOM
+                    posts_loaded = await page.evaluate("""() => {
+                        const avatar = document.querySelector('img.profile-pic, img.avatar, .profile-image img, .user-avatar img, img[src*="avatar"]');
+                        const imgs = Array.from(document.querySelectorAll('.post img, .media img, .grid img, article img, .item img, [class*="post"] img, img[src*="cdninstagram"]'));
+                        // Filter out the avatar image and tiny images (width < 80px)
+                        const postImgs = imgs.filter(img => img !== avatar && !img.src.includes('avatar') && img.getBoundingClientRect().width > 80);
+                        return postImgs.length >= 3;
+                    }""")
+                    
+                    if posts_loaded:
+                        logger.info(f"✅ Found at least 3 posts after {scroll_attempt + 1} scrolls.")
+                        break
 
                 # ── STEP 4: Extract Posts with Native Screenshots ──
                 profile_img_src = await page.evaluate("""() =>
@@ -4679,6 +4773,25 @@ class InstagramService:
                                 continue
                             
                             try:
+                                # Ensure image is fully loaded in browser DOM before screenshotting
+                                await page.evaluate("""(img) => {
+                                    return new Promise((resolve) => {
+                                        if (img.complete && img.naturalWidth > 0) {
+                                            resolve(true);
+                                        } else {
+                                            img.onload = () => resolve(true);
+                                            img.onerror = () => resolve(false);
+                                            // Timeout fallback after 3 seconds
+                                            setTimeout(() => resolve(false), 3000);
+                                        }
+                                    });
+                                }""", el)
+                                
+                                # Scroll it into view to avoid cut-off shots
+                                await el.scroll_into_view_if_needed()
+                                # Brief settling delay for rendering under high parallel load
+                                await asyncio.sleep(0.8)
+
                                 # Native Playwright screenshot of the image element
                                 img_bytes = await el.screenshot(type="jpeg", timeout=4000)
                                 import base64
@@ -4950,9 +5063,9 @@ class InstagramService:
         except: return False
 
     async def _perform_easycomment_harvest(self, page, target_username):
-        """Anonymous harvest via InstaCognito."""
+        """Anonymous harvest via Picnob."""
         # target_username is passed directly as a string from browser_engine.run_anonymous_session
-        url = "https://instacognito.com/en/followed"
+        url = "https://www.picnob.com/"
         logger.info(f"🛰️ Navigating to {url} (High-Stealth Mobile)...")
         
         try:
@@ -4984,6 +5097,30 @@ class InstagramService:
                         await page.wait_for_timeout(5000)
                 except: pass
 
+            # 🧹 DISMISS CONSENT POPUPS & OVERLAYS
+            logger.info("⏳ Dismissing consent popups/overlays...")
+            for _ in range(5):  # Check every 2 seconds for 10 seconds total
+                try:
+                    # Look for buttons containing Consent/Agree/Accept
+                    for btn_text in ["Consent", "AGREE", "Agree", "Accept", "Accept all", "OK"]:
+                        btn = await page.query_selector(f'button:has-text("{btn_text}"), .fc-button:has-text("{btn_text}")')
+                        if btn and await btn.is_visible():
+                            logger.info(f"Clicking consent button: {btn_text}")
+                            await btn.click(timeout=3000)
+                            await page.wait_for_timeout(1000)
+                except:
+                    pass
+                
+                # Delete any cookie consent elements/overlays
+                try:
+                    await page.evaluate("""() => {
+                        const elements = document.querySelectorAll('.fc-consent-root, .fc-dialog-overlay, [class*="consent" i], [class*="cookie" i]');
+                        elements.forEach(el => el.remove());
+                    }""")
+                except:
+                    pass
+                await asyncio.sleep(2)
+
             # 2. Find Search Input and Type Target Username
             logger.info(f"✍️ Searching for Username: {target_username}")
             
@@ -5007,7 +5144,7 @@ class InstagramService:
                     break
             
             if not input_found:
-                logger.error("❌ Could not find search input on InstaCognito")
+                logger.error("❌ Could not find search input on Picnob")
                 return {"success": False}
 
             # 3. Trigger Search (Use Enter like the test script)
