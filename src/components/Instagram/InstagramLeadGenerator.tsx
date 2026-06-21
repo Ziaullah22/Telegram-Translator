@@ -1308,7 +1308,23 @@ const InstagramLeadGenerator: React.FC = () => {
                                         {leads.length === 0 ? (
                                             <tr><td colSpan={6} className="px-6 py-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">No leads found.</td></tr>
                                         ) : (
-                                            leads.map(lead => (
+                                            [...leads].sort((a, b) => {
+                                                const getTraceCount = (lead: any) => {
+                                                    try {
+                                                        const ai = typeof lead.data_audit_json === 'string'
+                                                            ? JSON.parse(lead.data_audit_json || '{}')
+                                                            : lead.data_audit_json;
+                                                        return (ai?.filter_trace || []).length;
+                                                    } catch (e) {
+                                                        return 0;
+                                                    }
+                                                };
+                                                const aExtra = a.status === 'google_rejected' && getTraceCount(a) > 1;
+                                                const bExtra = b.status === 'google_rejected' && getTraceCount(b) > 1;
+                                                if (aExtra && !bExtra) return 1;
+                                                if (!aExtra && bExtra) return -1;
+                                                return 0;
+                                            }).map(lead => (
                                                 <tr
                                                     key={lead.id}
                                                     className={`group transition-all duration-700 ${autoAnalyzingId === lead.id
