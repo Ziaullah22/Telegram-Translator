@@ -237,12 +237,34 @@ const InstagramLeadGenerator: React.FC = () => {
             }
 
             if (leadsRes && Array.isArray(leadsRes.leads)) {
-                setLeads(leadsRes.leads);
-                setTotalLeadsCount(typeof leadsRes.total === 'number' ? leadsRes.total : leadsRes.leads.length);
+                const validLeads = leadsRes.leads.filter((lead: any) => {
+                    const isGoogleSourced = lead.status === 'google_discovered' || (!lead.source || lead.source !== 'network_expansion');
+                    if (isGoogleSourced) {
+                        const intent = lead.data_audit_json?.discovery_intent;
+                        if (!intent || intent.trim() === '') {
+                            return false; // Hide dirty legacy leads completely from the UI
+                        }
+                    }
+                    return true;
+                });
+                
+                setLeads(validLeads);
+                const hiddenCount = leadsRes.leads.length - validLeads.length;
+                setTotalLeadsCount(typeof leadsRes.total === 'number' ? leadsRes.total - hiddenCount : validLeads.length);
             } else if (leadsRes && Array.isArray(leadsRes)) {
-                // Fallback: plain array (shouldn't happen with current backend)
-                setLeads(leadsRes);
-                setTotalLeadsCount((leadsRes as any[]).length);
+                // Fallback: plain array
+                const validLeads = (leadsRes as any[]).filter((lead: any) => {
+                    const isGoogleSourced = lead.status === 'google_discovered' || (!lead.source || lead.source !== 'network_expansion');
+                    if (isGoogleSourced) {
+                        const intent = lead.data_audit_json?.discovery_intent;
+                        if (!intent || intent.trim() === '') {
+                            return false; // Hide dirty legacy leads
+                        }
+                    }
+                    return true;
+                });
+                setLeads(validLeads);
+                setTotalLeadsCount(validLeads.length);
             } else {
                 setLeads([]);
                 setTotalLeadsCount(0);
