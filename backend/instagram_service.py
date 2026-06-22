@@ -298,8 +298,8 @@ class InstagramService:
                     logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
  
             if proxies:
-                # 🚀 Browser Reuse Mode: up to 5 browsers, each handles a BATCH of keywords (Reduced to prevent hardware spikes/CAPTCHAs)
-                max_workers = min(len(proxies), 5)
+                # 🚀 Browser Reuse Mode: up to 20 browsers, each handles a BATCH of keywords
+                max_workers = min(len(proxies), 20)
                 logger.info(f"🛰️ Parallel Browser Mode: {max_workers} browsers open simultaneously, each reusing session across keyword batch.")
  
                 # Split keywords into batches — one batch per browser worker
@@ -409,22 +409,8 @@ class InstagramService:
                 
             context = await browser.new_context(
                 no_viewport=True,
-                user_agent=ua,
-                locale="en-US",
-                timezone_id="America/New_York"
+                user_agent=ua
             )
-            
-            # 🛡️ Apply extra stealth
-            try:
-                from playwright_stealth import stealth_async
-                await stealth_async(context)
-            except ImportError:
-                try:
-                    from playwright_stealth import stealth as stealth_async
-                    await stealth_async(context)
-                except:
-                    pass
-
             page = await context.new_page()
             is_first_keyword = True
  
@@ -709,22 +695,8 @@ class InstagramService:
 
             context = await browser.new_context(
                 no_viewport=True,
-                user_agent=ua,
-                locale="en-US",
-                timezone_id="America/New_York"
+                user_agent=ua
             )
-            
-            # 🛡️ Apply extra stealth
-            try:
-                from playwright_stealth import stealth_async
-                await stealth_async(context)
-            except ImportError:
-                try:
-                    from playwright_stealth import stealth as stealth_async
-                    await stealth_async(context)
-                except:
-                    pass
-                    
             page = await context.new_page()
  
             # 🚀 MAX RESULTS MODE (Up to 15 pages or until results end)
