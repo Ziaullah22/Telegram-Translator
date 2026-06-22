@@ -298,8 +298,8 @@ class InstagramService:
                     logger.warning(f"⚠️ Google Surge failed for '{keyword}': {e}")
  
             if proxies:
-                # 🚀 Browser Reuse Mode: up to 20 browsers, each handles a BATCH of keywords
-                max_workers = min(len(proxies), 20)
+                # 🚀 Browser Reuse Mode: up to 5 browsers, each handles a BATCH of keywords (Reduced to prevent hardware spikes/CAPTCHAs)
+                max_workers = min(len(proxies), 5)
                 logger.info(f"🛰️ Parallel Browser Mode: {max_workers} browsers open simultaneously, each reusing session across keyword batch.")
  
                 # Split keywords into batches — one batch per browser worker

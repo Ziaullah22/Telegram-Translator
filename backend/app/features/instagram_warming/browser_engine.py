@@ -418,6 +418,18 @@ class InstagramBrowserEngine:
                 })
             
             context = await browser.new_context(**context_args)
+            
+            # 🛡️ Apply extra stealth for anonymous sessions
+            try:
+                from playwright_stealth import stealth_async
+                await stealth_async(context)
+            except ImportError:
+                try:
+                    from playwright_stealth import stealth as stealth_async
+                    await stealth_async(context)
+                except:
+                    pass
+                    
             page = await context.new_page()
             
             try:
