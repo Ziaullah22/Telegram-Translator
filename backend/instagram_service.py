@@ -409,8 +409,22 @@ class InstagramService:
                 
             context = await browser.new_context(
                 no_viewport=True,
-                user_agent=ua
+                user_agent=ua,
+                locale="en-US",
+                timezone_id="America/New_York"
             )
+            
+            # 🛡️ Apply extra stealth
+            try:
+                from playwright_stealth import stealth_async
+                await stealth_async(context)
+            except ImportError:
+                try:
+                    from playwright_stealth import stealth as stealth_async
+                    await stealth_async(context)
+                except:
+                    pass
+
             page = await context.new_page()
             is_first_keyword = True
  
@@ -695,8 +709,22 @@ class InstagramService:
 
             context = await browser.new_context(
                 no_viewport=True,
-                user_agent=ua
+                user_agent=ua,
+                locale="en-US",
+                timezone_id="America/New_York"
             )
+            
+            # 🛡️ Apply extra stealth
+            try:
+                from playwright_stealth import stealth_async
+                await stealth_async(context)
+            except ImportError:
+                try:
+                    from playwright_stealth import stealth as stealth_async
+                    await stealth_async(context)
+                except:
+                    pass
+                    
             page = await context.new_page()
  
             # 🚀 MAX RESULTS MODE (Up to 15 pages or until results end)
