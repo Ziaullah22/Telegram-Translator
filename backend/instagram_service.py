@@ -405,21 +405,7 @@ class InstagramService:
  
             async def run_single_keyword(keyword, kw_idx, proxy=None):
                 nonlocal new_count
-                # 🛠️ Direct Username Detection
-                kw_clean = keyword.strip().lstrip('@')
-                if ' ' not in kw_clean and len(kw_clean) > 3 and self._is_valid_username(kw_clean):
-                    logger.info(f"🎯 Direct Username Detected: @{kw_clean}")
-                    data_audit = {}
-                    if discovery_intent:
-                        data_audit["discovery_intent"] = discovery_intent
-                    status = await db.execute(
-                        "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                        "VALUES ($1, $2, $3, 'discovered', $4) ON CONFLICT DO NOTHING", 
-                        user_id, kw_clean, "direct_add", json.dumps(data_audit)
-                    )
-                    if status == "INSERT 0 1":
-                        async with new_count_lock:
-                            new_count += 1
+
  
                 msg = f"🔍 [Ultra Discovery] Processing '{keyword}' ({kw_idx+1}/{len(keywords)})..."
                 if proxy:
@@ -581,12 +567,8 @@ class InstagramService:
  
         async with async_playwright() as p:
             browser = await p.chromium.launch(**launch_args)
-            import sys
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            if sys.platform.startswith("linux"):
-                ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            elif sys.platform == "darwin":
-                ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            # Force a real modern Windows footprint to prevent immediate flagging on Linux VPS
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 
             context = await browser.new_context(
                 no_viewport=True,
@@ -642,7 +624,7 @@ class InstagramService:
         found_usernames = []
         seen = set()
         new_leads_count = 0
-        search_query = f"{keyword} site:instagram.com"
+        search_query = f'"{keyword}" instagram profile'
 
         # ---- WARMUP & SEARCH ----
         if is_first_keyword:
@@ -871,12 +853,8 @@ class InstagramService:
  
             browser = await p.chromium.launch(**launch_args)
             # 🖼️ NO VIEWPORT (Let it use the full screen)
-            import sys
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            if sys.platform.startswith("linux"):
-                ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            elif sys.platform == "darwin":
-                ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            # Force a real modern Windows footprint to prevent immediate flagging on Linux VPS
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
             context = await browser.new_context(
                 no_viewport=True,
@@ -890,7 +868,7 @@ class InstagramService:
                 start_idx = page_num * 10
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
  
-                search_query = f"{keyword} site:instagram.com"
+                search_query = f'"{keyword}" instagram profile'
                 url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
  
                 try:
