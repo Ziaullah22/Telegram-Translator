@@ -42,7 +42,7 @@ class InstagramService:
     _discovery_status = {} # user_id: {"active": bool, "progress": str}
     _google_ai_lock = None
 
-    async def _perform_google_warmup_search(self, page) -> bool:
+    async def _perform_google_warmup_search(self, page, proxy: dict = None) -> bool:
         """
         Performs a warm-up search on Google using a random query.
         Returns True if successful, or False if CAPTCHA cannot be resolved.
@@ -101,9 +101,12 @@ class InstagramService:
                 current_url = page.url
                 is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
                 if is_captcha:
-                    logger.warning("🚨 CAPTCHA detected during warm-up! Waiting for cooldown...")
-                    await asyncio.sleep(20) # wait 20 seconds before next attempt
-                    continue
+                    logger.warning("🚨 CAPTCHA detected during warm-up!")
+                    solved = await self._solve_google_captcha(page, proxy=proxy)
+                    if not solved:
+                        logger.error("❌ 2Captcha failed. Waiting for cooldown...")
+                        await asyncio.sleep(20) # wait 20 seconds before next attempt
+                        continue
                 
                 # Check if results are visible
                 results_el = await page.query_selector("#search, div.g")
@@ -116,7 +119,179 @@ class InstagramService:
                 logger.error(f"❌ Error during Google warm-up attempt: {e}")
                 await asyncio.sleep(5)
                 
-        return False
+                return False
+                
+    async def _solve_google_captcha(self, page, proxy: dict = None) -> bool:
+        """
+        Attempts to solve Google ReCaptcha using 2Captcha API.
+        Returns True if successfully solved and navigated, False otherwise.
+        """
+        api_key = "cfe5eb8b039d9ea6e54a9287b34e5274"
+        logger.info("🤖 2Captcha: Attempting to solve Google CAPTCHA...")
+        
+        try:
+            # 1. Extract sitekey and data-s from the page
+            captcha_data = await page.evaluate(r"""() => {
+                const el = document.querySelector('[data-sitekey]');
+                if (!el) return null;
+                return {
+                    sitekey: el.getAttribute('data-sitekey'),
+                    s: el.getAttribute('data-s')
+                };
+            }""")
+            
+            if not captcha_data or not captcha_data.get('sitekey'):
+                logger.warning("⚠️ 2Captcha: Could not find data-sitekey on the CAPTCHA page.")
+                return False
+                
+            sitekey = captcha_data['sitekey']
+            data_s = captcha_data.get('s')
+            current_url = page.url
+            
+            # Extract User-Agent for 2Captcha
+            user_agent = await page.evaluate("navigator.userAgent")
+            
+            logger.info(f"🔑 2Captcha: Found sitekey '{sitekey}' (data-s: {data_s}) on url: {current_url}")
+            
+            # 2. Submit CAPTCHA to 2Captcha API
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                submit_url = f"http://2captcha.com/in.php?key={api_key}&method=userrecaptcha&googlekey={sitekey}&pageurl={current_url}&json=1"
+                if data_s:
+                    submit_url += f"&data-s={data_s}"
+                    
+                if proxy and 'server' in proxy:
+                    proxy_server = proxy['server']
+                    if proxy_server.startswith('http://') or proxy_server.startswith('https://'):
+                        proxy_server = proxy_server.split('://')[1]
+                    
+                    if 'username' in proxy and 'password' in proxy:
+                        # 2Captcha format: username:password@ip:port
+                        proxy_str = f"{proxy['username']}:{proxy['password']}@{proxy_server}"
+                    else:
+                        proxy_str = proxy_server
+                        
+                    submit_url += f"&proxy={proxy_str}&proxytype=HTTP"
+                
+                # We can't urlencode inside an f-string easily, so let's just append user-agent directly if available
+                # Or wait, let's use httpx params for better encoding.
+                params = {
+                    "key": api_key,
+                    "method": "userrecaptcha",
+                    "googlekey": sitekey,
+                    "pageurl": current_url,
+                    "json": "1",
+                    "userAgent": user_agent
+                }
+                if data_s:
+                    params["data-s"] = data_s
+                if proxy and 'server' in proxy:
+                    params["proxy"] = proxy_str
+                    params["proxytype"] = "HTTP"
+                    
+                resp = await client.get("http://2captcha.com/in.php", params=params)
+                res_data = resp.json()
+                
+                if res_data.get("status") != 1:
+                    logger.error(f"❌ 2Captcha: Failed to submit captcha. Response: {res_data}")
+                    return False
+                    
+                captcha_id = res_data.get("request")
+                logger.info(f"⏳ 2Captcha: Captcha submitted. ID: {captcha_id}. Waiting for solution...")
+                
+                # 3. Poll for the solution
+                solution_token = None
+                for poll_attempt in range(24): # Wait up to 120 seconds (24 * 5s)
+                    await asyncio.sleep(5)
+                    poll_url = f"http://2captcha.com/res.php?key={api_key}&action=get&id={captcha_id}&json=1"
+                    poll_resp = await client.get(poll_url)
+                    poll_data = poll_resp.json()
+                    
+                    if poll_data.get("status") == 1:
+                        solution_token = poll_data.get("request")
+                        logger.info(f"✅ 2Captcha: Solution received!")
+                        break
+                    elif poll_data.get("request") == "CAPCHA_NOT_READY":
+                        logger.info(f"⏳ 2Captcha: Still solving... ({poll_attempt+1}/24)")
+                        continue
+                    else:
+                        logger.error(f"❌ 2Captcha: Error while polling. Response: {poll_data}")
+                        return False
+                        
+                if not solution_token:
+                    logger.error("❌ 2Captcha: Timeout waiting for solution.")
+                    return False
+                    
+                # 4. Inject the solution token into the page
+                logger.info("💉 2Captcha: Injecting solution token into the page...")
+                await page.evaluate(f"""(token) => {{
+                    const els = document.querySelectorAll('[name="g-recaptcha-response"], #g-recaptcha-response');
+                    els.forEach(el => {{
+                        el.innerHTML = token;
+                        el.value = token;
+                    }});
+                }}""", solution_token)
+                
+                await asyncio.sleep(1)
+                
+                # 5. Corrected Google Form Submission Matrix
+                logger.info("🖱️ 2Captcha: Submitting CAPTCHA form...")
+                try:
+                    # Recursively look for ANY valid callback inside Google's grecaptcha config tree
+                    callback_executed = await page.evaluate(f"""(token) => {{
+                        if (typeof ___grecaptcha_cfg !== 'undefined' && ___grecaptcha_cfg.clients) {{
+                            let found = false;
+                            for (let clientKey in ___grecaptcha_cfg.clients) {{
+                                let client = ___grecaptcha_cfg.clients[clientKey];
+                                for (let propKey in client) {{
+                                    if (client[propKey] && typeof client[propKey].callback === 'function') {{
+                                        client[propKey].callback(token);
+                                        found = true;
+                                    }}
+                                }}
+                            }}
+                            return found;
+                        }}
+                        return false;
+                    }}""", solution_token)
+                    
+                    if callback_executed:
+                        logger.info("✅ 2Captcha: Executed target reCAPTCHA callback payload structure!")
+                    else:
+                        logger.info("⚠️ 2Captcha: No deep callback signature found. Simulating physical click event...")
+                        
+                        # Google uses an input element with type="submit" or name="submit" on the sorry page
+                        submit_btn = await page.query_selector('input[type="submit"], input[name="submit"], button[type="submit"]')
+                        if submit_btn:
+                            await submit_btn.click()
+                        else:
+                            # Hard fallback: Invoke the prototype execution chain bypassing element overlaps
+                            await page.evaluate("""() => {
+                                const form = document.querySelector('form') || document.getElementById('captcha-form');
+                                if (form) {
+                                    HTMLFormElement.prototype.submit.call(form);
+                                }
+                            }""")
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️ 2Captcha: Form submit event processing error: {e}")
+                
+                # Wait for the navigation to finish using target events instead of hard sleep
+                try:
+                    await page.wait_for_navigation(timeout=10000, wait_until="networkidle")
+                except Exception:
+                    logger.info("ℹ️ 2Captcha: Post-submit navigation timeout reached, manually auditing current state...")
+                
+                # Check if we successfully bypassed the sorry page
+                if "/sorry/" not in page.url:
+                    logger.info(f"🎉 2Captcha: Successfully bypassed Google CAPTCHA! New target location: {page.url}")
+                    return True
+                else:
+                    logger.error(f"❌ 2Captcha: Form processed but engine is stuck on page: {page.url}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ 2Captcha Error: {e}")
+            return False
 
     async def _analyze_google_result_sequential(self, **kwargs):
         """Ensures that Google AI analysis runs sequentially to prevent rate limits."""
@@ -432,7 +607,8 @@ class InstagramService:
                         minimax_api_key=minimax_api_key,
                         user_id=user_id,
                         is_first_keyword=is_first_keyword,
-                        discovery_intent=discovery_intent
+                        discovery_intent=discovery_intent,
+                        proxy=proxy
                     )
                     is_first_keyword = False
 
@@ -450,7 +626,7 @@ class InstagramService:
             await browser.close()
             logger.info(f"🏁 Browser worker finished batch of {len(batch)} keywords.")
 
-    async def _scrape_keyword_on_page(self, page, keyword: str, kw_idx: int, limit: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, is_first_keyword: bool, discovery_intent: str = None) -> int:
+    async def _scrape_keyword_on_page(self, page, keyword: str, kw_idx: int, limit: int, enable_ai_filter: bool, google_niche_filter: str, ai_model: str, minimax_api_key: str, user_id: int, is_first_keyword: bool, discovery_intent: str = None, proxy: dict = None) -> int:
         """
         🔍 Scrapes Google for ONE keyword using an already-open page.
         If is_first_keyword: navigates to Google home and types the query.
@@ -465,7 +641,7 @@ class InstagramService:
         # ---- WARMUP & SEARCH ----
         if is_first_keyword:
             logger.info("🌐 Opening Google homepage for first keyword and performing warm-up...")
-            warmup_ok = await self._perform_google_warmup_search(page)
+            warmup_ok = await self._perform_google_warmup_search(page, proxy=proxy)
             if not warmup_ok:
                 logger.warning("⚠️ Warmup failed. Proceeding anyway...")
 
@@ -502,9 +678,15 @@ class InstagramService:
             current_url = page.url
             is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
             if is_captcha:
-                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}! Retrying with new warmup...")
-                await asyncio.sleep(20) # Cool down
-                await self._perform_google_warmup_search(page)
+                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}!")
+                solved = await self._solve_google_captcha(page, proxy=proxy)
+                if not solved:
+                    logger.warning("⚠️ 2Captcha failed. Retrying with new warmup...")
+                    await asyncio.sleep(20) # Cool down
+                    await self._perform_google_warmup_search(page, proxy=proxy)
+                else:
+                    search_success = True
+                    break
             else:
                 search_success = True
                 break
@@ -540,14 +722,11 @@ class InstagramService:
                 current_url = page.url
                 is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
                 if is_captcha:
-                    logger.warning("🚨 CAPTCHA detected! Waiting for manual solve...")
-                    for _ in range(60):
-                        await asyncio.sleep(5)
-                        current_url = page.url
-                        is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
-                        if not is_captcha:
-                            logger.info("✅ CAPTCHA resolved!")
-                            break
+                    logger.warning("🚨 CAPTCHA detected!")
+                    solved = await self._solve_google_captcha(page, proxy=proxy)
+                    if not solved:
+                        logger.error("❌ 2Captcha failed. Cannot continue scraping this page.")
+                        break
  
                 # Human scrolling
                 for _ in range(random.randint(5, 8)):
@@ -712,7 +891,7 @@ class InstagramService:
                     if page_num == 0:
                         # Perform warmup search
                         logger.info("🌐 Opening Google homepage and performing warm-up...")
-                        warmup_ok = await self._perform_google_warmup_search(page)
+                        warmup_ok = await self._perform_google_warmup_search(page, proxy=proxy)
                         if not warmup_ok:
                             logger.warning("⚠️ Warmup failed. Proceeding anyway...")
 
@@ -749,9 +928,15 @@ class InstagramService:
                             current_url = page.url
                             is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
                             if is_captcha:
-                                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}! Retrying with new warmup...")
-                                await asyncio.sleep(20) # Cool down
-                                await self._perform_google_warmup_search(page)
+                                logger.warning(f"🚨 CAPTCHA detected on search attempt {search_attempt+1}!")
+                                solved = await self._solve_google_captcha(page, proxy=proxy)
+                                if not solved:
+                                    logger.warning("⚠️ 2Captcha failed. Retrying with new warmup...")
+                                    await asyncio.sleep(20) # Cool down
+                                    await self._perform_google_warmup_search(page, proxy=proxy)
+                                else:
+                                    search_success = True
+                                    break
                             else:
                                 search_success = True
                                 break
@@ -788,14 +973,11 @@ class InstagramService:
                     current_url = page.url
                     is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
                     if is_captcha:
-                        logger.warning("🚨 GOOGLE CAPTCHA! Please solve it in the window...")
-                        for _ in range(60):
-                            await asyncio.sleep(5)
-                            current_url = page.url
-                            is_captcha = "/sorry/" in current_url or (await page.query_selector("form[action*='/sorry/'], #captcha-form") is not None)
-                            if not is_captcha:
-                                logger.info("✅ CAPTCHA Resolved!")
-                                break
+                        logger.warning("🚨 GOOGLE CAPTCHA detected!")
+                        solved = await self._solve_google_captcha(page, proxy=proxy)
+                        if not solved:
+                            logger.error("❌ 2Captcha failed. Cannot continue scraping this page.")
+                            break
  
                     # 📜 HUMAN SCROLLING (Slow & Steady)
                     logger.info("⏬ Scrolling results like a human...")
