@@ -747,11 +747,6 @@ class InstagramService:
                             continue
 
                         if self._is_valid_username(u) and u not in seen:
-                            processed_card_leads += 1
-                            logger.info(f"✨ Approved Lead: @{u}")
-                            found_usernames.append(u)
-                            seen.add(u)
-                            
                             # Extract title and snippet via closest container
                             card_title = ""
                             card_snippet = ""
@@ -780,6 +775,11 @@ class InstagramService:
                             if not discovery_intent or not discovery_intent.strip():
                                 logger.info(f"⏭️ Skipping lead @{u}: No discovery intent provided.")
                                 continue
+                            
+                            processed_card_leads += 1
+                            logger.info(f"✨ Approved Lead: @{u}")
+                            found_usernames.append(u)
+                            seen.add(u)
                                 
                             try:
                                 data_audit = {
@@ -992,11 +992,6 @@ class InstagramService:
                                         continue
 
                                     if self._is_valid_username(u) and u not in seen:
-                                        processed_card_leads += 1
-                                        logger.info(f"✨ Approved Lead: @{u}")
-                                        found_usernames.append(u)
-                                        seen.add(u)
-                                        
                                         # Extract title and snippet via closest container
                                         card_title = ""
                                         card_snippet = ""
@@ -1025,6 +1020,11 @@ class InstagramService:
                                         if not discovery_intent or not discovery_intent.strip():
                                             logger.info(f"⏭️ Skipping lead @{u}: No discovery intent provided.")
                                             continue
+                                        
+                                        processed_card_leads += 1
+                                        logger.info(f"✨ Approved Lead: @{u}")
+                                        found_usernames.append(u)
+                                        seen.add(u)
                                         
                                         # Save lead with status 'google_discovered' to database immediately
                                         try:
