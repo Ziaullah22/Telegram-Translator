@@ -987,6 +987,11 @@ export const instagramAPI = {
     return response.data;
   },
 
+  bulkResetScrapedLeadsAnalysis: async (): Promise<any> => {
+    const response = await api.post('/instagram/leads/bulk-reset-scraped-analysis');
+    return response.data;
+  },
+
   startAutoPilot: async (): Promise<any> => {
     const response = await api.post('/instagram/auto-analyze/start');
     return response.data;

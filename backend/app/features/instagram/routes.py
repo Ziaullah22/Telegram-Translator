@@ -296,6 +296,13 @@ async def bulk_reset_leads_analysis(
     """Bulk reset all 'google_rejected' (trash) leads back to google_discovered to rerun the entire pipeline."""
     return await instagram_service.bulk_reset_leads_analysis(current_user.user_id)
 
+@router.post("/leads/bulk-reset-scraped-analysis")
+async def bulk_reset_scraped_leads_analysis(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Bulk reset all 'rejected' leads back to google_discovered to rerun the entire pipeline."""
+    return await instagram_service.bulk_reset_scraped_leads_analysis(current_user.user_id)
+
 # --- Analysis ---
 
 @router.post("/leads/{lead_id}/status")

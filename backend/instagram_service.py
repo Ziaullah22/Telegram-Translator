@@ -2899,6 +2899,63 @@ class InstagramService:
             
         return {"status": "success", "count": count}
 
+    async def bulk_reset_scraped_leads_analysis(self, user_id: int):
+        """Bulk resets all rejected (scraped) leads back to google_discovered."""
+        rows = await db.fetch("SELECT id, data_audit_json FROM instagram_leads WHERE user_id = $1 AND status = 'rejected'", user_id)
+        if not rows:
+            return {"status": "success", "count": 0}
+            
+        count = 0
+        for row in rows:
+            lead_id = row['id']
+            audit_json = {}
+            try:
+                audit_val = row['data_audit_json']
+                audit_json = json.loads(audit_val) if isinstance(audit_val, str) else (audit_val or {})
+            except:
+                pass
+            
+            clean_audit = {}
+            if isinstance(audit_json, dict):
+                if "google_snippet_data" in audit_json:
+                    clean_audit["google_snippet_data"] = audit_json["google_snippet_data"]
+                if "discovery_intent" in audit_json:
+                    clean_audit["discovery_intent"] = audit_json["discovery_intent"]
+                
+            await db.execute("""
+                UPDATE instagram_leads 
+                SET status = 'google_discovered',
+                    follower_count = NULL,
+                    following_count = NULL,
+                    recent_posts = NULL,
+                    score = 0,
+                    is_private = FALSE,
+                    data_audit_json = $1,
+                    updated_at = NOW()
+                WHERE id = $2 AND user_id = $3
+            """, json.dumps(clean_audit), lead_id, user_id)
+            
+            try:
+                await manager.send_personal_message({
+                    "type": "instagram_lead_updated",
+                    "lead_id": lead_id,
+                    "status": "google_discovered"
+                }, user_id)
+            except: pass
+            count += 1
+
+        # Force-enable AI analysis so background loop processes the batch
+        await db.execute("UPDATE instagram_filter_settings SET enable_ai_analysis = TRUE WHERE user_id = $1", user_id)
+        
+        try:
+            await manager.send_personal_message({
+                "type": "filter_settings_updated",
+                "settings": {"enable_ai_analysis": True}
+            }, user_id)
+        except: pass
+            
+        return {"status": "success", "count": count}
+
     async def clear_all_leads(self, user_id: int):
         await db.execute("DELETE FROM instagram_leads WHERE user_id = $1", user_id)
         return {"status": "success"}
@@ -4646,6 +4703,37 @@ class InstagramService:
         if await self._check_for_challenge(page, account_data):
             raise InstagramChallengeException(f"🚨 CHALLENGE DETECTED for @{account_username} on target profile.")
 
+    async def _dismiss_google_vignette_ad(self, page):
+        """Helper to dismiss Google Vignette ads that cover the whole page."""
+        try:
+            if "#google_vignette" in page.url:
+                logger.info("🛑 Google Vignette Ad detected! Attempting to close...")
+                
+                # Method 1: Look for Close button in any frame
+                for frame in page.frames:
+                    try:
+                        close_btn = await frame.query_selector('#dismiss-button, [aria-label="Close ad"], .close-button, div:has-text("Close")')
+                        if close_btn and await close_btn.is_visible():
+                            await close_btn.click()
+                            logger.info("✅ Clicked ad close button in iframe")
+                            await asyncio.sleep(1)
+                    except: pass
+                
+                # Method 2: Fallback to removing #google_vignette from URL
+                if "#google_vignette" in page.url:
+                    clean_url = page.url.replace("#google_vignette", "")
+                    await page.goto(clean_url, wait_until="domcontentloaded")
+                    logger.info("✅ Navigated to clean URL to bypass ad.")
+
+            # Method 3: Remove via JS
+            await page.evaluate("""() => {
+                const ads = document.querySelectorAll('[id*="vignette"], [class*="vignette"], ins.adsbygoogle, .fc-consent-root, .fc-dialog-overlay');
+                ads.forEach(el => el.remove());
+                document.body.style.overflow = 'auto';
+            }""")
+        except:
+            pass
+
     async def _perform_anonymous_analysis(self, page, target_username):
         """Playwright scraper using AnonyIG/Picuki — No login, reliable data."""
         # target_username is passed directly as a string from browser_engine
@@ -4655,6 +4743,7 @@ class InstagramService:
             logger.info(f"🔍 Trying Picnob for @{target_username}...")
             await page.goto("https://www.picnob.com/", wait_until="domcontentloaded", timeout=90000)
             await page.wait_for_timeout(random.randint(3000, 5000))
+            await self._dismiss_google_vignette_ad(page)
 
             # 🧹 DISMISS CONSENT POPUPS & OVERLAYS
             logger.info("⏳ Dismissing consent popups/overlays...")
@@ -4698,6 +4787,7 @@ class InstagramService:
                 logger.info(f"⏳ Waiting for Picnob to load @{target_username} profile page...")
                 profile_loaded = False
                 for wait_sec in range(60): # Max 60 seconds
+                    await self._dismiss_google_vignette_ad(page)
                     # Check URL first to avoid evaluating on the wrong page/state
                     if "/profile/" in page.url or "/user/" in page.url or target_username in page.url:
                         try:
@@ -5227,6 +5317,8 @@ class InstagramService:
                         await page.wait_for_timeout(5000)
                 except: pass
 
+            await self._dismiss_google_vignette_ad(page)
+
             # 🧹 DISMISS CONSENT POPUPS & OVERLAYS
             logger.info("⏳ Dismissing consent popups/overlays...")
             for _ in range(5):  # Check every 2 seconds for 10 seconds total
@@ -5285,6 +5377,7 @@ class InstagramService:
             logger.info("⏳ Waiting for profile page to load...")
             # Use a longer wait and simpler check like the script
             await page.wait_for_timeout(7000) 
+            await self._dismiss_google_vignette_ad(page)
 
             logger.info("🔴 Attempting to click the Followers Red Dot area...")
             clicked_status = await page.evaluate(r"""() => {

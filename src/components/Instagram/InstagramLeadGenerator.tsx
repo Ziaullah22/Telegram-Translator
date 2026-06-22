@@ -488,6 +488,17 @@ const InstagramLeadGenerator: React.FC = () => {
         }
     };
 
+    const handleBulkResetScrapedLeadsAnalysis = async () => {
+        if (!window.confirm('Are you sure you want to rerun analysis for ALL rejected/scraped leads?')) return;
+        try {
+            const res = await instagramAPI.bulkResetScrapedLeadsAnalysis();
+            notify(`Reset ${res.count || res.reset_count || 0} scraped leads back to analysis pipeline!`);
+            fetchData();
+        } catch (err) {
+            notify('Failed to reset scraped leads.', 'alert');
+        }
+    };
+
     const handleClearLeads = async () => {
         if (!window.confirm('Are you absolutely sure you want to clear ALL leads?')) return;
         try {
@@ -1172,6 +1183,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <RefreshCw className="w-4 h-4" /> Rerun All Trash
                             </button>
                         )}
+                        <button onClick={handleBulkResetScrapedLeadsAnalysis} className="flex items-center gap-2 px-6 py-3 bg-amber-500/10 hover:bg-amber-500 text-amber-600 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300 border border-amber-500/20">
+                            <RefreshCw className="w-4 h-4" /> Rerun All Scraped
+                        </button>
                         <button onClick={handleClearLeads} className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-50 text-red-500 hover:text-white rounded-2xl font-bold text-sm transition-all duration-300">
                             <Trash2 className="w-4 h-4" /> Clear All
                         </button>
