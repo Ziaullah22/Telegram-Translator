@@ -64,7 +64,13 @@ class InstagramService:
 
                 # Dismiss consent/cookie popups
                 popup_selectors = [
-                    "button#L2AGLb", "button:has-text('Accept all')",
+                    # Universal Google Cookie IDs (works in ALL languages)
+                    "button#L2AGLb", "button#W0wltc", 
+                    # Universal class-based fallbacks for dialogs
+                    "div[role='dialog'] button.tHlp8d",
+                    # English & German fallbacks
+                    "button:has-text('Accept all')", "button:has-text('Alle akzeptieren')",
+                    "button:has-text('Reject all')", "button:has-text('Alle ablehnen')",
                     "button:has-text('I agree')", "button:has-text('Agree')",
                     "button:has-text('Consent')", "button:has-text('No thanks')",
                     "button:has-text('Stay signed out')"
