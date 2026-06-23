@@ -3601,22 +3601,16 @@ class InstagramService:
                             ai_analysis = lead_item["audit_json"]
                             
                             # Update AI trace details
+                            # Update AI trace details
                             ai_analysis['intent_score'] = score_val
                             ai_analysis['intent_score_details'] = strategy_val
                             ai_analysis['niche'] = niche_val
                             ai_analysis['strategy'] = strategy_val
-                            ai_analysis['google_ai_analyzed'] = True
-                            ai_analysis['google_ai_match'] = match_val
-                            ai_analysis['google_ai_reason'] = strategy_val
                             
                             trace_steps = ai_analysis.get('filter_trace', [])
-                            # Add/overwrite AI steps
-                            trace_steps = [s for s in trace_steps if s.get("step") not in ("Deep AI Search Result Filter", "Deep AI Intent Check")]
-                            trace_steps.append({
-                                "step": "Deep AI Search Result Filter",
-                                "status": "passed" if match_val else "failed",
-                                "details": strategy_val
-                            })
+                            # Remove old Intent Check if it exists so we don't duplicate
+                            trace_steps = [s for s in trace_steps if s.get("step") != "Deep AI Intent Check"]
+                            
                             trace_steps.append({
                                 "step": "Deep AI Intent Check",
                                 "status": "passed" if is_qualified else "failed",
@@ -3626,7 +3620,7 @@ class InstagramService:
                             rejection_reason = ""
                             if not is_qualified:
                                 if not match_val:
-                                    rejection_reason = f"Deep AI Search Result Filter mismatch: {strategy_val}"
+                                    rejection_reason = f"Profile failed target criteria mismatch: {strategy_val}"
                                 else:
                                     rejection_reason = f"Low intent score: intent match score is only {score_val}% (below 70%)."
 
@@ -3737,29 +3731,16 @@ class InstagramService:
                             if is_qualified:
                                 new_status = 'qualified'
                             else:
-                                if not match_val:
-                                    new_status = 'google_rejected'
-                                else:
-                                    new_status = 'rejected'
+                                new_status = 'rejected'
                                     
                             ai_data_json = json.dumps(ai_analysis)
 
-                            if new_status == 'google_rejected':
-                                logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to GOOGLE_REJECTED (Trash) and clearing metrics")
-                                await db.execute("""
-                                    UPDATE instagram_leads 
-                                    SET status = $1, score = $2, data_audit_json = $3, 
-                                        follower_count = NULL, following_count = NULL, recent_posts = NULL,
-                                        updated_at = NOW() 
-                                    WHERE id = $4
-                                """, new_status, score_val, ai_data_json, lead_id_val)
-                            else:
-                                logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to {new_status.upper()}")
-                                await db.execute("""
-                                    UPDATE instagram_leads 
-                                    SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
-                                    WHERE id = $4
-                                """, new_status, score_val, ai_data_json, lead_id_val)
+                            logger.info(f"💾 [Batch DB] Updating Lead {lead_id_val} status to {new_status.upper()}")
+                            await db.execute("""
+                                UPDATE instagram_leads 
+                                SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
+                                WHERE id = $4
+                            """, new_status, score_val, ai_data_json, lead_id_val)
 
                             # Send UI notification
                             try:
