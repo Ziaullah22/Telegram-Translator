@@ -2125,15 +2125,15 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         onChange={(e) => setFilterSettings(p => ({ ...p, ai_model: e.target.value }))}
                                                         className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                                     >
-                                                        <option value="gemma4" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4 (Ollama / Local)</option>
-                                                        <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma4:e2b (Ollama / Local)</option>
-                                                        <option value="qwen-35b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 35B (llama.cpp / Local)</option>
-                                                        <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud / API Key Required)</option>
-                                                        <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Free Cloud APIs ──</option>
-                                                        <option value="gemini" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">✨ Gemini 2.5 Flash (Free / GEMINI_API_KEY)</option>
-                                                        <option value="groq" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">⚡ Groq Llama-3.3-70B (Free / GROQ_API_KEY)</option>
-                                                        <option value="openrouter" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🌐 OpenRouter Gemini Flash (Free / OPENROUTER_API_KEY)</option>
-                                                        <option value="huggingface" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🤗 HuggingFace Qwen-72B (Free / HUGGINGFACE_API_KEY)</option>
+                                                        <option value="gemma4" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma-4-E4B-it</option>
+                                                        <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma 4:e2b</option>
+                                                        <option value="qwen-35b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 35B (Local)</option>
+                                                        <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud)</option>
+                                                        <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Cloud APIs ──</option>
+                                                        <option value="openrouter" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🌐 Gemini 2.5 Flash (via OpenRouter)</option>
+                                                        <option value="gemini" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">✨ Gemini 2.5 Flash Lite (Direct API)</option>
+                                                        <option value="groq" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">⚡ Llama 3.3 70B (via Groq)</option>
+                                                        <option value="huggingface" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🤗 Qwen 2.5 72B (via Hugging Face)</option>
                                                     </select>
                                                 </div>
 
@@ -2561,9 +2561,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest block mt-0.5">
                                                                     Model: {(() => {
                                                                         const mk = item.model_used.toLowerCase().trim();
+                                                                        if (mk === 'gemma4') return 'gemma-4-E4B-it';
+                                                                        if (mk === 'gemma4:e2b') return 'gemma 4:e2b';
                                                                         if (mk === 'groq') return 'Groq Llama-3.3-70B';
-                                                                        if (mk === 'gemini') return 'Gemini 2.5 Flash';
-                                                                        if (mk === 'openrouter') return 'OpenRouter Gemini Flash';
+                                                                        if (mk === 'gemini') return 'Gemini 2.5 Flash Lite';
+                                                                        if (mk === 'openrouter') return 'OpenRouter Gemini 2.5 Flash';
                                                                         if (mk === 'huggingface') return 'HuggingFace Qwen-72B';
                                                                         if (mk === 'minimax' || mk === 'minimax-text-01') return 'MiniMax 2.7';
                                                                         if (mk === 'qwen-35b-local') return 'Qwen 35B';
@@ -2576,8 +2578,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                     let clean = item.details || '';
                                                                     const mps = [
                                                                         { k: 'groq', n: 'Groq Llama-3.3-70B' },
-                                                                        { k: 'gemini', n: 'Gemini 2.5 Flash' },
-                                                                        { k: 'openrouter', n: 'OpenRouter Gemini Flash' },
+                                                                        { k: 'gemma4', n: 'gemma-4-E4B-it' },
+                                                                        { k: 'gemma4:e2b', n: 'gemma 4:e2b' },
+                                                                        { k: 'gemini', n: 'Gemini 2.5 Flash Lite' },
+                                                                        { k: 'openrouter', n: 'OpenRouter Gemini 2.5 Flash' },
                                                                         { k: 'huggingface', n: 'HuggingFace Qwen-72B' },
                                                                         { k: 'minimax-text-01', n: 'MiniMax 2.7' },
                                                                         { k: 'minimax', n: 'MiniMax 2.7' },
