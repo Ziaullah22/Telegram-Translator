@@ -2547,7 +2547,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                                             {icon}
                                                         </div>
 
-                                                        <div>
+                                        <div>
                                                             <div className="flex items-center justify-between gap-2">
                                                                 <h4 className="text-xs font-black text-gray-900 dark:text-white tracking-tight">{item.step}</h4>
                                                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${isPassed ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400' :
@@ -2558,9 +2558,40 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 </span>
                                                             </div>
                                                             {item.model_used && (
-                                                                <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest block mt-0.5">Model: {item.model_used}</span>
+                                                                <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest block mt-0.5">
+                                                                    Model: {(() => {
+                                                                        const mk = item.model_used.toLowerCase().trim();
+                                                                        if (mk === 'groq') return 'Groq Llama-3.3-70B';
+                                                                        if (mk === 'gemini') return 'Gemini 2.5 Flash';
+                                                                        if (mk === 'openrouter') return 'OpenRouter Gemini Flash';
+                                                                        if (mk === 'huggingface') return 'HuggingFace Qwen-72B';
+                                                                        if (mk === 'minimax' || mk === 'minimax-text-01') return 'MiniMax 2.7';
+                                                                        if (mk === 'qwen-35b-local') return 'Qwen 35B';
+                                                                        return item.model_used;
+                                                                    })()}
+                                                                </span>
                                                             )}
-                                                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{item.details}</p>
+                                                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                                                                {(() => {
+                                                                    let clean = item.details || '';
+                                                                    const mps = [
+                                                                        { k: 'groq', n: 'Groq Llama-3.3-70B' },
+                                                                        { k: 'gemini', n: 'Gemini 2.5 Flash' },
+                                                                        { k: 'openrouter', n: 'OpenRouter Gemini Flash' },
+                                                                        { k: 'huggingface', n: 'HuggingFace Qwen-72B' },
+                                                                        { k: 'minimax-text-01', n: 'MiniMax 2.7' },
+                                                                        { k: 'minimax', n: 'MiniMax 2.7' },
+                                                                        { k: 'qwen-35b-local', n: 'Qwen 35B' }
+                                                                    ];
+                                                                    for (const m of mps) {
+                                                                        const regex = new RegExp(`^Model:\\s*${m.k}\\b`, 'i');
+                                                                        if (regex.test(clean)) {
+                                                                            clean = clean.replace(regex, `Model: ${m.n}`);
+                                                                        }
+                                                                    }
+                                                                    return clean;
+                                                                })()}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 );
