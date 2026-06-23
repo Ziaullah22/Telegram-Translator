@@ -2482,18 +2482,61 @@ class InstagramService:
         return [dict(row) for row in rows]
 
     async def get_stats(self, user_id: int):
-        stats = await db.fetchrow("""
-            SELECT 
-                COUNT(*) FILTER (WHERE status NOT IN ('discarded', 'google_rejected', 'failed')) as total, 
-                COUNT(*) FILTER (WHERE status IN ('discovered', 'queued')) as discovered, 
-                COUNT(*) FILTER (WHERE status IN ('qualified', 'analyzed', 'vetted', 'harvested')) as analyzed,
-                COUNT(*) FILTER (WHERE status IN ('rejected', 'discarded')) as rejected,
-                COUNT(*) FILTER (WHERE status = 'contacted') as contacted,
-                COUNT(*) FILTER (WHERE status = 'converted') as converted,
-                COUNT(*) FILTER (WHERE status = 'google_rejected') as trash
-            FROM instagram_leads WHERE user_id = $1
-        """, user_id)
-        return dict(stats) if stats else {"total": 0, "discovered": 0, "analyzed": 0, "rejected": 0, "contacted": 0, "converted": 0, "trash": 0}
+        rows = await db.fetch("SELECT status, source, data_audit_json FROM instagram_leads WHERE user_id = $1", user_id)
+        
+        total = 0
+        discovered = 0
+        analyzed = 0
+        rejected = 0
+        contacted = 0
+        converted = 0
+        trash = 0
+        
+        for row in rows:
+            status = row['status']
+            source = row['source']
+            audit_str = row['data_audit_json']
+            
+            # Parse audit json
+            audit = {}
+            if audit_str:
+                try:
+                    audit = json.loads(audit_str) if isinstance(audit_str, str) else audit_str
+                except:
+                    pass
+            
+            # Apply the frontend hide filter
+            is_google_sourced = (status == 'google_discovered') or (not source or source != 'network_expansion')
+            if is_google_sourced:
+                intent = audit.get('discovery_intent', '') if isinstance(audit, dict) else ''
+                if not intent or not intent.strip():
+                    continue # Skip/hide from counts
+            
+            # Count status
+            if status not in ('discarded', 'google_rejected', 'failed'):
+                total += 1
+            if status in ('discovered', 'queued'):
+                discovered += 1
+            elif status in ('qualified', 'analyzed', 'vetted', 'harvested'):
+                analyzed += 1
+            elif status in ('rejected', 'discarded'):
+                rejected += 1
+            elif status == 'contacted':
+                contacted += 1
+            elif status == 'converted':
+                converted += 1
+            elif status == 'google_rejected':
+                trash += 1
+                
+        return {
+            "total": total,
+            "discovered": discovered,
+            "analyzed": analyzed,
+            "rejected": rejected,
+            "contacted": contacted,
+            "converted": converted,
+            "trash": trash
+        }
 
     async def get_proxies(self, user_id: int):
         rows = await db.fetch("SELECT * FROM instagram_proxies WHERE user_id = $1", user_id)
