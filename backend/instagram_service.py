@@ -2283,17 +2283,8 @@ class InstagramService:
             params.append(f"{clean_kw}%")
             where_clause += f" AND instagram_username ILIKE ${len(params)}"
 
-        # 🧮 Count total matching records before applying LIMIT/OFFSET
-        count_query = f"SELECT COUNT(*) FROM instagram_leads{where_clause}"
-        total_count = await db.fetchval(count_query, *params)
-        
-        # 🏆 ACTION-FIRST INDUSTRIAL SEQUENCE:
-        # 0. Waiting Approval (Approve & Scrape) -> ABSOLUTE TOP (0)
-        # 1. Scrape Complete (Mission Finish)    -> SECOND (1)
-        # 2. Main Search Leads (Discovery Core)  -> THIRD (2)
-        # 3. Follower Wave (Network Expansion)   -> BOTTOM (3)
         query = f"SELECT * FROM instagram_leads{where_clause}"
-        query += f""" ORDER BY (
+        query += """ ORDER BY (
             CASE 
                 WHEN status IN ('qualified', 'analyzed', 'vetted', 'harvested') THEN 0
                 WHEN status IN ('rejected', 'discarded') THEN 1
@@ -2302,12 +2293,12 @@ class InstagramService:
                 WHEN status = 'pending_ai' THEN 4
                 WHEN status = 'discovered' THEN 5
                 ELSE 6
-            END) ASC, updated_at DESC, created_at DESC LIMIT {limit} OFFSET {offset}"""
+            END) ASC, updated_at DESC, created_at DESC"""
         rows = await db.fetch(query, *params)
+        
         leads = []
         for row in rows:
             d = dict(row)
-            # Parse JSON fields for frontend consumption
             try:
                 d['recent_posts'] = json.loads(d.get('recent_posts') or '[]')
             except:
@@ -2316,15 +2307,27 @@ class InstagramService:
             try:
                 audit = json.loads(d.get('data_audit_json') or '{}') if isinstance(d.get('data_audit_json'), str) else (d.get('data_audit_json') or {})
                 d['data_audit_json'] = audit
-                # 🏎️ UI Sync: Map the dynamic rejection reason or fallback to vision_reason
                 d['rejection_reason'] = audit.get('rejection_reason', audit.get('vision_reason', ''))
             except:
                 d['data_audit_json'] = {}
                 d['rejection_reason'] = ''
                 
+            # Filter condition: hide leads that are Google-sourced and do not have intent
+            status_val = d.get('status')
+            source_val = d.get('source')
+            is_google_sourced = (status_val == 'google_discovered') or (not source_val or source_val != 'network_expansion')
+            if is_google_sourced:
+                intent = d['data_audit_json'].get('discovery_intent', '')
+                if not intent or not intent.strip():
+                    continue # Hide this lead completely
+            
             leads.append(d)
+            
+        total_count = len(leads)
+        paginated_leads = leads[offset:offset+limit]
+        
         return {
-            "leads": leads,
+            "leads": paginated_leads,
             "total": total_count
         }
 
