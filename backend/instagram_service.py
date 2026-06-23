@@ -1143,7 +1143,26 @@ class InstagramService:
         settings = await self.get_filter_settings(user_id)
         is_qualified = True
         rejection_reason = ""
+        
+        # Load existing audit json and filter trace steps from Stage 1
+        lead_row_init = await db.fetchrow("SELECT data_audit_json FROM instagram_leads WHERE id = $1", lead_id)
+        existing_audit = json.loads(lead_row_init['data_audit_json'] or '{}') if (lead_row_init and lead_row_init['data_audit_json']) else {}
+        if not isinstance(existing_audit, dict):
+            existing_audit = {}
+        
+        # Preserve the Google snippet vetting check from Stage 1
+        existing_trace = existing_audit.get('filter_trace', []) if isinstance(existing_audit.get('filter_trace'), list) else []
         trace_steps = []
+        for s in existing_trace:
+            if s.get("step") == "Deep AI Search Result Filter":
+                step_copy = s.copy() if isinstance(s, dict) else {}
+                google_model = existing_audit.get("google_model_used") or existing_audit.get("ai_model") or "gemini"
+                if not step_copy.get("model_used"):
+                    step_copy["model_used"] = google_model
+                details_text = step_copy.get("details", "")
+                if "Model:" not in details_text:
+                    step_copy["details"] = f"Model: {google_model}. {details_text}"
+                trace_steps.append(step_copy)
         
         # 1. Follower Count Match
         if settings['min_followers'] > 0 or settings['max_followers'] > 0:
@@ -1297,10 +1316,9 @@ class InstagramService:
             })
 
         # 5. 🧠 DEEP AI ANALYSIS
-        ai_analysis = {}
+        ai_analysis = existing_audit.copy()
         score = 0
-        lead_row = await db.fetchrow("SELECT data_audit_json, instagram_username FROM instagram_leads WHERE id = $1", lead_id)
-        existing_audit = json.loads(lead_row['data_audit_json'] or '{}') if (lead_row and lead_row['data_audit_json']) else {}
+        lead_row = await db.fetchrow("SELECT instagram_username FROM instagram_leads WHERE id = $1", lead_id)
         intent_description = existing_audit.get('discovery_intent', '') or settings.get('ai_intent_filter', '')
         
         if not is_qualified:
@@ -1731,6 +1749,8 @@ class InstagramService:
         ai_analysis = {}
         score = 0
         ai_trace_steps = []
+        selected_model = settings.get('ai_model') or 'gemma4'
+        used_model = selected_model
 
         # 1. 🔍 DEEP AI SEARCH RESULT FILTER
         selected_model = settings.get('ai_model') or 'gemma4'
@@ -1769,6 +1789,7 @@ class InstagramService:
                     "match": True,
                     "reason": existing_audit.get('google_ai_reason', 'Matched criteria.')
                 }
+                used_model = existing_audit.get('google_model_used') or selected_model
             elif not google_niche_filter or not google_niche_filter.strip():
                 ai_trace_steps.append({
                     "step": "Deep AI Search Result Filter",
@@ -1813,7 +1834,7 @@ class InstagramService:
                                 api_key=settings.get('minimax_api_key', '')
                             )
                             if res and "error" not in res:
-                                used_model = model
+                                used_model = res.get("model_used", model)
                                 break
                             else:
                                 last_err = res.get("error", "Unknown error") if res else "Unknown error"
@@ -1840,13 +1861,15 @@ class InstagramService:
                     ai_trace_steps.append({
                         "step": "Deep AI Search Result Filter",
                         "status": "failed",
-                        "details": f"{step_prefix}{reason}"
+                        "details": f"Model: {used_model}. Failed: {step_prefix}{reason}",
+                        "model_used": used_model
                     })
                 else:
                     ai_trace_steps.append({
                         "step": "Deep AI Search Result Filter",
                         "status": "passed",
-                        "details": f"{step_prefix}{reason}"
+                        "details": f"Model: {used_model}. Passed (Google AI Match: {step_prefix}{reason})",
+                        "model_used": used_model
                     })
 
         # 2. 🧠 DEEP AI INTENT ANALYSIS
@@ -1907,6 +1930,7 @@ class InstagramService:
                         score = max(score, 90)
                     logger.info(f"✨ [{used_model}] Analysis Complete. Score: {score}, Niche: {ai_result.get('niche')}")
 
+                    ai_analysis['intent_model_used'] = used_model
                     if score < 70:
                         rejection_reason = f"Low intent score: {used_model} intent match score is only {score}% (below 70%). Analysis strategy details: '{ai_analysis.get('strategy', 'No reason given')}'"
                         logger.info(f"❌ AI Rejected lead: {rejection_reason}")
@@ -1914,13 +1938,15 @@ class InstagramService:
                         ai_trace_steps.append({
                             "step": "Deep AI Intent Check",
                             "status": "failed",
-                            "details": f"Intent match score {score}% is below required 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                            "details": f"Intent match score {score}% is below required 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}",
+                            "model_used": used_model
                         })
                     else:
                         ai_trace_steps.append({
                             "step": "Deep AI Intent Check",
                             "status": "passed",
-                            "details": f"Intent match score {score}% meets/exceeds 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}"
+                            "details": f"Intent match score {score}% meets/exceeds 70%. Model: {used_model}. Reason: {ai_analysis.get('strategy', 'No reason given')}",
+                            "model_used": used_model
                         })
         except Exception as ai_err:
             logger.error(f"❌ AI analysis error: {ai_err}. Deleting lead {lead_id} from database.")
@@ -2042,10 +2068,12 @@ class InstagramService:
         if not google_ai_step and (existing_audit.get('google_ai_analyzed') or existing_audit.get('google_ai_match') is not None):
             is_match = existing_audit.get('google_ai_match', False)
             reason = existing_audit.get('google_ai_reason', 'Matched criteria.')
+            google_model = existing_audit.get('google_model_used') or existing_audit.get('ai_model') or 'gemini'
             google_ai_step = {
                 "step": "Deep AI Search Result Filter",
                 "status": "passed" if is_match else "failed",
-                "details": f"Passed (Google AI Match: {reason})" if is_match else f"Failed: {reason}"
+                "details": f"Model: {google_model}. Passed (Google AI Match: {reason})" if is_match else f"Model: {google_model}. Failed: {reason}",
+                "model_used": google_model
             }
 
         # Filter out Google AI step from pre_filter_trace and remaining_ai_steps to avoid duplicates
@@ -3443,13 +3471,15 @@ class InstagramService:
                                 ai_analysis['google_ai_analyzed'] = True
                                 ai_analysis['google_ai_match'] = match_val
                                 ai_analysis['google_ai_reason'] = strategy_val
+                                ai_analysis['google_model_used'] = model
 
                                 trace_steps = ai_analysis.get('filter_trace', [])
                                 trace_steps = [s for s in trace_steps if s.get("step") != "Deep AI Search Result Filter"]
                                 trace_steps.append({
                                     "step": "Deep AI Search Result Filter",
                                     "status": "passed" if match_val else "failed",
-                                    "details": strategy_val
+                                    "details": f"Model: {model}. Passed (Google AI Match: {strategy_val})" if match_val else f"Model: {model}. Failed: {strategy_val}",
+                                    "model_used": model
                                 })
                                 ai_analysis['filter_trace'] = trace_steps
 
@@ -3647,11 +3677,11 @@ class InstagramService:
                             ai_analysis = lead_item["audit_json"]
                             
                             # Update AI trace details
-                            # Update AI trace details
                             ai_analysis['intent_score'] = score_val
                             ai_analysis['intent_score_details'] = strategy_val
                             ai_analysis['niche'] = niche_val
                             ai_analysis['strategy'] = strategy_val
+                            ai_analysis['intent_model_used'] = model
                             
                             trace_steps = ai_analysis.get('filter_trace', [])
                             # Remove old Intent Check if it exists so we don't duplicate
@@ -3660,7 +3690,8 @@ class InstagramService:
                             trace_steps.append({
                                 "step": "Deep AI Intent Check",
                                 "status": "passed" if is_qualified else "failed",
-                                "details": f"Intent match score {score_val}% " + ("meets/exceeds 70%." if score_val >= 70 else "is below 70%.") + f" Reason: {strategy_val}"
+                                "details": f"Intent match score {score_val}% " + ("meets/exceeds 70%." if score_val >= 70 else "is below 70%.") + f" Reason: {strategy_val}",
+                                "model_used": model
                             })
 
                             rejection_reason = ""
@@ -4400,10 +4431,12 @@ class InstagramService:
                     )
                     is_match = res.get("match", False)
                     reason = res.get("reason", "No reason provided.")
+                    used_model = res.get("model_used", ai_model)
                     
                     audit['google_ai_analyzed'] = True
                     audit['google_ai_match'] = is_match
                     audit['google_ai_reason'] = reason
+                    audit['google_model_used'] = used_model
                     audit['rejection_reason'] = reason if not is_match else ""
                     
                     if not is_match:
@@ -4411,7 +4444,8 @@ class InstagramService:
                         google_step = {
                             "step": "Deep AI Search Result Filter",
                             "status": "failed",
-                            "details": f"Failed: {reason}"
+                            "details": f"Model: {used_model}. Failed: {reason}",
+                            "model_used": used_model
                         }
                         audit['filter_trace'] = [google_step]
                         await db.execute("""
@@ -4517,10 +4551,12 @@ class InstagramService:
                     )
                     is_match = res.get("match", False)
                     reason = res.get("reason", "No reason provided.")
+                    used_model = res.get("model_used", ai_model)
                     
                     audit['google_ai_analyzed'] = True
                     audit['google_ai_match'] = is_match
                     audit['google_ai_reason'] = reason
+                    audit['google_model_used'] = used_model
                     audit['rejection_reason'] = reason if not is_match else ""
                     
                     if not is_match:
@@ -4528,7 +4564,8 @@ class InstagramService:
                         google_step = {
                             "step": "Deep AI Search Result Filter",
                             "status": "failed",
-                            "details": f"Failed: {reason}"
+                            "details": f"Model: {used_model}. Failed: {reason}",
+                            "model_used": used_model
                         }
                         audit['filter_trace'] = [google_step]
                         await db.execute("""
@@ -4560,9 +4597,10 @@ class InstagramService:
             # Prepend Google AI Filter step to the beginning
             google_status = "skipped"
             google_details = "Skipped because Google AI analysis was not executed."
+            google_model = audit.get('google_model_used') or ai_model
             if audit.get('google_ai_analyzed'):
                 google_status = "passed" if audit.get('google_ai_match') else "failed"
-                google_details = f"Passed (Google AI Match: {audit.get('google_ai_reason', 'Matched criteria.')})" if audit.get('google_ai_match') else f"Failed: {audit.get('google_ai_reason', 'Mismatched.')}"
+                google_details = f"Model: {google_model}. Passed (Google AI Match: {audit.get('google_ai_reason', 'Matched criteria.')})" if audit.get('google_ai_match') else f"Model: {google_model}. Failed: {audit.get('google_ai_reason', 'Mismatched.')}"
             elif not settings.get('enable_ai_filter'):
                 google_status = "skipped"
                 google_details = "Skipped because Deep AI Search Result Filter is not enabled in settings."
@@ -4570,7 +4608,8 @@ class InstagramService:
             google_step = {
                 "step": "Deep AI Search Result Filter",
                 "status": google_status,
-                "details": google_details
+                "details": google_details,
+                "model_used": google_model if audit.get('google_ai_analyzed') else None
             }
             trace_steps = [google_step] + trace_steps
 

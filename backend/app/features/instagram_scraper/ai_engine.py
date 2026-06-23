@@ -392,11 +392,23 @@ class InstagramAIEngine:
             "- INTENT_SCORE: An integer from 0 to 100 indicating the intent strength.\n"
             "- NICHE: A short one-word or two-word niche/category name.\n"
             "- STRATEGY: A grammatically complete, professional sentence explaining the precise reason why the lead qualifies or fails to qualify based on the target lead criteria.\n\n"
-            "IMPORTANT: Do not output any intro, markdown formatting, backticks, json blocks, or explanation. "
-            "Output ONLY the RESULT lines, one line per lead. Example output:\n"
+            "CRITICAL RULES:\n"
+            "1. You MUST process each lead independently. Do NOT compare leads, reference other lead IDs, or output placeholder/format correction text.\n"
+            "2. Never output self-corrections or text like 'this result is replaced by...'. Every output line must be a valid analysis of the target lead ID.\n"
+            "3. Do not output any intro, markdown formatting, backticks, json blocks, or explanation. Output ONLY the RESULT lines, one line per lead.\n\n"
+            "Example output:\n"
             "RESULT|123|true|85|fitness|The profile qualifies because the owner actively posts bodybuilding routines and fat loss coaching client results.\n"
             "RESULT|124|false|20|lifestyle|This profile is rejected because it appears to be a personal lifestyle account with no indication of business service offerings or professional niche relevance."
         )
+
+        if google_criteria and not intent_description:
+            # Stage 1: Google vetting leniency instructions
+            system_prompt += (
+                "\n\nADDITIONAL STAGE 1 GOOGLE VETTING INSTRUCTIONS:\n"
+                "- Google Search Results/snippets are brief, partial, and can represent directories, lists, blogs, reviews, or aggregators related to the niche.\n"
+                "- If there is ANY relation, mention, or association to the target niche/criteria found in the snippet (even if indirect, such as listing vape shops, blogging about vaping, or reviewing smoke shops), you MUST mark it as a match (MATCH_STATUS = 'true').\n"
+                "- Only reject (MATCH_STATUS = 'false') if the result is completely unrelated to the target niche (e.g., auto repair, fashion, food, software, real estate, general medical clinics with no mention of cannabis/vapes).\n"
+            )
 
         leads_str = ""
         for lead in leads:
@@ -574,6 +586,8 @@ class InstagramAIEngine:
         system_prompt = (
             "You are an expert lead qualification assistant.\n"
             "Evaluate whether the following Google Search Result matches the user's target lead criteria.\n"
+            "IMPORTANT: Google Search Results/snippets are brief, partial, and can represent directories, lists, blogs, reviews, or aggregators related to the niche. If there is ANY relation, mention, or association to the target niche/criteria found in the snippet (even if indirect, such as listing vape shops, blogging about vaping, or reviewing smoke shops), you MUST mark it as a match (match: true).\n"
+            "Only reject (match: false) if the result is completely unrelated to the target niche (e.g., auto repair, fashion, food, software, real estate, general medical clinics with no mention of cannabis/vapes).\n"
             "You MUST respond ONLY with a JSON object in this format:\n"
             "{\n"
             "  \"match\": true or false,\n"
@@ -790,6 +804,7 @@ class InstagramAIEngine:
 
                 if result and isinstance(result, dict) and "match" in result and "error" not in result:
                     logger.info(f"✅ [AI Filter] Successfully qualified result using model: {model}")
+                    result["model_used"] = model
                     return result
                 else:
                     err_msg = result.get("error") if result else "JSON parsing or match key missing"

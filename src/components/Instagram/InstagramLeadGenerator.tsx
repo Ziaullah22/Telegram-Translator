@@ -2383,7 +2383,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                     ) : (
                                         <div className="p-6 bg-gray-50 dark:bg-white/5 rounded-3xl border border-dashed border-gray-200 dark:border-white/10 flex flex-col items-center py-10">
                                             <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gemma is analyzing profile bio...</p>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                                {ai?.intent_model_used ? `${ai.intent_model_used} is analyzing profile bio...` : 'AI is analyzing profile bio...'}
+                                            </p>
                                         </div>
                                     )
                                 ) : (
@@ -2405,7 +2407,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10">
                                                 <div className="flex items-center gap-2 mb-3">
                                                     <Sparkles className="w-4 h-4 text-indigo-500" />
-                                                    <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">Gemma Strategic Analysis</h3>
+                                                    <h3 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest">
+                                                        {ai.intent_model_used ? `${ai.intent_model_used} Strategic Analysis` : 'AI Strategic Analysis'}
+                                                    </h3>
                                                 </div>
                                                 <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mb-4">
                                                     "{ai.strategy || 'No strategic summary available.'}"
@@ -2553,6 +2557,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                     {item.status}
                                                                 </span>
                                                             </div>
+                                                            {item.model_used && (
+                                                                <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest block mt-0.5">Model: {item.model_used}</span>
+                                                            )}
                                                             <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{item.details}</p>
                                                         </div>
                                                     </div>
