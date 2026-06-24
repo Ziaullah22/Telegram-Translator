@@ -17,27 +17,27 @@ read -p "Enter selection (1-6): " choice
 case $choice in
   1)
     echo "Starting Qwen 3.5 9B Instruct..."
-    ./build/bin/llama-server -m qwen3.5-9b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/qwen3.5-9b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   2)
     echo "Starting Qwen 3.5 4B Instruct..."
-    ./build/bin/llama-server -m qwen3.5-4b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/qwen3.5-4b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   3)
     echo "Starting Llama 3.1 8B Instruct..."
-    ./build/bin/llama-server -m Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   4)
     echo "Starting Qwen 2.5 7B Instruct..."
-    ./build/bin/llama-server -m Qwen2.5-7B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 99
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-7B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 99
     ;;
   5)
     echo "Starting Qwen 2.5 14B Instruct..."
-    ./build/bin/llama-server -m Qwen2.5-14B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 25
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-14B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 25
     ;;
   6)
     echo "Starting Qwen 2.5 35B Instruct..."
-    ./build/bin/llama-server -m Qwen2.5-32B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 12
+    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-32B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 12
     ;;
   *)
     echo "Invalid selection."
