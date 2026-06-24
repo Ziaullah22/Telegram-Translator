@@ -157,8 +157,8 @@ class InstagramAIEngine:
 
         model_lower = model_choice.lower().strip() if model_choice else ""
 
-        if model_lower == "qwen-35b-local":
-            print(f"🧠 [Qwen 35B] Analyzing @{username} via llama.cpp/Ollama...")
+        if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local"):
+            print(f"🧠 [{model_choice}] Analyzing @{username} via llama.cpp/Ollama...")
             return await self._call_llama_cpp(prompt)
 
         elif model_lower == "gemini":
@@ -638,8 +638,8 @@ class InstagramAIEngine:
             
             try:
                 result = None
-                if model_lower == "qwen-35b-local":
-                    logger.info(f"🧠 [Qwen 35B] Filtering google result: {title} via llama.cpp/Ollama...")
+                if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local"):
+                    logger.info(f"🧠 [{model}] Filtering google result: {title} via llama.cpp/Ollama...")
                     result = await self._call_llama_cpp(user_prompt, system_prompt)
                     
                 elif model_lower == "gemini":

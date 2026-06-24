@@ -2145,6 +2145,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     >
                                                         <option value="gemma4" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma-4-E4B-it</option>
                                                         <option value="gemma4:e2b" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">gemma 4:e2b</option>
+                                                        <option value="qwen-7b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 7B (Local)</option>
+                                                        <option value="qwen-14b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 14B (Local)</option>
                                                         <option value="qwen-35b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 35B (Local)</option>
                                                         <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud)</option>
                                                         <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Cloud APIs ──</option>
@@ -2654,6 +2656,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         if (mk === 'huggingface') return 'HuggingFace Qwen-72B';
                                                                         if (mk === 'minimax' || mk === 'minimax-text-01') return 'MiniMax 2.7';
                                                                         if (mk === 'qwen-35b-local') return 'Qwen 35B';
+                                                                        if (mk === 'qwen-14b-local') return 'Qwen 14B';
+                                                                        if (mk === 'qwen-7b-local') return 'Qwen 7B';
                                                                         return item.model_used;
                                                                     })()}
                                                                 </span>
@@ -2670,7 +2674,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         { k: 'huggingface', n: 'HuggingFace Qwen-72B' },
                                                                         { k: 'minimax-text-01', n: 'MiniMax 2.7' },
                                                                         { k: 'minimax', n: 'MiniMax 2.7' },
-                                                                        { k: 'qwen-35b-local', n: 'Qwen 35B' }
+                                                                        { k: 'qwen-35b-local', n: 'Qwen 35B' },
+                                                                        { k: 'qwen-14b-local', n: 'Qwen 14B' },
+                                                                        { k: 'qwen-7b-local', n: 'Qwen 7B' }
                                                                     ];
                                                                     for (const m of mps) {
                                                                         const regex = new RegExp(`^Model:\\s*${m.k}\\b`, 'i');
