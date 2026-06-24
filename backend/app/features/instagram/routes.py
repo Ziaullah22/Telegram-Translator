@@ -804,10 +804,8 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                 last_error_msg = f"Failed to query Hugging Face API: {hf_err}"
 
         if prov_lower in ("huggingface", "hf"):
-            return [], f"❌ All Hugging Face keys failed. Last error: {last_error_msg}", False, True if last_error_msg.startswith("Hugging Face API Error") else False, "Hugging Face API"
-
-    # 4.5 Try Qwen Local (llama.cpp / Ollama fallback)
-    if prov_lower == "qwen-35b-local":
+            return [], f"❌ All Hugging Face keys failed. Last error: {last_error_msg}", False, True    # 4.5 Try Qwen Local (llama.cpp / Ollama fallback)
+    if prov_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local"):
         payload_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
         payload = {
             "model": "qwen",
@@ -817,7 +815,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
         }
         llama_cpp_ok = False
         raw = "{}"
-
+ 
         for port in [8080, 8000]:
             url = f"http://localhost:{port}/v1/chat/completions"
             logger.info(f"Connecting to llama.cpp at {url}...")
@@ -839,13 +837,13 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                             logger.warning(f"llama.cpp on port {port} returned status {response.status}")
             except Exception as e:
                 logger.warning(f"Failed to connect to llama.cpp on port {port}: {e}")
-
+ 
         if llama_cpp_ok:
             suggested_items, explanation_msg, parsed_ok = robust_json_extract(raw, array_key)
             if suggested_items:
-                return suggested_items, explanation_msg or "Suggestions generated via local llama.cpp!", True, True, "llama.cpp (Qwen 35B)"
+                return suggested_items, explanation_msg or f"Suggestions generated via local llama.cpp ({provider})!", True, True, f"llama.cpp ({provider})"
             elif raw.strip():
-                return [], raw[:500], False, True, "llama.cpp (Qwen 35B)"
+                return [], raw[:500], False, True, f"llama.cpp ({provider})"
         else:
             logger.info("llama.cpp not reachable. Falling back to local Ollama qwen2.5:32b...")
             ollama_url = "http://localhost:11434"

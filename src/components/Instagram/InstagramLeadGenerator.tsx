@@ -2770,6 +2770,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
+                                                        <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
@@ -3165,6 +3167,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
+                                                        <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
@@ -3471,6 +3475,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="openrouter_free">Llama 3 8B Free (OpenRouter)</option>
                                                         <option value="huggingface">Qwen 2.5 72B (Hugging Face)</option>
                                                         <option value="gemma">Gemma 4 (Ollama)</option>
+                                                        <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
+                                                        <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>

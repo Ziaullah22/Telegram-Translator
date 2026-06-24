@@ -3430,28 +3430,12 @@ class InstagramService:
                                 await asyncio.sleep(random.uniform(2.0, 4.0))
 
                             try:
-                                if any(x in model.lower() for x in ["local", "gemma"]):
-                                    logger.info(f"💾 Local model {model} detected. Processing {len(remaining_google)} leads individually instead of batch...")
-                                    raw_response_lines = []
-                                    for lead in remaining_google:
-                                        lead_res = await instagram_ai.analyze_google_result(
-                                            title=lead.get("google_data", {}).get("title", ""),
-                                            url=lead.get("google_data", {}).get("url", ""),
-                                            snippet=lead.get("google_data", {}).get("snippet", ""),
-                                            criteria=google_niche_filter,
-                                            model_choice=model
-                                        )
-                                        match_str = "true" if lead_res.get("match") else "false"
-                                        strategy_str = lead_res.get("reason", "")
-                                        raw_response_lines.append(f"RESULT|{lead['id']}|{match_str}|50|local|{strategy_str}")
-                                    raw_response = "\n".join(raw_response_lines)
-                                else:
-                                    raw_response = await instagram_ai.analyze_leads_batch(
-                                        leads=remaining_google,
-                                        model_choice=model,
-                                        intent_description="", # Empty since this is snippet filter
-                                        google_criteria=google_niche_filter
-                                    )
+                                raw_response = await instagram_ai.analyze_leads_batch(
+                                    leads=remaining_google,
+                                    model_choice=model,
+                                    intent_description="", # Empty since this is snippet filter
+                                    google_criteria=google_niche_filter
+                                )
                             except Exception as batch_err:
                                 logger.error(f"❌ Batch Google AI Exception on {model}: {batch_err}. Fallback...")
                                 continue
@@ -3642,26 +3626,6 @@ class InstagramService:
 
                         # Call the batch AI method
                         try:
-                            if any(x in model.lower() for x in ["local", "gemma"]):
-                                logger.info(f"💾 Local model {model} detected. Processing {len(remaining_leads)} leads individually instead of batch...")
-                                raw_response_lines = []
-                                for lead in remaining_leads:
-                                    lead_res = await instagram_ai.analyze_lead_deep(
-                                        lead_data={
-                                            "username": lead.get("username", ""),
-                                            "bio": lead.get("bio", ""),
-                                            "followers": lead.get("followers", 0)
-                                        },
-                                        model_choice=model,
-                                        intent_description=intent_description
-                                    )
-                                    match_str = "true" if lead_res.get("quality") == "high" else "false"
-                                    score_val = lead_res.get("intent_score", 0)
-                                    niche_val = lead_res.get("niche", "n/a")
-                                    strategy_val = lead_res.get("strategy", "")
-                                    raw_response_lines.append(f"RESULT|{lead['id']}|{match_str}|{score_val}|{niche_val}|{strategy_val}")
-                                raw_response = "\n".join(raw_response_lines)
-                            else:
                                 raw_response = await instagram_ai.analyze_leads_batch(
                                     leads=remaining_leads,
                                     model_choice=model,
