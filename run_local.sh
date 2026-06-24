@@ -14,30 +14,48 @@ echo "6) Qwen 2.5 35B     (16K Context - Optimized GPU/CPU split)"
 echo "=========================================================="
 read -p "Enter selection (1-6): " choice
 
+# Helper to find model path in ~/llama.cpp or ~/llama.cpp/models
+find_model() {
+  local name="$1"
+  if [ -f "$HOME/llama.cpp/models/$name" ]; then
+    echo "$HOME/llama.cpp/models/$name"
+  elif [ -f "$HOME/llama.cpp/$name" ]; then
+    echo "$HOME/llama.cpp/$name"
+  else
+    echo "$HOME/llama.cpp/models/$name"
+  fi
+}
+
 case $choice in
   1)
     echo "Starting Qwen 3.5 9B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/qwen3.5-9b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    MODEL=$(find_model "qwen3.5-9b-q4_k_m.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   2)
     echo "Starting Qwen 3.5 4B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/qwen3.5-4b-q4_k_m.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    MODEL=$(find_model "qwen3.5-4b-q4_k_m.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   3)
     echo "Starting Llama 3.1 8B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
+    MODEL=$(find_model "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 32768 --port 8080 -ngl 99 --chat-template-kwargs '{"enable_thinking":false}'
     ;;
   4)
     echo "Starting Qwen 2.5 7B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-7B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 99
+    MODEL=$(find_model "Qwen2.5-7B-Instruct-Q4_K_M.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 16384 --port 8080 -ngl 99
     ;;
   5)
     echo "Starting Qwen 2.5 14B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-14B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 25
+    MODEL=$(find_model "Qwen2.5-14B-Instruct-Q4_K_M.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 16384 --port 8080 -ngl 25
     ;;
   6)
     echo "Starting Qwen 2.5 35B Instruct..."
-    ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/Qwen2.5-32B-Instruct-Q4_K_M.gguf -c 16384 --port 8080 -ngl 12
+    MODEL=$(find_model "Qwen2.5-32B-Instruct-Q4_K_M.gguf")
+    ~/llama.cpp/build/bin/llama-server -m "$MODEL" -c 16384 --port 8080 -ngl 12
     ;;
   *)
     echo "Invalid selection."
