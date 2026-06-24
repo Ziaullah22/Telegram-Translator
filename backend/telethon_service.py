@@ -102,7 +102,7 @@ class TelegramSession:
                             """
                             async def _connect(self, timeout=None, ssl=None):
                                 import base64
-                                _timeout = timeout or 30
+                                _timeout = timeout or 10
                                 # --- PRIMARY: asyncio CONNECT tunnel (auth in first request) ---
                                 try:
                                     reader, writer = await asyncio.wait_for(
@@ -650,8 +650,9 @@ class TelegramSession:
             
         # AUTO-RECONNECT: If socket is dead, reconnect before sending
         if not self.client.is_connected():
-            logger.info(f"Connection lost for account {self.account_id}. Reconnecting...")
-            await self.connect()
+            logger.info(f"Connection lost for account {self.account_id}. Reconnecting via service...")
+            from telethon_service import telethon_service
+            await telethon_service.connect_session(self.account_id)
 
         if not self.is_connected:
             raise Exception("Client failed to reconnect")
@@ -764,8 +765,9 @@ class TelegramSession:
             
         # AUTO-RECONNECT: Restore connection if dropped
         if not self.client.is_connected():
-            logger.info(f"Connection lost for account {self.account_id} during media send. Reconnecting...")
-            await self.connect()
+            logger.info(f"Connection lost for account {self.account_id} during media send. Reconnecting via service...")
+            from telethon_service import telethon_service
+            await telethon_service.connect_session(self.account_id)
 
         if not self.is_connected:
             raise Exception("Client failed to reconnect")
@@ -1434,6 +1436,24 @@ class TelethonService:
         # 1. Reuse existing session if it exists
         session = self.sessions.get(account_id)
         
+        if session:
+            try:
+                connected = await session.connect()
+                if connected:
+                    logger.info(f"Existing session reconnected successfully for account {account_id}")
+            except Exception as e:
+                logger.warning(f"Existing session connection failed for account {account_id}: {e}. Re-evaluating proxy candidates...")
+                connected = False
+                
+            if not connected:
+                try:
+                    await session.disconnect()
+                except Exception:
+                    pass
+                if account_id in self.sessions:
+                    del self.sessions[account_id]
+                session = None
+
         if not session:
             # 2. Fetch account details to create session
             row = await db.fetchrow(
@@ -1458,15 +1478,15 @@ class TelethonService:
 
             if proxy_id:
                 assigned = await db.fetchrow(
-                    "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE id = $1",
+                    "SELECT id, host, port, username, password, proxy_type, is_working FROM instagram_proxies WHERE id = $1",
                     proxy_id
                 )
-                if assigned:
+                if assigned and assigned.get('is_working', True):
                     proxy_candidates.append(dict(assigned))
 
             # Add other proxies from the same user's pool as fallbacks (max 2 to avoid long waits)
             fallback_proxies = await db.fetch(
-                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 ORDER BY id LIMIT 2",
+                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 AND is_working = TRUE ORDER BY id LIMIT 2",
                 user_id_for_proxies,
                 proxy_id or -1
             )
@@ -1518,15 +1538,21 @@ class TelethonService:
                         if proxy_candidate:
                             # If connection returned false, put it on a short cooldown
                             self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 300
+                            try:
+                                await db.execute("UPDATE instagram_proxies SET is_working = FALSE WHERE id = $1", proxy_candidate['id'])
+                            except Exception as db_err:
+                                logger.warning(f"Failed to flag bad proxy in DB: {db_err}")
                 except Exception as e:
                     err_str = str(e)
                     logger.warning(f"Account {account_id}: failed via {proxy_label}: {err_str}, trying next")
                     if proxy_candidate:
                         # Put on a 30-minute cooldown for timeout/payment/socket errors
                         self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 1800
-        else:
-            # Session already exists — just try connecting it
-            connected = await session.connect()
+                        try:
+                            await db.execute("UPDATE instagram_proxies SET is_working = FALSE WHERE id = $1", proxy_candidate['id'])
+                            logger.info(f"Flagged proxy {proxy_candidate['id']} ({proxy_candidate['host']}) as non-working in DB")
+                        except Exception as db_err:
+                            logger.warning(f"Failed to flag bad proxy in DB: {db_err}")
 
         if connected:
             session = self.sessions.get(account_id)
