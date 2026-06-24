@@ -124,6 +124,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [showAuditModal, setShowAuditModal] = useState(false);
     const [showTraceModal, setShowTraceModal] = useState(false);
+    const [showGoogleDescriptionModal, setShowGoogleDescriptionModal] = useState(false);
 
     const [selectedLead, setSelectedLead] = useState<any>(null);
 
@@ -1512,6 +1513,21 @@ const InstagramLeadGenerator: React.FC = () => {
                                                     <td className="px-4 py-3 text-right">
                                                         <div className="flex items-center justify-end gap-1 group-hover:opacity-100 transition-opacity">
                                                             <a href={`https://instagram.com/${lead.instagram_username || lead.username}`} target="_blank" rel="noopener noreferrer" className="p-2 rounded-xl text-gray-400 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/10 transition-all"><ExternalLink className="w-4 h-4" /></a>
+                                                            {(() => {
+                                                                const googleSnippet = lead.google_description || lead.data_audit_json?.google_snippet_data?.snippet;
+                                                                return googleSnippet ? (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedLead(lead);
+                                                                            setShowGoogleDescriptionModal(true);
+                                                                        }}
+                                                                        className="p-2 rounded-xl text-blue-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all"
+                                                                        title="View Google Description"
+                                                                    >
+                                                                        <Globe className="w-4 h-4" />
+                                                                    </button>
+                                                                ) : null;
+                                                            })()}
                                                             {(lead.data_audit_json || lead.rejection_reason) && (
                                                                 <>
                                                                     <button
@@ -2115,6 +2131,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 />
                                             </div>
 
+
+
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <div className="space-y-2">
                                                     <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
@@ -2274,7 +2292,11 @@ const InstagramLeadGenerator: React.FC = () => {
                                     onClick={async () => {
                                         setIsSavingFilters(true);
                                         try {
-                                            await api.post('/instagram/filters/settings', filterSettings);
+                                            const payload = {
+                                                ...filterSettings,
+                                                ai_intent_filter: filterSettings.google_niche_filter
+                                            };
+                                            await api.post('/instagram/filters/settings', payload);
                                             setNotification({ msg: '✅ Filter rules saved! Auto-Pilot will apply them on next run.', type: 'success' });
                                         } catch { setNotification({ msg: 'Failed to save filters.', type: 'alert' }); }
                                         finally { setIsSavingFilters(false); }
@@ -2368,6 +2390,18 @@ const InstagramLeadGenerator: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
+                                {(() => {
+                                    const googleSnippet = liveLead.google_description || ai?.google_snippet_data?.snippet;
+                                    return googleSnippet ? (
+                                        <div className="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10 flex items-start gap-2.5">
+                                            <div className="mt-0.5 text-blue-500">🌐</div>
+                                            <div>
+                                                <span className="text-[8px] font-black text-blue-400 uppercase block tracking-wider mb-0.5">Google Description</span>
+                                                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{googleSnippet}</span>
+                                            </div>
+                                        </div>
+                                    ) : null;
+                                })()}
                                 {/* Gemma Analysis */}
                                 {(!ai || Object.keys(ai).length === 0) ? (
                                     liveLead.status === 'rejected' ? (
@@ -2457,6 +2491,57 @@ const InstagramLeadGenerator: React.FC = () => {
                             <div className="p-8 pt-4 shrink-0 bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-white/5">
                                 <button onClick={() => setShowAuditModal(false)} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
                                     Close Audit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Google Description Modal */}
+            {showGoogleDescriptionModal && selectedLead && (() => {
+                const liveLead = leads.find(l => l.id === selectedLead.id) || selectedLead;
+                const googleTitle = liveLead.google_title || liveLead.data_audit_json?.google_snippet_data?.title || `Instagram Profile: ${liveLead.instagram_username || liveLead.username}`;
+                const googleSnippet = liveLead.google_description || liveLead.data_audit_json?.google_snippet_data?.snippet;
+                const googleUrl = liveLead.data_audit_json?.google_snippet_data?.url || `https://www.instagram.com/${liveLead.instagram_username || liveLead.username}/`;
+
+                return (
+                    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/10 animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                            {/* Sticky Header */}
+                            <div className="p-8 pb-4 shrink-0 border-b border-gray-100 dark:border-white/5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-blue-500/10 rounded-2xl">
+                                            <Globe className="w-6 h-6 text-blue-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Google Search Description</h2>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Metadata for @{liveLead.instagram_username || liveLead.username}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowGoogleDescriptionModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                                        <X className="w-6 h-6 text-gray-400" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="p-8 flex-1 overflow-y-auto space-y-6 pb-6 scrollbar-hide">
+                                <div className="space-y-4">
+                                    <div className="p-5 bg-gray-50 dark:bg-black/20 rounded-2xl border border-gray-100 dark:border-white/5">
+                                        <span className="text-[8px] font-black text-gray-400 uppercase block tracking-wider mb-1">Google Description</span>
+                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic">
+                                            "{googleSnippet || 'No description snippet available.'}"
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="p-8 pt-4 shrink-0 bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-white/5">
+                                <button onClick={() => setShowGoogleDescriptionModal(false)} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-sm transition-transform active:scale-95 shadow-xl">
+                                    Close Description
                                 </button>
                             </div>
                         </div>

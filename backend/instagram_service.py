@@ -328,7 +328,7 @@ class InstagramService:
             'media', 'keyframes', 'font', 'null', 'none', 'undefined', 'import', 'charset', 
             'document', 'supports', 'page', 'namespace', 'viewport', 'container', 'theme', 
             'root', 'var', 'selector', 'class', 'id', 'html', 'body', 'div', 'span', 'css', 
-            'js', 'true', 'false'
+            'js', 'true', 'false', 'popular'
         }
         if u.lower() in junk: return False
         
@@ -361,7 +361,7 @@ class InstagramService:
             'legal', 'cookies', 'safety', 'community', 'guidelines', 'verification',
             'verified', 'meta', 'facebook', 'whatsapp', 'messenger', 'oculus', 'portal',
             'instagram', 'home', 'search', 'profile', 'edit', 'following', 'followers',
-            'tv', 'link', 'none', 'null'
+            'tv', 'link', 'none', 'null', 'popular'
         }
         
         found = set()
@@ -624,7 +624,7 @@ class InstagramService:
         found_usernames = []
         seen = set()
         new_leads_count = 0
-        search_query = f'"{keyword}" instagram profile'
+        search_query = f'site:instagram.com "{keyword}"'
 
         # ---- WARMUP & SEARCH ----
         if is_first_keyword:
@@ -743,7 +743,7 @@ class InstagramService:
                         
                         u = match.group(1).strip().strip('./_').lower()
                         # Skip common static paths
-                        if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms'):
+                        if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms', 'popular'):
                             continue
 
                         if self._is_valid_username(u) and u not in seen:
@@ -792,14 +792,16 @@ class InstagramService:
                                 if discovery_intent:
                                     data_audit["discovery_intent"] = discovery_intent
                                 new_id = await db.fetchval(
-                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                    "VALUES ($1, $2, $3, 'google_discovered', $4) "
+                                    "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
+                                    "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
                                     "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
                                     "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
                                     "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                    "discovery_keyword = EXCLUDED.discovery_keyword "
+                                    "discovery_keyword = EXCLUDED.discovery_keyword, "
+                                    "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
+                                    "google_description = COALESCE(EXCLUDED.google_description, instagram_leads.google_description) "
                                     "RETURNING id",
-                                    user_id, u, keyword, json.dumps(data_audit)
+                                    user_id, u, keyword, json.dumps(data_audit), card_title, card_snippet
                                 )
                                 if new_id:
                                     new_leads_count += 1
@@ -868,7 +870,7 @@ class InstagramService:
                 start_idx = page_num * 10
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
  
-                search_query = f'"{keyword}" instagram profile'
+                search_query = f'site:instagram.com "{keyword}"'
                 url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
  
                 try:
@@ -988,7 +990,7 @@ class InstagramService:
                                 if match:
                                     u = match.group(1).strip().strip('./_').lower()
                                     # Skip common static paths
-                                    if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms'):
+                                    if u in ('explore', 'developer', 'about', 'legal', 'directory', 'press', 'jobs', 'privacy', 'terms', 'popular'):
                                         continue
 
                                     if self._is_valid_username(u) and u not in seen:
@@ -1039,14 +1041,16 @@ class InstagramService:
                                                 data_audit["discovery_intent"] = discovery_intent
                                             
                                             new_id = await db.fetchval(
-                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
-                                                "VALUES ($1, $2, $3, 'google_discovered', $4) "
+                                                "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
+                                                "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
                                                 "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
                                                 "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE 'google_discovered' END, "
                                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                                "discovery_keyword = EXCLUDED.discovery_keyword "
+                                                "discovery_keyword = EXCLUDED.discovery_keyword, "
+                                                "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
+                                                "google_description = COALESCE(EXCLUDED.google_description, instagram_leads.google_description) "
                                                 "RETURNING id",
-                                                user_id, u, keyword, json.dumps(data_audit)
+                                                user_id, u, keyword, json.dumps(data_audit), card_title, card_snippet
                                             )
                                             if new_id:
                                                 try:
@@ -1876,7 +1880,7 @@ class InstagramService:
         logger.info(f"🧠 [{selected_model}] AI Analysis for @{username}...")
         
         try:
-            intent_description = existing_audit.get('discovery_intent', '') or settings.get('ai_intent_filter', '')
+            intent_description = existing_audit.get('discovery_intent', '')
             if not is_qualified:
                 ai_trace_steps.append({
                     "step": "Deep AI Intent Check",
@@ -3372,8 +3376,8 @@ class InstagramService:
                     """, u_id)
                     google_count = cnt_row["cnt"] if cnt_row else 0
                     is_discovery_active = self._discovery_status.get(u_id, {}).get("active", False)
-                    if is_discovery_active and google_count < 50:
-                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 50...")
+                    if is_discovery_active and google_count < 25:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 25...")
                         continue
                     google_user_row = u_row
                     break
@@ -3384,7 +3388,7 @@ class InstagramService:
                         SELECT id, instagram_username, data_audit_json 
                         FROM instagram_leads
                         WHERE user_id = $1 AND status = 'google_discovered'
-                        ORDER BY created_at ASC LIMIT 50
+                        ORDER BY created_at ASC LIMIT 25
                     """, user_id)
 
                     settings = await self.get_filter_settings(user_id)

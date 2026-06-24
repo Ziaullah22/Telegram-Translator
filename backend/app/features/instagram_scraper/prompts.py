@@ -38,6 +38,7 @@ CRITICAL CRITERIA / INTENT:
 - The user's target business/profile intent is: "{intent_description}"
 - You MUST evaluate this profile strictly against this target intent. If it does not match, set "quality" to "low" and keep the "intent_score" below 70.
 - If it matches the intent perfectly, set "quality" to "high" and "intent_score" to 80-100.
+- Do NOT use generic rules (such as requiring the user to be a business owner or coach) unless specified by the target intent: "{intent_description}".
 - In the `strategy` field, you MUST explain exactly how the services, products, or keywords in this profile's bio match or do not match the target intent: "{intent_description}". Write a detailed, professional paragraph (3-5 sentences) providing the logical reasoning behind your decision.
 """
     else:

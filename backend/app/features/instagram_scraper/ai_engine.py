@@ -40,7 +40,7 @@ class InstagramAIEngine:
         payload = {
             "model": "qwen",
             "messages": messages,
-            "temperature": 0.1,
+            "temperature": 0.0,
             "response_format": {"type": "json_object"}
         }
 
@@ -76,7 +76,7 @@ class InstagramAIEngine:
                         "model": fallback_model,
                         "prompt": full_prompt,
                         "stream": False,
-                        "options": {"temperature": 0.1}
+                        "options": {"temperature": 0.0}
                     },
                     timeout=aiohttp.ClientTimeout(connect=5, total=300)
                 ) as response:
@@ -174,7 +174,7 @@ class InstagramAIEngine:
                 payload = {
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "generationConfig": {
-                        "temperature": 0.1,
+                        "temperature": 0.0,
                         "responseMimeType": "application/json"
                     }
                 }
@@ -204,7 +204,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                     "response_format": {"type": "json_object"}
                 }
                 headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -234,7 +234,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "google/gemini-2.5-flash",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                     "response_format": {"type": "json_object"}
                 }
                 headers = {
@@ -269,7 +269,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "Qwen/Qwen2.5-72B-Instruct",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                     "max_tokens": 500
                 }
                 headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -299,7 +299,7 @@ class InstagramAIEngine:
                             "model": model_to_use,
                             "prompt": prompt,
                             "stream": False,
-                            "options": {"temperature": 0.1}
+                            "options": {"temperature": 0.0}
                         },
                         timeout=180
                     ) as response:
@@ -355,7 +355,7 @@ class InstagramAIEngine:
                         "prompt": prompt,
                         "images": [image_base64],
                         "stream": False,
-                        "options": {"temperature": 0}
+                        "options": {"temperature": 0.0}
                     },
                     timeout=120
                 ) as response:
@@ -383,31 +383,33 @@ class InstagramAIEngine:
         system_prompt = (
             "You are an expert lead qualification assistant.\n"
             "You will be given a list of leads (Instagram profiles and Google snippet data).\n"
-            "You must analyze each lead against the Target Lead Criteria and Target Intent.\n"
+            "You must analyze each lead fully and strictly against the custom Target Lead Criteria and custom Target Intent specified by the user.\n"
+            "Do NOT use default generic rules (like requiring the lead to be a business owner or selling a service) unless explicitly specified in the criteria.\n"
+            "Evaluate each lead based ONLY on whether its bio, content, title, or snippet aligns with the custom criteria/intent.\n"
             "For each lead, you MUST output exactly one line in this format:\n"
             "RESULT|LEAD_ID|MATCH_STATUS|INTENT_SCORE|NICHE|STRATEGY\n"
             "Where:\n"
             "- LEAD_ID: The numeric ID of the lead provided in the input.\n"
-            "- MATCH_STATUS: 'true' if the lead meets the criteria, 'false' otherwise.\n"
-            "- INTENT_SCORE: An integer from 0 to 100 indicating the intent strength.\n"
+            "- MATCH_STATUS: 'true' if the lead meets the target criteria/intent, 'false' otherwise.\n"
+            "- INTENT_SCORE: An integer from 0 to 100 indicating how well they match the target criteria/intent.\n"
             "- NICHE: A short one-word or two-word niche/category name.\n"
-            "- STRATEGY: A grammatically complete, professional sentence explaining the precise reason why the lead qualifies or fails to qualify based on the target lead criteria.\n\n"
+            "- STRATEGY: A grammatically complete, professional sentence explaining the precise reason why the lead qualifies or fails to qualify based on the target criteria/intent.\n\n"
             "CRITICAL RULES:\n"
             "1. You MUST process each lead independently. Do NOT compare leads, reference other lead IDs, or output placeholder/format correction text.\n"
             "2. Never output self-corrections or text like 'this result is replaced by...'. Every output line must be a valid analysis of the target lead ID.\n"
             "3. Do not output any intro, markdown formatting, backticks, json blocks, or explanation. Output ONLY the RESULT lines, one line per lead.\n\n"
             "Example output:\n"
-            "RESULT|123|true|85|fitness|The profile qualifies because the owner actively posts bodybuilding routines and fat loss coaching client results.\n"
-            "RESULT|124|false|20|lifestyle|This profile is rejected because it appears to be a personal lifestyle account with no indication of business service offerings or professional niche relevance."
+            "RESULT|123|true|85|niche_name|The profile matches because the owner actively posts relevant content matching the criteria.\n"
+            "RESULT|124|false|20|unrelated|This profile is rejected because it is completely unrelated to the target criteria."
         )
 
         if google_criteria and not intent_description:
-            # Stage 1: Google vetting leniency instructions
+            # Stage 1: Google vetting instructions
             system_prompt += (
                 "\n\nADDITIONAL STAGE 1 GOOGLE VETTING INSTRUCTIONS:\n"
-                "- Google Search Results/snippets are brief, partial, and can represent directories, lists, blogs, reviews, or aggregators related to the niche.\n"
-                "- If there is ANY relation, mention, or association to the target niche/criteria found in the snippet (even if indirect, such as listing vape shops, blogging about vaping, or reviewing smoke shops), you MUST mark it as a match (MATCH_STATUS = 'true').\n"
-                "- Only reject (MATCH_STATUS = 'false') if the result is completely unrelated to the target niche (e.g., auto repair, fashion, food, software, real estate, general medical clinics with no mention of cannabis/vapes).\n"
+                "- Evaluate ONLY based on the Title, URL, and Google Snippet against the Target Lead Criteria.\n"
+                "- A lead is a match if it directly and clearly relates to ANY of the concepts, products, or categories listed in the Target Lead Criteria (e.g., if criteria includes 'smoking' or 'smoke shops', then a 'tobacco shop' or 'cigar lounge' is a match; do not reject it for not mentioning 'vaping' or 'cannabis'). Note that this is only an example; you must apply this same matching logic dynamically to whatever concepts, products, or categories are listed in the user's specific Target Lead Criteria.\n"
+                "- Reject (MATCH_STATUS = 'false') if the snippet context is vague, doubtful, or if keywords are used in a completely unrelated context.\n"
             )
 
         leads_str = ""
@@ -453,7 +455,7 @@ class InstagramAIEngine:
                 payload = {
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "generationConfig": {
-                        "temperature": 0.1
+                        "temperature": 0.0
                     }
                 }
                 async with aiohttp.ClientSession() as session:
@@ -480,7 +482,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1
+                    "temperature": 0.0
                 }
                 headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
@@ -507,7 +509,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "google/gemini-2.5-flash",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1
+                    "temperature": 0.0
                 }
                 headers = {
                     "Authorization": f"Bearer {key}",
@@ -539,7 +541,7 @@ class InstagramAIEngine:
                 payload = {
                     "model": "Qwen/Qwen2.5-72B-Instruct",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                     "max_tokens": 1000
                 }
                 headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -566,7 +568,7 @@ class InstagramAIEngine:
                             "model": model_to_use,
                             "prompt": prompt,
                             "stream": False,
-                            "options": {"temperature": 0.1}
+                            "options": {"temperature": 0.0}
                         },
                         timeout=240
                     ) as response:
@@ -584,14 +586,15 @@ class InstagramAIEngine:
         Implements a fallback chain: if the selected model fails, it tries other cloud models, then local ones.
         """
         system_prompt = (
-            "You are an expert lead qualification assistant.\n"
-            "Evaluate whether the following Google Search Result matches the user's target lead criteria.\n"
-            "IMPORTANT: Google Search Results/snippets are brief, partial, and can represent directories, lists, blogs, reviews, or aggregators related to the niche. If there is ANY relation, mention, or association to the target niche/criteria found in the snippet (even if indirect, such as listing vape shops, blogging about vaping, or reviewing smoke shops), you MUST mark it as a match (match: true).\n"
-            "Only reject (match: false) if the result is completely unrelated to the target niche (e.g., auto repair, fashion, food, software, real estate, general medical clinics with no mention of cannabis/vapes).\n"
-            "You MUST respond ONLY with a JSON object in this format:\n"
+            "You are a strict validator. Check if the Google Search Result matches the target lead criteria.\n"
+            "RULES:\n"
+            "1. You ONLY have: Title, URL, Google Description. Do NOT mention 'bio' or 'profile content'. Use 'Google description'.\n"
+            "2. A result matches if it directly and clearly relates to ANY of the specific concepts, products, or categories listed in the target lead criteria. For example, if criteria includes 'smoking' or 'smoke shops', then a 'tobacco shop' or 'cigar store' is a match. Do not reject it for not mentioning 'cannabis' or 'vaping' if it matches the smoking criteria. Note that this is only an example; you must apply this same matching logic dynamically to whatever concepts, products, or categories are listed in the user's specific Target Lead Criteria.\n"
+            "3. Reject (match=false) only if the description/title is vague, doubtful, or uses keywords in a completely unrelated context.\n"
+            "4. Respond ONLY with a JSON object:\n"
             "{\n"
             "  \"match\": true or false,\n"
-            "  \"reason\": \"A grammatically complete, professional sentence explaining the precise reason why the result matches or fails to match the target lead criteria.\"\n"
+            "  \"reason\": \"A brief, direct sentence explaining why it matches or fails to match the target criteria.\"\n"
             "}"
         )
         
@@ -600,7 +603,7 @@ class InstagramAIEngine:
             "Google Search Result to evaluate:\n"
             f"- Title: {title}\n"
             f"- URL: {url}\n"
-            f"- Description: {snippet}\n\n"
+            f"- Google Description: {snippet}\n\n"
             "Is this result a match for the lead criteria?"
         )
 
@@ -651,7 +654,7 @@ class InstagramAIEngine:
                         payload = {
                             "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
                             "generationConfig": {
-                                "temperature": 0.1,
+                                "temperature": 0.0,
                                 "responseMimeType": "application/json"
                             }
                         }
@@ -685,7 +688,7 @@ class InstagramAIEngine:
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_prompt}
                             ],
-                            "temperature": 0.1,
+                            "temperature": 0.0,
                             "response_format": {"type": "json_object"}
                         }
                         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -719,7 +722,7 @@ class InstagramAIEngine:
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_prompt}
                             ],
-                            "temperature": 0.1,
+                            "temperature": 0.0,
                             "response_format": {"type": "json_object"}
                         }
                         headers = {
@@ -758,7 +761,7 @@ class InstagramAIEngine:
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_prompt}
                             ],
-                            "temperature": 0.1,
+                            "temperature": 0.0,
                             "max_tokens": 500
                         }
                         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -790,7 +793,7 @@ class InstagramAIEngine:
                                 "model": model_to_use,
                                 "prompt": prompt,
                                 "stream": False,
-                                "options": {"temperature": 0.1}
+                                "options": {"temperature": 0.0}
                             },
                             timeout=120
                         ) as response:
