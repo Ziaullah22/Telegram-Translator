@@ -157,7 +157,7 @@ class InstagramAIEngine:
 
         model_lower = model_choice.lower().strip() if model_choice else ""
 
-        if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local"):
+        if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local", "qwen3.5-9b-local", "qwen3.5-4b-local"):
             print(f"🧠 [{model_choice}] Analyzing @{username} via llama.cpp/Ollama...")
             return await self._call_llama_cpp(prompt)
 
@@ -557,7 +557,7 @@ class InstagramAIEngine:
                         last_err = str(e)
             return f"error: All Hugging Face keys failed. Last error: {last_err}"
 
-        elif model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local"):
+        elif model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local", "qwen3.5-9b-local", "qwen3.5-4b-local"):
             # Call llama.cpp API on port 8080/8000
             payload = {
                 "model": "qwen",
@@ -669,7 +669,7 @@ class InstagramAIEngine:
             
             try:
                 result = None
-                if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local"):
+                if model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local", "qwen3.5-9b-local", "qwen3.5-4b-local"):
                     logger.info(f"🧠 [{model}] Filtering google result: {title} via llama.cpp/Ollama...")
                     result = await self._call_llama_cpp(user_prompt, system_prompt)
                     
