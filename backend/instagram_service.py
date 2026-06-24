@@ -1913,7 +1913,7 @@ class InstagramService:
                         }, model_choice=model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
                         
                         if ai_result and "error" not in ai_result:
-                            used_model = model
+                            used_model = ai_result.get("actual_model", model)
                             break
                         else:
                             last_err = ai_result.get("error", "Unknown error") if ai_result else "Unknown error"

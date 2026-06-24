@@ -27,6 +27,26 @@ class InstagramAIEngine:
         except:
             return {}
 
+    def _normalize_local_model_name(self, raw_model_name: str) -> str:
+        if not raw_model_name:
+            return ""
+        name = raw_model_name.lower()
+        if "qwen3.5-9b" in name or "qwen3.5_9b" in name:
+            return "qwen3.5-9b-local"
+        if "qwen3.5-4b" in name or "qwen3.5_4b" in name:
+            return "qwen3.5-4b-local"
+        if "llama-3.1-8b" in name or "llama_3.1_8b" in name:
+            return "llama-3.1-8b-local"
+        if "llama-3-8b" in name or "llama_8b" in name or "llama-8b" in name:
+            return "llama-8b-local"
+        if "qwen2.5-7b" in name or "qwen_2.5_7b" in name:
+            return "qwen-7b-local"
+        if "qwen2.5-14b" in name or "qwen_2.5_14b" in name:
+            return "qwen-14b-local"
+        if "qwen2.5-32b" in name or "qwen2.5-35b" in name or "qwen_2.5_35b" in name or "qwen_2.5_32b" in name:
+            return "qwen-35b-local"
+        return raw_model_name
+
     async def _call_llama_cpp(self, prompt: str, system_prompt: str = None) -> dict:
         """
         Attempts to call llama.cpp on port 8080 or 8000 using the OpenAI-compatible v1/chat/completions API.
@@ -58,8 +78,12 @@ class InstagramAIEngine:
                         if response.status == 200:
                             data = await response.json()
                             raw_content = data["choices"][0]["message"]["content"]
-                            logger.info(f"Successfully got response from llama.cpp on port {port}")
-                            return self._extract_json(raw_content)
+                            raw_model = data.get("model")
+                            logger.info(f"Successfully got response from llama.cpp on port {port} (raw model: {raw_model})")
+                            res_dict = self._extract_json(raw_content)
+                            if isinstance(res_dict, dict) and raw_model:
+                                res_dict["actual_model"] = self._normalize_local_model_name(raw_model)
+                            return res_dict
                         else:
                             logger.warning(f"llama.cpp on port {port} returned status {response.status}")
             except Exception as e:
@@ -838,7 +862,7 @@ class InstagramAIEngine:
 
                 if result and isinstance(result, dict) and "match" in result and "error" not in result:
                     logger.info(f"✅ [AI Filter] Successfully qualified result using model: {model}")
-                    result["model_used"] = model
+                    result["model_used"] = result.get("actual_model", model)
                     return result
                 else:
                     err_msg = result.get("error") if result else "JSON parsing or match key missing"
