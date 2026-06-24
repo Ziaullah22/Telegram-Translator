@@ -557,6 +557,37 @@ class InstagramAIEngine:
                         last_err = str(e)
             return f"error: All Hugging Face keys failed. Last error: {last_err}"
 
+        elif model_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local"):
+            # Call llama.cpp API on port 8080/8000
+            payload = {
+                "model": "qwen",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.0
+            }
+            for port in [8080, 8000]:
+                url = f"http://localhost:{port}/v1/chat/completions"
+                logger.info(f"Connecting to llama.cpp at {url} for batch...")
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            url, 
+                            json=payload, 
+                            headers={"Content-Type": "application/json"}, 
+                            timeout=240
+                        ) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                return data["choices"][0]["message"]["content"]
+                            else:
+                                logger.warning(f"llama.cpp on port {port} returned status {response.status}")
+                except Exception as e:
+                    logger.warning(f"Failed to connect to llama.cpp on port {port} for batch: {e}")
+            
+            return "error: llama.cpp not reachable on port 8080 or 8000"
+
         else:
             # Local Ollama
             model_to_use = model_choice if model_choice and model_choice != "ollama-local" else self.model
