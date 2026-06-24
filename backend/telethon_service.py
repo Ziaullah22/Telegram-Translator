@@ -1415,6 +1415,7 @@ class TelethonService:
         self.read_handlers: List[Callable] = []
         self.polling_task: Optional[asyncio.Task] = None
         self.polling_interval = 10  # seconds
+        self.expired_proxies: Dict[int, float] = {}  # proxy_id -> expiration timestamp (cooldown)
         os.makedirs("sessions", exist_ok=True)
 
     def add_message_handler(self, handler):
@@ -1478,6 +1479,15 @@ class TelethonService:
             # 3. Try each proxy candidate in order until one works
             connected = False
             for proxy_candidate in proxy_candidates:
+                if proxy_candidate and proxy_candidate.get('id') in self.expired_proxies:
+                    cooldown = self.expired_proxies[proxy_candidate['id']]
+                    if asyncio.get_event_loop().time() < cooldown:
+                        logger.info(f"Skipping known expired/dead proxy {proxy_candidate['host']}:{proxy_candidate['port']} (on cooldown)")
+                        continue
+                    else:
+                        # Cooldown expired, remove it to try again
+                        del self.expired_proxies[proxy_candidate['id']]
+
                 proxy_label = f"{proxy_candidate['host']}:{proxy_candidate['port']}" if proxy_candidate else "direct (no proxy)"
                 try:
                     # Remove stale session object between attempts
@@ -1505,8 +1515,15 @@ class TelethonService:
                         break
                     else:
                         logger.warning(f"Account {account_id}: connect() returned False via {proxy_label}, trying next")
+                        if proxy_candidate:
+                            # If connection returned false, put it on a short cooldown
+                            self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 300
                 except Exception as e:
-                    logger.warning(f"Account {account_id}: failed via {proxy_label}: {e}, trying next")
+                    err_str = str(e)
+                    logger.warning(f"Account {account_id}: failed via {proxy_label}: {err_str}, trying next")
+                    if proxy_candidate:
+                        # Put on a 30-minute cooldown for timeout/payment/socket errors
+                        self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 1800
         else:
             # Session already exists — just try connecting it
             connected = await session.connect()
