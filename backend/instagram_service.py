@@ -1760,7 +1760,7 @@ class InstagramService:
         selected_model = settings.get('ai_model') or 'gemma4'
         
         # Setup fallback models list
-        cloud_fallbacks = ["gemini", "groq", "huggingface"]
+        cloud_fallbacks = ["gemini", "groq", "openrouter", "huggingface", "qwen-35b-local", "gemma4", "gemma4:e2b"]
         models_to_try = [selected_model]
         for m in cloud_fallbacks:
             if not any(m in x.lower() for x in models_to_try):
@@ -3398,7 +3398,7 @@ class InstagramService:
 
                     if enable_ai_filter and google_niche_filter:
                         # Setup fallback models list
-                        cloud_fallbacks = ["gemini", "groq", "huggingface"]
+                        cloud_fallbacks = ["gemini", "groq", "openrouter", "huggingface", "qwen-35b-local", "gemma4", "gemma4:e2b"]
                         models_to_try = [selected_model]
                         for m in cloud_fallbacks:
                             if not any(m in x.lower() for x in models_to_try):
@@ -3584,7 +3584,7 @@ class InstagramService:
                     selected_model = settings.get('ai_model') or 'gemma4'
 
                     # Setup fallback models list
-                    cloud_fallbacks = ["gemini", "groq", "huggingface"]
+                    cloud_fallbacks = ["gemini", "groq", "openrouter", "huggingface", "qwen-35b-local", "gemma4", "gemma4:e2b"]
                     models_to_try = [selected_model]
                     for m in cloud_fallbacks:
                         if not any(m in x.lower() for x in models_to_try):
