@@ -805,7 +805,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
 
         if prov_lower in ("huggingface", "hf"):
             return [], f"❌ All Hugging Face keys failed. Last error: {last_error_msg}", False, True    # 4.5 Try Qwen Local (llama.cpp / Ollama fallback)
-    if prov_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local"):
+    if prov_lower in ("qwen-35b-local", "qwen-14b-local", "qwen-7b-local", "llama-8b-local", "llama-3.1-8b-local"):
         payload_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
         payload = {
             "model": "qwen",

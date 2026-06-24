@@ -2148,6 +2148,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="qwen-7b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 7B (Local)</option>
                                                         <option value="qwen-14b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 14B (Local)</option>
                                                         <option value="qwen-35b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Qwen 2.5 35B (Local)</option>
+                                                        <option value="llama-8b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Llama 8B (Local)</option>
+                                                        <option value="llama-3.1-8b-local" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">Llama 3.1 8B (Local)</option>
                                                         <option value="minimax-text-01" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">MiniMax 2.7 (Cloud)</option>
                                                         <option disabled className="bg-white dark:bg-slate-800 text-gray-400">── Cloud APIs ──</option>
                                                         <option value="openrouter" className="bg-white dark:bg-slate-800 text-gray-800 dark:text-white">🌐 Gemini 2.5 Flash (via OpenRouter)</option>
@@ -2658,6 +2660,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         if (mk === 'qwen-35b-local') return 'Qwen 35B';
                                                                         if (mk === 'qwen-14b-local') return 'Qwen 14B';
                                                                         if (mk === 'qwen-7b-local') return 'Qwen 7B';
+                                                                        if (mk === 'llama-8b-local') return 'Llama 8B';
+                                                                        if (mk === 'llama-3.1-8b-local') return 'Llama 3.1 8B';
                                                                         return item.model_used;
                                                                     })()}
                                                                 </span>
@@ -2676,7 +2680,9 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                         { k: 'minimax', n: 'MiniMax 2.7' },
                                                                         { k: 'qwen-35b-local', n: 'Qwen 35B' },
                                                                         { k: 'qwen-14b-local', n: 'Qwen 14B' },
-                                                                        { k: 'qwen-7b-local', n: 'Qwen 7B' }
+                                                                        { k: 'qwen-7b-local', n: 'Qwen 7B' },
+                                                                        { k: 'llama-8b-local', n: 'Llama 8B' },
+                                                                        { k: 'llama-3.1-8b-local', n: 'Llama 3.1 8B' }
                                                                     ];
                                                                     for (const m of mps) {
                                                                         const regex = new RegExp(`^Model:\\s*${m.k}\\b`, 'i');
@@ -2773,6 +2779,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
                                                         <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
+                                                        <option value="llama-8b-local">Llama 8B (llama.cpp / Local)</option>
+                                                        <option value="llama-3.1-8b-local">Llama 3.1 8B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
@@ -3170,6 +3178,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
                                                         <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
+                                                        <option value="llama-8b-local">Llama 8B (llama.cpp / Local)</option>
+                                                        <option value="llama-3.1-8b-local">Llama 3.1 8B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
@@ -3478,6 +3488,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="qwen-7b-local">Qwen 7B (llama.cpp / Local)</option>
                                                         <option value="qwen-14b-local">Qwen 14B (llama.cpp / Local)</option>
                                                         <option value="qwen-35b-local">Qwen 35B (llama.cpp / Local)</option>
+                                                        <option value="llama-8b-local">Llama 8B (llama.cpp / Local)</option>
+                                                        <option value="llama-3.1-8b-local">Llama 3.1 8B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
