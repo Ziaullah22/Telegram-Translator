@@ -1677,6 +1677,13 @@ class InstagramService:
                 await update_ui("private", "Private account")
                 return {"success": True, "status": "private"}
 
+            # Check for no followers or no posts/pictures (for public accounts)
+            if followers == 0 or not posts or len(posts) == 0:
+                logger.warning(f"⚠️ Lead {lead_id} has NO followers or NO posts/pictures. Deleting from DB.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                await update_ui("failed", "No posts/followers (Deleted)")
+                return {"success": False, "status": "failed"}
+
             # Run non-AI filters
             settings = await self.get_filter_settings(user_id)
             is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
@@ -4572,6 +4579,13 @@ class InstagramService:
                 logger.info(f"🔒 Lead {lead_id} marked as PRIVATE.")
                 await update_ui("private", "Private account")
                 return {"success": True, "status": "private"}
+
+            # Check for no followers or no posts/pictures (for public accounts)
+            if followers == 0 or not posts or len(posts) == 0:
+                logger.warning(f"⚠️ Lead {lead_id} has NO followers or NO posts/pictures. Deleting from DB.")
+                await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
+                await update_ui("failed", "No posts/followers (Deleted)")
+                return {"success": False, "status": "failed"}
 
             # Run fallback Google AI analysis if snippet-based analysis was skipped (e.g. legacy fallback or manually imported leads)
             if enable_ai_filter and google_niche_filter and not audit.get('google_ai_analyzed'):
