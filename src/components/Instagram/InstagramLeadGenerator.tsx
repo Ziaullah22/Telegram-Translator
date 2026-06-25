@@ -79,7 +79,8 @@ const InstagramLeadGenerator: React.FC = () => {
         bio_exclude_keywords: string,
         bio_cities_whitelist: string,
         enable_ai_analysis: boolean,
-        ai_intent_filter: string
+        ai_intent_filter: string,
+        knowledge_base: string
     }>({
         bio_keywords: '',
         min_followers: 0,
@@ -93,7 +94,8 @@ const InstagramLeadGenerator: React.FC = () => {
         bio_exclude_keywords: '',
         bio_cities_whitelist: '',
         enable_ai_analysis: true,
-        ai_intent_filter: ''
+        ai_intent_filter: '',
+        knowledge_base: ''
     });
     const [isSavingFilters, setIsSavingFilters] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -367,7 +369,8 @@ const InstagramLeadGenerator: React.FC = () => {
                 bio_exclude_keywords: s.bio_exclude_keywords || '',
                 bio_cities_whitelist: s.bio_cities_whitelist || '',
                 enable_ai_analysis: s.enable_ai_analysis !== undefined ? s.enable_ai_analysis : true,
-                ai_intent_filter: s.ai_intent_filter || ''
+                ai_intent_filter: s.ai_intent_filter || '',
+                knowledge_base: s.knowledge_base || ''
             }))
             .catch(() => { });
     }, []);
@@ -2131,6 +2134,19 @@ const InstagramLeadGenerator: React.FC = () => {
                                                 />
                                             </div>
 
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                                    Lead Qualification Knowledge Base (Do Not Match Guidelines)
+                                                </label>
+                                                <textarea
+                                                    rows={3}
+                                                    placeholder="Tell the AI what type of profiles to avoid matching. E.g., 'Do not match flower farms, gardening companies, or weed management groups. Only match dispensaries, smoke shops, and vape stores.'"
+                                                    value={filterSettings.knowledge_base}
+                                                    onChange={(e) => setFilterSettings(p => ({ ...p, knowledge_base: e.target.value }))}
+                                                    className="w-full bg-white dark:bg-black/40 border border-gray-100 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500/20 placeholder:text-gray-400"
+                                                />
+                                            </div>
+
 
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2327,6 +2343,12 @@ const InstagramLeadGenerator: React.FC = () => {
                                             <p className="text-[10px] font-black uppercase opacity-60 mb-1">Exclude Keywords (Block List)</p>
                                             <p className="font-bold text-sm">{filterSettings.bio_exclude_keywords || <span className="opacity-40 italic">None — no exclusions</span>}</p>
                                         </div>
+                                        {filterSettings.enable_ai_filter && filterSettings.knowledge_base && (
+                                            <div className="bg-white/10 rounded-xl p-3">
+                                                <p className="text-[10px] font-black uppercase opacity-60 mb-1">Knowledge Base Guidelines</p>
+                                                <p className="font-bold text-sm truncate">{filterSettings.knowledge_base}</p>
+                                            </div>
+                                        )}
                                         <div className="bg-white/10 rounded-xl p-3">
                                             <p className="text-[10px] font-black uppercase opacity-60 mb-1">Target Cities Whitelist</p>
                                             <p className="font-bold text-sm truncate">{filterSettings.bio_cities_whitelist || <span className="opacity-40 italic">None — all regions pass</span>}</p>

@@ -387,6 +387,7 @@ class FilterSettingsRequest(BaseModel):
     bio_cities_whitelist: str = ""
     enable_ai_analysis: bool = True
     ai_intent_filter: str = ""
+    knowledge_base: str = ""
 
 @router.get("/filters/settings")
 async def get_filter_settings(current_user: TokenData = Depends(get_current_user)):
@@ -410,7 +411,8 @@ async def save_filter_settings(req: FilterSettingsRequest, current_user: TokenDa
         req.bio_exclude_keywords,
         req.bio_cities_whitelist,
         req.enable_ai_analysis,
-        req.ai_intent_filter
+        req.ai_intent_filter,
+        req.knowledge_base
     )
 
 class ImageHashRequest(BaseModel):

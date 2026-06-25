@@ -167,7 +167,7 @@ class InstagramAIEngine:
             print(f"❌ [Gemma 4] Vision Error: {e}")
             return {"match": False, "confidence": 0, "reason": f"Gemma 4 Error: {str(e)}"}
 
-    async def analyze_lead_deep(self, lead_data: dict, model_choice: str = None, intent_description: str = "", api_key: str = "") -> dict:
+    async def analyze_lead_deep(self, lead_data: dict, model_choice: str = None, intent_description: str = "", api_key: str = "", knowledge_base: str = "") -> dict:
         """Analyze lead data using selected model in Ollama, MiniMax, Gemini, Groq, OpenRouter, or Hugging Face."""
         username = lead_data.get('username', 'unknown')
         bio = lead_data.get('bio', '').strip()
@@ -177,7 +177,7 @@ class InstagramAIEngine:
         if not bio and followers < 1000:
             return {"niche": "Personal", "intent_score": 0, "strategy": "Ignore.", "suggested_hook": "N/A", "quality": "low"}
 
-        prompt = get_lead_analysis_prompt(username, bio, followers, intent_description)
+        prompt = get_lead_analysis_prompt(username, bio, followers, intent_description, knowledge_base)
 
         model_lower = model_choice.lower().strip() if model_choice else ""
 
@@ -397,7 +397,7 @@ class InstagramAIEngine:
                 print(f"❌ [Ollama] Vision error: {e}")
                 return {"match": False, "confidence": 0, "reason": "Connection Error"}
 
-    async def analyze_leads_batch(self, leads: list, model_choice: str = None, intent_description: str = "", google_criteria: str = "", api_key: str = "") -> str:
+    async def analyze_leads_batch(self, leads: list, model_choice: str = None, intent_description: str = "", google_criteria: str = "", api_key: str = "", knowledge_base: str = "") -> str:
         """
         Analyze a list of leads in a single prompt.
         Instructs the model to evaluate each lead and print the result in format:
@@ -407,7 +407,7 @@ class InstagramAIEngine:
         system_prompt = (
             "You are an expert lead qualification assistant.\n"
             "You will be given a list of leads (Instagram profiles and Google snippet data).\n"
-            "You must analyze each lead fully and strictly against the custom Target Lead Criteria and custom Target Intent specified by the user.\n"
+            "You must analyze each lead fully and strictly against the custom Target Lead Criteria, custom Target Intent, and custom Knowledge Base / Do Not Match guidelines specified by the user.\n"
             "Do NOT use default generic rules (like requiring the lead to be a business owner or selling a service) unless explicitly specified in the criteria.\n"
             "Evaluate each lead based ONLY on whether its bio, content, title, or snippet aligns with the custom criteria/intent.\n"
             "For each lead, you MUST output exactly one line in this format:\n"
@@ -456,9 +456,11 @@ class InstagramAIEngine:
                 f"--- LEAD END ---\n\n"
             )
 
+        kb_part = f"Knowledge Base / Do Not Match Guidelines:\n\"{knowledge_base}\"\n\n" if knowledge_base else ""
         user_prompt = (
             f"Target Lead Criteria: \"{google_criteria}\"\n"
             f"Target Intent: \"{intent_description}\"\n\n"
+            f"{kb_part}"
             f"Leads to evaluate:\n{leads_str}"
             f"Analyze each lead and output exactly one line starting with RESULT| for each."
         )
@@ -634,27 +636,30 @@ class InstagramAIEngine:
                 except Exception as e:
                     return f"error: {str(e)}"
 
-    async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "gemini", api_key: str = "", ollama_url: str = None) -> dict:
+    async def analyze_google_result(self, title: str, url: str, snippet: str, criteria: str, model_choice: str = "gemini", api_key: str = "", ollama_url: str = None, knowledge_base: str = "") -> dict:
         """
         Evaluate whether a Google Search Result matches the target lead criteria.
         Supports Ollama (local), Gemini, Groq, OpenRouter, and Hugging Face.
         Implements a fallback chain: if the selected model fails, it tries other cloud models, then local ones.
         """
         system_prompt = (
-            "You are a strict validator. Check if the Google Search Result matches the target lead criteria.\n"
+            "You are a strict validator. Check if the Google Search Result matches the target lead criteria and custom Knowledge Base guidelines.\n"
             "RULES:\n"
             "1. You ONLY have: Title, URL, Google Description. Do NOT mention 'bio' or 'profile content'. Use 'Google description'.\n"
             "2. A result matches if it directly and clearly relates to ANY of the specific concepts, products, or categories listed in the target lead criteria. For example, if criteria includes 'smoking' or 'smoke shops', then a 'tobacco shop' or 'cigar store' is a match. Do not reject it for not mentioning 'cannabis' or 'vaping' if it matches the smoking criteria. Note that this is only an example; you must apply this same matching logic dynamically to whatever concepts, products, or categories are listed in the user's specific Target Lead Criteria.\n"
-            "3. Reject (match=false) only if the description/title is vague, doubtful, or uses keywords in a completely unrelated context.\n"
-            "4. Respond ONLY with a JSON object:\n"
+            "3. Reject (match=false) if the result matches any pattern to NOT match or reject described in the Knowledge Base guidelines.\n"
+            "4. Reject (match=false) if the description/title is vague, doubtful, or uses keywords in a completely unrelated context.\n"
+            "5. Respond ONLY with a JSON object:\n"
             "{\n"
             "  \"match\": true or false,\n"
-            "  \"reason\": \"A brief, direct sentence explaining why it matches or fails to match the target criteria.\"\n"
+            "  \"reason\": \"A brief, direct sentence explaining why it matches or fails to match the target criteria/guidelines.\"\n"
             "}"
         )
         
+        kb_part = f"Knowledge Base / Do Not Match Guidelines:\n\"{knowledge_base}\"\n\n" if knowledge_base else ""
         user_prompt = (
             f"User Target Lead Criteria: \"{criteria}\"\n\n"
+            f"{kb_part}"
             "Google Search Result to evaluate:\n"
             f"- Title: {title}\n"
             f"- URL: {url}\n"

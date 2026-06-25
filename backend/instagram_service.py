@@ -1348,7 +1348,7 @@ class InstagramService:
                     "username": username_val,
                     "bio": bio,
                     "followers": followers
-                }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+                }, model_choice=selected_model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''), knowledge_base=settings.get('knowledge_base', ''))
             except Exception as e:
                 logger.error(f"❌ AI analysis exception for @{username_val}: {e}. Deleting lead {lead_id} from database.")
                 await db.execute("DELETE FROM instagram_leads WHERE id = $1", lead_id)
@@ -1835,7 +1835,8 @@ class InstagramService:
                                 snippet=snippet,
                                 criteria=google_niche_filter,
                                 model_choice=model,
-                                api_key=settings.get('minimax_api_key', '')
+                                api_key=settings.get('minimax_api_key', ''),
+                                knowledge_base=settings.get('knowledge_base', '')
                             )
                             if res and "error" not in res:
                                 used_model = res.get("model_used", model)
@@ -1910,7 +1911,7 @@ class InstagramService:
                             "username": username,
                             "bio": bio,
                             "followers": followers
-                        }, model_choice=model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''))
+                        }, model_choice=model, intent_description=intent_description, api_key=settings.get('minimax_api_key', ''), knowledge_base=settings.get('knowledge_base', ''))
                         
                         if ai_result and "error" not in ai_result:
                             used_model = ai_result.get("actual_model", model)
@@ -3246,6 +3247,7 @@ class InstagramService:
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS bio_cities_whitelist TEXT DEFAULT '';
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS enable_ai_analysis BOOLEAN DEFAULT TRUE;
                 ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS ai_intent_filter TEXT DEFAULT '';
+                ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS knowledge_base TEXT DEFAULT '';
             """)
             
             await db.execute("""
@@ -3376,8 +3378,8 @@ class InstagramService:
                     """, u_id)
                     google_count = cnt_row["cnt"] if cnt_row else 0
                     is_discovery_active = self._discovery_status.get(u_id, {}).get("active", False)
-                    if is_discovery_active and google_count < 25:
-                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 25...")
+                    if is_discovery_active and google_count < 10:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active discovery but only {google_count} google_discovered leads. Waiting for 10...")
                         continue
                     google_user_row = u_row
                     break
@@ -3388,7 +3390,7 @@ class InstagramService:
                         SELECT id, instagram_username, data_audit_json 
                         FROM instagram_leads
                         WHERE user_id = $1 AND status = 'google_discovered'
-                        ORDER BY created_at ASC LIMIT 25
+                        ORDER BY created_at ASC LIMIT 10
                     """, user_id)
 
                     settings = await self.get_filter_settings(user_id)
@@ -3434,7 +3436,8 @@ class InstagramService:
                                     leads=remaining_google,
                                     model_choice=model,
                                     intent_description="", # Empty since this is snippet filter
-                                    google_criteria=google_niche_filter
+                                    google_criteria=google_niche_filter,
+                                    knowledge_base=settings.get('knowledge_base', '')
                                 )
                             except Exception as batch_err:
                                 logger.error(f"❌ Batch Google AI Exception on {model}: {batch_err}. Fallback...")
@@ -3630,7 +3633,8 @@ class InstagramService:
                                     leads=remaining_leads,
                                     model_choice=model,
                                     intent_description=intent_description,
-                                    google_criteria=google_niche_filter
+                                    google_criteria=google_niche_filter,
+                                    knowledge_base=settings.get('knowledge_base', '')
                                 )
                         except Exception as batch_err:
                             logger.error(f"❌ Batch AI Exception on {model}: {batch_err}. Trying fallback...")
@@ -3859,6 +3863,8 @@ class InstagramService:
                 res['enable_ai_analysis'] = True
             if res.get('ai_intent_filter') is None:
                 res['ai_intent_filter'] = ""
+            if res.get('knowledge_base') is None:
+                res['knowledge_base'] = ""
             return res
         return {
             "user_id": user_id, 
@@ -3874,17 +3880,18 @@ class InstagramService:
             "bio_exclude_keywords": "",
             "bio_cities_whitelist": "",
             "enable_ai_analysis": True,
-            "ai_intent_filter": ""
+            "ai_intent_filter": "",
+            "knowledge_base": ""
         }
 
-    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "gemini", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True, ai_intent_filter: str = ""):
+    async def save_filter_settings(self, user_id: int, bio_keywords: str, min_followers: int, max_followers: int, sample_hashes: List[str] = None, visual_niche: str = "", minimax_api_key: str = "", enable_ai_filter: bool = False, google_niche_filter: str = "", ai_model: str = "gemini", bio_exclude_keywords: str = "", bio_cities_whitelist: str = "", enable_ai_analysis: bool = True, ai_intent_filter: str = "", knowledge_base: str = ""):
         h_json = json.dumps(sample_hashes or [])
         await db.execute("""
-            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+            INSERT INTO instagram_filter_settings (user_id, bio_keywords, min_followers, max_followers, sample_hashes, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter, knowledge_base, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
             ON CONFLICT (user_id) DO UPDATE
-            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, enable_ai_analysis = $13, ai_intent_filter = $14, updated_at = NOW()
-        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter)
+            SET bio_keywords = $2, min_followers = $3, max_followers = $4, sample_hashes = $5, visual_niche = $6, minimax_api_key = $7, enable_ai_filter = $8, google_niche_filter = $9, ai_model = $10, bio_exclude_keywords = $11, bio_cities_whitelist = $12, enable_ai_analysis = $13, ai_intent_filter = $14, knowledge_base = $15, updated_at = NOW()
+        """, user_id, bio_keywords, min_followers, max_followers, h_json, visual_niche, minimax_api_key, enable_ai_filter, google_niche_filter, ai_model, bio_exclude_keywords, bio_cities_whitelist, enable_ai_analysis, ai_intent_filter, knowledge_base)
         return {"status": "saved"}
 
     def _get_image_hash(self, img_content: bytes) -> str:
@@ -4431,7 +4438,8 @@ class InstagramService:
                         snippet=snippet,
                         criteria=google_niche_filter,
                         model_choice=ai_model,
-                        api_key=minimax_api_key
+                        api_key=minimax_api_key,
+                        knowledge_base=settings.get('knowledge_base', '')
                     )
                     is_match = res.get("match", False)
                     reason = res.get("reason", "No reason provided.")
@@ -4551,7 +4559,8 @@ class InstagramService:
                         snippet=snippet,
                         criteria=google_niche_filter,
                         model_choice=ai_model,
-                        api_key=minimax_api_key
+                        api_key=minimax_api_key,
+                        knowledge_base=settings.get('knowledge_base', '')
                     )
                     is_match = res.get("match", False)
                     reason = res.get("reason", "No reason provided.")

@@ -29,9 +29,18 @@ EXAMPLES:
 JSON ONLY. START WITH '{'.
 """
 
-def get_lead_analysis_prompt(username, bio, followers, intent_description=""):
+def get_lead_analysis_prompt(username, bio, followers, intent_description="", knowledge_base=""):
     bio_content = bio if (bio and len(bio) > 2) else "No bio provided."
     
+    kb_clause = ""
+    if knowledge_base and knowledge_base.strip():
+        kb_clause = f"""
+KNOWLEDGE BASE / DO-NOT-MATCH GUIDELINES:
+- The user has provided the following additional guidelines/rules. Read and apply them strictly.
+- If the lead profile or business matches any pattern described below to NOT match/reject, you MUST reject the lead (set "quality" to "low" and "intent_score" below 70):
+"{knowledge_base.strip()}"
+"""
+
     if intent_description:
         intent_clause = f"""
 CRITICAL CRITERIA / INTENT:
@@ -53,6 +62,8 @@ CRITICAL RULES:
 You are an Instagram Lead Qualifier. Your goal is to determine if a profile matches the target intent.
 
 {intent_clause}
+
+{kb_clause}
 
 JSON FORMAT INSTRUCTIONS:
 - You must respond with a JSON object.

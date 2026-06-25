@@ -25,6 +25,11 @@ async def run():
       print('bio_exclude_keywords column verified.')
   except Exception as e:
       print(f'Bio exclude check: {e}')
+  try:
+      await db.execute('ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS knowledge_base TEXT DEFAULT \'\';')
+      print('knowledge_base column verified.')
+  except Exception as e:
+      print(f'Knowledge base check: {e}')
   await db.close()
   print('Database Synchronized for Linux Deployment.')
 

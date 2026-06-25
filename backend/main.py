@@ -267,8 +267,11 @@ async def lifespan(app: FastAPI):
         -- can correctly determine posting rights using the improved logic.
         -- Previously the creator check was unreliable and set many owned channels to FALSE.
         UPDATE conversations SET can_post = TRUE WHERE type = 'channel';
+
+        -- Instagram Filter Settings Knowledge Base migration
+        ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS knowledge_base TEXT DEFAULT '';
         """)
-        logger.info("Database migration (Partial Unique Indexes, Pinning, Device Info, and Proxy Support) completed")
+        logger.info("Database migration (Partial Unique Indexes, Pinning, Device Info, Proxy Support, and Knowledge Base) completed")
     except Exception as e:
         logger.error(f"Migration error: {e}")
     
