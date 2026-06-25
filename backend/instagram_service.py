@@ -4010,8 +4010,9 @@ class InstagramService:
             bio_exclude = settings.get('bio_exclude_keywords', '')
             if bio_exclude and bio_exclude.strip():
                 exclude_kws = [k.strip().lower() for k in bio_exclude.split(',') if k.strip()]
+                expanded_exclude = self._expand_keyword_variations(exclude_kws)
                 bio_lower = bio.lower()
-                matched_kws = [kw for kw in exclude_kws if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower)]
+                matched_kws = [kw for kw in expanded_exclude if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower)]
                 if matched_kws:
                     return False, f"Bio contains a blacklisted keyword: '{matched_kws[0]}'."
 
@@ -4036,6 +4037,33 @@ class InstagramService:
 
         return True, ""
 
+    def _expand_keyword_variations(self, keywords: List[str]) -> List[str]:
+        """Expands a list of keywords to include both singular and plural variations."""
+        expanded = set()
+        for kw in keywords:
+            expanded.add(kw)
+            # Ends in 'ies' -> singular 'y' (e.g. dispensaries -> dispensary)
+            if kw.endswith("ies") and len(kw) > 3:
+                expanded.add(kw[:-3] + "y")
+            # Ends in 'y' -> plural 'ies' (e.g. dispensary -> dispensaries)
+            elif kw.endswith("y") and not kw.endswith("ey") and len(kw) > 1:
+                expanded.add(kw[:-1] + "ies")
+            
+            # Ends in 'es' -> strip 'es' or 's' (e.g. coaches -> coach)
+            if kw.endswith("es") and len(kw) > 2:
+                expanded.add(kw[:-2])
+                expanded.add(kw[:-1])
+            # Ends in 's' -> strip 's' (e.g. vapes -> vape)
+            elif kw.endswith("s") and not kw.endswith("ss") and len(kw) > 1:
+                expanded.add(kw[:-1])
+            else:
+                # Add plural 's' (e.g. vape -> vapes)
+                expanded.add(kw + "s")
+                # Add plural 'es' for sibilants (e.g. coach -> coaches)
+                if kw.endswith(("ch", "sh", "x", "z", "s")):
+                    expanded.add(kw + "es")
+        return list(expanded)
+
     def _check_bio_keywords(self, bio: str, keywords_raw: str) -> bool:
         """Returns True if lead passes keyword filter (or no filter set)."""
         if not keywords_raw or not keywords_raw.strip():
@@ -4043,8 +4071,9 @@ class InstagramService:
         if not bio:
             return False  # Filter is set but lead has no bio = reject
         keywords = [k.strip().lower() for k in keywords_raw.split(',') if k.strip()]
+        expanded = self._expand_keyword_variations(keywords)
         bio_lower = bio.lower()
-        return any(re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower) for kw in keywords)
+        return any(re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower) for kw in expanded)
 
     async def _ai_city_check(self, username: str, full_name: str, bio: str, cities: list) -> tuple[bool, str]:
         """

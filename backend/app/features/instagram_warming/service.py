@@ -1509,7 +1509,32 @@ class InstagramWarmingService:
         if is_qualified and settings['max_followers'] > 0 and followers > settings['max_followers']: is_qualified = False
         if is_qualified and settings['bio_keywords']:
             kw_list = [k.strip().lower() for k in settings['bio_keywords'].split(',') if k.strip()]
-            if kw_list and not any(kw in bio.lower() for kw in kw_list):
+            expanded = set()
+            for kw in kw_list:
+                expanded.add(kw)
+                # Ends in 'ies' -> singular 'y'
+                if kw.endswith("ies") and len(kw) > 3:
+                    expanded.add(kw[:-3] + "y")
+                # Ends in 'y' -> plural 'ies'
+                elif kw.endswith("y") and not kw.endswith("ey") and len(kw) > 1:
+                    expanded.add(kw[:-1] + "ies")
+                
+                # Ends in 'es' -> strip 'es' or 's'
+                if kw.endswith("es") and len(kw) > 2:
+                    expanded.add(kw[:-2])
+                    expanded.add(kw[:-1])
+                # Ends in 's' -> strip 's'
+                elif kw.endswith("s") and not kw.endswith("ss") and len(kw) > 1:
+                    expanded.add(kw[:-1])
+                else:
+                    # Add plural 's'
+                    expanded.add(kw + "s")
+                    # Add plural 'es'
+                    if kw.endswith(("ch", "sh", "x", "z", "s")):
+                        expanded.add(kw + "es")
+            
+            bio_lower = bio.lower()
+            if expanded and not any(re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", bio_lower) for kw in expanded):
                 is_qualified = False
 
         new_status = 'qualified' if is_qualified else 'rejected'
