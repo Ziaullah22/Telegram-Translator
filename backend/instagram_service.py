@@ -452,7 +452,7 @@ class InstagramService:
                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                 "VALUES ($1, $2, $3, 'google_discovered', $4) "
                                 "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
+                                "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                 "discovery_keyword = EXCLUDED.discovery_keyword",
                                 user_id, u, keyword, json.dumps(data_audit)
@@ -795,7 +795,7 @@ class InstagramService:
                                     "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
                                     "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
                                     "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                    "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
+                                    "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
                                     "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                     "discovery_keyword = EXCLUDED.discovery_keyword, "
                                     "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
@@ -1044,7 +1044,7 @@ class InstagramService:
                                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
                                                 "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
                                                 "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                                "status = CASE WHEN instagram_leads.status IN ('contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE 'google_discovered' END, "
+                                                "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE 'google_discovered' END, "
                                                 "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
                                                 "discovery_keyword = EXCLUDED.discovery_keyword, "
                                                 "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
@@ -2433,7 +2433,8 @@ class InstagramService:
                             INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, source, status) 
                             VALUES ($1, $2, $3, 'network_expansion', 'discovered') 
                             ON CONFLICT (user_id, instagram_username) DO UPDATE SET
-                                status = 'discovered', updated_at = NOW()
+                                status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested', 'google_discovered') THEN instagram_leads.status ELSE 'discovered' END,
+                                updated_at = NOW()
                         """, user_id, f_user, f"follower_of_{username}")
                         count += 1
                     except: continue

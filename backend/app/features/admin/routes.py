@@ -646,6 +646,32 @@ async def bulk_upload_global_proxies(data: ProxyBulkUpload, admin = Depends(get_
         "message": f"Successfully added {results['success']} global proxies and rebalanced all users."
     }
 
+@router.delete("/proxies")
+async def delete_all_global_proxies(admin = Depends(get_current_admin)):
+    """Delete ALL proxies from the global pool and remove all references across the app database"""
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            proxy_ids = await conn.fetch("SELECT id FROM instagram_proxies WHERE global_proxy_id IS NOT NULL OR is_admin_assigned = TRUE")
+            proxy_id_list = [r['id'] for r in proxy_ids]
+            
+            if proxy_id_list:
+                await conn.execute(
+                    "UPDATE instagram_accounts SET proxy_id = NULL, proxy = NULL WHERE proxy_id = ANY($1)",
+                    proxy_id_list
+                )
+                await conn.execute(
+                    "UPDATE telegram_accounts SET proxy_id = NULL, proxy = NULL WHERE proxy_id = ANY($1)",
+                    proxy_id_list
+                )
+                await conn.execute(
+                    "DELETE FROM instagram_proxies WHERE id = ANY($1)",
+                    proxy_id_list
+                )
+            
+            await conn.execute("DELETE FROM instagram_global_proxies")
+            
+    return {"status": "success", "message": "All global proxies deleted and references totally removed."}
+
 @router.delete("/proxies/{proxy_id}")
 async def delete_global_proxy(proxy_id: int, admin = Depends(get_current_admin)):
     """Delete a proxy from the global pool and rebalance"""
@@ -654,6 +680,7 @@ async def delete_global_proxy(proxy_id: int, admin = Depends(get_current_admin))
     # Rebalance after deletion to ensure users don't have broken links
     await instagram_service.rebalance_global_proxies()
     return {"status": "success", "message": "Proxy deleted and rebalanced."}
+
 
 @router.post("/proxies/rebalance")
 async def manual_rebalance_proxies(admin = Depends(get_current_admin)):
