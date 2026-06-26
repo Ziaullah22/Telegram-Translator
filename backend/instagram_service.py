@@ -451,10 +451,7 @@ class InstagramService:
                             status = await db.execute(
                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json) "
                                 "VALUES ($1, $2, $3, 'google_discovered', $4) "
-                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
-                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                "discovery_keyword = EXCLUDED.discovery_keyword",
+                                "ON CONFLICT (user_id, instagram_username) DO NOTHING",
                                 user_id, u, keyword, json.dumps(data_audit)
                             )
                             if status == "INSERT 0 1": 
@@ -794,12 +791,7 @@ class InstagramService:
                                 new_id = await db.fetchval(
                                     "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
                                     "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
-                                    "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                    "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE EXCLUDED.status END, "
-                                    "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                    "discovery_keyword = EXCLUDED.discovery_keyword, "
-                                    "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
-                                    "google_description = COALESCE(EXCLUDED.google_description, instagram_leads.google_description) "
+                                    "ON CONFLICT (user_id, instagram_username) DO NOTHING "
                                     "RETURNING id",
                                     user_id, u, keyword, json.dumps(data_audit), card_title, card_snippet
                                 )
@@ -965,6 +957,25 @@ class InstagramService:
                             logger.error("❌ 2Captcha failed. Cannot continue scraping this page.")
                             break
  
+                    # Check for "no results found" indicators in body text to stop search early
+                    try:
+                        body_text = await page.inner_text("body")
+                        no_results_indicators = [
+                            "did not match any documents",
+                            "No results found for",
+                            "keine mit deiner Suchanfrage",
+                            "keine Ergebnisse für",
+                            "aucun résultat",
+                            "no se encontraron resultados",
+                            "Es wurden keine",
+                            "Search instead for"
+                        ]
+                        if any(indicator.lower() in body_text.lower() for indicator in no_results_indicators):
+                            logger.info(f"🚫 Google indicates 'No results found' for '{keyword}' on Page {page_num+1}. Ending search for this keyword.")
+                            break
+                    except Exception as text_err:
+                        logger.warning(f"⚠️ Failed to check page text for no-results: {text_err}")
+
                     # 📜 HUMAN SCROLLING (Slow & Steady)
                     logger.info("⏬ Scrolling results like a human...")
                     for _ in range(random.randint(5, 8)):
@@ -999,20 +1010,40 @@ class InstagramService:
                                         card_snippet = ""
                                         try:
                                             parent_text_data = await page.evaluate("""(el) => {
-                                                const container = el.closest('div.g, div[data-ved], div.MjjYud, div.v7wOcf, div.N5s3Zc');
+                                                // Find closest search result card container
+                                                let container = el.closest('div.g, div[data-ved], div.MjjYud, div.v7wOcf, div.N5s3Zc');
+                                                if (!container) {
+                                                    // Fallback to parent elements up to 6 levels to find any container with h3
+                                                    let temp = el;
+                                                    for (let i = 0; i < 6; i++) {
+                                                        if (!temp || !temp.parentElement) break;
+                                                        temp = temp.parentElement;
+                                                        if (temp.querySelector('h3')) {
+                                                            container = temp;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
                                                 if (!container) return null;
                                                 const h3 = container.querySelector('h3');
+                                                
+                                                // Try to locate Google's specific description/snippet elements
+                                                const snippetEl = container.querySelector('div.VwiC3b, div[style*="-webkit-line-clamp"], span.aCOpbc, div.kb0Bcb, div.L5w6fc');
+                                                let snippet = snippetEl ? snippetEl.innerText : '';
+                                                
                                                 return {
                                                     title: h3 ? h3.innerText : '',
-                                                    text: container.innerText
+                                                    text: container.innerText,
+                                                    snippet: snippet
                                                 };
                                             }""", link_el)
                                             if parent_text_data:
                                                 card_title = parent_text_data.get("title", "")
-                                                card_snippet = parent_text_data.get("text", "")
+                                                card_snippet = parent_text_data.get("snippet", "") or parent_text_data.get("text", "")
                                                 if card_title and card_title in card_snippet:
                                                     card_snippet = card_snippet.replace(card_title, "").strip()
-                                        except:
+                                        except Exception as parse_err:
+                                            logger.warning(f"⚠️ Error parsing Google snippet for @{u}: {parse_err}")
                                             pass
                                         
                                         # Skip leads without search snippet or without discovery intent
@@ -1043,12 +1074,7 @@ class InstagramService:
                                             new_id = await db.fetchval(
                                                 "INSERT INTO instagram_leads (user_id, instagram_username, discovery_keyword, status, data_audit_json, google_title, google_description) "
                                                 "VALUES ($1, $2, $3, 'google_discovered', $4, $5, $6) "
-                                                "ON CONFLICT (user_id, instagram_username) DO UPDATE SET "
-                                                "status = CASE WHEN instagram_leads.status IN ('qualified', 'analyzed', 'pending_ai', 'rejected', 'contacted', 'converted', 'vetted', 'harvested') THEN instagram_leads.status ELSE 'google_discovered' END, "
-                                                "data_audit_json = COALESCE(instagram_leads.data_audit_json, '{}'::jsonb) || EXCLUDED.data_audit_json, "
-                                                "discovery_keyword = EXCLUDED.discovery_keyword, "
-                                                "google_title = COALESCE(EXCLUDED.google_title, instagram_leads.google_title), "
-                                                "google_description = COALESCE(EXCLUDED.google_description, instagram_leads.google_description) "
+                                                "ON CONFLICT (user_id, instagram_username) DO NOTHING "
                                                 "RETURNING id",
                                                 user_id, u, keyword, json.dumps(data_audit), card_title, card_snippet
                                             )
@@ -1068,11 +1094,6 @@ class InstagramService:
 
                     if not link_elements or len(link_elements) == 0:
                         logger.info("📋 No Instagram link elements found on this page. Ending search.")
-                        break # Extra pause before next page
-                    await asyncio.sleep(random.uniform(4, 7))
-
-                    if not cards or len(cards) == 0:
-                        logger.info("📋 No result cards found on this page. Ending search.")
                         break
                 except Exception as e:
                     logger.error(f"❌ Google Scrape Error: {e}")
@@ -3511,7 +3532,7 @@ class InstagramService:
                                     await db.execute("""
                                         UPDATE instagram_leads 
                                         SET status = 'discovered', data_audit_json = $1, updated_at = NOW() 
-                                        WHERE id = $2
+                                        WHERE id = $2 AND status = 'google_discovered'
                                     """, json.dumps(ai_analysis), lead_id_val)
 
                                     try:
@@ -3528,7 +3549,7 @@ class InstagramService:
                                     await db.execute("""
                                         UPDATE instagram_leads 
                                         SET status = 'google_rejected', data_audit_json = $1, updated_at = NOW() 
-                                        WHERE id = $2
+                                        WHERE id = $2 AND status = 'google_discovered'
                                     """, json.dumps(ai_analysis), lead_id_val)
                                     try:
                                         await manager.send_personal_message({
@@ -3552,7 +3573,7 @@ class InstagramService:
                         # AI search filter is disabled -> immediately mark all as 'discovered' so they bypass the filter
                         logger.info(f"⚡ Google AI Filter is disabled. Bypassing and promoting {len(google_leads)} leads to 'discovered'.")
                         for row in google_leads:
-                            await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE id = $1", row["id"])
+                            await db.execute("UPDATE instagram_leads SET status = 'discovered', updated_at = NOW() WHERE id = $1 AND status = 'google_discovered'", row["id"])
                             try:
                                 await manager.send_personal_message({
                                     "type": "instagram_lead_updated",
@@ -3839,7 +3860,7 @@ class InstagramService:
                             await db.execute("""
                                 UPDATE instagram_leads 
                                 SET status = $1, score = $2, data_audit_json = $3, updated_at = NOW() 
-                                WHERE id = $4
+                                WHERE id = $4 AND status = 'pending_ai'
                             """, new_status, score_val, ai_data_json, lead_id_val)
 
                             # Send UI notification
