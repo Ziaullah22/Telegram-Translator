@@ -2766,20 +2766,26 @@ class InstagramService:
         return await db.fetchrow("SELECT * FROM instagram_accounts WHERE id = $1", account_id)
 
     def _parse_proxy_str(self, p_str: str):
-        """🚀 INDUSTRIAL PARSER: Supports host:port:user:pass, user:pass@host:port, etc."""
+        """🚀 INDUSTRIAL PARSER: Supports host:port:user:pass, user:pass@host:port, http://user:pass@host:port/ etc."""
         if not p_str: return None
         
-        # 1. Clean string (remove tabs, spaces, protocols)
+        # 1. Clean string (remove tabs, spaces, trailing slashes, protocols)
         p_str = str(p_str).replace('\t', ' ').strip()
-        p_str = re.sub(r'^https?://', '', p_str.split(' ')[0])
+        p_str = p_str.split(' ')[0]  # remove any trailing comments
+        # Strip protocol prefix (http://, https://, socks5://, etc.)
+        p_str = re.sub(r'^[a-zA-Z0-9+\-.]+://', '', p_str)
+        # Strip trailing slash and any path component (e.g. p.webshare.io:80/something -> p.webshare.io:80)
+        p_str = p_str.split('/')[0].strip()
         
         # 2. Handle user:pass@host:port format
         if '@' in p_str:
             try:
                 auth, server = p_str.split('@', 1)
                 user, pw = auth.split(':', 1)
-                host, port = server.split(':', 1)
-                return {"host": host, "port": int(port), "user": user, "pass": pw}
+                # Strip any remaining path from server
+                server = server.split('/')[0].strip()
+                host, port_str = server.rsplit(':', 1)
+                return {"host": host.strip(), "port": int(port_str.strip()), "user": user.strip(), "pass": pw.strip()}
             except: pass
 
         # 3. Handle colon-separated formats
@@ -2802,6 +2808,7 @@ class InstagramService:
             except: pass
             
         return None
+
 
     async def add_account(self, user_id: int, account_data):
         username = account_data.username
