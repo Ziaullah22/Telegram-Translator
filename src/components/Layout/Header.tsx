@@ -24,8 +24,9 @@ export default function Header({ onStartTour }: HeaderProps) {
     { path: '/campaigns', label: 'Campaigns', icon: <Zap className={`w-3.5 h-3.5 ${location.pathname !== '/campaigns' ? 'text-orange-500' : ''}`} />, id: 'nav-campaigns' },
     { path: '/products', label: 'Store', icon: <ShoppingBag className="w-3.5 h-3.5 text-blue-500" /> },
     { path: '/advanced-settings', label: 'Advanced', icon: <Settings className="w-3.5 h-3.5 text-blue-600" /> },
-    { path: '/instagram-leads', label: 'Scraper', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" /> },
-    { path: '/instagram-warming', label: 'Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-600" /> },
+    // Instagram items hidden (keep code, not shown in UI)
+    // { path: '/instagram-leads', label: 'Scraper', icon: <Instagram className="w-3.5 h-3.5 text-pink-500" /> },
+    // { path: '/instagram-warming', label: 'Warmer', icon: <Flame className="w-3.5 h-3.5 text-orange-600" /> },
   ];
 
   return (
@@ -108,8 +109,8 @@ export default function Header({ onStartTour }: HeaderProps) {
                 </button>
               ))}
 
-              {/* Instagram Dropdown */}
-              <div className="relative group ml-1">
+              {/* Instagram Dropdown - HIDDEN (code kept, not shown in UI) */}
+              <div className="relative group ml-1 hidden">
                 <button id="nav-instagram-group" className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${['/instagram-leads', '/instagram-warming'].includes(location.pathname) ? 'text-pink-600 dark:text-pink-500 bg-pink-50/50 dark:bg-white/5' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
                    <Instagram className="w-3.5 h-3.5" />
                    <span>Instagram</span>

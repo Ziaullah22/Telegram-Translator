@@ -674,12 +674,37 @@ async def delete_all_global_proxies(admin = Depends(get_current_admin)):
 
 @router.delete("/proxies/{proxy_id}")
 async def delete_global_proxy(proxy_id: int, admin = Depends(get_current_admin)):
-    """Delete a proxy from the global pool and rebalance"""
-    from instagram_service import instagram_service
-    await db.execute("DELETE FROM instagram_global_proxies WHERE id = $1", proxy_id)
-    # Rebalance after deletion to ensure users don't have broken links
-    await instagram_service.rebalance_global_proxies()
-    return {"status": "success", "message": "Proxy deleted and rebalanced."}
+    """Delete a proxy from the global pool and remove all user-level copies and account references"""
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            # 1. Find all user-level instagram_proxies rows that came from this global proxy
+            user_proxy_ids = await conn.fetch(
+                "SELECT id FROM instagram_proxies WHERE global_proxy_id = $1",
+                proxy_id
+            )
+            user_proxy_id_list = [r['id'] for r in user_proxy_ids]
+
+            if user_proxy_id_list:
+                # 2. Null out proxy_id on any instagram accounts using these proxies
+                await conn.execute(
+                    "UPDATE instagram_accounts SET proxy_id = NULL, proxy = NULL WHERE proxy_id = ANY($1)",
+                    user_proxy_id_list
+                )
+                # 3. Null out proxy_id on any telegram accounts using these proxies
+                await conn.execute(
+                    "UPDATE telegram_accounts SET proxy_id = NULL, proxy = NULL WHERE proxy_id = ANY($1)",
+                    user_proxy_id_list
+                )
+                # 4. Delete the user-level proxy copies
+                await conn.execute(
+                    "DELETE FROM instagram_proxies WHERE id = ANY($1)",
+                    user_proxy_id_list
+                )
+
+            # 5. Delete from the global pool
+            await conn.execute("DELETE FROM instagram_global_proxies WHERE id = $1", proxy_id)
+
+    return {"status": "success", "message": "Proxy fully deleted from global pool and all user accounts."}
 
 
 @router.post("/proxies/rebalance")

@@ -1417,7 +1417,7 @@ class TelethonService:
         self.read_handlers: List[Callable] = []
         self.polling_task: Optional[asyncio.Task] = None
         self.polling_interval = 10  # seconds
-        self.expired_proxies: Dict[int, float] = {}  # proxy_id -> expiration timestamp (cooldown)
+        self.expired_proxies: Dict[int, float] = {}  # kept for backward compat, no longer used to block retries
         os.makedirs("sessions", exist_ok=True)
 
     def add_message_handler(self, handler):
@@ -1496,63 +1496,54 @@ class TelethonService:
             # Always add direct (no proxy) as last resort
             proxy_candidates.append(None)
 
-            # 3. Try each proxy candidate in order until one works
+            # 3. Try each proxy candidate in order until one works.
+            # For rotating proxies (e.g. Webshare), we NEVER mark a proxy as failed in the DB —
+            # rotating proxies change IP on every request so a single failure means nothing.
+            # Instead we retry the same proxy up to 5 times, then fall back to direct VPS IP.
             connected = False
+            MAX_PROXY_RETRIES = 5
+
             for proxy_candidate in proxy_candidates:
-                if proxy_candidate and proxy_candidate.get('id') in self.expired_proxies:
-                    cooldown = self.expired_proxies[proxy_candidate['id']]
-                    if asyncio.get_event_loop().time() < cooldown:
-                        logger.info(f"Skipping known expired/dead proxy {proxy_candidate['host']}:{proxy_candidate['port']} (on cooldown)")
-                        continue
-                    else:
-                        # Cooldown expired, remove it to try again
-                        del self.expired_proxies[proxy_candidate['id']]
-
                 proxy_label = f"{proxy_candidate['host']}:{proxy_candidate['port']}" if proxy_candidate else "direct (no proxy)"
-                try:
-                    # Remove stale session object between attempts
-                    if account_id in self.sessions:
-                        try:
-                            await self.sessions[account_id].disconnect()
-                        except Exception:
-                            pass
-                        del self.sessions[account_id]
+                max_attempts = MAX_PROXY_RETRIES if proxy_candidate else 1
 
-                    session = TelegramSession(
-                        account_id, app_id, app_hash, session_file,
-                        device_info=device_info,
-                        proxy=proxy_candidate
-                    )
-                    self.sessions[account_id] = session
-
-                    logger.info(f"Trying to connect account {account_id} via {proxy_label}")
-                    connected = await session.connect()
-                    if connected:
-                        if proxy_candidate and proxy_candidate.get('id') != proxy_id:
-                            logger.warning(f"Account {account_id} connected via fallback proxy {proxy_label}")
-                        elif not proxy_candidate:
-                            logger.warning(f"Account {account_id} connected via direct IP (all proxies failed)")
-                        break
-                    else:
-                        logger.warning(f"Account {account_id}: connect() returned False via {proxy_label}, trying next")
-                        if proxy_candidate:
-                            # If connection returned false, put it on a short cooldown
-                            self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 300
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        # Remove stale session object between attempts
+                        if account_id in self.sessions:
                             try:
-                                await db.execute("UPDATE instagram_proxies SET is_working = FALSE WHERE id = $1", proxy_candidate['id'])
-                            except Exception as db_err:
-                                logger.warning(f"Failed to flag bad proxy in DB: {db_err}")
-                except Exception as e:
-                    err_str = str(e)
-                    logger.warning(f"Account {account_id}: failed via {proxy_label}: {err_str}, trying next")
-                    if proxy_candidate:
-                        # Put on a 30-minute cooldown for timeout/payment/socket errors
-                        self.expired_proxies[proxy_candidate['id']] = asyncio.get_event_loop().time() + 1800
-                        try:
-                            await db.execute("UPDATE instagram_proxies SET is_working = FALSE WHERE id = $1", proxy_candidate['id'])
-                            logger.info(f"Flagged proxy {proxy_candidate['id']} ({proxy_candidate['host']}) as non-working in DB")
-                        except Exception as db_err:
-                            logger.warning(f"Failed to flag bad proxy in DB: {db_err}")
+                                await self.sessions[account_id].disconnect()
+                            except Exception:
+                                pass
+                            del self.sessions[account_id]
+
+                        session = TelegramSession(
+                            account_id, app_id, app_hash, session_file,
+                            device_info=device_info,
+                            proxy=proxy_candidate
+                        )
+                        self.sessions[account_id] = session
+
+                        logger.info(f"Trying to connect account {account_id} via {proxy_label} (attempt {attempt}/{max_attempts})")
+                        connected = await session.connect()
+                        if connected:
+                            if proxy_candidate and proxy_candidate.get('id') != proxy_id:
+                                logger.warning(f"Account {account_id} connected via fallback proxy {proxy_label}")
+                            elif not proxy_candidate:
+                                logger.warning(f"Account {account_id} connected via direct VPS IP (all proxy retries exhausted)")
+                            break
+                        else:
+                            logger.warning(f"Account {account_id}: connect() returned False via {proxy_label} (attempt {attempt}/{max_attempts})")
+                            if attempt < max_attempts:
+                                await asyncio.sleep(2)  # short pause before retry
+                    except Exception as e:
+                        err_str = str(e)
+                        logger.warning(f"Account {account_id}: failed via {proxy_label} (attempt {attempt}/{max_attempts}): {err_str}")
+                        if attempt < max_attempts:
+                            await asyncio.sleep(2)  # short pause before retry
+
+                if connected:
+                    break  # successfully connected, stop trying further candidates
 
         if connected:
             session = self.sessions.get(account_id)
