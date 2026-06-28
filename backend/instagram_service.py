@@ -59,7 +59,7 @@ class InstagramService:
         for attempt in range(max_attempts):
             logger.info(f"🔄 Google Warmup Attempt {attempt+1}/{max_attempts}...")
             try:
-                await page.goto("https://www.google.com", wait_until="domcontentloaded")
+                await page.goto("https://www.google.com/?hl=en&gl=au", wait_until="domcontentloaded")
                 await asyncio.sleep(random.uniform(2.0, 4.0))
 
                 # Dismiss consent/cookie popups
@@ -100,7 +100,7 @@ class InstagramService:
                     await page.keyboard.press("Enter")
                 else:
                     logger.warning("⚠️ Search box not found on home page. Trying direct navigation...")
-                    await page.goto(f"https://www.google.com/search?q={quote(rand_query)}", wait_until="domcontentloaded")
+                    await page.goto(f"https://www.google.com/search?q={quote(rand_query)}&hl=en&gl=au", wait_until="domcontentloaded")
 
                 # Wait and check CAPTCHA
                 await asyncio.sleep(4)
@@ -653,10 +653,10 @@ class InstagramService:
                     await page.keyboard.press("Enter")
                 else:
                     logger.warning("⚠️ Search box not found. Direct URL navigation...")
-                    await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
+                    await page.goto(f"https://www.google.com/search?q={quote(search_query)}&hl=en&gl=au", wait_until="domcontentloaded")
             except Exception as e:
                 logger.warning(f"⚠️ Search box input failed: {e}. Falling back to direct URL...")
-                await page.goto(f"https://www.google.com/search?q={quote(search_query)}", wait_until="domcontentloaded")
+                await page.goto(f"https://www.google.com/search?q={quote(search_query)}&hl=en&gl=au", wait_until="domcontentloaded")
 
             # Wait and check if CAPTCHA page loaded
             await asyncio.sleep(4)
@@ -698,7 +698,7 @@ class InstagramService:
                         await next_btn.click()
                     else:
                         logger.warning("⚠️ Next page button not found. Direct URL...")
-                        await page.goto(f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}", wait_until="domcontentloaded")
+                        await page.goto(f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}&hl=en&gl=au", wait_until="domcontentloaded")
  
                 logger.info("⏳ Waiting for results (3s)...")
                 await asyncio.sleep(3)
@@ -863,7 +863,7 @@ class InstagramService:
                 logger.info(f"🔥 [ULTRA SURGE] Google Page {page_num+1} (Deep Scrape) for '{keyword}'...")
  
                 search_query = f'site:instagram.com "{keyword}"'
-                url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}"
+                url = f"https://www.google.com/search?q={quote(search_query)}&start={start_idx}&hl=en&gl=au"
  
                 try:
                     if page_num == 0:

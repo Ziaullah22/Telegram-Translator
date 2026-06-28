@@ -109,7 +109,7 @@ class InstagramWarmingService:
                 if current_kw_results >= limit_per_keyword: break
                 
                 mirrors = [
-                    f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&start={page*10}",
+                    f"https://www.google.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&start={page*10}&hl=en&gl=au",
                     f"https://www.bing.com/search?q={quote(f'site:instagram.com \"{keyword}\"')}&first={page*10 + 1}",
                     f"https://html.duckduckgo.com/html/?q={quote(f'site:instagram.com \"{keyword}\"')}" if page == 0 else None
                 ]
