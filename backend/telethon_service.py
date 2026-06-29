@@ -40,16 +40,42 @@ class TelegramSession:
         self.secret_chat_manager: Optional[SecretChatManager] = None
         self.device_info = device_info
         self.proxy = proxy
+        self.last_check_time = None
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
+        now = datetime.now()
         if self.is_connected and self.client and self.client.is_connected():
-            return True
-            
+            if self.last_check_time and (now - self.last_check_time).total_seconds() < 10:
+                return True
+            try:
+                await asyncio.wait_for(self.client(functions.updates.GetStateRequest()), timeout=3.0)
+                self.last_check_time = now
+                return True
+            except Exception as e:
+                logger.warning(f"Connection check failed for account {self.account_id} (proxy might be frozen): {e}. Forcing reconnect...")
+                self.is_connected = False
+                try:
+                    await self.client.disconnect()
+                except Exception:
+                    pass
+
         async with self.connection_lock:
             # Inner check after acquiring lock
             if self.is_connected and self.client and self.client.is_connected():
-                return True
+                if self.last_check_time and (now - self.last_check_time).total_seconds() < 10:
+                    return True
+                try:
+                    await asyncio.wait_for(self.client(functions.updates.GetStateRequest()), timeout=3.0)
+                    self.last_check_time = now
+                    return True
+                except Exception as e:
+                    logger.warning(f"Inner connection check failed for account {self.account_id}: {e}. Reconnecting...")
+                    self.is_connected = False
+                    try:
+                        await self.client.disconnect()
+                    except Exception:
+                        pass
                 
             self.is_connecting = True
             try:
@@ -1484,15 +1510,6 @@ class TelethonService:
                 if assigned and assigned.get('is_working', True):
                     proxy_candidates.append(dict(assigned))
 
-            # Add other proxies from the same user's pool as fallbacks (max 2 to avoid long waits)
-            fallback_proxies = await db.fetch(
-                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 AND is_working = TRUE ORDER BY id LIMIT 2",
-                user_id_for_proxies,
-                proxy_id or -1
-            )
-            for p in fallback_proxies:
-                proxy_candidates.append(dict(p))
-
             # Always add direct (no proxy) as last resort
             proxy_candidates.append(None)
 
@@ -1572,17 +1589,18 @@ class TelethonService:
             del self.sessions[account_id]
 
     async def get_session(self, account_id: int) -> Optional[TelegramSession]:
+        await self.connect_session(account_id)
         return self.sessions.get(account_id)
 
     async def get_dialogs(self, account_id: int, limit: int = 50):
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             raise Exception("Session not connected")
 
         return await session.get_dialogs(limit)
 
     async def get_messages(self, account_id: int, peer_id: int, limit: int = 50):
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             raise Exception("Session not connected")
 
@@ -1608,7 +1626,7 @@ class TelethonService:
 
     async def get_unread_messages(self, account_id: int):
         """Get unread messages for a specific account"""
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             raise Exception("Session not connected")
 
@@ -1616,7 +1634,7 @@ class TelethonService:
 
     async def search_users(self, account_id: int, username: str, limit: int = 10):
         """Search for Telegram users with cross-session discovery"""
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             raise Exception("Session not connected")
 
