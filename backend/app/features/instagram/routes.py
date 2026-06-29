@@ -435,8 +435,8 @@ async def stream_from_llama_cpp(
 ) -> tuple[list[str], bool]:
     """
     Streams a single request from llama.cpp and broadcasts cities to frontend via WebSocket
-    as they are generated token by token. Returns (list_of_cities, success).
-    Filters out <think>...</think> content (Qwen 3.5 thinking mode) to avoid false extractions.
+    as they appear line by line. Uses plain numbered list format (much faster than JSON).
+    Filters out <think>...</think> content (Qwen 3.5 thinking mode).
     """
     import aiohttp
     import json as json_module
@@ -445,27 +445,83 @@ async def stream_from_llama_cpp(
     from websocket_manager import manager
     logger = logging.getLogger(__name__)
 
-    # Streaming payload — disable thinking mode to avoid 10k+ wasted tokens
+    # Override the prompt to ask for a plain numbered list — this is how the model naturally outputs
+    # and is 2-3x faster than JSON format. We parse each line as it completes.
+    orig_messages = payload.get("messages", [])
+    patched_messages = []
+    for msg in orig_messages:
+        if msg.get("role") == "system":
+            patched_messages.append({
+                "role": "system",
+                "content": (
+                    msg["content"].split("Output ONLY")[0].strip() +
+                    " Output ONLY a simple numbered list, one location per line. "
+                    "No categories, no headers, no explanations, no JSON. Example:\n"
+                    "1. Sydney\n2. Melbourne\n3. Brisbane"
+                )
+            })
+        elif msg.get("role") == "user":
+            # Replace any JSON instruction with simple list instruction
+            content = msg["content"]
+            content = re.sub(r'as JSON.*$', 'as a numbered list, one per line.', content, flags=re.IGNORECASE)
+            content = re.sub(r'Output.*JSON.*', '', content, flags=re.IGNORECASE)
+            patched_messages.append({"role": "user", "content": content.strip()})
+        else:
+            patched_messages.append(msg)
+
     stream_payload = {
         "model": payload.get("model", "qwen"),
-        "messages": payload["messages"],
+        "messages": patched_messages,
         "temperature": payload.get("temperature", 0.7),
         "stream": True,
-        # Disable thinking/reasoning for Qwen 3.5 (avoids 10k+ thinking tokens before JSON)
+        # Disable thinking mode — avoids 10k+ wasted thinking tokens before output
         "thinking": False,
         "enable_thinking": False,
         "chat_template_kwargs": {"enable_thinking": False},
     }
 
     full_content = ""
+    processed_lines: set[str] = set()   # lines already processed
     found_cities: list[str] = []
     sent_cities_set: set[str] = set()
-    SKIP_KEYS = {"cities", "message", "keywords", "error", "regions", "states", "villages", "suburbs"}
-
-    # Track whether we're inside a <think>...</think> block
+    SKIP_KEYS = {
+        "cities", "message", "keywords", "error", "regions", "states",
+        "villages", "suburbs", "note", "here", "below", "following",
+        "australia", "list", "the", "for", "and", "this"
+    }
+    # Track thinking blocks
     in_thinking = False
-    # Content outside thinking blocks (actual response)
-    real_content = ""
+
+    def extract_city_from_line(line: str) -> str | None:
+        """Extract a clean city name from a numbered or bulleted list line."""
+        line = line.strip()
+        if not line:
+            return None
+        # Remove number prefix: "1. " "23. " "1) "
+        line = re.sub(r'^\d+[.)]\s*', '', line)
+        # Remove bullet prefix: "- " "* " "• " "· "
+        line = re.sub(r'^[-*•·]\s*', '', line)
+        # Remove state/category headers like "New South Wales (NSW):" or "Victoria:"
+        if line.endswith(':') or '(' in line and line.endswith(')'):
+            return None
+        # Remove trailing parens like "Sydney (Capital)"
+        line = re.sub(r'\s*\(.*?\)\s*$', '', line).strip()
+        # Must start with capital letter (city names do)
+        if not line or not line[0].isupper():
+            return None
+        # Reasonable city name length
+        if len(line) < 2 or len(line) > 80:
+            return None
+        # No JSON, markdown, or sentence chars
+        if any(c in line for c in ['{', '}', '[', ']', '"', ':', '|', '`', '=']):
+            return None
+        # Not a skip word
+        if line.lower() in SKIP_KEYS:
+            return None
+        # Not a sentence (city names are < 4 words usually)
+        if len(line.split()) > 5:
+            return None
+        return line
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -480,10 +536,10 @@ async def stream_from_llama_cpp(
                     return [], False
 
                 async for raw_line in response.content:
-                    line = raw_line.decode("utf-8", errors="ignore").strip()
-                    if not line.startswith("data: "):
+                    token_raw = raw_line.decode("utf-8", errors="ignore").strip()
+                    if not token_raw.startswith("data: "):
                         continue
-                    data_str = line[6:]
+                    data_str = token_raw[6:]
                     if data_str == "[DONE]":
                         break
                     try:
@@ -493,38 +549,33 @@ async def stream_from_llama_cpp(
                             continue
                         full_content += token
 
-                        # Track thinking mode on/off to filter out <think> blocks
+                        # Track and skip <think>...</think> blocks
                         if "<think>" in full_content and not in_thinking:
                             in_thinking = True
                         if "</think>" in full_content and in_thinking:
                             in_thinking = False
-                            # Strip all thinking content from real_content
-                            clean = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL)
-                            real_content = clean
-                        elif not in_thinking:
-                            # Only accumulate non-thinking content
-                            clean = re.sub(r"<think>.*", "", full_content, flags=re.DOTALL)
-                            real_content = clean
-
-                        # Skip extraction while inside thinking block
                         if in_thinking:
                             continue
 
-                        # Extract fully-formed quoted strings from the REAL content only
-                        matches = re.findall(r'"([^"\\]{2,80})"', real_content)
+                        # Strip thinking content from what we parse
+                        parse_content = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL)
+                        parse_content = re.sub(r"<think>.*", "", parse_content, flags=re.DOTALL)
+
+                        # Process all COMPLETED lines (exclude last incomplete line)
+                        lines = parse_content.split("\n")
+                        complete_lines = lines[:-1]
                         new_cities = []
-                        for m in matches:
-                            m_clean = m.strip()
-                            if (
-                                m_clean
-                                and m_clean.lower() not in SKIP_KEYS
-                                and m_clean not in sent_cities_set
-                                and len(m_clean) >= 2
-                                and not any(c in m_clean for c in ["{", "}", "[", "]", "\\"])
-                            ):
-                                sent_cities_set.add(m_clean)
-                                found_cities.append(m_clean)
-                                new_cities.append(m_clean)
+
+                        for raw_ln in complete_lines:
+                            if raw_ln in processed_lines:
+                                continue
+                            processed_lines.add(raw_ln)
+
+                            city = extract_city_from_line(raw_ln)
+                            if city and city not in sent_cities_set:
+                                sent_cities_set.add(city)
+                                found_cities.append(city)
+                                new_cities.append(city)
 
                         if new_cities:
                             try:
@@ -539,6 +590,16 @@ async def stream_from_llama_cpp(
                                 logger.warning(f"WebSocket stream error: {ws_err}")
                     except Exception:
                         continue
+
+                # Process any final incomplete line at end of stream
+                if full_content:
+                    parse_content = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL)
+                    for raw_ln in parse_content.split("\n"):
+                        if raw_ln not in processed_lines:
+                            city = extract_city_from_line(raw_ln)
+                            if city and city not in sent_cities_set:
+                                sent_cities_set.add(city)
+                                found_cities.append(city)
 
         logger.info(f"Streaming complete — extracted {len(found_cities)} cities in real-time.")
         return found_cities, True
@@ -790,8 +851,9 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                     "model": "llama-3.3-70b-versatile",
                     "messages": groq_messages,
                     "temperature": temperature,
-                    "response_format": {"type": "json_object"},
-                    "max_tokens": 4096
+                    # NOTE: Do NOT use response_format:json_object with Groq — it causes 400 errors
+                    # when the model hits the token limit mid-JSON. Use robust_json_extract instead.
+                    "max_tokens": 8000
                 }
 
                 async with aiohttp.ClientSession() as session:
