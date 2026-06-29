@@ -34,20 +34,20 @@ async def reject_all_pending():
         return
 
     try:
-        # Check how many leads are currently AI pending
+        # Check how many leads are currently pending_ai
         pending_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM instagram_leads WHERE status = 'ai_pending'"
+            "SELECT COUNT(*) FROM instagram_leads WHERE status = 'pending_ai'"
         )
-        print(f"Found {pending_count} AI pending leads.")
+        print(f"Found {pending_count} pending_ai leads.")
 
         if pending_count == 0:
-            print("No AI pending leads to reject.")
+            print("No pending_ai leads to reject.")
             return
 
-        # Update all AI pending leads to rejected
-        print("Rejecting all AI pending leads...")
+        # Update all pending_ai leads to rejected
+        print("Rejecting all pending_ai leads...")
         result = await conn.execute(
-            "UPDATE instagram_leads SET status = 'rejected' WHERE status = 'ai_pending'"
+            "UPDATE instagram_leads SET status = 'rejected' WHERE status = 'pending_ai'"
         )
         print(f"Success! {result}")
 
