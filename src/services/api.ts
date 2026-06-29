@@ -1154,7 +1154,7 @@ export const instagramAPI = {
     api_provider: string;
     assistant_message: { role: string; content: string };
   }> => {
-    const response = await api.post('/instagram/suggest-cities', params, { timeout: 90000 });
+    const response = await api.post('/instagram/suggest-cities', params, { timeout: 240000 });
     return response.data;
   },
 };
