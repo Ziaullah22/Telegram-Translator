@@ -1339,7 +1339,12 @@ async def suggest_cities(
     # We bypass Ollama for counts > 100 and use the instant database fallback.
     selected_provider = req.provider.lower().strip() if req.provider else "auto"
     
-    is_local = selected_provider in ("ollama", "ollama-local", "local")
+    is_local = (
+        selected_provider in ("ollama", "ollama-local", "local") or 
+        selected_provider.endswith("-local") or 
+        "local" in selected_provider or
+        selected_provider in ("gemma", "gemma4")
+    )
     batch_size = 50 if is_local else 100
     total_wanted = count
     accumulated_messages = []
@@ -1433,6 +1438,19 @@ async def suggest_cities(
                     if c_clean and c_clean.lower() not in [sc.lower() for sc in suggested_cities]:
                         suggested_cities.append(c_clean)
                         new_added += 1
+                        
+                if new_added > 0:
+                    try:
+                        from websocket_manager import manager
+                        await manager.send_personal_message({
+                            "type": "cities_suggestion_progress",
+                            "cities": list(suggested_cities),
+                            "batch_index": batch_idx + 1,
+                            "total_batches": max_batches,
+                            "new_added": new_added
+                        }, current_user.user_id)
+                    except Exception as ws_err:
+                        logger.warning(f"Could not send cities websocket progress: {ws_err}")
                         
                 if batch_msg:
                     accumulated_messages.append(batch_msg)

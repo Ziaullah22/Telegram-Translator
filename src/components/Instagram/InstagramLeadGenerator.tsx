@@ -332,6 +332,21 @@ const InstagramLeadGenerator: React.FC = () => {
                 fetchData();
             } else if (message.type === 'filter_settings_updated') {
                 setFilterSettings(prev => ({ ...prev, ...message.settings }));
+            } else if (message.type === 'cities_suggestion_progress') {
+                if (message.cities) {
+                    setCitiesAiSuggestedKeywords(message.cities);
+                    setCitiesSelectedKeywords(new Set(message.cities));
+                }
+                setCitiesAiChatHistory(prev => {
+                    const cleanPrev = prev.filter(item => !item.content.includes('🔄 Batch'));
+                    return [
+                        ...cleanPrev,
+                        {
+                            role: 'assistant',
+                            content: `🔄 Batch ${message.batch_index}/${message.total_batches} generated! Found ${message.cities.length} unique location candidates so far...`
+                        }
+                    ];
+                });
             }
         });
         return unsubscribe;
