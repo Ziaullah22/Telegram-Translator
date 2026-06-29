@@ -431,7 +431,8 @@ async def stream_from_llama_cpp(
     url: str,
     payload: dict,
     user_id: int,
-    total_wanted: int
+    total_wanted: int,
+    existing_cities: list[str] = None
 ) -> tuple[list[str], bool]:
     """
     Streams a single request from llama.cpp and broadcasts cities to frontend via WebSocket
@@ -482,8 +483,8 @@ async def stream_from_llama_cpp(
 
     full_content = ""
     processed_lines: set[str] = set()   # lines already processed
-    found_cities: list[str] = []
-    sent_cities_set: set[str] = set()
+    found_cities: list[str] = list(existing_cities) if existing_cities else []
+    sent_cities_set: set[str] = set(found_cities)
     SKIP_KEYS = {
         "cities", "message", "keywords", "error", "regions", "states",
         "villages", "suburbs", "note", "here", "below", "following",
@@ -1619,7 +1620,8 @@ async def suggest_cities(
                 url=url_llama,
                 payload=stream_payload,
                 user_id=current_user.user_id,
-                total_wanted=total_wanted
+                total_wanted=total_wanted,
+                existing_cities=suggested_cities
             )
 
             if not stream_ok:
