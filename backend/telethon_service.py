@@ -1459,19 +1459,69 @@ class TelethonService:
             self.read_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
-        # 1. Reuse existing session if it exists
-        session = self.sessions.get(account_id)
-        
-        if session:
+        # 1. Fetch account details to check proxy settings
+        row = await db.fetchrow(
+            "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
+            account_id
+        )
+
+        if not row:
+            return False
+
+        app_id = row['app_id']
+        app_hash = row['app_hash']
+        user_id = row['user_id']
+        account_name = row['account_name']
+        device_info = row['device_info']
+        proxy_id = row['proxy_id']
+        user_id_for_proxies = user_id
+        session_file = f"sessions/{user_id}_{account_name}.session"
+
+        # Build current proxy config from DB
+        db_proxy = None
+        if proxy_id:
+            assigned = await db.fetchrow(
+                "SELECT id, host, port, username, password, proxy_type, is_working FROM instagram_proxies WHERE id = $1",
+                proxy_id
+            )
+            if assigned and assigned.get('is_working', True):
+                db_proxy = dict(assigned)
+        elif row.get('proxy'):
+            p_str = row['proxy'].strip()
+            import re
             try:
-                connected = await session.connect()
-                if connected:
-                    logger.info(f"Existing session reconnected successfully for account {account_id}")
-            except Exception as e:
-                logger.warning(f"Existing session connection failed for account {account_id}: {e}. Re-evaluating proxy candidates...")
-                connected = False
-                
-            if not connected:
+                p_str = re.sub(r'^[a-zA-Z0-9+\-.]+://', '', p_str).split('/')[0].strip()
+                if '@' in p_str:
+                    auth, server = p_str.split('@', 1)
+                    user, pw = auth.split(':', 1)
+                    host, port_str = server.rsplit(':', 1)
+                    db_proxy = {"host": host.strip(), "port": int(port_str.strip()), "username": user.strip(), "password": pw.strip(), "proxy_type": "http"}
+                else:
+                    parts = [p.strip() for p in p_str.split(':')]
+                    if len(parts) == 4:
+                        db_proxy = {"host": parts[0], "port": int(parts[1]), "username": parts[2], "password": parts[3], "proxy_type": "http"}
+                    elif len(parts) == 2:
+                        db_proxy = {"host": parts[0], "port": int(parts[1]), "username": None, "password": None, "proxy_type": "http"}
+            except Exception as parse_err:
+                logger.warning(f"Failed to parse proxy string '{row['proxy']}': {parse_err}")
+
+        # 2. Check if we can reuse the existing session
+        session = self.sessions.get(account_id)
+        if session:
+            # Detect if proxy configuration has changed
+            session_proxy = session.proxy
+            proxy_changed = False
+            if (db_proxy is None) != (session_proxy is None):
+                proxy_changed = True
+            elif db_proxy and session_proxy:
+                if (db_proxy.get('host') != session_proxy.get('host') or 
+                    db_proxy.get('port') != session_proxy.get('port') or 
+                    db_proxy.get('username') != session_proxy.get('username') or 
+                    db_proxy.get('password') != session_proxy.get('password')):
+                    proxy_changed = True
+
+            if proxy_changed:
+                logger.info(f"Proxy changed for account {account_id}. Disconnecting and recreating session.")
                 try:
                     await session.disconnect()
                 except Exception:
@@ -1479,25 +1529,23 @@ class TelethonService:
                 if account_id in self.sessions:
                     del self.sessions[account_id]
                 session = None
+            else:
+                try:
+                    connected = await session.connect()
+                    if connected:
+                        logger.info(f"Existing session reconnected successfully for account {account_id}")
+                        return True
+                except Exception as e:
+                    logger.warning(f"Existing session connection failed for account {account_id}: {e}. Re-evaluating...")
+                    try:
+                        await session.disconnect()
+                    except Exception:
+                        pass
+                    if account_id in self.sessions:
+                        del self.sessions[account_id]
+                    session = None
 
         if not session:
-            # 2. Fetch account details to create session
-            row = await db.fetchrow(
-                "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
-                account_id
-            )
-
-            if not row:
-                return False
-
-            app_id = row['app_id']
-            app_hash = row['app_hash']
-            user_id = row['user_id']
-            account_name = row['account_name']
-            device_info = row['device_info']
-            proxy_id = row['proxy_id']
-            user_id_for_proxies = user_id
-            session_file = f"sessions/{user_id}_{account_name}.session"
 
             # Build ordered proxy list: [assigned proxy, None (direct)]
             proxy_candidates = []
@@ -2048,8 +2096,11 @@ class TelethonService:
     async def _check_unread_messages_on_start(self, account_id: int):
         """Check for unread messages immediately when session starts"""
         try:
-            logger.info(f"Checking unread messages for account {account_id} on start")
-            unread_messages = await self.get_unread_messages(account_id)
+            session = self.sessions.get(account_id)
+            if not session or not session.is_connected:
+                logger.warning(f"Session not ready for account {account_id} on start check.")
+                return
+            unread_messages = await session.get_unread_messages()
             logger.info(f"Found {len(unread_messages)} unread messages for account {account_id}")
             
             if unread_messages:
