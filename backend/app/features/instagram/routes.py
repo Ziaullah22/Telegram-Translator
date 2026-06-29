@@ -436,6 +436,7 @@ async def stream_from_llama_cpp(
     """
     Streams a single request from llama.cpp and broadcasts cities to frontend via WebSocket
     as they are generated token by token. Returns (list_of_cities, success).
+    Filters out <think>...</think> content (Qwen 3.5 thinking mode) to avoid false extractions.
     """
     import aiohttp
     import json as json_module
@@ -444,18 +445,27 @@ async def stream_from_llama_cpp(
     from websocket_manager import manager
     logger = logging.getLogger(__name__)
 
-    # Use streaming payload — no response_format since it can conflict with streaming
+    # Streaming payload — disable thinking mode to avoid 10k+ wasted tokens
     stream_payload = {
         "model": payload.get("model", "qwen"),
         "messages": payload["messages"],
         "temperature": payload.get("temperature", 0.7),
         "stream": True,
+        # Disable thinking/reasoning for Qwen 3.5 (avoids 10k+ thinking tokens before JSON)
+        "thinking": False,
+        "enable_thinking": False,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     full_content = ""
     found_cities: list[str] = []
     sent_cities_set: set[str] = set()
     SKIP_KEYS = {"cities", "message", "keywords", "error", "regions", "states", "villages", "suburbs"}
+
+    # Track whether we're inside a <think>...</think> block
+    in_thinking = False
+    # Content outside thinking blocks (actual response)
+    real_content = ""
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -483,8 +493,25 @@ async def stream_from_llama_cpp(
                             continue
                         full_content += token
 
-                        # Extract any fully-formed quoted strings from the accumulating JSON stream
-                        matches = re.findall(r'"([^"\\]{2,80})"', full_content)
+                        # Track thinking mode on/off to filter out <think> blocks
+                        if "<think>" in full_content and not in_thinking:
+                            in_thinking = True
+                        if "</think>" in full_content and in_thinking:
+                            in_thinking = False
+                            # Strip all thinking content from real_content
+                            clean = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL)
+                            real_content = clean
+                        elif not in_thinking:
+                            # Only accumulate non-thinking content
+                            clean = re.sub(r"<think>.*", "", full_content, flags=re.DOTALL)
+                            real_content = clean
+
+                        # Skip extraction while inside thinking block
+                        if in_thinking:
+                            continue
+
+                        # Extract fully-formed quoted strings from the REAL content only
+                        matches = re.findall(r'"([^"\\]{2,80})"', real_content)
                         new_cities = []
                         for m in matches:
                             m_clean = m.strip()
