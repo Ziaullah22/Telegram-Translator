@@ -3,15 +3,24 @@ import sys
 import os
 
 # Adjust paths to load config correctly
-# Load backend .env before importing config/settings
+# Adjust paths to load config correctly and read .env file manually
 import os
 import sys
-from dotenv import load_dotenv
 
 backend_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(backend_dir)
 
-load_dotenv(os.path.join(backend_dir, ".env"))
+# Pure Python .env file parser (No dotenv module required)
+env_path = os.path.join(backend_dir, ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                # Strip quotes if present
+                val = val.strip().strip('"').strip("'")
+                os.environ[key.strip()] = val
 
 from app.core.config import settings
 import asyncpg
