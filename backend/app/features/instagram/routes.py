@@ -819,7 +819,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
         raw = "{}"
  
         for port in [8080, 8000]:
-            url = f"http://localhost:{port}/v1/chat/completions"
+            url = f"http://127.0.0.1:{port}/v1/chat/completions"
             logger.info(f"Connecting to llama.cpp at {url}...")
             try:
                 async with aiohttp.ClientSession() as session:
@@ -848,7 +848,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                 return [], raw[:500], False, True, f"llama.cpp ({provider})"
         else:
             logger.info("llama.cpp not reachable. Falling back to local Ollama qwen2.5:32b...")
-            ollama_url = "http://localhost:11434"
+            ollama_url = "http://127.0.0.1:11434"
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
@@ -877,7 +877,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
 
     # 5. Try Ollama
     if prov_lower in ("gemma", "gemma4", "ollama") or prov_lower == "auto":
-        ollama_url = "http://localhost:11434"
+        ollama_url = "http://127.0.0.1:11434"
         try:
             logger.info("Sending request to local Ollama (gemma4)...")
             ollama_messages = [{"role": "system", "content": system_prompt}] + [m for m in messages if m.get("role") != "system"]
