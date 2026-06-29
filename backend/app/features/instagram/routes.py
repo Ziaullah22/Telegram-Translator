@@ -578,6 +578,10 @@ async def stream_from_llama_cpp(
                                 found_cities.append(city)
                                 new_cities.append(city)
 
+                        if len(found_cities) >= total_wanted:
+                            logger.info(f"Target count {total_wanted} reached during streaming. Stopping stream early.")
+                            break
+
                         if new_cities:
                             try:
                                 await manager.send_personal_message({
@@ -1549,11 +1553,11 @@ async def suggest_cities(
         elif "cit" in combined_lower: loc_type = "cities"
         
         stream_system_prompt = (
-            f"You are a location database expert. Generate EXACTLY {total_wanted} unique {loc_type} "
-            f"in: {region_str}. Output ONLY a valid JSON: "
-            f'{{"cities": ["Name1", "Name2", ...]}}. No explanation.'
+            f"You are a target region database expert. Generate EXACTLY {total_wanted} unique, individual {loc_type} in: {region_str}.\n"
+            f"Output ONLY a simple numbered list, one location per line (e.g. '1. Sydney').\n"
+            f"Do NOT group by state, do NOT add category headers, do NOT add titles, and do NOT write notes or explanations. Just start the list."
         )
-        stream_user_msg = f"Give me {total_wanted} {loc_type} in {region_str} as JSON."
+        stream_user_msg = f"Provide a simple, flat numbered list of EXACTLY {total_wanted} unique {loc_type} in {region_str}. No headers, no categories, one per line."
         
         stream_payload = {
             "model": "qwen",
@@ -1596,15 +1600,15 @@ async def suggest_cities(
 
             exclude_note = ""
             if suggested_cities:
-                sample = suggested_cities[-50:]
-                exclude_note = f" Do NOT include: {', '.join(sample)}."
+                sample = suggested_cities[-60:]
+                exclude_note = f" Do NOT include any of these: {', '.join(sample)}."
 
             pass_system_prompt = (
-                f"You are a location database expert. Generate EXACTLY {remaining} unique {loc_type} "
-                f"in: {region_str}.{exclude_note} "
-                f'Output ONLY valid JSON: {{"cities": ["Name1", "Name2", ...]}}. No explanation.'
+                f"You are a target region database expert. Generate EXACTLY {remaining} MORE unique, individual {loc_type} in: {region_str}.{exclude_note}\n"
+                f"Output ONLY a simple numbered list, one location per line starting from number 1 (e.g. '1. SuburbName').\n"
+                f"Do NOT group by state, do NOT add category headers, do NOT write notes. Just start the list."
             )
-            pass_user_msg = f"Give me {remaining} more {loc_type} in {region_str} as JSON.{exclude_note}"
+            pass_user_msg = f"Provide a simple, flat numbered list of EXACTLY {remaining} MORE unique {loc_type} in {region_str}.{exclude_note}"
 
             stream_payload = {
                 "model": "qwen",
