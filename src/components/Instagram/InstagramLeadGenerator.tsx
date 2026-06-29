@@ -170,6 +170,7 @@ const InstagramLeadGenerator: React.FC = () => {
     const [citiesAiChatInput, setCitiesAiChatInput] = useState('');
     const [citiesAiSuggestedKeywords, setCitiesAiSuggestedKeywords] = useState<string[]>([]);
     const [citiesAiKeywordCount, setCitiesAiKeywordCount] = useState(50);
+    const [citiesAiLocationType, setCitiesAiLocationType] = useState<string>('all');
     const [isCitiesAiThinking, setIsCitiesAiThinking] = useState(false);
     const [citiesSelectedKeywords, setCitiesSelectedKeywords] = useState<Set<string>>(new Set());
     const [citiesAiProvider, setCitiesAiProvider] = useState<string>('');
@@ -819,7 +820,16 @@ const InstagramLeadGenerator: React.FC = () => {
         if (!message && !citiesAiSeedInput.trim()) return;
 
         const regionStr = citiesAiSeedInput.trim() || 'Australia';
-        const userMsg = message || `Generate a list of ${citiesAiKeywordCount} major cities, suburbs, or regions in: ${regionStr} for our profile location whitelist.`;
+        const locationTypeMap: { [key: string]: string } = {
+            all: 'major cities, suburbs, or regions',
+            villages: 'villages',
+            suburbs: 'suburbs',
+            cities: 'major cities',
+            regions: 'regions',
+            states: 'states'
+        };
+        const selectedType = locationTypeMap[citiesAiLocationType] || 'major cities, suburbs, or regions';
+        const userMsg = message || `Generate a list of ${citiesAiKeywordCount} ${selectedType} in: ${regionStr} for our profile location whitelist.`;
 
         const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
             ...citiesAiChatHistory,
@@ -3497,15 +3507,19 @@ const InstagramLeadGenerator: React.FC = () => {
                                 <div className="flex-1 flex flex-col overflow-hidden">
                                     {/* Seed input + Model Selector */}
                                     <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
-                                        <div className="flex items-center justify-between mb-2.5">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-bold">Describe Target Country / Region / City 📍</p>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[9px] font-black uppercase text-gray-400">AI Model:</span>
+                                        <div className="mb-3">
+                                            <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2.5">Configure Target Specifications ⚙️</p>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-gray-100/50 dark:bg-white/[0.02] border border-gray-200/50 dark:border-white/5 rounded-2xl mb-1">
+                                                {/* AI Model Selection */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="text-[9.5px] font-black uppercase text-gray-400 dark:text-gray-500 tracking-wider flex items-center gap-1">
+                                                        <span>🤖</span> AI Model
+                                                    </span>
                                                     <select
                                                         value={citiesKeywordModel}
                                                         onChange={e => setCitiesKeywordModel(e.target.value)}
-                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
+                                                        className="w-full bg-white dark:bg-[#0f172a]/90 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer shadow-sm hover:border-gray-300 dark:hover:border-white/20"
                                                     >
                                                         <option value="auto">Auto / Default</option>
                                                         <option value="gemini">Gemini API</option>
@@ -3522,14 +3536,37 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="qwen3.5-4b-local">Qwen 3.5 4B (llama.cpp / Local)</option>
                                                     </select>
                                                 </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[9px] font-black uppercase text-gray-400">Target Count:</span>
+
+                                                {/* Target Count Selection */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="text-[9.5px] font-black uppercase text-gray-400 dark:text-gray-500 tracking-wider flex items-center gap-1">
+                                                        <span>📊</span> Target Count
+                                                    </span>
                                                     <select
                                                         value={citiesAiKeywordCount}
                                                         onChange={e => setCitiesAiKeywordCount(parseInt(e.target.value))}
-                                                        className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-indigo-500"
+                                                        className="w-full bg-white dark:bg-[#0f172a]/90 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer shadow-sm hover:border-gray-300 dark:hover:border-white/20"
                                                     >
                                                         {[10, 20, 30, 50, 75, 100, 200, 300, 500].map(n => <option key={n} value={n}>{n} Locations</option>)}
+                                                    </select>
+                                                </div>
+
+                                                {/* Location Type Selection */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="text-[9.5px] font-black uppercase text-gray-400 dark:text-gray-500 tracking-wider flex items-center gap-1">
+                                                        <span>📍</span> Location Type
+                                                    </span>
+                                                    <select
+                                                        value={citiesAiLocationType}
+                                                        onChange={e => setCitiesAiLocationType(e.target.value)}
+                                                        className="w-full bg-white dark:bg-[#0f172a]/90 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer shadow-sm hover:border-gray-300 dark:hover:border-white/20"
+                                                    >
+                                                        <option value="all">All Locations</option>
+                                                        <option value="villages">Only Villages</option>
+                                                        <option value="suburbs">Only Suburbs</option>
+                                                        <option value="cities">Only Cities</option>
+                                                        <option value="regions">Only Regions</option>
+                                                        <option value="states">Only States</option>
                                                     </select>
                                                 </div>
                                             </div>

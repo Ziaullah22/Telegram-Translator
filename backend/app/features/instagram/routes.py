@@ -625,7 +625,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                         url=gemini_url,
                         json_data=payload,
                         headers={"Content-Type": "application/json"},
-                        timeout=15,
+                        timeout=180,
                         user_proxies=proxies
                     )
                     if status == 200:
@@ -679,7 +679,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                         url=groq_url,
                         json_data=payload,
                         headers=headers,
-                        timeout=20,
+                        timeout=180,
                         user_proxies=proxies
                     )
                     if status == 200:
@@ -735,7 +735,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                         url=or_url,
                         json_data=payload,
                         headers=headers,
-                        timeout=20,
+                        timeout=180,
                         user_proxies=proxies
                     )
                     if status == 200:
@@ -787,7 +787,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                         url=hf_url,
                         json_data=payload,
                         headers=headers,
-                        timeout=20,
+                        timeout=180,
                         user_proxies=proxies
                     )
                     if status == 200:
@@ -890,7 +890,7 @@ async def query_ai_service(messages: List[dict], system_prompt: str, array_key: 
                         "stream": False,
                         "options": {"temperature": temperature}
                     },
-                    timeout=aiohttp.ClientTimeout(connect=5, total=90)
+                    timeout=aiohttp.ClientTimeout(connect=5, total=180)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -1339,19 +1339,20 @@ async def suggest_cities(
     # We bypass Ollama for counts > 100 and use the instant database fallback.
     selected_provider = req.provider.lower().strip() if req.provider else "auto"
     
-    # We will generate in batches to ensure model generates the full list without cutting off
-    batch_size = 50
+    is_local = selected_provider in ("ollama", "ollama-local", "local")
+    batch_size = 50 if is_local else 100
     total_wanted = count
     accumulated_messages = []
     
     run_ai = True
-    if total_wanted > 100 and selected_provider in ("ollama", "ollama-local", "local"):
+    if total_wanted > 100 and is_local:
         run_ai = False
 
     if run_ai:
         max_batches = (total_wanted + batch_size - 1) // batch_size
         logger.info(f"Generating {total_wanted} cities/regions for {region_str} in up to {max_batches} batches using provider {selected_provider}...")
         
+        consecutive_no_progress = 0
         for batch_idx in range(max_batches):
             current_batch_wanted = min(batch_size, total_wanted - len(suggested_cities))
             if current_batch_wanted <= 0:
@@ -1360,26 +1361,45 @@ async def suggest_cities(
             # Customize the system prompt and user content to avoid duplicates
             exclude_str = ""
             if suggested_cities:
-                sample_excludes = suggested_cities[-100:]
+                sample_excludes = suggested_cities[-150:]
                 exclude_str = f" You MUST NOT include any of the following cities/regions that were already generated: {', '.join(sample_excludes)}."
 
+            # Determine location type dynamically based on user custom message or input region
+            location_type = "major cities, suburbs, or regions"
+            combined_text = (req.user_message or "") + " " + (region_str or "")
+            combined_lower = combined_text.lower()
+            
+            if "village" in combined_lower:
+                location_type = "villages"
+            elif "suburb" in combined_lower:
+                location_type = "suburbs"
+            elif "region" in combined_lower:
+                location_type = "regions"
+            elif "state" in combined_lower:
+                location_type = "states"
+            elif "city" in combined_lower or "cities" in combined_lower:
+                location_type = "cities"
+
             system_prompt = (
-                f"You are a target region and city database expert. Your job is to help the user generate a list of cities "
-                f"or regions in a target country or area to be used as a profile location whitelist. "
-                f"Generate a list of {current_batch_wanted} major cities, suburbs, or regions in the target area (e.g. {region_str}).{exclude_str} "
+                f"You are a target location database expert. Your job is to help the user generate a list of target locations "
+                f"in a target country or area to be used as a profile location whitelist. "
+                f"Generate a list of {current_batch_wanted} {location_type} in the target area (e.g. {region_str}).{exclude_str} "
                 f"Return ONLY a valid JSON object with a 'cities' array of strings and a 'message' string explaining the coverage. "
-                f"Example: {{\"cities\": [\"Sydney\", \"Melbourne\", \"Brisbane\"], \"message\": \"Here are some major cities in Australia...\"}}"
+                f"Example: {{\"cities\": [\"Sydney\", \"Melbourne\", \"Brisbane\"], \"message\": \"Here are some major locations in Australia...\"}}"
             )
             
-            # Prepare messages
+            # Prepare messages (always pass conversation history to maintain context/instructions)
             batch_messages = [{"role": "system", "content": system_prompt}]
-            if batch_idx == 0:
-                for turn in req.conversation_history[-8:]:
-                    if turn.get("role") in ("user", "assistant") and turn.get("content"):
-                        batch_messages.append({"role": turn["role"], "content": turn["content"]})
+            for turn in req.conversation_history[-8:]:
+                if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                    batch_messages.append({"role": turn["role"], "content": turn["content"]})
                         
-            if batch_idx == 0 and req.user_message.strip():
-                user_content = req.user_message
+            if req.user_message.strip():
+                user_content = (
+                    f"{req.user_message}\n\n"
+                    f"Batch Instruction: From the target area/criteria, generate {current_batch_wanted} additional unique entries. "
+                    f"{exclude_str} Output your response strictly in the JSON format."
+                )
             else:
                 user_content = (
                     f"Generate a whitelist of {current_batch_wanted} unique cities or regions in the target area: {region_str}.{exclude_str} "
@@ -1420,6 +1440,12 @@ async def suggest_cities(
                 logger.info(f"Batch {batch_idx + 1} generated {len(batch_cities)} cities ({new_added} unique new ones). Total: {len(suggested_cities)}.")
                 
                 if new_added == 0:
+                    consecutive_no_progress += 1
+                else:
+                    consecutive_no_progress = 0
+                    
+                if consecutive_no_progress >= 2:
+                    logger.warning("No new unique cities added for 2 consecutive batches, stopping generator.")
                     break
             except Exception as e:
                 logger.error(f"Error generating batch {batch_idx + 1}: {e}")
