@@ -1499,7 +1499,7 @@ class TelethonService:
             user_id_for_proxies = user_id
             session_file = f"sessions/{user_id}_{account_name}.session"
 
-            # Build ordered proxy list: [assigned proxy, ...other proxies, None (direct)]
+            # Build ordered proxy list: [assigned proxy, None (direct)]
             proxy_candidates = []
 
             if proxy_id:
@@ -1509,6 +1509,29 @@ class TelethonService:
                 )
                 if assigned and assigned.get('is_working', True):
                     proxy_candidates.append(dict(assigned))
+            elif row.get('proxy'):
+                p_str = row['proxy'].strip()
+                import re
+                try:
+                    # Clean and parse p_str
+                    p_str = re.sub(r'^[a-zA-Z0-9+\-.]+://', '', p_str).split('/')[0].strip()
+                    parsed = None
+                    if '@' in p_str:
+                        auth, server = p_str.split('@', 1)
+                        user, pw = auth.split(':', 1)
+                        host, port_str = server.rsplit(':', 1)
+                        parsed = {"host": host.strip(), "port": int(port_str.strip()), "username": user.strip(), "password": pw.strip(), "proxy_type": "http"}
+                    else:
+                        parts = [p.strip() for p in p_str.split(':')]
+                        if len(parts) == 4:
+                            parsed = {"host": parts[0], "port": int(parts[1]), "username": parts[2], "password": parts[3], "proxy_type": "http"}
+                        elif len(parts) == 2:
+                            parsed = {"host": parts[0], "port": int(parts[1]), "username": None, "password": None, "proxy_type": "http"}
+                    
+                    if parsed:
+                        proxy_candidates.append(parsed)
+                except Exception as parse_err:
+                    logger.warning(f"Failed to parse proxy string '{row['proxy']}': {parse_err}")
 
             # Always add direct (no proxy) as last resort
             proxy_candidates.append(None)
