@@ -3222,7 +3222,7 @@ const InstagramLeadGenerator: React.FC = () => {
                                     {/* Seed keywords input */}
                                     <div className="p-4 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5 flex-shrink-0">
                                         <div className="flex items-center justify-between mb-2.5">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Describe What to Exclude (Niche / Competitors / Bot patterns)</p>
+                                            
                                             <div className="flex items-center gap-3">
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="text-[9px] font-black uppercase text-gray-400">AI Model:</span>

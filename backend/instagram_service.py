@@ -1281,8 +1281,17 @@ class InstagramService:
                 full_name_lower = (full_name or '').lower()
                 bio_lower_city = (bio or '').lower()
 
-                # Fast string match only
-                matched_cities = [city for city in cities_list if city in bio_lower_city or city in full_name_lower or city in username_lower]
+                # Strict word boundary regex match to prevent substring false matches (e.g. 'wa' matching 'Cornwall')
+                import re
+                matched_cities = []
+                for city in cities_list:
+                    pattern = rf"\b{re.escape(city)}\b"
+                    if (
+                        re.search(pattern, bio_lower_city) or 
+                        re.search(pattern, full_name_lower) or 
+                        re.search(pattern, username_lower)
+                    ):
+                        matched_cities.append(city)
                 city_found_fast = len(matched_cities) > 0
 
                 if city_found_fast:
@@ -4004,7 +4013,15 @@ class InstagramService:
                 bio_lower = (bio or '').lower()
                 full_name_lower = (full_name or '').lower()
                 username_lower = (username or '').lower()
-                matched_cities = [city for city in cities_list if city in bio_lower or city in full_name_lower or city in username_lower]
+                matched_cities = []
+                for city in cities_list:
+                    pattern = rf"\b{re.escape(city)}\b"
+                    if (
+                        re.search(pattern, bio_lower) or 
+                        re.search(pattern, full_name_lower) or 
+                        re.search(pattern, username_lower)
+                    ):
+                        matched_cities.append(city)
                 if matched_cities:
                     trace.append({"step": "Cities Whitelist Filter", "status": "passed", "details": f"Matches whitelist city: '{matched_cities[0]}'."})
                 else:
@@ -4060,10 +4077,16 @@ class InstagramService:
             full_name_lower = (full_name or '').lower()
             bio_lower_city = (bio or '').lower()
 
-            city_found_fast = any(
-                city in bio_lower_city or city in full_name_lower or city in username_lower
-                for city in cities_list
-            )
+            city_found_fast = False
+            for city in cities_list:
+                pattern = rf"\b{re.escape(city)}\b"
+                if (
+                    re.search(pattern, bio_lower_city) or 
+                    re.search(pattern, full_name_lower) or 
+                    re.search(pattern, username_lower)
+                ):
+                    city_found_fast = True
+                    break
             if not city_found_fast:
                 return False, "Location check failed: The profile does not match any city on your whitelist."
 

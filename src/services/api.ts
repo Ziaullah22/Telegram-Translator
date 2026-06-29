@@ -924,7 +924,7 @@ export const instagramAPI = {
     const response = await api.delete(`/instagram/accounts/${accountId}`);
     return response.data;
   },
-  
+
   updateAccountSettings: async (accountId: number, targetLanguage: string, sourceLanguage: string, isTranslationEnabled: boolean, proxy?: string): Promise<any> => {
     const response = await api.put(`/instagram/accounts/${accountId}/settings`, {
       target_language: targetLanguage,
@@ -1034,10 +1034,10 @@ export const instagramAPI = {
   },
 
   saveFilterSettings: async (
-    bio_keywords: string, 
-    min_followers: number, 
-    max_followers: number, 
-    sample_hashes: string[], 
+    bio_keywords: string,
+    min_followers: number,
+    max_followers: number,
+    sample_hashes: string[],
     visual_niche: string,
     minimax_api_key: string,
     enable_ai_filter: boolean,
@@ -1047,11 +1047,11 @@ export const instagramAPI = {
     bio_cities_whitelist: string,
     enable_ai_analysis: boolean
   ): Promise<any> => {
-    const response = await api.post('/instagram/filters/settings', { 
-      bio_keywords, 
-      min_followers, 
-      max_followers, 
-      sample_hashes, 
+    const response = await api.post('/instagram/filters/settings', {
+      bio_keywords,
+      min_followers,
+      max_followers,
+      sample_hashes,
       visual_niche,
       minimax_api_key,
       enable_ai_filter,
@@ -1171,25 +1171,25 @@ export const instagramChatAPI = {
     return response.data;
   },
   sendMessage: async (accountId: number, threadId: string, text: string): Promise<InstagramMessage> => {
-    const response = await api.post(`/instagram/chat/threads/${threadId}/send`, null, { 
-      params: { account_id: accountId, text: text } 
+    const response = await api.post(`/instagram/chat/threads/${threadId}/send`, null, {
+      params: { account_id: accountId, text: text }
     });
     return response.data;
   },
   searchUsers: async (accountId: number, query: string): Promise<any[]> => {
-    const response = await api.get(`/instagram/chat/search-user`, { 
-      params: { account_id: accountId, query: query } 
+    const response = await api.get(`/instagram/chat/search-user`, {
+      params: { account_id: accountId, query: query }
     });
     return response.data;
   },
   createThread: async (accountId: number, username: string, userPk?: string, fullName?: string): Promise<InstagramChat> => {
-    const response = await api.post(`/instagram/chat/threads/create`, null, { 
-      params: { 
-        account_id: accountId, 
+    const response = await api.post(`/instagram/chat/threads/create`, null, {
+      params: {
+        account_id: accountId,
         username: username,
         user_pk: userPk,
         full_name: fullName
-      } 
+      }
     });
     return response.data;
   }
