@@ -1618,13 +1618,7 @@ class TelethonService:
             del self.sessions[account_id]
 
     async def get_session(self, account_id: int) -> Optional[TelegramSession]:
-        session = self.sessions.get(account_id)
-        if session:
-            try:
-                await session.ensure_active()
-            except Exception as e:
-                logger.warning(f"Failed to ensure session {account_id} is active: {e}")
-        return session
+        return self.sessions.get(account_id)
 
     async def get_dialogs(self, account_id: int, limit: int = 50):
         session = self.sessions.get(account_id)
@@ -1641,9 +1635,10 @@ class TelethonService:
         return await session.get_messages(peer_id, limit)
 
     async def send_message(self, account_id: int, peer_id: int, text: str, reply_to: int = None):
-        session = await self.get_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Telegram account is not connected. Please reconnect your account.")
+        await session.ensure_active()
         return await session.send_message(peer_id, text, reply_to=reply_to)
 
     async def delete_messages(self, account_id: int, peer_id: int, message_ids: List[int], revoke: bool = True):
@@ -1671,6 +1666,7 @@ class TelethonService:
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
+        await session.ensure_active()
 
         # 1. Check all other active sessions for their own 'me' entity
         # This ensures we find our other accounts with full details immediately
@@ -2317,6 +2313,7 @@ class TelethonService:
         session = self.sessions.get(account_id)
         if not session or not session.client:
             raise Exception("Account not connected")
+        await session.ensure_active()
         
         from telethon.tl.functions.account import GetAuthorizationsRequest
         
