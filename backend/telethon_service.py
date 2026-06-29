@@ -40,42 +40,16 @@ class TelegramSession:
         self.secret_chat_manager: Optional[SecretChatManager] = None
         self.device_info = device_info
         self.proxy = proxy
-        self.last_check_time = None
 
     # Initialize the SQLite session, connect to the Telegram servers, perform authorization checks, and pre-warm the dialog cache
     async def connect(self):
-        now = datetime.now()
         if self.is_connected and self.client and self.client.is_connected():
-            if self.last_check_time and (now - self.last_check_time).total_seconds() < 10:
-                return True
-            try:
-                await asyncio.wait_for(self.client(functions.updates.GetStateRequest()), timeout=3.0)
-                self.last_check_time = now
-                return True
-            except Exception as e:
-                logger.warning(f"Connection check failed for account {self.account_id} (proxy might be frozen): {e}. Forcing reconnect...")
-                self.is_connected = False
-                try:
-                    await self.client.disconnect()
-                except Exception:
-                    pass
-
+            return True
+            
         async with self.connection_lock:
             # Inner check after acquiring lock
             if self.is_connected and self.client and self.client.is_connected():
-                if self.last_check_time and (now - self.last_check_time).total_seconds() < 10:
-                    return True
-                try:
-                    await asyncio.wait_for(self.client(functions.updates.GetStateRequest()), timeout=3.0)
-                    self.last_check_time = now
-                    return True
-                except Exception as e:
-                    logger.warning(f"Inner connection check failed for account {self.account_id}: {e}. Reconnecting...")
-                    self.is_connected = False
-                    try:
-                        await self.client.disconnect()
-                    except Exception:
-                        pass
+                return True
                 
             self.is_connecting = True
             try:
@@ -1459,69 +1433,19 @@ class TelethonService:
             self.read_handlers.append(handler)
 
     async def connect_session(self, account_id: int) -> bool:
-        # 1. Fetch account details to check proxy settings
-        row = await db.fetchrow(
-            "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
-            account_id
-        )
-
-        if not row:
-            return False
-
-        app_id = row['app_id']
-        app_hash = row['app_hash']
-        user_id = row['user_id']
-        account_name = row['account_name']
-        device_info = row['device_info']
-        proxy_id = row['proxy_id']
-        user_id_for_proxies = user_id
-        session_file = f"sessions/{user_id}_{account_name}.session"
-
-        # Build current proxy config from DB
-        db_proxy = None
-        if proxy_id:
-            assigned = await db.fetchrow(
-                "SELECT id, host, port, username, password, proxy_type, is_working FROM instagram_proxies WHERE id = $1",
-                proxy_id
-            )
-            if assigned and assigned.get('is_working', True):
-                db_proxy = dict(assigned)
-        elif row.get('proxy'):
-            p_str = row['proxy'].strip()
-            import re
-            try:
-                p_str = re.sub(r'^[a-zA-Z0-9+\-.]+://', '', p_str).split('/')[0].strip()
-                if '@' in p_str:
-                    auth, server = p_str.split('@', 1)
-                    user, pw = auth.split(':', 1)
-                    host, port_str = server.rsplit(':', 1)
-                    db_proxy = {"host": host.strip(), "port": int(port_str.strip()), "username": user.strip(), "password": pw.strip(), "proxy_type": "http"}
-                else:
-                    parts = [p.strip() for p in p_str.split(':')]
-                    if len(parts) == 4:
-                        db_proxy = {"host": parts[0], "port": int(parts[1]), "username": parts[2], "password": parts[3], "proxy_type": "http"}
-                    elif len(parts) == 2:
-                        db_proxy = {"host": parts[0], "port": int(parts[1]), "username": None, "password": None, "proxy_type": "http"}
-            except Exception as parse_err:
-                logger.warning(f"Failed to parse proxy string '{row['proxy']}': {parse_err}")
-
-        # 2. Check if we can reuse the existing session
+        # 1. Reuse existing session if it exists
         session = self.sessions.get(account_id)
+        
         if session:
-            # Detect if proxy configuration has changed
-            session_proxy = session.proxy
-            proxy_changed = False
-            if (db_proxy is None) != (session_proxy is None):
-                proxy_changed = True
-            elif db_proxy and session_proxy:
-                if (db_proxy.get('host') != session_proxy.get('host') or 
-                    db_proxy.get('port') != session_proxy.get('port') or 
-                    db_proxy.get('username') != session_proxy.get('username') or 
-                    db_proxy.get('password') != session_proxy.get('password')):
-                    proxy_changed = True
-
-            if proxy_changed:
-                logger.info(f"Proxy changed for account {account_id}. Disconnecting and recreating session.")
+            try:
+                connected = await session.connect()
+                if connected:
+                    logger.info(f"Existing session reconnected successfully for account {account_id}")
+            except Exception as e:
+                logger.warning(f"Existing session connection failed for account {account_id}: {e}. Re-evaluating proxy candidates...")
+                connected = False
+                
+            if not connected:
                 try:
                     await session.disconnect()
                 except Exception:
@@ -1529,25 +1453,27 @@ class TelethonService:
                 if account_id in self.sessions:
                     del self.sessions[account_id]
                 session = None
-            else:
-                try:
-                    connected = await session.connect()
-                    if connected:
-                        logger.info(f"Existing session reconnected successfully for account {account_id}")
-                        return True
-                except Exception as e:
-                    logger.warning(f"Existing session connection failed for account {account_id}: {e}. Re-evaluating...")
-                    try:
-                        await session.disconnect()
-                    except Exception:
-                        pass
-                    if account_id in self.sessions:
-                        del self.sessions[account_id]
-                    session = None
 
         if not session:
+            # 2. Fetch account details to create session
+            row = await db.fetchrow(
+                "SELECT app_id, app_hash, user_id, account_name, device_info, proxy_id, proxy FROM telegram_accounts WHERE id = $1",
+                account_id
+            )
 
-            # Build ordered proxy list: [assigned proxy, None (direct)]
+            if not row:
+                return False
+
+            app_id = row['app_id']
+            app_hash = row['app_hash']
+            user_id = row['user_id']
+            account_name = row['account_name']
+            device_info = row['device_info']
+            proxy_id = row['proxy_id']
+            user_id_for_proxies = user_id
+            session_file = f"sessions/{user_id}_{account_name}.session"
+
+            # Build ordered proxy list: [assigned proxy, ...other proxies, None (direct)]
             proxy_candidates = []
 
             if proxy_id:
@@ -1557,29 +1483,15 @@ class TelethonService:
                 )
                 if assigned and assigned.get('is_working', True):
                     proxy_candidates.append(dict(assigned))
-            elif row.get('proxy'):
-                p_str = row['proxy'].strip()
-                import re
-                try:
-                    # Clean and parse p_str
-                    p_str = re.sub(r'^[a-zA-Z0-9+\-.]+://', '', p_str).split('/')[0].strip()
-                    parsed = None
-                    if '@' in p_str:
-                        auth, server = p_str.split('@', 1)
-                        user, pw = auth.split(':', 1)
-                        host, port_str = server.rsplit(':', 1)
-                        parsed = {"host": host.strip(), "port": int(port_str.strip()), "username": user.strip(), "password": pw.strip(), "proxy_type": "http"}
-                    else:
-                        parts = [p.strip() for p in p_str.split(':')]
-                        if len(parts) == 4:
-                            parsed = {"host": parts[0], "port": int(parts[1]), "username": parts[2], "password": parts[3], "proxy_type": "http"}
-                        elif len(parts) == 2:
-                            parsed = {"host": parts[0], "port": int(parts[1]), "username": None, "password": None, "proxy_type": "http"}
-                    
-                    if parsed:
-                        proxy_candidates.append(parsed)
-                except Exception as parse_err:
-                    logger.warning(f"Failed to parse proxy string '{row['proxy']}': {parse_err}")
+
+            # Add other proxies from the same user's pool as fallbacks (max 2 to avoid long waits)
+            fallback_proxies = await db.fetch(
+                "SELECT id, host, port, username, password, proxy_type FROM instagram_proxies WHERE user_id = $1 AND id != $2 AND is_working = TRUE ORDER BY id LIMIT 2",
+                user_id_for_proxies,
+                proxy_id or -1
+            )
+            for p in fallback_proxies:
+                proxy_candidates.append(dict(p))
 
             # Always add direct (no proxy) as last resort
             proxy_candidates.append(None)
@@ -1663,7 +1575,6 @@ class TelethonService:
         return self.sessions.get(account_id)
 
     async def get_dialogs(self, account_id: int, limit: int = 50):
-        await self.connect_session(account_id)
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
@@ -1671,7 +1582,6 @@ class TelethonService:
         return await session.get_dialogs(limit)
 
     async def get_messages(self, account_id: int, peer_id: int, limit: int = 50):
-        await self.connect_session(account_id)
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
@@ -1679,29 +1589,25 @@ class TelethonService:
         return await session.get_messages(peer_id, limit)
 
     async def send_message(self, account_id: int, peer_id: int, text: str, reply_to: int = None):
-        await self.connect_session(account_id)
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             raise Exception("Telegram account is not connected. Please reconnect your account.")
         return await session.send_message(peer_id, text, reply_to=reply_to)
 
     async def delete_messages(self, account_id: int, peer_id: int, message_ids: List[int], revoke: bool = True):
-        await self.connect_session(account_id)
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             return False
         return await session.delete_messages(peer_id, message_ids, revoke=revoke)
 
     async def delete_dialog(self, account_id: int, peer_id: int):
-        await self.connect_session(account_id)
-        session = self.sessions.get(account_id)
+        session = await self.get_session(account_id)
         if not session:
             return False
         return await session.delete_dialog(peer_id)
 
     async def get_unread_messages(self, account_id: int):
         """Get unread messages for a specific account"""
-        await self.connect_session(account_id)
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
@@ -1710,7 +1616,6 @@ class TelethonService:
 
     async def search_users(self, account_id: int, username: str, limit: int = 10):
         """Search for Telegram users with cross-session discovery"""
-        await self.connect_session(account_id)
         session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
@@ -2096,11 +2001,8 @@ class TelethonService:
     async def _check_unread_messages_on_start(self, account_id: int):
         """Check for unread messages immediately when session starts"""
         try:
-            session = self.sessions.get(account_id)
-            if not session or not session.is_connected:
-                logger.warning(f"Session not ready for account {account_id} on start check.")
-                return
-            unread_messages = await session.get_unread_messages()
+            logger.info(f"Checking unread messages for account {account_id} on start")
+            unread_messages = await self.get_unread_messages(account_id)
             logger.info(f"Found {len(unread_messages)} unread messages for account {account_id}")
             
             if unread_messages:

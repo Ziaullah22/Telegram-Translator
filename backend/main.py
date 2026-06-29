@@ -768,14 +768,9 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.error(f"✗ Error connecting Telegram {acc['id']}: {e}")
 
-            # Run parallel connections with a concurrency limit of 10
-            sem = asyncio.Semaphore(10)
-            async def connect_with_semaphore(acc):
-                async with sem:
-                    await connect_one(acc)
-                    await asyncio.sleep(0.5)
-
-            await asyncio.gather(*(connect_with_semaphore(acc) for acc in tg_accounts), return_exceptions=True)
+            for acc in tg_accounts:
+                await connect_one(acc)
+                await asyncio.sleep(0.2)  # Stagger connections to avoid event loop congestion
 
             # 2. Instagram Auto-Connect (Invisible/Background session recovery)
             # Only connect accounts that have a session stored
