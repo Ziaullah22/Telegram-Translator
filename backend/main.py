@@ -399,14 +399,10 @@ async def lifespan(app: FastAPI):
                                 logger.info("Manually translated product description for Admin UI")
                     
                     elif detected == target_lang:
-                        logger.info("Message already in target language, back-translating to original")
-                        back_translation = await translation_service.translate_text(
-                            text,
-                            account['source_language'],
-                            account['target_language']
-                        )
-                        processed_original = back_translation['translated_text']
+                        logger.info("Message already in target language. No translation needed.")
+                        processed_original = text
                         processed_translated = text
+                        source_lang = detected
                     else:
                         logger.info(f"Translating message to {target_lang}")
                         translation = await translation_service.translate_text(
