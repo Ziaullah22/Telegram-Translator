@@ -1474,24 +1474,93 @@ async def suggest_cities(
             "temperature": 0.7,
         }
         
+        llama_port = None
         for port in [8080, 8000]:
-            url_llama = f"http://127.0.0.1:{port}/v1/chat/completions"
+            # Quick connectivity check
+            try:
+                import aiohttp as _aiohttp
+                async with _aiohttp.ClientSession() as _s:
+                    async with _s.get(
+                        f"http://127.0.0.1:{port}/health",
+                        timeout=_aiohttp.ClientTimeout(connect=2, total=3)
+                    ) as _r:
+                        if _r.status in (200, 404):  # 404 = server up but no /health endpoint
+                            llama_port = port
+                            break
+            except Exception:
+                continue
+
+        if llama_port is None:
+            # Try connecting anyway — server might not have /health
+            llama_port = 8080
+
+        url_llama = f"http://127.0.0.1:{llama_port}/v1/chat/completions"
+        
+        # Stream in passes until we reach the target count (max 3 passes)
+        all_cities_set: set = set()
+        consecutive_failures = 0
+        for pass_idx in range(3):
+            remaining = total_wanted - len(suggested_cities)
+            if remaining <= 0:
+                break
+
+            exclude_note = ""
+            if suggested_cities:
+                sample = suggested_cities[-50:]
+                exclude_note = f" Do NOT include: {', '.join(sample)}."
+
+            pass_system_prompt = (
+                f"You are a location database expert. Generate EXACTLY {remaining} unique {loc_type} "
+                f"in: {region_str}.{exclude_note} "
+                f'Output ONLY valid JSON: {{"cities": ["Name1", "Name2", ...]}}. No explanation.'
+            )
+            pass_user_msg = f"Give me {remaining} more {loc_type} in {region_str} as JSON.{exclude_note}"
+
+            stream_payload = {
+                "model": "qwen",
+                "messages": [
+                    {"role": "system", "content": pass_system_prompt},
+                    {"role": "user", "content": pass_user_msg}
+                ],
+                "temperature": 0.7,
+            }
+
+            logger.info(f"Streaming pass {pass_idx + 1}: requesting {remaining} more {loc_type}...")
             streamed_cities, stream_ok = await stream_from_llama_cpp(
                 url=url_llama,
                 payload=stream_payload,
                 user_id=current_user.user_id,
                 total_wanted=total_wanted
             )
-            if stream_ok:
-                suggested_cities = streamed_cities[:total_wanted]
-                ai_used = True
-                ai_online = True
-                api_provider = f"llama.cpp ({selected_provider}) — Streaming"
-                ai_message = f"⚡ Streamed {len(suggested_cities)} locations live from {selected_provider}."
+
+            if not stream_ok:
+                consecutive_failures += 1
+                if consecutive_failures >= 2:
+                    logger.warning("llama.cpp streaming failed twice — stopping.")
+                    break
+                continue
+
+            consecutive_failures = 0
+            new_added = 0
+            for c in streamed_cities:
+                c_clean = c.strip()
+                if c_clean and c_clean.lower() not in {x.lower() for x in suggested_cities}:
+                    suggested_cities.append(c_clean)
+                    new_added += 1
+                    if len(suggested_cities) >= total_wanted:
+                        break
+
+            logger.info(f"Pass {pass_idx + 1} added {new_added} new cities. Total: {len(suggested_cities)}/{total_wanted}")
+            if new_added == 0:
+                logger.info("No new cities in this pass — model is exhausted. Stopping.")
                 break
-        
-        # Skip to fallback section if streaming failed
-        if not suggested_cities:
+
+        if suggested_cities:
+            ai_used = True
+            ai_online = True
+            api_provider = f"llama.cpp ({selected_provider}) — Streaming"
+            ai_message = f"⚡ Streamed {len(suggested_cities)} locations live from {selected_provider}."
+        else:
             logger.warning("llama.cpp streaming failed — falling back to database.")
     
     # ☁️ CLOUD MODELS: Use multi-batch approach (no streaming needed)
