@@ -844,17 +844,24 @@ const InstagramLeadGenerator: React.FC = () => {
             suburbs: 'suburbs',
             cities: 'major cities',
             regions: 'regions',
-            states: 'states'
+            states: 'states',
+            state_abbreviations: 'state abbreviations'
         };
         const selectedType = locationTypeMap[citiesAiLocationType] || 'major cities, suburbs, or regions';
         const userMsg = message || `Generate a list of ${citiesAiKeywordCount} ${selectedType} in: ${regionStr} for our profile location whitelist.`;
 
+        // Clean previous progress messages so we don't have multiple status indicators in chat history
+        const cleanHistory = citiesAiChatHistory.filter(item => 
+            !item.content.includes('🔄 Batch') && !item.content.includes('⚡ Streaming')
+        );
+
         const newHistory: { role: 'user' | 'assistant'; content: string }[] = [
-            ...citiesAiChatHistory,
+            ...cleanHistory,
             { role: 'user', content: userMsg }
         ];
         setCitiesAiChatHistory(newHistory);
         setCitiesAiChatInput('');
+        setCitiesAiSuggestedKeywords([]); // Start fresh so it doesn't show old cities
         setIsCitiesAiThinking(true);
 
         try {
@@ -3584,7 +3591,8 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         <option value="suburbs">Only Suburbs</option>
                                                         <option value="cities">Only Cities</option>
                                                         <option value="regions">Only Regions</option>
-                                                        <option value="states">Only States</option>
+                                                        <option value="states">Only States / Provinces</option>
+                                                        <option value="state_abbreviations">Only States (Abbreviated)</option>
                                                     </select>
                                                 </div>
                                             </div>

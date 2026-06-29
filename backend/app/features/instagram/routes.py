@@ -504,9 +504,21 @@ async def stream_from_llama_cpp(
         line = re.sub(r'^[-*•·]\s*', '', line)
         # Remove state/category headers like "New South Wales (NSW):" or "Victoria:"
         if line.endswith(':') or '(' in line and line.endswith(')'):
+            if not any(x in line.lower() for x in ["wait", "exclude", "ignore"]):
+                # If it's just a regular state suffix, we can strip it, otherwise skip
+                pass
+            else:
+                return None
+        # Completely skip lines with arrows or exclusion thoughts like "(Wait, excluded)"
+        if "->" in line or "=>" in line or "wait" in line.lower() or "exclude" in line.lower():
             return None
-        # Remove trailing parens like "Sydney (Capital)"
-        line = re.sub(r'\s*\(.*?\)\s*$', '', line).strip()
+        # Remove trailing parens like "Sydney (Capital)" but PRESERVE short state abbreviations like "(NSW)"
+        # If parens contain 2-4 uppercase characters, keep them. Otherwise strip.
+        has_abbrev = re.search(r'\s*\(([A-Z]{2,4})\)\s*$', line)
+        if not has_abbrev:
+            line = re.sub(r'\s*\(.*?\)\s*$', '', line).strip()
+        else:
+            line = line.strip()
         # Must start with capital letter (city names do)
         if not line or not line[0].isupper():
             return None
@@ -1546,15 +1558,21 @@ async def suggest_cities(
         # Build a single clean prompt asking for all cities at once
         combined_lower = (req.user_message or "").lower() + " " + region_str.lower()
         loc_type = "major cities, suburbs, or regions"
+        is_abbrev = "abbrev" in combined_lower
+        
         if "village" in combined_lower: loc_type = "villages"
         elif "suburb" in combined_lower: loc_type = "suburbs"
         elif "region" in combined_lower: loc_type = "regions"
+        elif is_abbrev: loc_type = "state abbreviations"
         elif "state" in combined_lower: loc_type = "states"
         elif "cit" in combined_lower: loc_type = "cities"
         
+        abbrev_instruction = " Output ONLY short uppercase state abbreviation codes (e.g. NSW, VIC, QLD, WA, SA, TAS, ACT)." if is_abbrev else ""
+        example_line = "NSW\n2. VIC\n3. QLD" if is_abbrev else "Sydney\n2. Melbourne\n3. Brisbane"
+
         stream_system_prompt = (
-            f"You are a target region database expert. Generate EXACTLY {total_wanted} unique, individual {loc_type} in: {region_str}.\n"
-            f"Output ONLY a simple numbered list, one location per line (e.g. '1. Sydney').\n"
+            f"You are a target region database expert. Generate EXACTLY {total_wanted} unique, individual {loc_type} in: {region_str}.{abbrev_instruction}\n"
+            f"Output ONLY a simple numbered list, one location per line (e.g. '1. {example_line.split()[0]}').\n"
             f"Do NOT group by state, do NOT add category headers, do NOT add titles, and do NOT write notes or explanations. Just start the list."
         )
         stream_user_msg = f"Provide a simple, flat numbered list of EXACTLY {total_wanted} unique {loc_type} in {region_str}. No headers, no categories, one per line."
@@ -1604,8 +1622,8 @@ async def suggest_cities(
                 exclude_note = f" Do NOT include any of these: {', '.join(sample)}."
 
             pass_system_prompt = (
-                f"You are a target region database expert. Generate EXACTLY {remaining} MORE unique, individual {loc_type} in: {region_str}.{exclude_note}\n"
-                f"Output ONLY a simple numbered list, one location per line starting from number 1 (e.g. '1. SuburbName').\n"
+                f"You are a target region database expert. Generate EXACTLY {remaining} MORE unique, individual {loc_type} in: {region_str}.{exclude_note}{abbrev_instruction}\n"
+                f"Output ONLY a simple numbered list, one location per line starting from number 1 (e.g. '1. {example_line.split()[0]}').\n"
                 f"Do NOT group by state, do NOT add category headers, do NOT write notes. Just start the list."
             )
             pass_user_msg = f"Provide a simple, flat numbered list of EXACTLY {remaining} MORE unique {loc_type} in {region_str}.{exclude_note}"
