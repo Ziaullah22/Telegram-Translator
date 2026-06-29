@@ -1350,8 +1350,6 @@ async def suggest_cities(
     accumulated_messages = []
     
     run_ai = True
-    if total_wanted > 100 and is_local:
-        run_ai = False
 
     if run_ai:
         max_batches = (total_wanted + batch_size - 1) // batch_size
