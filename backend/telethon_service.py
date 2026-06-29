@@ -395,6 +395,52 @@ class TelegramSession:
         except Exception as e:
             logger.warning(f"Could not broadcast new secret chat to frontend: {e}")
 
+    async def verify_connection_health(self) -> bool:
+        """
+        Verifies if the connection is actually responsive by performing a fast query.
+        Returns True if healthy, False if frozen or disconnected.
+        """
+        if not self.client or not self.is_connected or not self.client.is_connected():
+            return False
+
+        try:
+            from telethon.tl.functions.users import GetFullUserRequest
+            from telethon.tl.types import InputUserSelf
+            await asyncio.wait_for(self.client(GetFullUserRequest(InputUserSelf())), timeout=3.0)
+            return True
+        except Exception as e:
+            logger.warning(f"Connection health check failed for account {self.account_id}: {e}. Connection is likely frozen.")
+            return False
+
+    async def ensure_active(self) -> bool:
+        """
+        Ensures the session is connected and active. If it is frozen, it disconnects and reconnects.
+        Uses a time-based cache to avoid spamming the network check (only pings if last check was > 60s ago).
+        """
+        import time
+        now = time.time()
+        
+        # If not locally connected, connect immediately
+        if not self.is_connected or not self.client or not self.client.is_connected():
+            logger.info(f"Session {self.account_id} not connected. Connecting...")
+            return await self.connect()
+            
+        # Only perform the remote health check if last check was more than 60 seconds ago
+        last_check = getattr(self, "_last_health_check_time", 0)
+        if now - last_check > 60:
+            self._last_health_check_time = now
+            is_healthy = await self.verify_connection_health()
+            if not is_healthy:
+                logger.info(f"Session {self.account_id} is frozen. Reconnecting...")
+                self.is_connected = False
+                try:
+                    await self.client.disconnect()
+                except Exception:
+                    pass
+                return await self.connect()
+                
+        return True
+
     # Gracefully terminate the active Telethon client connection
     async def disconnect(self):
         if self.client:
@@ -1572,7 +1618,13 @@ class TelethonService:
             del self.sessions[account_id]
 
     async def get_session(self, account_id: int) -> Optional[TelegramSession]:
-        return self.sessions.get(account_id)
+        session = self.sessions.get(account_id)
+        if session:
+            try:
+                await session.ensure_active()
+            except Exception as e:
+                logger.warning(f"Failed to ensure session {account_id} is active: {e}")
+        return session
 
     async def get_dialogs(self, account_id: int, limit: int = 50):
         session = self.sessions.get(account_id)
@@ -2114,9 +2166,7 @@ class TelethonService:
         if not session:
             raise Exception("Account not connected and could not be found")
             
-        if not session.is_connected or not session.client or not session.client.is_connected():
-            logger.info(f"Reconnecting account {account_id}...")
-            await session.connect()
+        await session.ensure_active()
         return session
 
     async def leave_chat(self, account_id: int, peer_id: int):
