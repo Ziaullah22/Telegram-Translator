@@ -1589,44 +1589,49 @@ class TelethonService:
             del self.sessions[account_id]
 
     async def get_session(self, account_id: int) -> Optional[TelegramSession]:
-        await self.connect_session(account_id)
         return self.sessions.get(account_id)
 
     async def get_dialogs(self, account_id: int, limit: int = 50):
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
         return await session.get_dialogs(limit)
 
     async def get_messages(self, account_id: int, peer_id: int, limit: int = 50):
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
         return await session.get_messages(peer_id, limit)
 
     async def send_message(self, account_id: int, peer_id: int, text: str, reply_to: int = None):
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Telegram account is not connected. Please reconnect your account.")
         return await session.send_message(peer_id, text, reply_to=reply_to)
 
     async def delete_messages(self, account_id: int, peer_id: int, message_ids: List[int], revoke: bool = True):
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             return False
         return await session.delete_messages(peer_id, message_ids, revoke=revoke)
 
     async def delete_dialog(self, account_id: int, peer_id: int):
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             return False
         return await session.delete_dialog(peer_id)
 
     async def get_unread_messages(self, account_id: int):
         """Get unread messages for a specific account"""
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
@@ -1634,7 +1639,8 @@ class TelethonService:
 
     async def search_users(self, account_id: int, username: str, limit: int = 10):
         """Search for Telegram users with cross-session discovery"""
-        session = await self.get_session(account_id)
+        await self.connect_session(account_id)
+        session = self.sessions.get(account_id)
         if not session:
             raise Exception("Session not connected")
 
