@@ -427,6 +427,100 @@ async def generate_image_hash(req: ImageHashRequest, current_user: TokenData = D
 
 # --- AI Keyword Suggestions ---
 
+async def stream_from_llama_cpp(
+    url: str,
+    payload: dict,
+    user_id: int,
+    total_wanted: int
+) -> tuple[list[str], bool]:
+    """
+    Streams a single request from llama.cpp and broadcasts cities to frontend via WebSocket
+    as they are generated token by token. Returns (list_of_cities, success).
+    """
+    import aiohttp
+    import json as json_module
+    import re
+    import logging
+    from websocket_manager import manager
+    logger = logging.getLogger(__name__)
+
+    # Use streaming payload — no response_format since it can conflict with streaming
+    stream_payload = {
+        "model": payload.get("model", "qwen"),
+        "messages": payload["messages"],
+        "temperature": payload.get("temperature", 0.7),
+        "stream": True,
+    }
+
+    full_content = ""
+    found_cities: list[str] = []
+    sent_cities_set: set[str] = set()
+    SKIP_KEYS = {"cities", "message", "keywords", "error", "regions", "states", "villages", "suburbs"}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=stream_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(connect=5, total=300)
+            ) as response:
+                if response.status != 200:
+                    logger.warning(f"llama.cpp streaming returned status {response.status}")
+                    return [], False
+
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8", errors="ignore").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json_module.loads(data_str)
+                        token = chunk["choices"][0].get("delta", {}).get("content", "")
+                        if not token:
+                            continue
+                        full_content += token
+
+                        # Extract any fully-formed quoted strings from the accumulating JSON stream
+                        matches = re.findall(r'"([^"\\]{2,80})"', full_content)
+                        new_cities = []
+                        for m in matches:
+                            m_clean = m.strip()
+                            if (
+                                m_clean
+                                and m_clean.lower() not in SKIP_KEYS
+                                and m_clean not in sent_cities_set
+                                and len(m_clean) >= 2
+                                and not any(c in m_clean for c in ["{", "}", "[", "]", "\\"])
+                            ):
+                                sent_cities_set.add(m_clean)
+                                found_cities.append(m_clean)
+                                new_cities.append(m_clean)
+
+                        if new_cities:
+                            try:
+                                await manager.send_personal_message({
+                                    "type": "cities_suggestion_progress",
+                                    "cities": list(found_cities),
+                                    "batch_index": len(found_cities),
+                                    "total_batches": total_wanted,
+                                    "new_added": len(new_cities)
+                                }, user_id)
+                            except Exception as ws_err:
+                                logger.warning(f"WebSocket stream error: {ws_err}")
+                    except Exception:
+                        continue
+
+        logger.info(f"Streaming complete — extracted {len(found_cities)} cities in real-time.")
+        return found_cities, True
+
+    except Exception as e:
+        logger.warning(f"llama.cpp streaming failed: {type(e).__name__}: {e}")
+        return [], False
+
+
 def robust_json_extract(raw: str, array_key: str) -> tuple[list[str], str, bool]:
     """
     Robustly extracts the list from JSON/text output of Ollama.
@@ -1345,13 +1439,63 @@ async def suggest_cities(
         "local" in selected_provider or
         selected_provider in ("gemma", "gemma4")
     )
-    batch_size = 50 if is_local else 100
+    batch_size = 100  # Cloud models always batch 100
     total_wanted = count
     accumulated_messages = []
     
     run_ai = True
 
-    if run_ai:
+    # ⚡ LOCAL MODELS: Use single-shot streaming (cities appear in real-time on the frontend)
+    if run_ai and is_local and selected_provider.endswith("-local"):
+        logger.info(f"Streaming {total_wanted} cities from llama.cpp in a single shot for: {region_str}...")
+        
+        # Build a single clean prompt asking for all cities at once
+        combined_lower = (req.user_message or "").lower() + " " + region_str.lower()
+        loc_type = "major cities, suburbs, or regions"
+        if "village" in combined_lower: loc_type = "villages"
+        elif "suburb" in combined_lower: loc_type = "suburbs"
+        elif "region" in combined_lower: loc_type = "regions"
+        elif "state" in combined_lower: loc_type = "states"
+        elif "cit" in combined_lower: loc_type = "cities"
+        
+        stream_system_prompt = (
+            f"You are a location database expert. Generate EXACTLY {total_wanted} unique {loc_type} "
+            f"in: {region_str}. Output ONLY a valid JSON: "
+            f'{{"cities": ["Name1", "Name2", ...]}}. No explanation.'
+        )
+        stream_user_msg = f"Give me {total_wanted} {loc_type} in {region_str} as JSON."
+        
+        stream_payload = {
+            "model": "qwen",
+            "messages": [
+                {"role": "system", "content": stream_system_prompt},
+                {"role": "user", "content": stream_user_msg}
+            ],
+            "temperature": 0.7,
+        }
+        
+        for port in [8080, 8000]:
+            url_llama = f"http://127.0.0.1:{port}/v1/chat/completions"
+            streamed_cities, stream_ok = await stream_from_llama_cpp(
+                url=url_llama,
+                payload=stream_payload,
+                user_id=current_user.user_id,
+                total_wanted=total_wanted
+            )
+            if stream_ok:
+                suggested_cities = streamed_cities[:total_wanted]
+                ai_used = True
+                ai_online = True
+                api_provider = f"llama.cpp ({selected_provider}) — Streaming"
+                ai_message = f"⚡ Streamed {len(suggested_cities)} locations live from {selected_provider}."
+                break
+        
+        # Skip to fallback section if streaming failed
+        if not suggested_cities:
+            logger.warning("llama.cpp streaming failed — falling back to database.")
+    
+    # ☁️ CLOUD MODELS: Use multi-batch approach (no streaming needed)
+    elif run_ai and not is_local:
         max_batches = (total_wanted + batch_size - 1) // batch_size
         logger.info(f"Generating {total_wanted} cities/regions for {region_str} in up to {max_batches} batches using provider {selected_provider}...")
         
@@ -1364,8 +1508,10 @@ async def suggest_cities(
             # Customize the system prompt and user content to avoid duplicates
             exclude_str = ""
             if suggested_cities:
-                sample_excludes = suggested_cities[-150:]
-                exclude_str = f" You MUST NOT include any of the following cities/regions that were already generated: {', '.join(sample_excludes)}."
+                # For local models, keep exclude list SHORT to avoid filling context window
+                max_excludes = 30 if is_local else 150
+                sample_excludes = suggested_cities[-max_excludes:]
+                exclude_str = f" You MUST NOT include any of the following that were already generated: {', '.join(sample_excludes)}. Generate only NEW, UNIQUE ones."
 
             # Determine location type dynamically based on user custom message or input region
             location_type = "major cities, suburbs, or regions"
@@ -1392,10 +1538,14 @@ async def suggest_cities(
             )
             
             # Prepare messages (always pass conversation history to maintain context/instructions)
+            # For local models: skip conversation history in batches beyond the first to keep context small
             batch_messages = [{"role": "system", "content": system_prompt}]
-            for turn in req.conversation_history[-8:]:
-                if turn.get("role") in ("user", "assistant") and turn.get("content"):
-                    batch_messages.append({"role": turn["role"], "content": turn["content"]})
+            if not is_local or batch_idx == 0:
+                for turn in req.conversation_history[-4:]:
+                    if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                        # Skip long AI responses (city lists) to save context
+                        if len(turn["content"]) < 500:
+                            batch_messages.append({"role": turn["role"], "content": turn["content"]})
                         
             if req.user_message.strip():
                 user_content = (

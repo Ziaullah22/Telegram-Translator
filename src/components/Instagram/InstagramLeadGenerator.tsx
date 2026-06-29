@@ -337,14 +337,17 @@ const InstagramLeadGenerator: React.FC = () => {
                     setCitiesAiSuggestedKeywords(message.cities);
                     setCitiesSelectedKeywords(new Set(message.cities));
                 }
+                const isStreaming = message.total_batches > 10; // streaming uses city count as total
                 setCitiesAiChatHistory(prev => {
-                    const cleanPrev = prev.filter(item => !item.content.includes('🔄 Batch'));
+                    const cleanPrev = prev.filter(item =>
+                        !item.content.includes('🔄 Batch') && !item.content.includes('⚡ Streaming')
+                    );
+                    const statusMsg = isStreaming
+                        ? `⚡ Streaming live... ${message.cities.length} locations found so far`
+                        : `🔄 Batch ${message.batch_index}/${message.total_batches} done! ${message.cities.length} locations so far...`;
                     return [
                         ...cleanPrev,
-                        {
-                            role: 'assistant',
-                            content: `🔄 Batch ${message.batch_index}/${message.total_batches} generated! Found ${message.cities.length} unique location candidates so far...`
-                        }
+                        { role: 'assistant', content: statusMsg }
                     ];
                 });
             }
