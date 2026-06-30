@@ -385,6 +385,8 @@ export const conversationsAPI = {
         sender_user_id: c.last_message.sender_user_id,
       } : undefined,
       unreadCount: c.unread_count,
+      last_online: c.last_online,
+      is_blocked: c.is_blocked || false,
     }));
   },
 };
