@@ -767,6 +767,16 @@ function App() {
   const handleConversationSelect = (conv: TelegramChat) => {
     setCurrentConversation(conv);
     loadMessages(conv.id);
+    if (currentAccount && conv.type === 'private' && conv.telegram_peer_id) {
+      telegramAPI.getPeerProfile(currentAccount.id, conv.telegram_peer_id)
+        .then(profile => {
+          if (profile && profile.last_online) {
+            setCurrentConversation(prev => prev && prev.id === conv.id ? { ...prev, last_online: profile.last_online } : prev);
+            setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, last_online: profile.last_online } : c));
+          }
+        })
+        .catch(err => console.error("Failed to load live user status on select:", err));
+    }
     if (currentAccount) {
       setUnreadCounts(prev => {
         const next = { ...prev };
