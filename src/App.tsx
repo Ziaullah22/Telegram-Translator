@@ -583,6 +583,16 @@ function App() {
         if (currentConversationRef.current?.id === delId) { setCurrentConversation(null); setMessages([]); }
       }
 
+      // HANDLE: Conversation blocked toggle
+      if (data?.type === 'conversation_blocked_toggle') {
+        const toggleId = Number(data.conversation_id);
+        const isBlocked = !!data.is_blocked;
+        setConversations(prev => prev.map(c => c.id === toggleId ? { ...c, is_blocked: isBlocked } : c));
+        if (currentConversationRef.current?.id === toggleId) {
+          setCurrentConversation(prev => prev ? { ...prev, is_blocked: isBlocked } : null);
+        }
+      }
+
       // HANDLE: Conversation pinned toggle
       if (data?.type === 'conversation_pinned_toggle') {
         const toggleId = Number(data.conversation_id);

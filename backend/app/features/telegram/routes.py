@@ -1520,15 +1520,16 @@ async def block_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to block contact: {str(e)}")
     
     await db.execute(
-        "UPDATE conversations SET is_hidden = true, is_blocked = true WHERE id = $1",
+        "UPDATE conversations SET is_blocked = true WHERE id = $1",
         conversation_id
     )
 
-    # Notify via WebSocket so it's removed/updated on client side
+    # Notify via WebSocket so it's updated on client side
     await manager.send_to_account(
         {
-            "type": "conversation_deleted",
-            "conversation_id": conversation_id
+            "type": "conversation_blocked_toggle",
+            "conversation_id": conversation_id,
+            "is_blocked": True
         },
         conv['telegram_account_id'],
         current_user.user_id,
@@ -1542,7 +1543,7 @@ async def unblock_conversation(
     conversation_id: int,
     current_user = Depends(get_current_user),
 ):
-    """Unblock a private user and make the conversation visible"""
+    """Unblock a private user"""
     conv = await db.fetchrow(
         """SELECT c.telegram_account_id, c.telegram_peer_id, c.type FROM conversations c
            JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
@@ -1562,8 +1563,19 @@ async def unblock_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to unblock contact: {str(e)}")
     
     await db.execute(
-        "UPDATE conversations SET is_hidden = false, is_blocked = false WHERE id = $1",
+        "UPDATE conversations SET is_blocked = false WHERE id = $1",
         conversation_id
+    )
+
+    # Notify via WebSocket so it's updated on client side
+    await manager.send_to_account(
+        {
+            "type": "conversation_blocked_toggle",
+            "conversation_id": conversation_id,
+            "is_blocked": False
+        },
+        conv['telegram_account_id'],
+        current_user.user_id,
     )
 
     return {"status": "success"}
