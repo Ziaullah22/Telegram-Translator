@@ -69,7 +69,8 @@ async def migrate():
                     username VARCHAR(100),
                     notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    last_used TIMESTAMPTZ
+                    last_used TIMESTAMPTZ,
+                    auto_cleaned BOOLEAN NOT NULL DEFAULT FALSE
                 );
                 CREATE INDEX IF NOT EXISTS idx_telegram_accounts_user ON telegram_accounts(user_id);
             """)
@@ -95,7 +96,9 @@ async def migrate():
                     is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
                     invite_hash TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    last_message_at TIMESTAMPTZ
+                    last_message_at TIMESTAMPTZ,
+                    last_online VARCHAR(100),
+                    is_blocked BOOLEAN NOT NULL DEFAULT FALSE
                 );
                 -- Smart Search Indexes: Support for multiple pending invite links (id 0)
                 DROP INDEX IF EXISTS uq_conversations_account_peer;
@@ -529,6 +532,20 @@ async def migrate():
                 
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(100);
                 ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS translation_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+                
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='telegram_accounts' AND column_name='auto_cleaned'
+                    ) THEN
+                        ALTER TABLE telegram_accounts ADD COLUMN auto_cleaned BOOLEAN NOT NULL DEFAULT FALSE;
+                        UPDATE telegram_accounts SET auto_cleaned = TRUE;
+                    END IF;
+                END $$;
+                
+                ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_online VARCHAR(100);
+                ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE;
                 
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS failure_reason TEXT;
                 ALTER TABLE campaign_leads ADD COLUMN IF NOT EXISTS first_contacted_at TIMESTAMP WITH TIME ZONE;

@@ -255,6 +255,16 @@ export const telegramAPI = {
     return response.data;
   },
 
+  blockConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/block`);
+    return response.data;
+  },
+
+  unblockConversation: async (conversationId: number) => {
+    const response = await api.post(`/telegram/conversations/${conversationId}/unblock`);
+    return response.data;
+  },
+
   searchUsersByPhone: async (accountId: number, phone: string) => {
     const response = await api.get(`/telegram/accounts/${accountId}/search-users`, {
       params: { username: phone }

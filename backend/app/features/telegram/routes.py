@@ -1079,6 +1079,8 @@ async def get_conversations(
         account_id,
     )
 
+    session = await telethon_service.get_session(account_id)
+
     result = []
     for conv in conversations:
         last_message = None
@@ -1109,6 +1111,21 @@ async def get_conversations(
                 "media_file_name": conv['media_file_name'],
             }
 
+        last_online = conv.get('last_online')
+        if session and session.client and session.is_connected and conv['type'] == 'private':
+            try:
+                entity = await session.client.get_entity(conv['telegram_peer_id'])
+                if hasattr(entity, 'status'):
+                    from telethon_service import format_user_status
+                    last_online = format_user_status(entity.status)
+                    await db.execute(
+                        "UPDATE conversations SET last_online = $2 WHERE id = $1",
+                        conv['id'],
+                        last_online
+                    )
+            except Exception:
+                pass
+
         result.append({
             "id": conv['id'],
             "telegram_account_id": conv['telegram_account_id'],
@@ -1125,6 +1142,8 @@ async def get_conversations(
             "is_hidden": conv.get('is_hidden', False),
             "is_pinned": conv.get('is_pinned', False),
             "can_post": conv.get('can_post', True),
+            "last_online": last_online,
+            "is_blocked": conv.get('is_blocked', False),
         })
 
     return result
@@ -1471,6 +1490,80 @@ async def leave_conversation(
         },
         conv['telegram_account_id'],
         current_user.user_id,
+    )
+
+    return {"status": "success"}
+
+
+@router.post("/conversations/{conversation_id}/block")
+async def block_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Block a private user and hide the conversation"""
+    conv = await db.fetchrow(
+        """SELECT c.telegram_account_id, c.telegram_peer_id, c.type FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = $1 AND ta.user_id = $2""",
+        conversation_id, current_user.user_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if conv['type'] != 'private':
+        raise HTTPException(status_code=400, detail="Only private chats can be blocked")
+        
+    try:
+        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=True)
+    except Exception as e:
+        logger.warning(f"Block contact error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to block contact: {str(e)}")
+    
+    await db.execute(
+        "UPDATE conversations SET is_hidden = true, is_blocked = true WHERE id = $1",
+        conversation_id
+    )
+
+    # Notify via WebSocket so it's removed/updated on client side
+    await manager.send_to_account(
+        {
+            "type": "conversation_deleted",
+            "conversation_id": conversation_id
+        },
+        conv['telegram_account_id'],
+        current_user.user_id,
+    )
+
+    return {"status": "success"}
+
+
+@router.post("/conversations/{conversation_id}/unblock")
+async def unblock_conversation(
+    conversation_id: int,
+    current_user = Depends(get_current_user),
+):
+    """Unblock a private user and make the conversation visible"""
+    conv = await db.fetchrow(
+        """SELECT c.telegram_account_id, c.telegram_peer_id, c.type FROM conversations c
+           JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
+           WHERE c.id = $1 AND ta.user_id = $2""",
+        conversation_id, current_user.user_id
+    )
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if conv['type'] != 'private':
+        raise HTTPException(status_code=400, detail="Only private chats can be unblocked")
+        
+    try:
+        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=False)
+    except Exception as e:
+        logger.warning(f"Unblock contact error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to unblock contact: {str(e)}")
+    
+    await db.execute(
+        "UPDATE conversations SET is_hidden = false, is_blocked = false WHERE id = $1",
+        conversation_id
     )
 
     return {"status": "success"}

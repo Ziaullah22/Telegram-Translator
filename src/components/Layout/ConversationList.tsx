@@ -8,7 +8,7 @@
  * 3. Avatar pre-fetching for smooth scrolling
  * 4. Context menu for chat actions (Mute, Delete)
  */
-import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft, MessageSquare, Pin, CheckSquare } from 'lucide-react';
+import { MessageCircle, Search, Loader2, X, Users, Megaphone, BellOff, Trash2, Bell, Lock, ArrowLeft, MessageSquare, Pin, CheckSquare, Ban } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { TelegramChat, TelegramUserSearchResult, TelegramGlobalMessageSearchResult } from '../../types';
 import { telegramAPI, messagesAPI } from '../../services/api';
@@ -756,11 +756,16 @@ export default function ConversationList({
                   {/* Info */}
                   <div className={`flex-1 min-w-0 ml-3 py-1 ${isActive ? '' : 'border-b border-gray-100 dark:border-white/5'}`}>
                     <div className="flex items-center justify-between">
-                      <h3 className={`text-sm font-semibold truncate flex items-center gap-1 ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                      <h3 className={`text-sm font-semibold truncate flex items-center gap-1.5 ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
                         {conversation.type === 'secret' && <Lock className={`w-3 h-3 ${isActive ? 'text-blue-100' : 'text-green-500'}`} />}
                         {conversation.username && (!conversation.title || conversation.title.startsWith('+'))
                           ? `@${conversation.username}`
                           : (conversation.title || 'Unknown')}
+                        {conversation.is_blocked && (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded leading-none ${isActive ? 'bg-white/20 text-white border border-white/10' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+                            Blocked
+                          </span>
+                        )}
                       </h3>
                       <div className="flex items-center space-x-1 ml-2 flex-shrink-0 relative">
                         {isOutgoing && (
@@ -855,6 +860,34 @@ export default function ConversationList({
             <Bell className="w-[18px] h-[18px] text-gray-500" />
             <span className="text-[15px]">{contextMenu.conversation.is_muted ? 'Unmute' : 'Mute'}</span>
           </button>
+
+          {contextMenu.conversation.type === 'private' && (
+            <>
+              <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
+              <button
+                onClick={async () => {
+                  const conv = contextMenu.conversation;
+                  try {
+                    if (conv.is_blocked) {
+                      await telegramAPI.unblockConversation(conv.id);
+                    } else {
+                      await telegramAPI.blockConversation(conv.id);
+                    }
+                    if (onConversationCreated) {
+                      await onConversationCreated();
+                    }
+                  } catch (e) {
+                    console.error("Block toggle failed:", e);
+                  }
+                  setContextMenu(null);
+                }}
+                className="w-full px-4 py-2.5 flex items-center space-x-3 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                <Ban className="w-[18px] h-[18px] text-gray-500" />
+                <span className="text-[15px]">{contextMenu.conversation.is_blocked ? 'Unblock user' : 'Block user'}</span>
+              </button>
+            </>
+          )}
 
           <div className="mx-3 border-b border-gray-100 dark:border-white/5" />
 

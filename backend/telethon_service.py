@@ -18,6 +18,34 @@ logger = logging.getLogger(__name__)
 # Using standard SQLiteSession as WAL mode can sometimes cause issues during intense reloads on Windows
 from telethon.sessions import SQLiteSession
 
+def format_user_status(status) -> str:
+    if not status:
+        return "offline"
+    
+    from telethon.tl.types import (
+        UserStatusOnline,
+        UserStatusOffline,
+        UserStatusRecently,
+        UserStatusLastWeek,
+        UserStatusLastMonth
+    )
+    
+    if isinstance(status, UserStatusOnline):
+        return "online"
+    elif isinstance(status, UserStatusOffline):
+        try:
+            return status.was_online.isoformat()
+        except Exception:
+            return "offline"
+    elif isinstance(status, UserStatusRecently):
+        return "recently"
+    elif isinstance(status, UserStatusLastWeek):
+        return "last week"
+    elif isinstance(status, UserStatusLastMonth):
+        return "last month"
+    
+    return "offline"
+
 # Core wrapper class managing the connection lifecycle and cached entities for a single Telegram account
 class TelegramSession:
     # Initialize the session container with API credentials and rate limiting configurations
@@ -499,6 +527,10 @@ class TelegramSession:
                         # Megagroup/supergroup: anyone can post unless banned
                         can_post = not is_banned
 
+                status_str = None
+                if conv_type == 'private':
+                    status_str = format_user_status(getattr(dialog.entity, 'status', None))
+
                 result.append({
                     "peer_id": peer_id,
                     "title": title,
@@ -506,7 +538,8 @@ class TelegramSession:
                     "type": conv_type,
                     "unread_count": dialog.unread_count,
                     "last_message_date": dialog.date,
-                    "can_post": can_post
+                    "can_post": can_post,
+                    "last_online": status_str
                 })
 
             return result
@@ -1773,6 +1806,14 @@ class TelethonService:
                 logger.warning(f"Cannot sync dialogs: session {account_id} not connected")
                 return
 
+            # Check if this account needs auto-cleanup
+            acc_row = await db.fetchrow("SELECT auto_cleaned FROM telegram_accounts WHERE id = $1", account_id)
+            perform_cleanup = False
+            if acc_row and not acc_row['auto_cleaned']:
+                perform_cleanup = True
+                logger.info(f"Account {account_id} requires auto-cleanup (new loading).")
+                limit = 150
+
             logger.info(f"Starting initial dialog sync for account {account_id}")
             
             # 1. Fetch recent dialogs from Telegram
@@ -1787,6 +1828,61 @@ class TelethonService:
             for dialog in dialogs:
                 peer_id = dialog['peer_id']
                 
+                # If we are doing cleanup, filter here
+                if perform_cleanup:
+                    if dialog['type'] in ('group', 'supergroup', 'channel'):
+                        # Leave the channel/group
+                        try:
+                            await self.leave_chat(account_id, peer_id)
+                            logger.info(f"Auto-cleanup: left chat {peer_id} ({dialog['title']})")
+                        except Exception as e:
+                            logger.warning(f"Failed to leave chat {peer_id} during cleanup: {e}")
+                        continue
+                    elif dialog['type'] == 'private':
+                        # Check exceptions
+                        username_lower = (dialog['username'] or '').lower()
+                        if username_lower in ('spambot', 'telegram') or peer_id == 777000:
+                            # Keep it
+                            logger.info(f"Auto-cleanup: keeping contact {peer_id} ({dialog['title']})")
+                        else:
+                            # Block it
+                            try:
+                                await self.block_peer(account_id, peer_id, block=True)
+                                logger.info(f"Auto-cleanup: blocked contact {peer_id} ({dialog['title']})")
+                            except Exception as e:
+                                logger.warning(f"Failed to block contact {peer_id} during cleanup: {e}")
+                            
+                            # Insert/Update in DB as blocked and hidden
+                            existing = await db.fetchrow(
+                                "SELECT id FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                                account_id,
+                                peer_id
+                            )
+                            if not existing:
+                                await db.execute(
+                                    """
+                                    INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, can_post, is_blocked, last_online)
+                                    VALUES ($1, $2, $3, $4, $5, true, false, $6, true, $7)
+                                    """,
+                                    account_id,
+                                    peer_id,
+                                    dialog['title'] or 'Unknown',
+                                    dialog['type'],
+                                    dialog['username'],
+                                    dialog.get('can_post', True),
+                                    dialog.get('last_online')
+                                )
+                            else:
+                                await db.execute(
+                                    """
+                                    UPDATE conversations SET is_hidden = true, is_blocked = true, last_online = $2
+                                    WHERE id = $1
+                                    """,
+                                    existing['id'],
+                                    dialog.get('last_online')
+                                )
+                            continue
+
                 # Check if conversation already exists
                 existing = await db.fetchrow(
                     "SELECT id, can_post FROM conversations WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
@@ -1798,29 +1894,31 @@ class TelethonService:
                     # Create conversation
                     await db.execute(
                         """
-                        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, can_post)
-                        VALUES ($1, $2, $3, $4, $5, false, false, $6)
+                        INSERT INTO conversations (telegram_account_id, telegram_peer_id, title, type, username, is_hidden, is_muted, can_post, last_online)
+                        VALUES ($1, $2, $3, $4, $5, false, false, $6, $7)
                         """,
                         account_id,
                         peer_id,
                         dialog['title'] or 'Unknown',
                         dialog['type'],
                         dialog['username'],
-                        dialog.get('can_post', True)
+                        dialog.get('can_post', True),
+                        dialog.get('last_online')
                     )
                     logger.debug(f"Created new conversation record for peer {peer_id} ({dialog['title']})")
                 else:
                     # Update can_post and details
                     await db.execute(
                         """
-                        UPDATE conversations SET can_post = $2, type = $3, title = $4, username = $5
+                        UPDATE conversations SET can_post = $2, type = $3, title = $4, username = $5, last_online = $6
                         WHERE id = $1
                         """,
                         existing['id'],
                         dialog.get('can_post', True),
                         dialog['type'],
                         dialog['title'] or 'Unknown',
-                        dialog['username']
+                        dialog['username'],
+                        dialog.get('last_online')
                     )
                 
                 # 3. Queue up history fetching for this peer (limit to 20 messages to be fast)
@@ -1830,6 +1928,10 @@ class TelethonService:
                 # Small delay to prevent flooding the event loop / rate limits
                 await asyncio.sleep(0.5)
                 
+            if perform_cleanup:
+                await db.execute("UPDATE telegram_accounts SET auto_cleaned = True WHERE id = $1", account_id)
+                logger.info(f"Auto-cleanup completed for account {account_id}")
+
             logger.info(f"Completed initial dialog sync for account {account_id}")
             
         except Exception as e:
@@ -2185,6 +2287,24 @@ class TelethonService:
             logger.warning(f"Leave chat error for peer {peer_id}: {e}")
             raise
 
+    async def block_peer(self, account_id: int, peer_id: int, block: bool = True):
+        """Block or unblock a peer (user)"""
+        session = self.sessions.get(account_id)
+        if not session or not session.client:
+            raise Exception("Account not connected")
+        
+        from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
+        
+        try:
+            entity = await session.client.get_entity(peer_id)
+            if block:
+                await session.client(BlockRequest(id=entity))
+            else:
+                await session.client(UnblockRequest(id=entity))
+        except Exception as e:
+            logger.warning(f"Block/unblock error for peer {peer_id}: {e}")
+            raise
+
     async def get_profile(self, account_id: int) -> dict:
         """Get the Telegram user's own profile info including privacy"""
         session = self.sessions.get(account_id)
@@ -2473,13 +2593,24 @@ class TelethonService:
             if hasattr(entity, 'first_name') or hasattr(entity, 'last_name'):
                 full = await session.client(GetFullUserRequest(entity))
                 user = full.users[0]
+                status_str = format_user_status(getattr(user, 'status', None))
+                try:
+                    await db.execute(
+                        "UPDATE conversations SET last_online = $3 WHERE telegram_account_id = $1 AND telegram_peer_id = $2",
+                        account_id,
+                        user.id,
+                        status_str
+                    )
+                except Exception as dbe:
+                    logger.warning(f"Could not update status in DB for {user.id}: {dbe}")
                 return {
                     "id": user.id,
                     "first_name": getattr(user, 'first_name', '') or "",
                     "last_name": getattr(user, 'last_name', '') or "",
                     "username": getattr(user, 'username', '') or "",
                     "phone": getattr(user, 'phone', '') or "",
-                    "bio": getattr(full.full_user, 'about', '') or ""
+                    "bio": getattr(full.full_user, 'about', '') or "",
+                    "last_online": status_str
                 }
             else:
                 # For channels/groups

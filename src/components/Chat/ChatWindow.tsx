@@ -79,6 +79,29 @@ const formatDuration = (seconds?: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+// --- UTILITY: LAST ONLINE FORMATTING ---
+const formatLastOnline = (lastOnline?: string) => {
+  if (!lastOnline) return '';
+  if (lastOnline === 'online') return 'online';
+  if (lastOnline === 'recently') return 'last seen recently';
+  if (lastOnline === 'last week') return 'last seen last week';
+  if (lastOnline === 'last month') return 'last seen last month';
+  try {
+    const date = new Date(lastOnline);
+    if (isNaN(date.getTime())) return `last seen ${lastOnline}`;
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 1) return 'last seen just now';
+    if (diffMins < 60) return `last seen ${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `last seen ${diffHours}h ago`;
+    return `last seen on ${date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  } catch (e) {
+    return `last seen ${lastOnline}`;
+  }
+};
+
 // --- PERSISTENT CACHE: INDEXED DB ---
 // Messages with large photos or videos are cached locally to prevent 
 // re-downloading them every time the user switches chats.
@@ -414,6 +437,7 @@ interface ChatWindowProps {
   onSendMessage: (text: string, replyToId?: number) => Promise<void>;
   onSendMedia: (file: File, caption: string) => Promise<void>;
   onJoinConversation?: (conversationId: number) => Promise<void>;
+  onUnblockConversation?: (conversationId: number) => Promise<void>;
   onToggleMute?: (conversationId: number) => Promise<void>;
   onLeaveConversation?: (conversationId: number) => Promise<void>;
   onDeleteMessages?: (conversationId: number, messageIds: number[], revoke: boolean) => Promise<void>;
@@ -437,6 +461,7 @@ export default function ChatWindow({
   onSendMessage,
   onSendMedia,
   onJoinConversation,
+  onUnblockConversation,
   onToggleMute,
   onLeaveConversation,
   onDeleteMessages,
@@ -1381,6 +1406,15 @@ export default function ChatWindow({
                     {currentConversation?.username && currentConversation.title && !currentConversation.title.startsWith('+') && (
                       <span className="text-[10px] xl:text-xs text-[#4da2d9] font-medium opacity-80">@{currentConversation.username}</span>
                     )}
+                    {currentConversation?.last_online && (
+                      <span className={`text-[10px] xl:text-xs font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                        currentConversation.last_online === 'online' 
+                          ? 'bg-green-500/10 text-green-600 dark:bg-green-500/15 dark:text-green-400' 
+                          : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {formatLastOnline(currentConversation.last_online)}
+                      </span>
+                    )}
                     {contactTags.map(tag => (
                       <span
                         key={tag}
@@ -2047,9 +2081,19 @@ export default function ChatWindow({
               </div>
             )}
 
-              {/* --- INPUT AREA: UNJOINED STATE --- */}
-              {/* If user is viewing a public chat they haven't joined yet */}
-              {currentConversation?.is_hidden ? (
+              {/* --- INPUT AREA: BLOCKED STATE --- */}
+              {currentConversation?.is_blocked ? (
+                <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-red-200 dark:border-red-500/20 p-4 items-center justify-between">
+                  <span className="text-sm font-semibold text-red-500 dark:text-red-400">This contact is blocked.</span>
+                  <button
+                    type="button"
+                    onClick={() => conversationId && onUnblockConversation?.(conversationId)}
+                    className="text-xs px-3 py-1.5 bg-[#419FD9] hover:bg-[#3b8fc4] text-white rounded-lg font-bold transition-all active:scale-[0.99]"
+                  >
+                    Unblock
+                  </button>
+                </div>
+              ) : currentConversation?.is_hidden ? (
                 <div className="flex bg-white dark:bg-[#1c2733] rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-white/5">
                   <button
                     onClick={() => conversationId && onJoinConversation?.(conversationId)}

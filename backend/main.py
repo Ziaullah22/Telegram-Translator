@@ -270,8 +270,23 @@ async def lifespan(app: FastAPI):
 
         -- Instagram Filter Settings Knowledge Base migration
         ALTER TABLE instagram_filter_settings ADD COLUMN IF NOT EXISTS knowledge_base TEXT DEFAULT '';
+
+        -- Telegram status, blocking, and auto-cleanup migrations
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_online VARCHAR(100);
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE;
+        
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name='telegram_accounts' AND column_name='auto_cleaned'
+            ) THEN
+                ALTER TABLE telegram_accounts ADD COLUMN auto_cleaned BOOLEAN NOT NULL DEFAULT FALSE;
+                UPDATE telegram_accounts SET auto_cleaned = TRUE;
+            END IF;
+        END $$;
         """)
-        logger.info("Database migration (Partial Unique Indexes, Pinning, Device Info, Proxy Support, and Knowledge Base) completed")
+        logger.info("Database migration (Partial Unique Indexes, Pinning, Device Info, Proxy Support, Knowledge Base, Status/Block/AutoClean) completed")
     except Exception as e:
         logger.error(f"Migration error: {e}")
     

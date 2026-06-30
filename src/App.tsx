@@ -1100,6 +1100,15 @@ function App() {
                         }
                       } catch (e) { console.error(e); }
                     }}
+                    onUnblockConversation={async (id) => {
+                      try {
+                        await telegramAPI.unblockConversation(id);
+                        if (currentAccount) {
+                          await loadConversations(currentAccount.id);
+                          setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_blocked: false, is_hidden: false } : prev);
+                        }
+                      } catch (e) { console.error(e); }
+                    }}
                     onToggleMute={async (id) => {
                       try {
                         const result = await telegramAPI.toggleMute(id);

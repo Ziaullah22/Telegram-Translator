@@ -69,6 +69,8 @@ export interface TelegramChat {
   photo_url?: string;
   is_pinned?: boolean;
   can_post?: boolean;
+  last_online?: string;
+  is_blocked?: boolean;
 }
 
 export interface TranslationResult {
