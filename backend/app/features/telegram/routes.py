@@ -1126,6 +1126,8 @@ async def get_conversations(
             except Exception:
                 pass
 
+        logger.info(f"🔍 DEBUG CONV: title={conv['title']}, id={conv['id']}, is_blocked={conv.get('is_blocked')}, type={conv['type']}")
+
         result.append({
             "id": conv['id'],
             "telegram_account_id": conv['telegram_account_id'],
