@@ -1500,7 +1500,7 @@ async def block_conversation(
     conversation_id: int,
     current_user = Depends(get_current_user),
 ):
-    """Block a private user and hide the conversation"""
+    """Block a private user"""
     conv = await db.fetchrow(
         """SELECT c.telegram_account_id, c.telegram_peer_id, c.type FROM conversations c
            JOIN telegram_accounts ta ON c.telegram_account_id = ta.id
@@ -1513,18 +1513,19 @@ async def block_conversation(
     if conv['type'] != 'private':
         raise HTTPException(status_code=400, detail="Only private chats can be blocked")
         
-    try:
-        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=True)
-    except Exception as e:
-        logger.warning(f"Block contact error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to block contact: {str(e)}")
-    
+    # 1. Update database state immediately
     await db.execute(
         "UPDATE conversations SET is_blocked = true WHERE id = $1",
         conversation_id
     )
 
-    # Notify via WebSocket so it's updated on client side
+    # 2. Try to block on Telegram, but do not crash the request if connection is offline
+    try:
+        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=True)
+    except Exception as e:
+        logger.warning(f"Could not block peer {conv['telegram_peer_id']} on Telegram (connection/proxy issue): {e}")
+    
+    # 3. Notify via WebSocket
     await manager.send_to_account(
         {
             "type": "conversation_blocked_toggle",
@@ -1556,18 +1557,19 @@ async def unblock_conversation(
     if conv['type'] != 'private':
         raise HTTPException(status_code=400, detail="Only private chats can be unblocked")
         
-    try:
-        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=False)
-    except Exception as e:
-        logger.warning(f"Unblock contact error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to unblock contact: {str(e)}")
-    
+    # 1. Update database state immediately
     await db.execute(
         "UPDATE conversations SET is_blocked = false WHERE id = $1",
         conversation_id
     )
-
-    # Notify via WebSocket so it's updated on client side
+    
+    # 2. Try to unblock on Telegram
+    try:
+        await telethon_service.block_peer(conv['telegram_account_id'], conv['telegram_peer_id'], block=False)
+    except Exception as e:
+        logger.warning(f"Could not unblock peer {conv['telegram_peer_id']} on Telegram (connection/proxy issue): {e}")
+    
+    # 3. Notify via WebSocket
     await manager.send_to_account(
         {
             "type": "conversation_blocked_toggle",
