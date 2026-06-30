@@ -97,6 +97,8 @@ class ConversationResponse(BaseModel):
     is_muted: bool = False
     is_pinned: bool = False
     can_post: bool = True
+    last_online: Optional[str] = None
+    is_blocked: bool = False
 
 class MessageType(str, Enum):
     text = "text"
