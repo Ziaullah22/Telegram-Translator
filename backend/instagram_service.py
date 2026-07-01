@@ -3231,8 +3231,8 @@ class InstagramService:
         return {"status": "success", "count": count}
 
     async def bulk_reset_scraped_leads_analysis(self, user_id: int):
-        """Bulk resets all rejected (scraped) leads back to google_discovered."""
-        rows = await db.fetch("SELECT id, data_audit_json FROM instagram_leads WHERE user_id = $1 AND status = 'rejected'", user_id)
+        """Bulk resets all rejected and qualified (scraped) leads back to google_discovered."""
+        rows = await db.fetch("SELECT id, data_audit_json FROM instagram_leads WHERE user_id = $1 AND status IN ('rejected', 'qualified')", user_id)
         if not rows:
             return {"status": "success", "count": 0}
             
