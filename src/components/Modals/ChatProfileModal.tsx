@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, BellOff, Bell, Phone, LogOut, Users, Trash, Lock, CheckCircle2, Ban } from 'lucide-react';
+import { X, MessageCircle, BellOff, Bell, LogOut, Users, Trash, Lock, CheckCircle2, Ban } from 'lucide-react';
 import PeerAvatar from '../Common/PeerAvatar';
 import ConfirmModal from './ConfirmModal';
 import type { TelegramChat } from '../../types';
@@ -193,9 +193,7 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId, onB
             />
           )}
           
-          {chat.type === 'private' ? (
-            <ActionBtn icon={<Phone className="w-6 h-6" />} label="Call" disabled />
-          ) : (
+          {chat.type !== 'private' && (
             <ActionBtn icon={<LogOut className="w-6 h-6 text-red-500" />} label="Leave" onClick={() => setLeaveModalOpen(true)} />
           )}
 
