@@ -1416,7 +1416,10 @@ const InstagramLeadGenerator: React.FC = () => {
                                                                 <div className="flex items-center gap-1.5">
                                                                     <span className="font-black text-gray-900 dark:text-white text-[12px] tracking-tighter truncate max-w-[100px]">@{lead.instagram_username || lead.username || 'unknown'}</span>
                                                                     {lead.score > 0 && (
-                                                                        <div className={`w-2 h-2 rounded-full ${lead.score > 80 ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : lead.score > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} title={`Strategic Score: ${lead.score}%`} />
+                                                                        <span className={`inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full ${lead.score >= 70 ? 'bg-green-500/10 text-green-600 dark:text-green-400' : lead.score >= 40 ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'}`} title={`Strategic Intent Score: ${lead.score}%`}>
+                                                                            <span className={`w-1.5 h-1.5 rounded-full ${lead.score >= 70 ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' : lead.score >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                                                            {lead.score}%
+                                                                        </span>
                                                                     )}
                                                                 </div>
                                                                 <div className="flex flex-col gap-0.5">
@@ -1461,29 +1464,29 @@ const InstagramLeadGenerator: React.FC = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <div className="max-w-[140px]">
-                                                            {(lead.status === 'google_rejected' || lead.status === 'failed') ? (
-                                                                <span className="text-[8px] text-gray-400/50 italic">
-                                                                    No bio 🧐
-                                                                </span>
-                                                            ) : lead.bio ? (
-                                                                <p className="text-[9px] text-gray-600 dark:text-gray-400 line-clamp-2 italic leading-tight">
-                                                                    {lead.bio}
-                                                                </p>
-                                                            ) : (
-                                                                lead.status === 'discovered' ? (
-                                                                    <span className="text-[8px] text-gray-300 dark:text-gray-600 block animate-pulse">Wait Stage 2..🏎️💨</span>
-                                                                ) : lead.status === 'pending_ai' ? (
-                                                                    <span className="text-[8px] text-amber-500 font-bold block animate-pulse">
-                                                                        {statusUpdates[lead.id] || "Waiting for AI... 🧠"}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[8px] text-gray-400/50 italic">
-                                                                        {statusUpdates[lead.id] || "No bio 🧐"}
-                                                                    </span>
-                                                                )
-                                                            )}
-                                                        </div>
+                                                         <div className="max-w-[220px]">
+                                                             {(lead.status === 'google_rejected' || lead.status === 'failed') ? (
+                                                                 <span className="text-[8px] text-gray-400/50 italic">
+                                                                     No bio 🧐
+                                                                 </span>
+                                                             ) : lead.bio ? (
+                                                                 <p className="text-[9px] text-gray-600 dark:text-gray-400 italic leading-tight whitespace-pre-line">
+                                                                     {lead.bio}
+                                                                 </p>
+                                                             ) : (
+                                                                 lead.status === 'discovered' ? (
+                                                                     <span className="text-[8px] text-gray-300 dark:text-gray-600 block animate-pulse">Wait Stage 2..🏎️💨</span>
+                                                                 ) : lead.status === 'pending_ai' ? (
+                                                                     <span className="text-[8px] text-amber-500 font-bold block animate-pulse">
+                                                                         {statusUpdates[lead.id] || "Waiting for AI... 🧠"}
+                                                                     </span>
+                                                                 ) : (
+                                                                     <span className="text-[8px] text-gray-400/50 italic">
+                                                                         {statusUpdates[lead.id] || "No bio 🧐"}
+                                                                     </span>
+                                                                 )
+                                                             )}
+                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex -space-x-1.5 isolate justify-center">
@@ -2618,11 +2621,11 @@ const InstagramLeadGenerator: React.FC = () => {
                 const filterTrace = ai?.filter_trace || [];
                 const stepOrder = [
                     "Deep AI Search Result Filter",
+                    "Deep AI Intent Check",
                     "Follower Count Check",
                     "Exclude Keyword Filter",
                     "Cities Whitelist Filter",
                     "Bio Keyword Match",
-                    "Deep AI Intent Check",
                     "Visual Match Filter"
                 ];
                 const sortedTrace = [...filterTrace].sort((a: any, b: any) => {

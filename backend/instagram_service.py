@@ -1714,27 +1714,9 @@ class InstagramService:
                 await update_ui("failed", "No posts/followers (Deleted)")
                 return {"success": False, "status": "failed"}
 
-            # Run non-AI filters
-            settings = await self.get_filter_settings(user_id)
-            is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
-
-            trace_steps = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
+            # Save scraped data with status 'pending_ai' immediately without running pre-filters
             posts_json = json.dumps(posts or [])
-            if not is_qualified:
-                ai_analysis = {"rejection_reason": rejection_reason, "filter_trace": trace_steps}
-                ai_data_json = json.dumps(ai_analysis)
-                await db.execute("""
-                    UPDATE instagram_leads 
-                    SET status = 'rejected', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
-                        recent_posts = $5, is_private = FALSE, score = 0, data_audit_json = $6, updated_at = NOW() 
-                    WHERE id = $7
-                """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
-                logger.info(f"❌ Lead {lead_id} rejected by pre-filters: {rejection_reason}")
-                await update_ui("rejected", rejection_reason)
-                return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
-
-            # Passed pre-filters -> set status to pending_ai
-            ai_analysis = {"filter_trace": trace_steps}
+            ai_analysis = {"filter_trace": []}
             ai_data_json = json.dumps(ai_analysis)
             await db.execute("""
                 UPDATE instagram_leads 
@@ -1742,8 +1724,8 @@ class InstagramService:
                     recent_posts = $5, is_private = FALSE, data_audit_json = $6, updated_at = NOW() 
                 WHERE id = $7
             """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
-            logger.info(f"⏳ Lead {lead_id} passed pre-filters. Marked as pending_ai.")
-            await update_ui("pending_ai", "Passed pre-filters, waiting for AI...")
+            logger.info(f"⏳ Lead {lead_id} scraped successfully. Marked as pending_ai.")
+            await update_ui("pending_ai", "Profile scraped, waiting for AI...")
             return {"success": True, "status": "pending_ai"}
 
         except Exception as e:
@@ -1996,6 +1978,50 @@ class InstagramService:
             await update_ui("deleted", f"AI analysis error: {ai_err}")
             return {"success": False, "status": "deleted", "error": str(ai_err)}
 
+        # 2.5 Run non-AI filters: follower count, keyword exclude, cities whitelist, bio keyword match
+        if is_qualified:
+            non_ai_ok, non_ai_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
+            if not non_ai_ok:
+                is_qualified = False
+                rejection_reason = non_ai_reason
+            
+            # Generate the trace steps for non-AI filters
+            non_ai_trace = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
+            ai_trace_steps.extend(non_ai_trace)
+        else:
+            # All non-AI filters are skipped because previous step failed
+            for step_name in ["Follower Count Check", "Exclude Keyword Filter", "Cities Whitelist Filter", "Bio Keyword Match"]:
+                is_set = False
+                if step_name == "Follower Count Check":
+                    is_set = settings.get('min_followers', 0) > 0 or settings.get('max_followers', 0) > 0
+                elif step_name == "Exclude Keyword Filter":
+                    is_set = bool(settings.get('bio_exclude_keywords', '').strip())
+                elif step_name == "Cities Whitelist Filter":
+                    is_set = bool(settings.get('bio_cities_whitelist', '').strip())
+                elif step_name == "Bio Keyword Match":
+                    is_set = bool(settings.get('bio_keywords', '').strip())
+                
+                if is_set:
+                    ai_trace_steps.append({
+                        "step": step_name,
+                        "status": "skipped",
+                        "details": "Skipped because previous step failed."
+                    })
+                else:
+                    if step_name == "Follower Count Check":
+                        dt = f"No follower range criteria set. Profile has {followers:,} followers."
+                    elif step_name == "Exclude Keyword Filter":
+                        dt = "No exclude keywords list set."
+                    elif step_name == "Cities Whitelist Filter":
+                        dt = "No cities whitelist criteria set."
+                    else:
+                        dt = "No bio keyword criteria set."
+                    ai_trace_steps.append({
+                        "step": step_name,
+                        "status": "skipped",
+                        "details": dt
+                    })
+
         # 3. Visual Match Filter (Only if enabled)
         visual_niche = settings.get('visual_niche', '')
         target_hashes = settings.get('sample_hashes', [])
@@ -2118,8 +2144,9 @@ class InstagramService:
                 "model_used": google_model
             }
 
-        # Filter out Google AI step from pre_filter_trace and remaining_ai_steps to avoid duplicates
-        clean_pre_trace = [s for s in pre_filter_trace if s.get("step") != "Deep AI Search Result Filter"]
+        # Filter out Google AI step and non-AI steps from pre_filter_trace and remaining_ai_steps to avoid duplicates
+        non_ai_step_names = {"Follower Count Check", "Exclude Keyword Filter", "Cities Whitelist Filter", "Bio Keyword Match", "Visual Match Filter"}
+        clean_pre_trace = [s for s in pre_filter_trace if s.get("step") != "Deep AI Search Result Filter" and s.get("step") not in non_ai_step_names]
         clean_ai_trace = [s for s in ai_trace_steps if s.get("step") != "Deep AI Search Result Filter"]
         
         if google_ai_step:
@@ -3611,8 +3638,8 @@ class InstagramService:
                     """, u_id)
                     pending_count = cnt_row["cnt"] if cnt_row else 0
                     is_scraping_active = self.workers.get(u_id, False)
-                    if is_scraping_active and pending_count < 30:
-                        logger.info(f"⏳ [Global AI] User {u_id} has active Playwright scraping but only {pending_count} pending_ai leads. Waiting for 30...")
+                    if is_scraping_active:
+                        logger.info(f"⏳ [Global AI] User {u_id} has active Playwright scraping. Pausing AI analysis until scraping completes...")
                         continue
                     active_user_row = u_row
                     break
@@ -3623,7 +3650,7 @@ class InstagramService:
                         SELECT id, instagram_username, bio, follower_count, following_count, full_name, recent_posts, is_private, data_audit_json 
                         FROM instagram_leads
                         WHERE user_id = $1 AND status = 'pending_ai'
-                        ORDER BY updated_at ASC LIMIT 30
+                        ORDER BY updated_at ASC LIMIT 10
                     """, user_id)
 
                     settings = await self.get_filter_settings(user_id)
@@ -3657,7 +3684,8 @@ class InstagramService:
                             "google_data": audit_json.get("google_snippet_data", {}),
                             "audit_json": audit_json,
                             "recent_posts": recent_posts,
-                            "is_private": row["is_private"]
+                            "is_private": row["is_private"],
+                            "full_name": row["full_name"]
                         })
 
                     # Try models sequentially to process the remaining leads
@@ -3737,8 +3765,9 @@ class InstagramService:
                             ai_analysis['intent_model_used'] = model
                             
                             trace_steps = ai_analysis.get('filter_trace', [])
-                            # Remove old Intent Check if it exists so we don't duplicate
-                            trace_steps = [s for s in trace_steps if s.get("step") != "Deep AI Intent Check"]
+                            # Remove old Intent Check and non-AI filters if they exist to avoid duplicate steps on re-analysis
+                            non_ai_step_names = {"Follower Count Check", "Exclude Keyword Filter", "Cities Whitelist Filter", "Bio Keyword Match", "Visual Match Filter", "Deep AI Intent Check"}
+                            trace_steps = [s for s in trace_steps if s.get("step") not in non_ai_step_names]
                             
                             trace_steps.append({
                                 "step": "Deep AI Intent Check",
@@ -3753,6 +3782,62 @@ class InstagramService:
                                     rejection_reason = f"Profile failed target criteria mismatch: {strategy_val}"
                                 else:
                                     rejection_reason = f"Low intent score: intent match score is only {score_val}% (below 70%)."
+
+                            # Run non-AI filters: follower count, keyword exclude, cities whitelist, bio keyword match
+                            if is_qualified:
+                                non_ai_ok, non_ai_reason = self._check_non_ai_filters(
+                                    lead_item["bio"], 
+                                    lead_item["followers"], 
+                                    lead_item["full_name"], 
+                                    lead_item["username"], 
+                                    settings
+                                )
+                                if not non_ai_ok:
+                                    is_qualified = False
+                                    rejection_reason = non_ai_reason
+                                
+                                # Generate pre-filter trace
+                                non_ai_trace = self._generate_pre_filter_trace(
+                                    settings, 
+                                    lead_item["bio"], 
+                                    lead_item["followers"], 
+                                    lead_item["full_name"], 
+                                    lead_item["username"]
+                                )
+                                trace_steps.extend(non_ai_trace)
+                            else:
+                                # All non-AI filters are skipped because previous step failed
+                                for step_name in ["Follower Count Check", "Exclude Keyword Filter", "Cities Whitelist Filter", "Bio Keyword Match"]:
+                                    is_set = False
+                                    if step_name == "Follower Count Check":
+                                        is_set = settings.get('min_followers', 0) > 0 or settings.get('max_followers', 0) > 0
+                                    elif step_name == "Exclude Keyword Filter":
+                                        is_set = bool(settings.get('bio_exclude_keywords', '').strip())
+                                    elif step_name == "Cities Whitelist Filter":
+                                        is_set = bool(settings.get('bio_cities_whitelist', '').strip())
+                                    elif step_name == "Bio Keyword Match":
+                                        is_set = bool(settings.get('bio_keywords', '').strip())
+                                    
+                                    if is_set:
+                                        trace_steps.append({
+                                            "step": step_name,
+                                            "status": "skipped",
+                                            "details": "Skipped because previous step failed."
+                                        })
+                                    else:
+                                        if step_name == "Follower Count Check":
+                                            dt = f"No follower range criteria set. Profile has {lead_item['followers']:,} followers."
+                                        elif step_name == "Exclude Keyword Filter":
+                                            dt = "No exclude keywords list set."
+                                        elif step_name == "Cities Whitelist Filter":
+                                            dt = "No cities whitelist criteria set."
+                                        else:
+                                            dt = "No bio keyword criteria set."
+                                        trace_steps.append({
+                                            "step": step_name,
+                                            "status": "skipped",
+                                            "details": dt
+                                        })
 
                             if visual_niche or target_hashes:
                                 if not is_qualified:
@@ -4696,13 +4781,7 @@ class InstagramService:
                 except Exception as ai_err:
                     logger.error(f"⚠️ Fallback Google AI pre-filter error: {ai_err}")
 
-            # Run non-AI filters
-            settings = await self.get_filter_settings(user_id)
-            is_qualified, rejection_reason = self._check_non_ai_filters(bio, followers, full_name, username, settings)
-
-            trace_steps = self._generate_pre_filter_trace(settings, bio, followers, full_name, username)
-            
-            # Prepend Google AI Filter step to the beginning
+            # Save scraped data with status 'pending_ai' immediately without running non-AI pre-filters
             google_status = "skipped"
             google_details = "Skipped because Google AI analysis was not executed."
             google_model = audit.get('google_model_used') or ai_model
@@ -4719,24 +4798,9 @@ class InstagramService:
                 "details": google_details,
                 "model_used": google_model if audit.get('google_ai_analyzed') else None
             }
-            trace_steps = [google_step] + trace_steps
+            trace_steps = [google_step]
 
             posts_json = json.dumps(posts or [])
-            if not is_qualified:
-                ai_analysis = audit.copy()
-                ai_analysis.update({"rejection_reason": rejection_reason, "filter_trace": trace_steps})
-                ai_data_json = json.dumps(ai_analysis)
-                await db.execute("""
-                    UPDATE instagram_leads 
-                    SET status = 'rejected', bio = $1, follower_count = $2, following_count = $3, full_name = $4, 
-                        recent_posts = $5, is_private = FALSE, score = 0, data_audit_json = $6, updated_at = NOW() 
-                    WHERE id = $7
-                """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
-                logger.info(f"❌ Lead {lead_id} rejected by pre-filters: {rejection_reason}")
-                await update_ui("rejected", rejection_reason)
-                return {"success": True, "status": "rejected", "rejection_reason": rejection_reason}
-
-            # Passed pre-filters -> set status to pending_ai
             ai_analysis = audit.copy()
             ai_analysis.update({"filter_trace": trace_steps})
             ai_data_json = json.dumps(ai_analysis)
@@ -4746,8 +4810,8 @@ class InstagramService:
                     recent_posts = $5, is_private = FALSE, data_audit_json = $6, updated_at = NOW() 
                 WHERE id = $7
             """, bio, followers, following, full_name, posts_json, ai_data_json, lead_id)
-            logger.info(f"⏳ Lead {lead_id} passed pre-filters. Marked as pending_ai.")
-            await update_ui("pending_ai", "Passed pre-filters, waiting for AI...")
+            logger.info(f"⏳ Lead {lead_id} scraped successfully. Marked as pending_ai.")
+            await update_ui("pending_ai", "Profile scraped, waiting for AI...")
             return {"success": True, "status": "pending_ai"}
 
         except Exception as e:
