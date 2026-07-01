@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageCircle, BellOff, Bell, Phone, LogOut, Users, Trash, Lock, CheckCircle2 } from 'lucide-react';
+import { X, MessageCircle, BellOff, Bell, Phone, LogOut, Users, Trash, Lock, CheckCircle2, Ban } from 'lucide-react';
 import PeerAvatar from '../Common/PeerAvatar';
 import ConfirmModal from './ConfirmModal';
 import type { TelegramChat } from '../../types';
@@ -24,12 +24,14 @@ interface ChatProfileModalProps {
   onClose: () => void;
   chat: TelegramChat | null;
   accountId?: number;
+  onBlockToggle?: (isBlocked: boolean) => void;
 }
 
-export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: ChatProfileModalProps) {
+export default function ChatProfileModal({ isOpen, onClose, chat, accountId, onBlockToggle }: ChatProfileModalProps) {
   const [profile, setProfile] = useState<PeerProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState(chat?.is_muted || false);
+  const [isBlocked, setIsBlocked] = useState(chat?.is_blocked || false);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -50,7 +52,10 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
       }
     }
     fetchProfile();
-    if (chat) setIsMuted(chat.is_muted || false);
+    if (chat) {
+      setIsMuted(chat.is_muted || false);
+      setIsBlocked(chat.is_blocked || false);
+    }
   }, [isOpen, chat, accountId]);
 
   if (!isOpen || !chat) return null;
@@ -71,6 +76,23 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
       setIsMuted(!isMuted);
     } catch(e) {
       console.error(e);
+    }
+  };
+
+  const handleToggleBlock = async () => {
+    if (!chat) return;
+    try {
+      if (isBlocked) {
+        await telegramAPI.unblockConversation(chat.id);
+        setIsBlocked(false);
+        onBlockToggle?.(false);
+      } else {
+        await telegramAPI.blockConversation(chat.id);
+        setIsBlocked(true);
+        onBlockToggle?.(true);
+      }
+    } catch (e) {
+      console.error("Failed to toggle block status", e);
     }
   };
 
@@ -132,7 +154,7 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
         </div>
 
         {/* Action Buttons: Message, Mute, Call */}
-        <div className="flex justify-center items-center space-x-2 px-6 pb-6">
+        <div className="flex flex-wrap justify-center items-center gap-2 px-6 pb-6">
           <ActionBtn icon={<MessageCircle className="w-6 h-6" />} label="Message" onClick={onClose} />
           
           <ActionBtn 
@@ -160,6 +182,14 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId }: C
                   alert(`❌ ${msg}`);
                 }
               }} 
+            />
+          )}
+
+          {chat.type === 'private' && (
+            <ActionBtn 
+              icon={<Ban className="w-6 h-6 text-red-500" />} 
+              label={isBlocked ? "Unblock" : "Block"} 
+              onClick={handleToggleBlock} 
             />
           )}
           

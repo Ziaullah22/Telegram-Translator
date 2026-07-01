@@ -438,6 +438,7 @@ interface ChatWindowProps {
   onSendMedia: (file: File, caption: string) => Promise<void>;
   onJoinConversation?: (conversationId: number) => Promise<void>;
   onUnblockConversation?: (conversationId: number) => Promise<void>;
+  onBlockConversation?: (conversationId: number) => Promise<void>;
   onToggleMute?: (conversationId: number) => Promise<void>;
   onLeaveConversation?: (conversationId: number) => Promise<void>;
   onDeleteMessages?: (conversationId: number, messageIds: number[], revoke: boolean) => Promise<void>;
@@ -462,6 +463,7 @@ export default function ChatWindow({
   onSendMedia,
   onJoinConversation,
   onUnblockConversation,
+  onBlockConversation,
   onToggleMute,
   onLeaveConversation,
   onDeleteMessages,
@@ -2365,6 +2367,14 @@ export default function ChatWindow({
         onClose={() => setShowChatProfileModal(false)}
         chat={currentConversation}
         accountId={currentAccount?.id}
+        onBlockToggle={async (isBlocked) => {
+          if (!currentConversation) return;
+          if (isBlocked) {
+            await onBlockConversation?.(currentConversation.id);
+          } else {
+            await onUnblockConversation?.(currentConversation.id);
+          }
+        }}
       />
     </div >
   );

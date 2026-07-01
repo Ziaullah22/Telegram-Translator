@@ -1129,6 +1129,15 @@ function App() {
                         }
                       } catch (e) { console.error(e); }
                     }}
+                    onBlockConversation={async (id) => {
+                      try {
+                        await telegramAPI.blockConversation(id);
+                        if (currentAccount) {
+                          await loadConversations(currentAccount.id);
+                          setCurrentConversation(prev => prev && prev.id === id ? { ...prev, is_blocked: true } : prev);
+                        }
+                      } catch (e) { console.error(e); }
+                    }}
                     onToggleMute={async (id) => {
                       try {
                         const result = await telegramAPI.toggleMute(id);
