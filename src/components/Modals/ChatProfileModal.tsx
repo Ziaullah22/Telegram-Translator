@@ -17,7 +17,30 @@ interface PeerProfile {
     username: string;
   }>;
   invite_link?: string;
+  last_online?: string;
 }
+
+const formatLastOnline = (lastOnline?: string) => {
+  if (!lastOnline) return '';
+  if (lastOnline === 'online') return 'online';
+  if (lastOnline === 'recently') return 'last seen recently';
+  if (lastOnline === 'last week') return 'last seen last week';
+  if (lastOnline === 'last month') return 'last seen last month';
+  try {
+    const date = new Date(lastOnline);
+    if (isNaN(date.getTime())) return `last seen ${lastOnline}`;
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 1) return 'last seen just now';
+    if (diffMins < 60) return `last seen ${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `last seen ${diffHours}h ago`;
+    return `last seen on ${date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  } catch (e) {
+    return `last seen ${lastOnline}`;
+  }
+};
 
 interface ChatProfileModalProps {
   isOpen: boolean;
@@ -64,7 +87,8 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId, onB
   const name = chat.title || 'Unknown';
   const peerId = chat.telegram_peer_id || chat.id;
   const username = chat.username;
-  const lastSeen = 'last seen recently';
+  const lastOnlineVal = profile?.last_online || chat.last_online;
+  const lastSeen = lastOnlineVal ? formatLastOnline(lastOnlineVal) : 'last seen recently';
   
   const displayBio = profile?.bio || (username ? `@${username}` : 'No bio given.');
   const displayPhone = profile?.phone || (chat?.title?.startsWith('+') ? chat.title : '');
@@ -148,7 +172,7 @@ export default function ChatProfileModal({ isOpen, onClose, chat, accountId, onB
           <h2 className="text-[20px] font-medium text-gray-900 dark:text-white mt-4 tracking-tight">
             {name}
           </h2>
-          <p className="text-[14px] text-gray-400 mt-1">
+          <p className={`text-[14px] mt-1 ${lastOnlineVal === 'online' ? 'text-green-500 font-medium' : 'text-gray-400'}`}>
             {lastSeen}
           </p>
         </div>
