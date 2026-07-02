@@ -1079,8 +1079,6 @@ async def get_conversations(
         account_id,
     )
 
-    session = await telethon_service.get_session(account_id)
-
     result = []
     for conv in conversations:
         last_message = None
@@ -1112,21 +1110,10 @@ async def get_conversations(
             }
 
         last_online = conv.get('last_online')
-        if session and session.client and session.is_connected and conv['type'] == 'private':
-            try:
-                entity = await session.client.get_entity(conv['telegram_peer_id'])
-                if hasattr(entity, 'status'):
-                    from telethon_service import format_user_status
-                    last_online = format_user_status(entity.status)
-                    await db.execute(
-                        "UPDATE conversations SET last_online = $2 WHERE id = $1",
-                        conv['id'],
-                        last_online
-                    )
-            except Exception:
-                pass
+        # NOTE: We no longer fetch live last_online via Telethon get_entity() here because
+        # it creates N sequential API calls (one per conversation) that block the entire
+        # conversation list from loading. last_online is updated via WebSocket events instead.
 
-        logger.info(f"🔍 DEBUG CONV: title={conv['title']}, id={conv['id']}, is_blocked={conv.get('is_blocked')}, type={conv['type']}")
 
         result.append({
             "id": conv['id'],
