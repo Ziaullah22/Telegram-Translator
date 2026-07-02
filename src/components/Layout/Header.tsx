@@ -109,7 +109,7 @@ export default function Header({ onStartTour }: HeaderProps) {
               ))}
 
               {/* Instagram Dropdown */}
-              <div className="relative group ml-1">
+              <div className="relative group ml-1" style={{ display: 'none' }}>
                 <button id="nav-instagram-group" className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${['/instagram-leads', '/instagram-warming'].includes(location.pathname) ? 'text-pink-600 dark:text-pink-500 bg-pink-50/50 dark:bg-white/5' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
                    <Instagram className="w-3.5 h-3.5" />
                    <span>Instagram</span>
@@ -250,7 +250,7 @@ export default function Header({ onStartTour }: HeaderProps) {
             </div>
 
             <div className="grid grid-cols-1 gap-1">
-              {navItems.map(item => (
+              {navItems.filter(item => !['/instagram-leads', '/instagram-warming'].includes(item.path)).map(item => (
                 <button
                   key={item.path}
                   id={item.id + '-mobile'}
