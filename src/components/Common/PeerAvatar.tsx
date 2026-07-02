@@ -71,7 +71,7 @@ export function prefetchAvatars(accountId: number, peers: { peerId: number }[]) 
         if (pendingFetches.has(key)) return;      // already in flight
         const p = telegramAPI.getPeerPhoto(accountId, peerId)
             .then(res => { const u = res.photo_url || null; cacheSet(key, u); return u; })
-            .catch(() => { pendingFetches.delete(key); return null; })
+            .catch(() => { cacheSet(key, null); pendingFetches.delete(key); return null; })  // cache failure so we never retry
             .finally(() => pendingFetches.delete(key));
         pendingFetches.set(key, p);
     });
@@ -105,7 +105,7 @@ export default function PeerAvatar({
         if (!p) {
             p = telegramAPI.getPeerPhoto(accountId, peerId)
                 .then(res => { const u = res.photo_url || null; cacheSet(cacheKey, u); return u; })
-                .catch(() => { pendingFetches.delete(cacheKey); return null; })
+                .catch(() => { cacheSet(cacheKey, null); pendingFetches.delete(cacheKey); return null; })  // cache failure so we never retry
                 .finally(() => pendingFetches.delete(cacheKey));
             pendingFetches.set(cacheKey, p);
         }

@@ -2526,36 +2526,50 @@ class TelethonService:
             raise e
 
     async def get_peer_photo(self, account_id: int, peer_id: int) -> str:
-        """Download and return peer's profile photo as base64"""
+        """Download and return peer's profile photo as base64, with disk caching (24h TTL)"""
         session = self.sessions.get(account_id)
         if not session or not session.client:
             raise Exception("Account not connected")
         
-        import base64
+        import base64, os, time
         from telethon.tl.types import PeerUser, PeerChannel, PeerChat
         
-        # Look up entity from our cache
+        # --- Disk cache check (24-hour TTL) ---
+        cache_dir = os.path.join("backend", "media", "avatars")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{account_id}_{peer_id}.jpg")
+        null_marker = os.path.join(cache_dir, f"{account_id}_{peer_id}.none")  # marks "no photo"
+        cache_ttl = 86400  # 24 hours in seconds
+
+        # Serve from disk cache if fresh
+        for f in (cache_file, null_marker):
+            if os.path.exists(f):
+                if time.time() - os.path.getmtime(f) < cache_ttl:
+                    if f == null_marker:
+                        return None  # cached "no photo"
+                    with open(cache_file, "rb") as fh:
+                        return f"data:image/jpeg;base64,{base64.b64encode(fh.read()).decode()}"
+                else:
+                    # Expired - remove stale cache
+                    try: os.remove(f)
+                    except: pass
+
+        # --- Not cached: resolve entity ---
         entity = session.entity_cache.get(peer_id)
         
         if not entity:
-            # Determine correct Peer type based on ID format
-            # Users > 0, Chats < 0 but > -1000... , Channels < -1000...
             try:
                 if peer_id > 0:
                     peer_obj = PeerUser(peer_id)
                 elif peer_id < -1000000000000:
-                    # It's a channel (large negative)
                     channel_id = abs(peer_id + 1000000000000)
                     peer_obj = PeerChannel(channel_id)
                 else:
-                    # It's a small group chat
                     chat_id = abs(peer_id)
                     peer_obj = PeerChat(chat_id)
                 
-                # Try Telethon's own session cache/database
                 entity = await session.client.get_entity(peer_obj)
                 
-                # Update cache if found
                 if entity:
                     session.entity_cache[peer_id] = entity
                     raw_id = getattr(entity, 'id', None)
@@ -2566,18 +2580,33 @@ class TelethonService:
 
         if not entity:
             logger.warning(f"Entity not found for peer {peer_id} in account {account_id}. Cache has {len(session.entity_cache)} entries.")
+            # Write null marker so we don't retry on next request
+            try:
+                open(null_marker, 'w').close()
+            except: pass
             raise Exception(f"Profile not found for {peer_id}. Please wait for session to sync.")
         
         try:
-            # Some entities might have been deleted or have no photo
             photo_bytes = await session.client.download_profile_photo(entity, bytes)
         except Exception as e:
             logger.error(f"Error downloading photo for peer {peer_id}: {e}")
             raise e
         
         if photo_bytes:
+            # Save to disk cache
+            try:
+                with open(cache_file, "wb") as fh:
+                    fh.write(photo_bytes)
+            except Exception as e:
+                logger.warning(f"Could not write avatar cache for {peer_id}: {e}")
             return f"data:image/jpeg;base64,{base64.b64encode(photo_bytes).decode()}"
+        
+        # No photo - write null marker
+        try:
+            open(null_marker, 'w').close()
+        except: pass
         return None  # Entity has no profile photo set
+
 
     async def get_peer_profile(self, account_id: int, peer_id: int) -> dict:
         """Get the profile info (bio, phone) of a specific peer"""
